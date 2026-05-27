@@ -23,8 +23,8 @@ The same image binary speaks both — flip the env var, point at the right path.
 
 ## Source
 
-- Image source: [solo-demos/agentic-pii-guardrail-kind/src/inspector-ui](https://github.com/tjorourke/solo/tree/main/agentic-pii-guardrail-kind/src/inspector-ui)
-- Chart source: [solo-demos/agentic-pii-guardrail-kind/charts/pii-inspector-ui](https://github.com/tjorourke/solo/tree/main/agentic-pii-guardrail-kind/charts/pii-inspector-ui)
+- Image source: [solo-demos/agentic-pii-guardrail-kind/src/inspector-ui](https://github.com/tjorourke/solo-labs/tree/main/agentic-pii-guardrail-kind/src/inspector-ui)
+- Chart source: [solo-demos/agentic-pii-guardrail-kind/charts/pii-inspector-ui](https://github.com/tjorourke/solo-labs/tree/main/agentic-pii-guardrail-kind/charts/pii-inspector-ui)
 
 The chart references the image by tag (`pii-inspector-ui:dev` by default).
 On a kind cluster you build + `kind load docker-image` once; for a real
