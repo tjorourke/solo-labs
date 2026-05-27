@@ -14,7 +14,7 @@
 #   PEM_PATH / KEY_NAME      ~/.ssh/solo-demo.pem  (imported as "solo-demo" key pair on first run)
 #   SG_NAME                  solo-demo-ssh-open  (inbound :22 from 0.0.0.0/0 — demo only)
 #   NAME_TAG                 solo-demo-<timestamp>
-#   REPO_SRC                 ~/code/solo/solo-demos  (rsynced to ~/code/solo/ on the VM)
+#   REPO_SRC                 ~/code/solo/solo-labs  (rsynced to ~/code/solo/ on the VM)
 #   SECRETS_SRC              ~/code/solo/secrets     (rsynced alongside)
 #
 # Override examples:
@@ -46,7 +46,7 @@ NAME_TAG="${NAME_TAG:-solo-demo-$(date +%Y%m%d-%H%M)}"
 ROOT_VOLUME_GB="${ROOT_VOLUME_GB:-50}"
 AMI_ID="${AMI_ID:-}"
 PROJECT_TAG="solo-demo"
-REPO_SRC="${REPO_SRC:-$HOME/code/solo/solo-demos}"
+REPO_SRC="${REPO_SRC:-$HOME/code/solo/solo-labs}"
 SECRETS_SRC="${SECRETS_SRC:-$HOME/code/solo/secrets}"
 NO_PREP="${NO_PREP:-0}"
 
@@ -130,8 +130,8 @@ resolve_ami() {
 }
 
 # ── embedded bootstrap script (run on the VM via ssh) ────────────────────────
-# This is the same content as scripts/bootstrap-linux.sh in the solo-demos
-# repo. Embedding makes this script self-contained — works even if you scp
+# This is the same content as scripts/bootstrap-aws-linux.sh alongside this
+# file. Embedding makes this script self-contained — works even if you scp
 # only this single file. Keep them in sync if you change one.
 embedded_bootstrap_script() {
 cat <<'BOOTSTRAP_EOF'
@@ -140,7 +140,7 @@ set -Eeuo pipefail
 
 KIND_VERSION="${KIND_VERSION:-v0.31.0}"
 MESHCTL_VERSION="${MESHCTL_VERSION:-v2.12.3}"
-REPO_DIR="${REPO_DIR:-$HOME/code/solo/solo-demos}"
+REPO_DIR="${REPO_DIR:-$HOME/code/solo/solo-labs}"
 
 step() { printf '\n══> %s\n' "$*"; }
 log()  { printf '   • %s\n' "$*"; }
@@ -398,7 +398,7 @@ cmd_up() {
    gcloud auth configure-docker us-central1-docker.pkg.dev
 
  Run the agentgateway nightly demo:
-   cd ~/code/solo/solo-demos
+   cd ~/code/solo/solo-labs
    export SECRETS_FILE=\$HOME/code/solo/secrets/secrets-envs.sh
    AGW_NIGHTLY=true ./agentgw-multi-cluster-kind/scripts/quick.sh
 

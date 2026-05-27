@@ -72,7 +72,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # this scripts/ dir
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"                    # solo-demos repo root
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"                    # solo-labs repo root
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 

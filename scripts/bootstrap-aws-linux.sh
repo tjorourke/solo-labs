@@ -5,7 +5,7 @@
 #
 # Standalone: scp this single file to the host and run it. The Solo istioctl
 # install runs only if the repo is already present at $REPO_DIR (default:
-# ~/code/solo/solo-demos); otherwise it's skipped with a clear hint.
+# ~/code/solo/solo-labs); otherwise it's skipped with a clear hint.
 #
 # Idempotent: every tool's install is guarded by a `command -v` check, so
 # re-running is safe — it'll only do what's missing.
@@ -18,13 +18,13 @@
 # Override knobs (env):
 #   KIND_VERSION       default v0.31.0
 #   MESHCTL_VERSION    default v2.12.3
-#   REPO_DIR           default $HOME/code/solo/solo-demos
+#   REPO_DIR           default $HOME/code/solo/solo-labs
 
 set -Eeuo pipefail
 
 KIND_VERSION="${KIND_VERSION:-v0.31.0}"
 MESHCTL_VERSION="${MESHCTL_VERSION:-v2.12.3}"
-REPO_DIR="${REPO_DIR:-$HOME/code/solo/solo-demos}"
+REPO_DIR="${REPO_DIR:-$HOME/code/solo/solo-labs}"
 
 # ── output helpers ──────────────────────────────────────────────────────────
 step() { printf '\n══> %s\n' "$*"; }
@@ -221,7 +221,7 @@ Next steps (interactive, one-time per host):
 
        # from your laptop:
        rsync -avz -e "ssh -i ~/.ssh/<key>.pem" --exclude '.claude' \\
-         ~/code/solo/solo-demos ~/code/solo/secrets \\
+         ~/code/solo/solo-labs ~/code/solo/secrets \\
          ubuntu@<this-host>:~/code/solo/
 
        # then on this host, install the Solo istioctl that was skipped above:

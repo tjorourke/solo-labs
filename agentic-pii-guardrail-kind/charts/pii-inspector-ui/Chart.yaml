@@ -18,7 +18,7 @@ keywords:
   - llm
   - inspector
 sources:
-  - https://github.com/tjorourke/solo/tree/main/agentic-pii-guardrail-kind
+  - https://github.com/tjorourke/solo-labs/tree/main/agentic-pii-guardrail-kind
 maintainers:
   - name: Tom O'Rourke
     email: tom.orourke@solo.io
