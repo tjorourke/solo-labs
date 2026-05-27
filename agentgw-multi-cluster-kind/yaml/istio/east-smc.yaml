@@ -1,0 +1,39 @@
+# ServiceMeshController for the east cluster.
+# Apply with: kubectl --context kind-east apply -f yaml/istio/east-smc.yaml
+# The Gloo Operator reconciles this into istiod + ztunnel + CNI deployments.
+#
+# Trust domain is locked to cluster.local on every cluster:
+#   - enterprise-agentgateway-waypoint binary hardcodes TRUST_DOMAIN=cluster.local
+#   - Shared root CA intermediates are signed with SAN spiffe://cluster.local/...
+#   Per-cluster identity is differentiated by clusterID + the per-cluster
+#   intermediate signing key, not the trust domain.
+apiVersion: operator.gloo.solo.io/v1
+kind: ServiceMeshController
+metadata:
+  name: managed-istio
+  namespace: gloo-system
+spec:
+  cluster: east
+  network: east
+  trustDomain: cluster.local
+
+  # Strip "-solo" from the version string — the operator auto-appends it.
+  version: "1.29.2-patch0"
+  dataplaneMode: Ambient
+  distribution: Standard
+  scalingProfile: Demo
+
+  meshConfig:
+    defaultConfig:
+      proxyMetadata:
+        ISTIO_META_DNS_CAPTURE: "true"
+
+  # L7_ENABLED + SELECT_WORKLOAD_ENTRIES are required for Ambient peering.
+  # The SMC schema doesn't expose these as first-class fields — patched
+  # directly onto the istiod Deployment by 03-istio.sh after install.
+  #
+  # values:
+  #   pilot:
+  #     env:
+  #       L7_ENABLED: "true"
+  #       PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES: "false"

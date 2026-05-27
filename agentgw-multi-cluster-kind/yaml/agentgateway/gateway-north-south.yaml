@@ -1,0 +1,35 @@
+# Enterprise agentgateway — north-south ingress gateway.
+# Replaces gatewayClassName: istio (Istio Ingress Gateway) from the
+# companion istio-gw-multi-cluster-kind demo.
+#
+# GatewayClass "enterprise-agentgateway" is registered by the enterprise
+# agentgateway Helm chart. It programs an Envoy-based proxy with
+# MCP-awareness, LLM routing, prompt guards, and OTLP observability.
+#
+# Apply to BOTH clusters (update parentRefs / ServiceAccount names per cluster).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agw-ingress
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - name: http
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https
+      port: 8443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: agw-ingress-tls
+            kind: Secret
+            namespace: agentgateway-system
+      allowedRoutes:
+        namespaces:
+          from: All

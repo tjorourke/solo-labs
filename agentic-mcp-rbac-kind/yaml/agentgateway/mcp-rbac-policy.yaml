@@ -1,0 +1,42 @@
+# MCP tool-level RBAC. The policy attaches to the AgentgatewayBackend (NOT
+# to the Gateway or HTTPRoute) so the gateway evaluates each rule with the
+# request's MCP context — including the tool name.
+#
+# matchExpressions are OR-ed. A tool is visible to a caller iff at least one
+# expression evaluates true. Tools that match no expression are silently
+# filtered from tools/list and short-circuited on tools/call with
+# JSON-RPC -32602 "Unknown tool".
+#
+# JWT claims used here (set by jwt-issuer/main.go):
+#   sub:     "alice" | "bob" | "carol"
+#   team:    "platform" | "dev" | "intern"
+#   groups:  ["admin"] | ["dev"] | ["intern"]
+#
+# Per-identity coverage:
+#   alice  — admin group → matches the catch-all rule → all 6 tools
+#   bob    — team=dev   → read_orders, read_customers, truncate_table, run_migration  (4)
+#   carol  — team=intern → read_orders, read_customers                                (2)
+#
+# Bob has no access to get_secrets or audit_log even though they exist.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: mcp-tool-rbac
+  namespace: ops-tools
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: ops-tools-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # admins (alice) see and call everything
+            - 'jwt.groups.exists(g, g == "admin")'
+            # developers (bob) — read + write, but NOT secrets or audit log
+            - 'jwt.team == "dev" && mcp.tool.name in ["read_orders","read_customers","truncate_table","run_migration"]'
+            # interns (carol) — read-only
+            - 'jwt.team == "intern" && mcp.tool.name in ["read_orders","read_customers"]'

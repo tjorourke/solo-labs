@@ -1,0 +1,31 @@
+# JWT authentication on the Gateway. Strict mode — every request must carry
+# a valid token, or it's rejected with 401 before reaching any backend.
+#
+# JWKS is fetched from the in-cluster jwt-issuer Service at startup and
+# cached. The shape follows use-cases/security/jwt-authentication.md.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: jwt-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: rbac-gateway
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "agentic-mcp-rbac-kind"
+          audiences: ["ops-tools"]
+          jwks:
+            remote:
+              jwksPath: "/.well-known/jwks.json"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: jwt-issuer
+                namespace: mcp-rbac
+                port: 8080

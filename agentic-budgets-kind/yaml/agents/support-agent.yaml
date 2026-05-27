@@ -1,0 +1,28 @@
+# Support team agent. Identical image to dba-agent.yaml; the only difference
+# is which JWT Secret gets mounted as $LLM_JWT. jwt-issuer created `jwt-support`
+# in this namespace at step 04. The team's budget is 20,000 tokens/hour and
+# 200,000 tokens/day — 4× the DBA team. With the same usage pattern, support
+# stays comfortably under budget while DBA hits the ceiling.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: support-agent
+  namespace: kagent
+spec:
+  description: "Customer-support team chat agent. Same code as dba-agent, but with a team=support JWT and a 4× larger token budget."
+  type: BYO
+  byo:
+    deployment:
+      image: langgraph-agent:dev
+      env:
+        - name: LLM_URL
+          value: "http://budgets-gateway.agentgateway-system.svc.cluster.local/v1/chat/completions"
+        - name: MODEL
+          value: "mock-essay-7b"
+        - name: TEAM_LABEL
+          value: "support"
+        - name: LLM_JWT
+          valueFrom:
+            secretKeyRef:
+              name: jwt-support
+              key: token

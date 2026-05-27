@@ -1,0 +1,61 @@
+# AgentgatewayBackend resources — define upstream MCP servers.
+# The agentgateway uses these to forward MCP tool calls to the right service.
+# Applied to BOTH clusters (east handles its own local MCP servers;
+# the cross-cluster backend in east points at the west service via the
+# global mesh hostname).
+#
+# --- East cluster backends ---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: echo-mcp-east
+  namespace: agentgateway-system
+spec:
+  mcp:
+    sessionRouting: Stateful
+    targets:
+      - name: echo-mcp
+        static:
+          host: echo-mcp.ai-demo.svc.cluster.local
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP
+---
+# Cross-cluster backend: agent in east calls MCP server in west.
+# Uses the Solo Istio global mesh hostname (requires istio.io/global=true
+# label on the west echo-mcp Service and the remote-secret peering in place).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: echo-mcp-west
+  namespace: agentgateway-system
+spec:
+  mcp:
+    sessionRouting: Stateful
+    targets:
+      - name: echo-mcp-west
+        static:
+          # Global hostname: <svc>.<ns>.svc.<cluster>.mesh.internal
+          # Routed via ztunnel HBONE to the west cluster east-west GW,
+          # then through the west-cluster agw-waypoint to the MCP pod.
+          host: echo-mcp.ai-demo.svc.west.mesh.internal
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP
+---
+# --- West cluster backends (apply with --context kind-west) ---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: echo-mcp-west
+  namespace: agentgateway-system
+spec:
+  mcp:
+    sessionRouting: Stateful
+    targets:
+      - name: echo-mcp
+        static:
+          host: echo-mcp.ai-demo.svc.cluster.local
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP

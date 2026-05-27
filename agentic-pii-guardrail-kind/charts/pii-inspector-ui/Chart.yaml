@@ -1,0 +1,24 @@
+apiVersion: v2
+name: pii-inspector-ui
+description: |
+  Drop-in inspector UI for testing PII redaction in front of any agentgateway
+  LLM route. Renders prompt → what-the-LLM-saw → what-came-back side by side.
+  Works with the Anthropic-native and OpenAI-compatible request formats.
+  Pairs optionally with a Guardrail Webhook (via its /events admin endpoint)
+  to show the redaction trace; degrades cleanly to "you sent / LLM returned"
+  when no webhook is configured.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - agentgateway
+  - solo
+  - pii
+  - guardrail
+  - llm
+  - inspector
+sources:
+  - https://github.com/tjorourke/solo/tree/main/agentic-pii-guardrail-kind
+maintainers:
+  - name: Tom O'Rourke
+    email: tom.orourke@solo.io

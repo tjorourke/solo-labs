@@ -1,0 +1,71 @@
+# HTTPRoutes — wire the north-south Gateway to AgentgatewayBackends.
+#
+# North-south routes (apply to both clusters — east exposes both local
+# and cross-cluster paths so clients can choose).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-mcp-local
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agw-ingress
+      namespace: agentgateway-system
+      group: gateway.networking.k8s.io
+      kind: Gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp/east
+      backendRefs:
+        - name: echo-mcp-east
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-mcp-cross-cluster
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agw-ingress
+      namespace: agentgateway-system
+      group: gateway.networking.k8s.io
+      kind: Gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp/west
+      backendRefs:
+        - name: echo-mcp-west
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+---
+# Waypoint route — in waypoint mode the HTTPRoute parentRef targets the
+# ServiceEntry (not the Gateway). The agentgateway controller reads this
+# and fans out backend routing separately from the Gateway listener config.
+#
+# IMPORTANT: this is the "east calls west" path, in-mesh.
+# parentRefs.group must be networking.istio.io, kind ServiceEntry.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-waypoint-routing
+  namespace: ai-demo
+spec:
+  parentRefs:
+    - group: networking.istio.io
+      kind: ServiceEntry
+      name: echo-mcp-global
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - name: echo-mcp-east
+          group: agentgateway.dev
+          kind: AgentgatewayBackend

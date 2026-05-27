@@ -1,0 +1,56 @@
+# jwt-issuer needs two slices of permission:
+#   1. Manage Secrets + ConfigMaps in its own namespace (budgets) — for the
+#      signing key Secret and the JWKS ConfigMap.
+#   2. Create + Update + Get Secrets in the `kagent` namespace — for the two
+#      per-team jwt-{dba,support} Secrets the agent Deployments mount.
+#
+# Two separate Roles + bindings rather than one ClusterRole, so the
+# cross-namespace permissions are visible in the manifest.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jwt-issuer
+  namespace: budgets
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jwt-issuer
+  namespace: budgets
+subjects:
+  - kind: ServiceAccount
+    name: jwt-issuer
+    namespace: budgets
+roleRef:
+  kind: Role
+  name: jwt-issuer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Cross-namespace: write the two team JWT Secrets into the `kagent` ns.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jwt-issuer-cross-ns
+  namespace: kagent
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jwt-issuer-cross-ns
+  namespace: kagent
+subjects:
+  - kind: ServiceAccount
+    name: jwt-issuer
+    namespace: budgets
+roleRef:
+  kind: Role
+  name: jwt-issuer-cross-ns
+  apiGroup: rbac.authorization.k8s.io

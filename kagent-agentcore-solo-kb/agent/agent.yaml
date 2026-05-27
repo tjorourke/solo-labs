@@ -1,0 +1,18 @@
+# Used by `arctl build`, which reads spec.source.image to tag the
+# built artifact. Replace the placeholder with your own OCI registry
+# before building. The canonical Agent record lives at
+# ../yaml/agent.yaml; keep both in sync, or pass --image to arctl build.
+apiVersion: ar.dev/v1alpha1
+kind: Agent
+metadata:
+  name: solofieldassistant
+spec:
+  description: Answers questions about Solo.io products by calling the Solo Knowledge Base via MCP.
+  modelProvider: bedrock
+  modelName: us.anthropic.claude-haiku-4-5-20251001-v1:0
+  source:
+    image: <your-registry>/solofieldassistant:0.2.2
+    repository:
+      url: https://github.com/<you>/<repo>.git
+      branch: main
+      subfolder: kagent-agentcore-solo-kb/agent

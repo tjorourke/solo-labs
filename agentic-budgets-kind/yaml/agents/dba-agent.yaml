@@ -1,0 +1,28 @@
+# DBA team agent. Identical image to support-agent.yaml; the only difference
+# is which JWT Secret gets mounted as $LLM_JWT. jwt-issuer created `jwt-dba`
+# in this namespace at step 04. The team's budget is 5,000 tokens/hour and
+# 50,000 tokens/day — easy to burn through with a handful of long-prompt
+# essays from the mock LLM.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-agent
+  namespace: kagent
+spec:
+  description: "DBA team chat agent. Calls the gateway-fronted mock LLM with a team=dba JWT; gets 429 when the team's hourly token budget is exhausted."
+  type: BYO
+  byo:
+    deployment:
+      image: langgraph-agent:dev
+      env:
+        - name: LLM_URL
+          value: "http://budgets-gateway.agentgateway-system.svc.cluster.local/v1/chat/completions"
+        - name: MODEL
+          value: "mock-essay-7b"
+        - name: TEAM_LABEL
+          value: "dba"
+        - name: LLM_JWT
+          valueFrom:
+            secretKeyRef:
+              name: jwt-dba
+              key: token

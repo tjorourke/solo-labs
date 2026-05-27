@@ -1,0 +1,39 @@
+# Single HTTPRoute that points at the ops-tools MCP server through an
+# AgentgatewayBackend of type `mcp`. We need the AgentgatewayBackend (rather
+# than a plain Service backendRef) so the MCP-aware RBAC policy in
+# mcp-rbac-policy.yaml can targetRef it — `EnterpriseAgentgatewayPolicy.spec.
+# backend.mcp.authorization` only attaches to AgentgatewayBackends with
+# `spec.mcp` populated.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: ops-tools-mcp
+  namespace: ops-tools
+spec:
+  mcp:
+    targets:
+      - name: ops-tools
+        # Streamable-HTTP backend pointing at the in-cluster ops-tools Service.
+        # The MCP server itself lives behind /mcp on that Service (see
+        # src/ops-tools/server.py — Mount("/mcp", …)).
+        static:
+          host: ops-tools.ops-tools.svc.cluster.local
+          port: 8080
+          path: /mcp
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-route
+  namespace: ops-tools
+spec:
+  parentRefs:
+    - name: rbac-gateway
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mcp }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: ops-tools-mcp

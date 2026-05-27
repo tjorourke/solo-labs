@@ -1,0 +1,39 @@
+# AgentgatewayBackend with the LLM-aware "openai" provider type. Because the
+# upstream is our in-cluster mock-llm Service (not the real api.openai.com),
+# we use the `openai-compatible-provider.md` use-case shape: custom host +
+# port + path, NO TLS (the in-cluster service is plain HTTP).
+#
+# This is what makes the TOKEN-type rate-limit possible: the gateway parses
+# the OpenAI-format response body's `usage.total_tokens` field and debits the
+# matched descriptor bucket. A plain Service backendRef wouldn't get this
+# accounting — the AI-typed backend is the hook.
+#
+# TODO(unverified): The `ai.provider.openai` + custom host shape has been
+# pulled verbatim from the use case doc. On first quick.sh up:
+#   1. confirm the gateway accepts an openai-shaped backend with no auth
+#      (mock-llm doesn't validate Authorization — it passes the JWT
+#      through transparently)
+#   2. confirm the gateway forwards the Authorization header from the
+#      caller all the way to the upstream — we need it both for the JWT
+#      validation step (at the gateway) AND for the mock-LLM to see it
+#      (for clarity; mock-LLM ignores it)
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: mock-llm
+  namespace: llm
+spec:
+  ai:
+    provider:
+      openai:
+        # `model` is the *default* server-side model. We send "mock-essay-7b"
+        # in the request body anyway; the gateway falls back to this only
+        # when the body lacks a model field.
+        model: mock-essay-7b
+      host: mock-llm.llm.svc.cluster.local
+      port: 8080
+      path: /v1/chat/completions
+  # No `policies.auth.secretRef` — the mock LLM does not require an API key
+  # of its own. The JWT in the inbound Authorization header is for the
+  # gateway, not the upstream.
+  # No `policies.tls.sni` — the upstream is plain HTTP in-cluster.

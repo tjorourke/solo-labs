@@ -1,0 +1,17 @@
+# MetalLB IP pool for the west cluster.
+# Apply after metallb-native.yaml is ready.
+# Range 172.22.255.220-230 — non-overlapping with east (.200-210).
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: kind-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 172.22.255.220-172.22.255.230
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: kind-l2
+  namespace: metallb-system

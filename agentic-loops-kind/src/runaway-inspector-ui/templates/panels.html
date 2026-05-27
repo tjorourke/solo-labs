@@ -1,0 +1,152 @@
+{# Live counter cards + scenario buttons + trace. Swapped on every action. #}
+<div id="panels" class="panels">
+
+  <!-- ─── Live counter cards ─── -->
+  <div class="panel counter-panel">
+    <div class="panel-bar">
+      Live budget counters
+      <span class="right">session <code>{{ state.session[:16] }}…</code> · updates after every call</span>
+    </div>
+    {% if state.limits %}
+      <div class="counter-grid">
+        {% set lc = state.tool_calls or 0 %}
+        {% set lt = state.turns or 0 %}
+        {% set ld = state.chain_depth or 0 %}
+        {% set lr = state.recent|length if state.recent else 0 %}
+        {% set mc = state.limits.max_tool_calls %}
+        {% set mt = state.limits.max_turns %}
+        {% set md = state.limits.max_chain_depth %}
+        {% set mw = state.limits.repetition_window %}
+
+        <div class="counter {% if lc >= mc %}counter-hot{% elif lc >= mc * 0.7 %}counter-warm{% endif %}">
+          <div class="counter-label">tool calls</div>
+          <div class="counter-val">{{ lc }} / <span class="lim">{{ mc }}</span></div>
+          <div class="counter-bar"><span style="width: {{ ((lc / mc) * 100)|round|int if mc else 0 }}%;"></span></div>
+        </div>
+
+        <div class="counter {% if lt >= mt %}counter-hot{% elif lt >= mt * 0.7 %}counter-warm{% endif %}">
+          <div class="counter-label">turns (X-Goal-Turn)</div>
+          <div class="counter-val">{{ lt }} / <span class="lim">{{ mt }}</span></div>
+          <div class="counter-bar"><span style="width: {{ ((lt / mt) * 100)|round|int if mt else 0 }}%;"></span></div>
+        </div>
+
+        <div class="counter {% if ld >= md %}counter-hot{% elif ld >= md * 0.7 %}counter-warm{% endif %}">
+          <div class="counter-label">chain depth</div>
+          <div class="counter-val">{{ ld }} / <span class="lim">{{ md }}</span></div>
+          <div class="counter-bar"><span style="width: {{ ((ld / md) * 100)|round|int if md else 0 }}%;"></span></div>
+        </div>
+
+        <div class="counter">
+          <div class="counter-label">recent calls (LRU)</div>
+          <div class="counter-val">{{ lr }} / <span class="lim">{{ mw }}</span></div>
+          <div class="counter-bar"><span style="width: {{ ((lr / mw) * 100)|round|int if mw else 0 }}%;"></span></div>
+          <div class="counter-foot">window for repetition detection</div>
+        </div>
+      </div>
+      <div class="counter-foot">
+        ext-auth resets all of these to zero when you click <strong>Reset session</strong> or
+        when the session has been idle for {{ state.limits.session_ttl_sec if state.limits.session_ttl_sec else '10 min' }}.
+      </div>
+    {% else %}
+      <div class="empty">budget-extauth /state unavailable — {{ state.error or "(no error reported)" }}</div>
+    {% endif %}
+  </div>
+
+  <!-- ─── Scenario buttons ─── -->
+  <div class="panel scenario-panel">
+    <div class="panel-bar">
+      Run a scenario
+      <span class="right">each scenario stops at the first denial (the controlled cut-off)</span>
+    </div>
+    <div class="scenario-row">
+      <button class="btn-allow"
+              hx-post="/run/well_behaved" hx-target="#panels" hx-swap="outerHTML">
+        S1 · well-behaved task
+        <div class="btn-hint">5 distinct calls under one turn · all approved</div>
+      </button>
+      <button class="btn-deny"
+              hx-post="/run/tool_call_cap" hx-target="#panels" hx-swap="outerHTML">
+        S2 · max tool calls cap
+        <div class="btn-hint">12 calls in a tight loop · cuts off ~call 11</div>
+      </button>
+      <button class="btn-deny"
+              hx-post="/run/chain_depth_cap" hx-target="#panels" hx-swap="outerHTML">
+        S3 · max chain depth cap
+        <div class="btn-hint">6 chained calls, no new turn · cuts off ~call 5</div>
+      </button>
+      <button class="btn-deny"
+              hx-post="/run/repetition" hx-target="#panels" hx-swap="outerHTML">
+        S4 · repetition
+        <div class="btn-hint">same (tool, args) called twice · 2nd call denied</div>
+      </button>
+    </div>
+    <div class="scenario-row reset-row">
+      <button class="btn-reset"
+              hx-post="/reset" hx-target="#panels" hx-swap="outerHTML">
+        ↺ Reset session — zero every counter
+      </button>
+      <button class="btn-refresh"
+              hx-get="/panels" hx-target="#panels" hx-swap="outerHTML">
+        ⟳ Refresh counters
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Trace ─── -->
+  <div class="panel trace-panel">
+    <div class="panel-bar">
+      Trace
+      <span class="right">read top-down · each row is one <code>tools/call</code> through the gateway</span>
+    </div>
+    {% if not trace %}
+      <div class="empty hint">Click a scenario above to see the per-call verdict here.</div>
+    {% else %}
+      <div class="trace">
+        {% for entry in trace %}
+          {% if entry.role == 'scenario' %}
+            <div class="msg msg-scenario">
+              <div class="msg-label">scenario</div>
+              <div class="msg-body"><strong>{{ entry.label }}</strong> — {{ entry.description }}</div>
+            </div>
+          {% elif entry.role == 'note' %}
+            <div class="msg msg-note">
+              <div class="msg-label">note</div>
+              <div class="msg-body">{{ entry.text }}</div>
+            </div>
+          {% elif entry.role == 'call' %}
+            {% if entry.verdict == 'allowed' %}
+              <div class="msg msg-ok">
+                <div class="msg-label">
+                  #{{ entry.n }} · tools/call → <code>{{ entry.tool }}</code> · <span class="ok">allowed</span>
+                  {% if entry.turn %}<span class="turn-tag">X-Goal-Turn: {{ entry.turn }}</span>{% endif %}
+                </div>
+                <pre class="msg-body">args: {{ entry.args_json }}
+result: {{ entry.result_preview }}</pre>
+              </div>
+            {% else %}
+              <div class="msg msg-deny">
+                <div class="msg-label">
+                  #{{ entry.n }} · tools/call → <code>{{ entry.tool }}</code> · <span class="deny">denied · controlled cut-off</span>
+                </div>
+                <pre class="msg-body">args: {{ entry.args_json }}</pre>
+                {% if entry.deny.reason_code %}
+                  <div class="deny-body">
+                    <div class="deny-line"><span class="dk">reason_code:</span>       <span class="dv-hl">{{ entry.deny.reason_code }}</span></div>
+                    <div class="deny-line"><span class="dk">limit:</span>             <span class="dv">{{ entry.deny.limit }}</span></div>
+                    <div class="deny-line"><span class="dk">observed:</span>          <span class="dv">{{ entry.deny.observed }}</span></div>
+                    <div class="deny-line"><span class="dk">tool:</span>              <span class="dv">{{ entry.deny.tool }}</span></div>
+                    <div class="deny-line"><span class="dk">session:</span>           <span class="dv">{{ entry.deny.session[:16] }}…</span></div>
+                    {% if entry.deny.detail %}<div class="deny-line"><span class="dk">detail:</span>            <span class="dv">{{ entry.deny.detail }}</span></div>{% endif %}
+                    <div class="deny-line"><span class="dk">controlled_cutoff:</span> <span class="dv">{{ entry.deny.controlled_cutoff }}</span></div>
+                  </div>
+                {% else %}
+                  <pre class="msg-body">{{ entry.deny.raw }}</pre>
+                {% endif %}
+              </div>
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>

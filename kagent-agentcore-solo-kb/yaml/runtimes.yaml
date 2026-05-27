@@ -1,0 +1,13 @@
+# Runtimes are usually pre-provisioned by the cluster admin when the AR
+# instance is bootstrapped — you should not need to re-apply these to
+# run the lab. They're included here so the lab is self-contained and so
+# you can see what the Deployments are pointing at.
+#
+# Confirm what's already there:
+#   arctl get runtimes
+#
+# This lab's AR instance ships with:
+#   - kagent-tor1   (Kubernetes platform / kagent controller, namespace kagent)
+#   - aws-agentcore (AWS platform / Bedrock AgentCore, region us-east-1)
+#
+# The Deployments in yaml/deployments.yaml reference these by name.

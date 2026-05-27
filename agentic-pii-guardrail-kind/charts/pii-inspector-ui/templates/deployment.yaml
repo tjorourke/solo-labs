@@ -1,0 +1,85 @@
+{{- if not .Values.agw.url -}}
+{{- fail "agw.url is required — point at your agentgateway Service URL, e.g. http://my-gateway.agentgateway-system.svc.cluster.local" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pii-inspector-ui.fullname" . }}
+  labels:
+    {{- include "pii-inspector-ui.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pii-inspector-ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pii-inspector-ui.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: AGW_URL
+              value: {{ .Values.agw.url | quote }}
+            - name: LLM_FORMAT
+              value: {{ .Values.agw.format | quote }}
+            {{- if .Values.agw.path }}
+            - name: LLM_PATH
+              value: {{ .Values.agw.path | quote }}
+            {{- end }}
+            {{- if .Values.agw.model }}
+            - name: LLM_MODEL
+              value: {{ .Values.agw.model | quote }}
+            {{- end }}
+            {{- if .Values.webhook.url }}
+            - name: WEBHOOK_URL
+              value: {{ .Values.webhook.url | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.probes.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

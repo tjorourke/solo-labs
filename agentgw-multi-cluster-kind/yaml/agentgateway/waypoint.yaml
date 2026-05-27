@@ -1,0 +1,36 @@
+# Enterprise agentgateway — east-west waypoint.
+# Replaces gatewayClassName: istio-eastwest (Istio East-West Gateway) for
+# L7 AI/MCP traffic inside the Ambient mesh.
+#
+# How it works (three-hop data path):
+#   Agent pod  →  ztunnel (src, L4 HBONE)  →  AGW Waypoint (L7 enforcement)
+#             →  ztunnel (dst, L4 HBONE)   →  MCP pod
+#
+# The SPIFFE identity of the calling agent is proven by mTLS at ztunnel
+# and available in the waypoint as source.identity.serviceAccount — no JWT
+# required. This is the cryptographic identity anchor that EnterpriseAgentgatewayPolicy
+# references.
+#
+# Note: the Istio east-west Gateway (gatewayClassName: istio-eastwest, port 15008/HBONE)
+# still exists as the mesh fabric for cross-cluster routing — see 03-istio.sh.
+# This waypoint sits at the L7 enforcement layer IN FRONT OF MCP services.
+#
+# Requires: Enterprise AgentGateway v2.3.0+, Solo Istio in Ambient mode.
+# Apply to BOTH clusters in the ai-demo namespace.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agw-waypoint
+  namespace: ai-demo
+  labels:
+    # Scope: apply L7 enforcement to individual services (vs. the whole namespace).
+    # Change to "namespace" to auto-protect every service in ai-demo.
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  listeners:
+    - name: mesh
+      port: 15088
+      protocol: HTTP
+      # Port 15088 is the inbound application listener; HBONE termination
+      # is on 15008. These are distinct — don't conflate them.

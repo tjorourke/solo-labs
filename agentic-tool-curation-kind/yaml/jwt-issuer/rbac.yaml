@@ -1,0 +1,27 @@
+# jwt-issuer permissions, all in the tool-curation namespace:
+#   - signing-key Secret (jwt-signing-key)
+#   - JWKS ConfigMap (jwt-jwks)
+#   - per-intent JWT Secrets (jwt-general, jwt-secret-rot)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jwt-issuer
+  namespace: tool-curation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jwt-issuer
+  namespace: tool-curation
+subjects:
+  - kind: ServiceAccount
+    name: jwt-issuer
+    namespace: tool-curation
+roleRef:
+  kind: Role
+  name: jwt-issuer
+  apiGroup: rbac.authorization.k8s.io

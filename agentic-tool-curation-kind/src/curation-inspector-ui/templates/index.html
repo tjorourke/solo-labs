@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>MCP Lockdown Inspector — agentregistry → agentgateway</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <div class="brand">
+        <svg width="34" height="34" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M 16 3 L 27 7 V 16 C 27 22 22 26 16 28 C 10 26 5 22 5 16 V 7 Z"
+                fill="#0b0f17" stroke="#c4b5fd" stroke-width="1.6"/>
+          <text x="16" y="20" text-anchor="middle" font-family="ui-monospace, monospace"
+                font-size="9" fill="#c4b5fd" font-weight="700">C</text>
+        </svg>
+        <div>
+          <h1>MCP Lockdown Inspector <span class="role-tag">REGISTRY DECIDES · GATEWAY ENFORCES</span></h1>
+          <div class="sub">One MCP server. One curated manifest. Three views — and four enforcement layers that hold the line.</div>
+          <div class="crumbs">
+            <code>agentregistry/MCPServer</code> → <code>curation-manifest</code> ConfigMap → <code>policy-sync</code> → <code>EnterpriseAgentgatewayPolicy</code> + <code>ext-auth</code>
+          </div>
+        </div>
+      </div>
+
+      <form class="acting-as" onsubmit="return false">
+        <div class="intent-stack">
+          <label for="intent-select" class="lab">What the agent is doing</label>
+          <select id="intent-select" name="intent"
+                  hx-get="/panels" hx-target="#panels" hx-swap="outerHTML"
+                  hx-trigger="change, load"
+                  hx-include="this">
+            {% for i in intents %}
+              <option value="{{ i }}" {% if i == default_intent %}selected{% endif %}>{{ labels[i].label }}</option>
+            {% endfor %}
+          </select>
+          <div class="intent-explainer">
+            JWT <code>intent</code> claim · purpose, not identity.
+            Same agent (<code>sub: agent</code>), different task at different times.
+          </div>
+        </div>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    <div id="panels" class="panels">
+      <div class="empty">Loading panels…</div>
+    </div>
+  </main>
+
+  <footer>
+    Sample web app — not a Solo product. Compares agentregistry's curated manifest against the gateway's view against the raw rogue upstream.
+    <br>solo-demos · agentic-tool-curation-kind
+  </footer>
+</body>
+</html>

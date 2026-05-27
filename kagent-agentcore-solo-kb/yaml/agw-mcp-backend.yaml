@@ -1,0 +1,67 @@
+# Demo Gateway, MCP backend, and HTTPRoute for the Solo Knowledge Base.
+#
+# This is the user-facing path: alice and bob call the gateway directly with
+# a Keycloak-signed JWT. The gateway proxies to the public Solo KB MCP at
+# https://knowledge-base.soloio-field.com/mcp and the EnterpriseAgentgatewayPolicy
+# resources in agw-jwt-policy.yaml + agw-mcp-rbac.yaml gate it.
+#
+# Why a separate Gateway (not the per-agent waypoint):
+# kagent-enterprise auto-creates agent-<name>-waypoint of class
+# enterprise-agentgateway-waypoint on HBONE port 15008 (ambient-internal,
+# not user-callable). For Scene 2/3 the user is the principal and needs
+# a plain HTTP listener they can curl/inspector against.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: solo-kb-demo
+  namespace: kagent
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - name: http
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# AgentgatewayBackend (kind: mcp) targeting the public KB endpoint.
+# host + port + path + TLS SNI is the "remote HTTPS MCP server" shape
+# from the agentgateway 2.3 spec.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: solo-kb-mcp
+  namespace: kagent
+spec:
+  mcp:
+    sessionRouting: Stateless
+    targets:
+      - name: solo-kb
+        static:
+          host: knowledge-base.soloio-field.com
+          port: 443
+          path: /mcp
+          policies:
+            tls:
+              sni: knowledge-base.soloio-field.com
+---
+# Route /mcp on the demo Gateway to the AgentgatewayBackend above.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: solo-kb-mcp
+  namespace: kagent
+spec:
+  parentRefs:
+    - name: solo-kb-demo
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: solo-kb-mcp

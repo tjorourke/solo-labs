@@ -1,0 +1,58 @@
+# Prometheus scrape config for the two metric sources we care about.
+# The kube-prometheus-stack Prometheus is installed with
+# {service,pod}MonitorSelectorNilUsesHelmValues=false in 06-observability.sh,
+# so any (Pod|Service)Monitor in any namespace is picked up automatically.
+#
+# What each scrape gives us:
+#   rate-limit-service :9091/metrics   →   ratelimit_solo_io_total_hits / over_limit
+#                                          per-descriptor counters keyed on team^<id>
+#   agentgateway :15020/stats/prometheus → agentgateway_gen_ai_client_token_usage_*
+#                                          histogram (input/output tokens per route)
+
+# A Service in front of the rate-limit-service so we can scrape it via a
+# named port. The rate-limiter Deployment doesn't declare container ports
+# itself (RL_PORT_GRPC=8083, DEBUG_PORT=9091 are env vars only), which makes
+# PodMonitor's `port:` reference impossible — ServiceMonitor + a Service
+# with a named port is the workaround.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rate-limiter-metrics
+  namespace: agentgateway-system
+  labels: { app: rate-limiter }
+spec:
+  selector:
+    app: rate-limiter
+  ports:
+    - name: metrics
+      port: 9091
+      targetPort: 9091
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rate-limit-service
+  namespace: agentgateway-system
+spec:
+  selector:
+    matchLabels:
+      app: rate-limiter
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: agentgateway-data-plane
+  namespace: agentgateway-system
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-class-name: enterprise-agentgateway
+  podMetricsEndpoints:
+    - port: metrics         # named "metrics" on container port 15020
+      path: /stats/prometheus
+      interval: 10s

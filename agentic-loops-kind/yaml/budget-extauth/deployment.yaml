@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: budget-extauth
+  namespace: runaway-containment
+  labels: { app: budget-extauth }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: budget-extauth }
+  template:
+    metadata:
+      labels: { app: budget-extauth }
+    spec:
+      containers:
+        - name: budget-extauth
+          image: budget-extauth:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9001
+              name: grpc
+            - containerPort: 8080
+              name: http
+          env:
+            - name: LISTEN_ADDR
+              value: ":9001"
+            - name: HEALTH_ADDR
+              value: ":8080"
+            - name: BUDGETS_PATH
+              value: "/etc/budgets/budgets.yaml"
+            - name: REDIS_ADDR
+              value: "redis.runaway-containment.svc.cluster.local:6379"
+          volumeMounts:
+            - name: budgets
+              mountPath: /etc/budgets
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+      volumes:
+        - name: budgets
+          configMap:
+            name: budgets
+            items:
+              - key: budgets.yaml
+                path: budgets.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: budget-extauth
+  namespace: runaway-containment
+  labels: { app: budget-extauth }
+spec:
+  selector: { app: budget-extauth }
+  ports:
+    - name: grpc
+      port: 9001
+      targetPort: 9001
+      # h2c — the AGW ext-auth client speaks plain h2 (no TLS).
+      appProtocol: kubernetes.io/h2c
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

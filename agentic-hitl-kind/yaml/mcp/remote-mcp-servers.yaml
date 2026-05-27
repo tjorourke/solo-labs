@@ -1,0 +1,31 @@
+# Two RemoteMCPServer resources, both pointing at the same gateway but at
+# different paths. The agent references each separately so its tool calls land
+# on the right HTTPRoute (and therefore get the right HITL gate, if any).
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: ops-tools-public
+  namespace: kagent
+spec:
+  description: "Public ops tools (cluster_db_query, truncate_table) — no gateway HITL"
+  protocol: STREAMABLE_HTTP
+  url: http://hitl-gateway.agentgateway-system.svc.cluster.local/public/mcp
+  timeout: 10s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: ops-tools-privileged
+  namespace: kagent
+spec:
+  description: "Privileged ops tools (run_migration) — every call gates at the gateway HITL"
+  protocol: STREAMABLE_HTTP
+  # The HTTP client must tolerate the parked Check() (up to PARK_TIMEOUT_SEC
+  # on the ext-auth side, default 600s in the deployment). Set generous
+  # request timeouts so we don't give up while a human is reviewing.
+  url: http://hitl-gateway.agentgateway-system.svc.cluster.local/privileged/mcp
+  timeout: 10m0s
+  sseReadTimeout: 10m0s
+  terminateOnClose: true

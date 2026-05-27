@@ -1,0 +1,31 @@
+# BYO LangGraph variant of the DBA Assistant. Same MCP servers, same gateway
+# HITL — the only difference is how agent-side HITL is wired:
+#   declarative.yaml uses `requireApproval:` in the CRD
+#   this agent uses LangGraph `interrupt()` in code (see src/langgraph-agent/agent.py)
+#
+# Both render as the same approval card in the kagent dashboard, because the
+# kagent-langgraph executor converts interrupt() into the same `adk_request_confirmation`
+# A2A event that the declarative `requireApproval` path produces.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-assistant-langgraph
+  namespace: kagent
+spec:
+  description: "BYO LangGraph DBA Assistant — agent HITL via interrupt(), gateway HITL via extAuth"
+  type: BYO
+  byo:
+    deployment:
+      image: langgraph-agent:dev
+      env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: kagent-anthropic
+              key: ANTHROPIC_API_KEY
+        - name: OPS_TOOLS_PUBLIC_URL
+          value: "http://hitl-gateway.agentgateway-system.svc.cluster.local/public/mcp"
+        - name: OPS_TOOLS_PRIVILEGED_URL
+          value: "http://hitl-gateway.agentgateway-system.svc.cluster.local/privileged/mcp"
+        - name: MODEL
+          value: "claude-haiku-4-5"

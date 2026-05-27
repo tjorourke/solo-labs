@@ -1,0 +1,49 @@
+# Per-team token budgets — one flat descriptor per team.
+#
+# Pattern: each top-level descriptor matches a specific team string (the
+# X-Team-ID header the agent sends, validated to equal the JWT's `team`
+# claim by jwt-policy.yaml). One rateLimit per team, with a per-team
+# budget. This is the shape documented in
+#   use-cases/llm-cost/token-budget-model-degradation.md
+# verbatim.
+#
+# Budgets:
+#   dba     —  5,000 tokens / hour
+#   support — 20,000 tokens / hour
+#
+# Why no per-day or per-minute tier here: the per-user-tiered pattern uses
+# nested descriptors keyed off the IDENTITY (X-User-ID) and pins the time
+# WINDOW with `genericKey: "per-minute"` etc — which makes one shared
+# budget for all users. Combining nested time-window descriptors WITH
+# differing per-team values is not in any documented shape, and was
+# producing descriptor misses. One hour-level budget per team matches the
+# docs and is what this lab demonstrates.
+#
+# type: TOKEN debits the response's `usage.total_tokens` (prompt +
+# completion). The first request that pushes a team over the limit
+# completes successfully (response already in flight); the NEXT request
+# from the same team comes back HTTP 429.
+apiVersion: ratelimit.solo.io/v1alpha1
+kind: RateLimitConfig
+metadata:
+  name: team-token-budget
+  namespace: agentgateway-system
+spec:
+  raw:
+    descriptors:
+      - key: team
+        value: "dba"
+        rateLimit:
+          requestsPerUnit: 5000
+          unit: HOUR
+      - key: team
+        value: "support"
+        rateLimit:
+          requestsPerUnit: 20000
+          unit: HOUR
+    rateLimits:
+      - actions:
+          - requestHeaders:
+              descriptorKey: "team"
+              headerName: "X-Team-ID"
+        type: TOKEN

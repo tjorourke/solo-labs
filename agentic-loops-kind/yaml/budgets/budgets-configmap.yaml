@@ -1,0 +1,33 @@
+# budgets — runaway-containment thresholds the ext-auth enforces.
+#
+# Edit this ConfigMap and the ext-auth reloads on its next Check() — no
+# pod restart, no deploy. The defaults are tuned so the four scenarios
+# in the inspector UI each trigger a different limit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: budgets
+  namespace: runaway-containment
+data:
+  budgets.yaml: |
+    # Max tools/call requests per session. S2 (12 calls) trips this.
+    maxToolCalls: 10
+
+    # Max distinct X-Goal-Turn values per session. The inspector bumps the
+    # header at the start of each scenario; this caps goal-level looping.
+    maxTurns: 5
+
+    # Max consecutive tools/call within a single turn (chain length). S3
+    # (6 chained calls under one turn) trips this around call 5.
+    maxChainDepth: 4
+
+    # Repetition detection: how many recent calls to remember, and how
+    # many duplicates to allow before denying. (1 means deny on the first
+    # repeat within the window.)
+    repetitionWindow: 3
+    repetitionMaxDups: 1
+
+    # How long Redis keeps the per-session counters once a session goes
+    # idle. 10 min — enough for a demo loop, short enough that stale state
+    # doesn't accumulate.
+    sessionTTLSec: 600

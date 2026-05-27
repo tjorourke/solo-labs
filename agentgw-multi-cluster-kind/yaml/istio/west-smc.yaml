@@ -1,0 +1,19 @@
+# ServiceMeshController for the west cluster.
+# Apply with: kubectl --context kind-west apply -f yaml/istio/west-smc.yaml
+apiVersion: operator.gloo.solo.io/v1
+kind: ServiceMeshController
+metadata:
+  name: managed-istio
+  namespace: gloo-system
+spec:
+  cluster: west
+  network: west
+  trustDomain: cluster.local
+  version: "1.29.2-patch0"
+  dataplaneMode: Ambient
+  distribution: Standard
+  scalingProfile: Demo
+  meshConfig:
+    defaultConfig:
+      proxyMetadata:
+        ISTIO_META_DNS_CAPTURE: "true"

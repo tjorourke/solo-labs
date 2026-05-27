@@ -1,0 +1,39 @@
+# Validate Keycloak-signed JWTs at the solo-kb-demo Gateway.
+#
+# Tokens are minted in the `solo` realm by the kagent client and carry:
+#   iss = http://keycloak.kagent.svc.cluster.local/realms/solo
+#   aud = kagent
+#   groups = ["field-fte"]  (alice)
+#         | ["field-trial"] (bob)
+#
+# Mode: Strict — reject any request without a valid token. The MCP RBAC
+# policy in agw-mcp-rbac.yaml then makes per-tool allow/deny decisions
+# based on the JWT claims this policy validated.
+#
+# JWKS is fetched live from the in-cluster Keycloak Service so signing-key
+# rotations propagate without re-applying YAML.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: jwt-keycloak
+  namespace: kagent
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: solo-kb-demo
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "http://keycloak.kagent.svc.cluster.local/realms/solo"
+          audiences:
+            - kagent
+          jwks:
+            remote:
+              jwksPath: /realms/solo/protocol/openid-connect/certs
+              backendRef:
+                kind: Service
+                name: keycloak
+                namespace: kagent
+                port: 80

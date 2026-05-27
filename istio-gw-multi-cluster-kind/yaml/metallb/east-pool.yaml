@@ -1,0 +1,18 @@
+# MetalLB IP pool for the east cluster.
+# Apply after metallb-native.yaml is ready.
+# Range 172.22.255.200-210 sits in the kind Docker bridge network (172.22.0.0/16)
+# but well above the node IPs (172.22.0.2-9), so no conflicts.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: kind-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 172.22.255.200-172.22.255.210
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: kind-l2
+  namespace: metallb-system

@@ -1,0 +1,163 @@
+# Grafana dashboard ConfigMap: per-team LLM token budgets.
+#
+# The kube-prometheus-stack chart configures Grafana to auto-discover
+# dashboards from ConfigMaps with the label `grafana_dashboard=1` in any
+# namespace. We drop this one into the `monitoring` namespace alongside
+# Grafana itself.
+#
+# Metrics this dashboard reads:
+#   ratelimit_solo_io_total_hits{descriptor=".*team-token-budget.*team^<TEAM>"}
+#     — total tokens charged against each team's bucket (rate-limit-service)
+#   ratelimit_solo_io_over_limit{descriptor=".*team^<TEAM>"}
+#     — tokens that pushed a team over its budget (429-side counter)
+#   agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type="output"|"input"}
+#     — gateway-side gen-ai token histogram per route (no team label)
+#
+# The team name lives inside the `descriptor` label as `team^<id>`. The
+# panels below use label_replace() to extract it into a clean `team` label
+# for the legend.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentic-budgets-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  per-team-token-budgets.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "title": "Tokens consumed — per team (5-min rate, tokens/sec)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum by (team) (rate(label_replace(ratelimit_solo_io_total_hits{descriptor=~\".*team-token-budget.*\"}, \"team\", \"$1\", \"descriptor\", \".*team\\\\^(.+)\")[5m:]))",
+              "legendFormat": "{{team}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "palette-classic" }
+            }
+          }
+        },
+        {
+          "title": "Tokens this hour — dba (budget 5,000)",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(ratelimit_solo_io_total_hits{descriptor=~\".*team\\\\^dba.*\"})",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green",  "value": null },
+                  { "color": "orange", "value": 4000 },
+                  { "color": "red",    "value": 5000 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Tokens this hour — support (budget 20,000)",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(ratelimit_solo_io_total_hits{descriptor=~\".*team\\\\^support.*\"})",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green",  "value": null },
+                  { "color": "orange", "value": 16000 },
+                  { "color": "red",    "value": 20000 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Gen-AI tokens — gateway (output)",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\"})",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short" } }
+        },
+        {
+          "title": "Gen-AI tokens — gateway (input)",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\"})",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short" } }
+        },
+        {
+          "title": "Over-budget tokens — per team (last 1h)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+          "targets": [
+            {
+              "expr": "sum by (team) (rate(label_replace(ratelimit_solo_io_over_limit{descriptor=~\".*team-token-budget.*\"}, \"team\", \"$1\", \"descriptor\", \".*team\\\\^(.+)\")[5m:]))",
+              "legendFormat": "{{team}} over",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "palette-classic" }
+            }
+          }
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": ["agentgateway","budgets","llm","tokens"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "",
+      "title": "Per-Team LLM Token Budgets",
+      "uid": "agentic-budgets-tokens",
+      "version": 2,
+      "weekStart": ""
+    }

@@ -1,0 +1,19 @@
+{
+  "name": "dba-assistant-langgraph",
+  "description": "BYO LangGraph DBA assistant. Uses MCP tools through agentgateway; demonstrates agent-side HITL via LangGraph interrupt() and gateway-side HITL via the AgentgatewayPolicy extAuth on /privileged.",
+  "url": "localhost:8080",
+  "version": "0.1.0",
+  "capabilities": {
+    "streaming": true
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "dba-ops",
+      "name": "DBA Operations",
+      "description": "Query the orders DB, truncate tables (user approval required), apply schema migrations (gateway approval required).",
+      "tags": ["dba", "hitl", "mcp", "langgraph"]
+    }
+  ]
+}

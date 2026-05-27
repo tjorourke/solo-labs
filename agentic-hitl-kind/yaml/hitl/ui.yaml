@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hitl-ui
+  namespace: hitl
+  labels: { app: hitl-ui }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: hitl-ui }
+  template:
+    metadata:
+      labels: { app: hitl-ui }
+    spec:
+      containers:
+        - name: ui
+          image: hitl-ui:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: HTTP_PORT, value: "8080" }
+            - { name: HITL_EXTAUTH_ADMIN_URL, value: "http://hitl-extauth-admin.hitl.svc.cluster.local:8081" }
+          ports:
+            - { containerPort: 8080, name: http }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hitl-ui
+  namespace: hitl
+  labels: { app: hitl-ui }
+spec:
+  selector: { app: hitl-ui }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      appProtocol: http

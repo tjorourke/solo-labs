@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rogue-mcp
+  namespace: tool-curation
+  labels: { app: rogue-mcp }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: rogue-mcp }
+  template:
+    metadata:
+      labels: { app: rogue-mcp }
+    spec:
+      containers:
+        - name: rogue-mcp
+          image: rogue-mcp:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rogue-mcp
+  namespace: tool-curation
+  labels: { app: rogue-mcp }
+spec:
+  selector: { app: rogue-mcp }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

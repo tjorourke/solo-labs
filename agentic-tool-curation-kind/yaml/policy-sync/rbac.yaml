@@ -1,0 +1,33 @@
+# policy-sync permissions:
+#   - Read the curation-manifest ConfigMap (watch + get)
+#   - Apply EnterpriseAgentgatewayPolicy (create/patch in tool-curation ns)
+#
+# We give it cluster-wide get on EnterpriseAgentgatewayPolicy because the
+# server-side-apply patch op requires read-back to know if the resource
+# exists.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: policy-sync
+  namespace: tool-curation
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["enterpriseagentgateway.solo.io"]
+    resources: ["enterpriseagentgatewaypolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: policy-sync
+  namespace: tool-curation
+subjects:
+  - kind: ServiceAccount
+    name: policy-sync
+    namespace: tool-curation
+roleRef:
+  kind: Role
+  name: policy-sync
+  apiGroup: rbac.authorization.k8s.io

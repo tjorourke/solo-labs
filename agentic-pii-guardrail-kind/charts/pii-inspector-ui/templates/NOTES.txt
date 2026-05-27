@@ -1,0 +1,16 @@
+pii-inspector-ui installed.
+
+Gateway:  {{ .Values.agw.url }}{{ if .Values.agw.path }}{{ .Values.agw.path }}{{ else if eq .Values.agw.format "openai-chat" }}/v1/chat/completions{{ else }}/v1/messages{{ end }}
+Format:   {{ .Values.agw.format }}
+{{- if .Values.webhook.url }}
+Webhook:  {{ .Values.webhook.url }}  (redaction trace ENABLED)
+{{- else }}
+Webhook:  (none — running in generic-gateway mode)
+{{- end }}
+
+Open the UI:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "pii-inspector-ui.fullname" . }} 8090:{{ .Values.service.port }}
+  open http://localhost:8090
+
+Logs:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "pii-inspector-ui.fullname" . }} -f

@@ -1,0 +1,81 @@
+# Default values for pii-inspector-ui.
+
+# ── Image ─────────────────────────────────────────────────────────────────────
+image:
+  repository: pii-inspector-ui
+  tag: dev
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ── How the inspector talks to your gateway ───────────────────────────────────
+agw:
+  # REQUIRED. URL of the agentgateway Service (no trailing slash).
+  # In-cluster examples:
+  #   http://my-gateway.agentgateway-system.svc.cluster.local
+  #   http://my-gateway.agentgateway-system.svc.cluster.local:80
+  url: ""
+
+  # LLM wire format the inspector should speak.
+  #   anthropic-messages  — POST /v1/messages, Anthropic-native body
+  #   openai-chat         — POST /v1/chat/completions, OpenAI-compatible body
+  format: anthropic-messages
+
+  # Path appended to .agw.url. Override if your gateway exposes the LLM route
+  # under a different prefix (e.g. /openai/v1/chat/completions).
+  # Leave blank to use the format's default:
+  #   anthropic-messages → /v1/messages
+  #   openai-chat        → /v1/chat/completions
+  path: ""
+
+  # Model name passed in the request body. Leave blank to use the format
+  # default (claude-haiku-4-5-20251001 for Anthropic, gpt-4o-mini for OpenAI).
+  # Many gateways accept "" and let the AgentgatewayBackend pin the model.
+  model: ""
+
+# ── Optional: paired guardrail webhook ────────────────────────────────────────
+# When set, the inspector polls <webhook.url>/events for the request- and
+# response-side redaction trace. The webhook must be the Solo Guardrail
+# Webhook reference server (https://github.com/solo-io/gloo-gateway-use-cases/
+# tree/main/ai-guardrail-webhook-server) OR a compatible implementation that
+# exposes a `/events` admin endpoint returning the same JSON shape used by the
+# pii-guardrail-webhook in this lab.
+#
+# Leave url empty to run in "generic-gateway" mode — the trace column is
+# hidden and the UI just shows what you sent vs what came back.
+webhook:
+  url: ""
+
+# ── Pod plumbing ──────────────────────────────────────────────────────────────
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  # targetPort matches the container's HTTP_PORT (8080).
+  targetPort: 8080
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Probes hit /healthz on the container port.
+probes:
+  enabled: true
+
+# Free-form overrides if you need them. Merged onto the container spec.
+extraEnv: []
+# - name: HTTP_PORT
+#   value: "8080"
+
+podLabels: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

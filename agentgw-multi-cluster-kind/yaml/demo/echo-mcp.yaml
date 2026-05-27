@@ -1,0 +1,135 @@
+# Echo MCP server — a minimal MCP server that exposes two tools:
+#   echo(message)   → returns message unchanged
+#   reverse(text)   → returns text reversed
+#
+# Deployed to both clusters. On west cluster it is labelled
+# istio.io/global=true so east-cluster agents can reach it via the
+# global mesh hostname echo-mcp.ai-demo.svc.west.mesh.internal.
+#
+# The agw-waypoint Gateway in the ai-demo namespace intercepts all
+# inbound traffic to this service for L7 enforcement.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-demo
+  labels:
+    istio.io/dataplane-mode: ambient
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: echo-mcp
+  namespace: ai-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo-mcp
+  namespace: ai-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: echo-mcp
+  template:
+    metadata:
+      labels:
+        app: echo-mcp
+    spec:
+      serviceAccountName: echo-mcp
+      containers:
+        - name: server
+          image: python:3.12-slim
+          ports:
+            - containerPort: 8080
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install --quiet mcp fastapi uvicorn && python /app/server.py
+          volumeMounts:
+            - name: app
+              mountPath: /app
+          env:
+            - name: PORT
+              value: "8080"
+      volumes:
+        - name: app
+          configMap:
+            name: echo-mcp-server
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: echo-mcp-server
+  namespace: ai-demo
+data:
+  server.py: |
+    import os, uvicorn
+    from mcp.server.fastmcp import FastMCP
+
+    mcp = FastMCP("echo-mcp")
+
+    @mcp.tool()
+    def echo(message: str) -> str:
+        """Echo back the given message."""
+        return message
+
+    @mcp.tool()
+    def reverse(text: str) -> str:
+        """Return text with characters reversed."""
+        return text[::-1]
+
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", 8080))
+        uvicorn.run(mcp.streamable_http_app(), host="0.0.0.0", port=port)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo-mcp
+  namespace: ai-demo
+  # Add istio.io/global=true on the WEST cluster so east agents can reach
+  # it as echo-mcp.ai-demo.svc.west.mesh.internal (global hostname).
+  # labels:
+  #   istio.io/global: "true"
+  annotations:
+    # Route all inbound traffic to this service through the agw-waypoint.
+    istio.io/use-waypoint: agw-waypoint
+spec:
+  selector:
+    app: echo-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+# ServiceAccount for the demo agent — the waypoint policy allows
+# calls from this SA only (SPIFFE-based, no tokens needed in mesh).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo-agent
+  namespace: ai-demo
+---
+# ServiceEntry for waypoint-mode LLM egress routing.
+# The dummy endpoint is overridden by the AgentgatewayBackend.
+# The waypoint intercepts traffic to this hostname and applies
+# HTTPRoute-based routing to the correct backend.
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: echo-mcp-global
+  namespace: ai-demo
+  labels:
+    istio.io/use-waypoint: agw-waypoint
+spec:
+  hosts:
+    - echo-mcp.global
+  location: MESH_EXTERNAL
+  resolution: STATIC
+  ports:
+    - number: 8080
+      name: http
+      protocol: HTTP
+  endpoints:
+    - address: "1.1.1.1"  # dummy — waypoint overrides via HTTPRoute+Backend

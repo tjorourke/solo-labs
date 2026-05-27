@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inspector-ui
+  namespace: pii-demo
+  labels:
+    app: inspector-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inspector-ui
+  template:
+    metadata:
+      labels:
+        app: inspector-ui
+    spec:
+      containers:
+        - name: ui
+          image: pii-inspector-ui:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # The gateway is reachable on the chart-rendered Service in the
+            # agentgateway-system namespace. The Service is created automatically
+            # for the Gateway resource by the AGW controller; its name matches
+            # the Gateway metadata.name ("pii-gateway").
+            - name: AGW_URL
+              value: http://pii-gateway.agentgateway-system.svc.cluster.local
+            - name: LLM_FORMAT
+              value: anthropic-messages
+            - name: LLM_PATH
+              value: /v1/messages
+            - name: LLM_MODEL
+              value: claude-haiku-4-5-20251001
+            # WEBHOOK_URL is OPTIONAL. Set to enable the "what the LLM saw"
+            # redaction-trace column. Unset/empty to run the inspector in
+            # generic-gateway mode (you-sent / LLM-returned only).
+            - name: WEBHOOK_URL
+              value: http://pii-guardrail-webhook.pii-demo.svc.cluster.local:8000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inspector-ui
+  namespace: pii-demo
+spec:
+  selector:
+    app: inspector-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

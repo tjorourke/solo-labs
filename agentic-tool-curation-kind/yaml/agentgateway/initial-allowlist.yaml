@@ -1,0 +1,28 @@
+# Initial EnterpriseAgentgatewayPolicy that the policy-sync controller will
+# subsequently OVERWRITE based on the curation-manifest ConfigMap.
+#
+# We ship this as a YAML so the lab starts in a known-good state — if for
+# any reason policy-sync hasn't reconciled yet, the gateway still enforces
+# the same allow-list. Once policy-sync is running and processes its first
+# ConfigMap event, this is server-side-applied by it (FieldManager=policy-sync,
+# Force=true), keeping the resource shape identical.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: mcp-tool-allowlist
+  namespace: tool-curation
+  labels:
+    app.kubernetes.io/managed-by: bring-up-script
+    curation.solo.io/source: bootstrap
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: rogue-mcp-backend
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'mcp.tool.name in ["db_read_row","db_read_secret","http_post_external"]'

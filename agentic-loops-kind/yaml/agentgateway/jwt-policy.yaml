@@ -1,0 +1,26 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: jwt-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: loops-gateway
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "agentic-loops-kind"
+          audiences: ["runaway-mcp"]
+          jwks:
+            remote:
+              jwksPath: "/.well-known/jwks.json"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: jwt-issuer
+                namespace: runaway-containment
+                port: 8080

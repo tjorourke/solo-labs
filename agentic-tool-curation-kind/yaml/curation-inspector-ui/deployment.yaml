@@ -1,0 +1,64 @@
+# curation-inspector-ui — single-pod three-panel + attack UI.
+#
+# Mounts both JWT Secrets the jwt-issuer writes (jwt-general, jwt-secret-rot)
+# under /etc/jwts/{general,secret-rot}. Also mounts the curation-manifest
+# ConfigMap so the "registry says" panel can render the live source-of-truth.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curation-inspector-ui
+  namespace: tool-curation
+  labels: { app: curation-inspector-ui }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: curation-inspector-ui }
+  template:
+    metadata:
+      labels: { app: curation-inspector-ui }
+    spec:
+      containers:
+        - name: curation-inspector-ui
+          image: curation-inspector-ui:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: MCP_GATEWAY_URL
+              # Trailing slash matters: avoids a 307 dance from agentgateway
+              # back to the upstream's DNS. Same trick as the rbac lab.
+              value: "http://curation-gateway.agentgateway-system.svc.cluster.local/mcp/"
+            - name: ROGUE_DIRECT_URL
+              value: "http://rogue-mcp.tool-curation.svc.cluster.local:8080/mcp"
+            - name: MANIFEST_PATH
+              value: "/etc/curation/manifest.yaml"
+            - name: JWT_PATH
+              value: "/etc/jwts"
+            - name: LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - { name: jwt-general,    mountPath: /etc/jwts/general,    subPath: token, readOnly: true }
+            - { name: jwt-secret-rot, mountPath: /etc/jwts/secret-rot, subPath: token, readOnly: true }
+            - { name: manifest,       mountPath: /etc/curation,        readOnly: true }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+      volumes:
+        - name: jwt-general
+          secret:
+            secretName: jwt-general
+            items: [{ key: token, path: token }]
+        - name: jwt-secret-rot
+          secret:
+            secretName: jwt-secret-rot
+            items: [{ key: token, path: token }]
+        - name: manifest
+          configMap:
+            name: curation-manifest
+            items:
+              - key: manifest.yaml
+                path: manifest.yaml

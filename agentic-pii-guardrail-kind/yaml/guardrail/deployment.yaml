@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pii-guardrail-webhook
+  namespace: pii-demo
+  labels:
+    app: pii-guardrail-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pii-guardrail-webhook
+  template:
+    metadata:
+      labels:
+        app: pii-guardrail-webhook
+    spec:
+      containers:
+        - name: webhook
+          image: pii-guardrail-webhook:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: LOG_LEVEL
+              value: INFO
+            - name: EVENT_BUFFER_SIZE
+              value: "200"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pii-guardrail-webhook
+  namespace: pii-demo
+spec:
+  selector:
+    app: pii-guardrail-webhook
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

@@ -1,0 +1,20 @@
+# Single HTTPRoute. All /v1/chat/completions traffic from any team hits the
+# same backend; the team identity comes from the JWT (validated by the
+# jwt-auth policy on the Gateway) and is consumed by the RateLimitConfig
+# directly via a CEL `jwt.team` action — no header projection needed.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-route
+  namespace: llm
+spec:
+  parentRefs:
+    - name: budgets-gateway
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /v1/chat/completions }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: mock-llm

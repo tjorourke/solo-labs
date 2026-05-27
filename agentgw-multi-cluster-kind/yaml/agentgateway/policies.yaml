@@ -1,0 +1,87 @@
+# EnterpriseAgentgatewayPolicy resources.
+#
+# These policies use SPIFFE identity from the mesh — no JWT tokens needed.
+# source.identity.serviceAccount comes from the peer mTLS cert proven by
+# ztunnel before the request even reaches the waypoint.
+#
+# --- Policy 1: Allow only authorised agents to call the echo-mcp waypoint ---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: echo-mcp-authz
+  namespace: ai-demo
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agw-waypoint
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          # Allow the demo agent service account on either cluster.
+          - 'source.identity.serviceAccount == "demo-agent"'
+          # Allow cross-cluster calls: the caller's SA from the east cluster
+          # is visible here with trust-domain=cluster.local (shared root CA).
+          - 'source.identity.serviceAccount == "demo-agent" && source.identity.namespace == "ai-demo"'
+---
+# --- Policy 2: Local rate limit on the north-south ingress gateway ---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: ingress-rate-limit
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agw-ingress
+  traffic:
+    rateLimit:
+      local:
+        - requests: 120
+          unit: Minutes
+          burst: 20
+---
+# --- Policy 3: Waypoint rate limit (per-agent token budget) ---
+# Caps calls through the waypoint so a single rogue agent can't saturate
+# the MCP server. Uses local RL (global RL requires the ext-authz sidecar).
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: waypoint-rate-limit
+  namespace: ai-demo
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agw-waypoint
+  traffic:
+    rateLimit:
+      local:
+        - requests: 60
+          unit: Minutes
+          burst: 10
+---
+# --- Policy 4: Observability / tracing on the ingress gateway ---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: ingress-tracing
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agw-ingress
+  frontend:
+    tracing:
+      protocol: GRPC
+      backendRef:
+        kind: Service
+        name: otel-collector
+        namespace: monitoring
+        port: 4317
+      randomSampling: "1.0"
+      clientSampling: "1.0"

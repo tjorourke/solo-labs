@@ -1,0 +1,49 @@
+# Native istio Gateway deployed alongside an enterprise-agentgateway on the same
+# Ambient mesh. Apply to east-ag.
+#
+# Why deploy both?
+#   - enterprise-agentgateway = AI/MCP traffic (MCP tool AuthZ, prompt guard,
+#     LLM routing, tool allowlists — its native feature set).
+#   - istio Gateway (Envoy)   = general web/API traffic that needs cross-cluster
+#     failover. As of Solo Istio 1.29.2 + agentgateway v2.3.3 the agentgateway
+#     dataplane NACKs istiod's synthetic cross-cluster WorkloadEntry as
+#     "unknown address type" and returns 503, while the istio Gateway (Envoy)
+#     handles the same backendRef pattern and fails over correctly.
+#
+# Both share the same Ambient mesh, identity (SPIFFE), and east-west HBONE
+# fabric. The HTTPRoute's backendRef MUST use the Solo extension
+#   kind: Hostname
+#   group: networking.istio.io
+#   name: <svc>.<ns>.mesh.internal
+# so istiod programs Envoy at the synthetic global hostname (which carries the
+# remote east-west GW endpoint) rather than the local .svc.cluster.local Service
+# (which has 0 endpoints after the local pod scales down).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: bookinfo-istio-gateway
+  namespace: bookinfo
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: http
+    port: 8080
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: productpage-istio
+  namespace: bookinfo
+spec:
+  parentRefs:
+  - name: bookinfo-istio-gateway
+  rules:
+  - backendRefs:
+    - kind: Hostname
+      group: networking.istio.io
+      name: productpage.bookinfo.mesh.internal
+      port: 9080

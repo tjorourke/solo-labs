@@ -1,0 +1,45 @@
+# Two Deployments. Same Agent (solofieldassistant), two different
+# Runtimes. After both are applied, the same agent image is running in
+# two places — one inside the cluster under kagent, one inside AWS under
+# Bedrock AgentCore.
+#
+# Runtime names match what `arctl get runtimes` shows in this lab's AR
+# instance:
+#   - kagent-tor1   → Kubernetes / kagent controller in this cluster
+#   - aws-agentcore → AWS Bedrock AgentCore in your AWS account
+#
+# Credentials:
+#   - kagent runtime: pod runs under an IRSA-bound ServiceAccount so the
+#     anthropic[bedrock] client picks up an IAM role with bedrock:InvokeModel.
+#   - AgentCore runtime: AR-provisioned workload identity in your AWS
+#     account does the same. No API keys in either env block.
+---
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: solofieldassistant-kagent
+spec:
+  targetRef:
+    kind: Agent
+    name: solofieldassistant
+  runtimeRef:
+    kind: Runtime
+    name: kagent-tor1
+  env:
+    SOLO_KB_MCP_URL: "${SOLO_KB_MCP_URL}"
+    AWS_REGION: us-east-1
+---
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: solofieldassistant-agentcore
+spec:
+  targetRef:
+    kind: Agent
+    name: solofieldassistant
+  runtimeRef:
+    kind: Runtime
+    name: aws-agentcore
+  env:
+    SOLO_KB_MCP_URL: "${SOLO_KB_MCP_URL}"
+    AWS_REGION: us-east-1

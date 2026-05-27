@@ -1,0 +1,50 @@
+# JWT authentication + claim-to-header projection on the Gateway.
+#
+# Strict-mode JWT auth — every request must carry a valid token signed by
+# the in-cluster jwt-issuer or it's rejected with 401 before reaching any
+# backend. JWKS is fetched from the issuer Service at startup and cached.
+#
+# Plus a transformation that sets X-Team-ID from the validated `team`
+# claim before the request is forwarded. The downstream RateLimitConfig's
+# `requestHeaders` action keys per-team budgets off X-Team-ID — so the
+# value the rate limiter sees is always the gateway-stamped JWT claim,
+# never something the client could spoof.
+#
+# The `value:` of each header is compiled as a strict CEL expression. The
+# `jwt` variable in scope is the validated claim set (per
+# crates/agentgateway/src/cel/types.rs — `jwt` contains the claims from
+# a verified JWT token). So `jwt.team` returns the team claim string.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: jwt-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: budgets-gateway
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "agentic-budgets-kind"
+          audiences: ["mock-llm"]
+          jwks:
+            remote:
+              jwksPath: "/.well-known/jwks.json"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: jwt-issuer
+                namespace: budgets
+                port: 8080
+    # Project the validated JWT claim into a request header before
+    # forwarding. CEL expression `jwt.team` resolves to the team claim
+    # from the validated token.
+    transformation:
+      request:
+        set:
+          - name: X-Team-ID
+            value: jwt.team

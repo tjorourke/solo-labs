@@ -1,0 +1,74 @@
+# rbac-inspector-ui — single-pod web UI driving the per-identity MCP RBAC demo.
+#
+# Mounts all three JWT Secrets (jwt-alice / jwt-bob / jwt-carol) as files
+# under /etc/jwts. Each Secret has a `token` key; we project just that key
+# under a filename matching the user, so the UI sees:
+#
+#   /etc/jwts/alice
+#   /etc/jwts/bob
+#   /etc/jwts/carol
+#
+# The UI picks the right file based on the "Acting as" dropdown — only one
+# Secret's contents is sent on any one request. The pod itself never decides
+# what tools that token can call; the gateway does.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rbac-inspector-ui
+  namespace: mcp-rbac
+  labels: { app: rbac-inspector-ui }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: rbac-inspector-ui }
+  template:
+    metadata:
+      labels: { app: rbac-inspector-ui }
+    spec:
+      containers:
+        - name: rbac-inspector-ui
+          image: rbac-inspector-ui:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: MCP_GATEWAY_URL
+              # Trailing slash matters: agentgateway's MCP path-prefix match
+              # accepts /mcp/ but the FastMCP upstream redirects bare /mcp
+              # to /mcp/ — see ops-tools/server.py inline comment.
+              value: "http://rbac-gateway.agentgateway-system.svc.cluster.local/mcp/"
+            - name: MODEL
+              value: "claude-haiku-4-5"
+            - name: JWT_PATH
+              value: "/etc/jwts"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rbac-inspector-anthropic
+                  key: ANTHROPIC_API_KEY
+          volumeMounts:
+            - { name: jwt-alice, mountPath: /etc/jwts/alice, subPath: token, readOnly: true }
+            - { name: jwt-bob,   mountPath: /etc/jwts/bob,   subPath: token, readOnly: true }
+            - { name: jwt-carol, mountPath: /etc/jwts/carol, subPath: token, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+      volumes:
+        - name: jwt-alice
+          secret:
+            secretName: jwt-alice
+            items: [{ key: token, path: token }]
+        - name: jwt-bob
+          secret:
+            secretName: jwt-bob
+            items: [{ key: token, path: token }]
+        - name: jwt-carol
+          secret:
+            secretName: jwt-carol
+            items: [{ key: token, path: token }]

@@ -1,0 +1,63 @@
+# EnterpriseAgentgatewayPolicy — two prompt guards stacked on the same route:
+#
+#   1. Built-in regex (Reject) for the universal PII patterns shipped with AGW.
+#      Catches CreditCard / Ssn / Email / PhoneNumber / CaSin without code.
+#
+#   2. Custom guardrail webhook for EU/UK PII (UK NIN, IBAN, EU passport) AND
+#      prompt-injection rejection. Same pod implements /request and /response.
+#
+# Request guards run in the order they are listed: built-ins first, webhook
+# second. So a credit-card number is masked by the built-in mask before the
+# webhook ever sees it (this is intentional — the inspector UI flags that
+# case with a "built-in regex ran first" badge).
+#
+# Response guards mask LLM output on the way back to the user using the same
+# patterns. Anthropic's reply rarely contains real PII, but if the user asked
+# the LLM to repeat the redacted form ("what was the SSN I gave you?") the
+# response mask makes sure it doesn't leak.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: anthropic-guardrails
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      promptGuard:
+        request:
+          # ── Layer 1: built-in regex masks for the universal PII patterns.
+          - regex:
+              action: Mask
+              builtins:
+                - CreditCard
+                - Ssn
+                - Email
+                - PhoneNumber
+                - CaSin
+          # ── Layer 2: custom webhook — EU/UK PII + injection reject.
+          - webhook:
+              backendRef:
+                kind: Service
+                name: pii-guardrail-webhook
+                namespace: pii-demo
+                port: 8000
+        response:
+          # Mask any PII the LLM tries to echo back to the user.
+          - regex:
+              action: Mask
+              builtins:
+                - CreditCard
+                - Ssn
+                - Email
+                - PhoneNumber
+                - CaSin
+          - webhook:
+              backendRef:
+                kind: Service
+                name: pii-guardrail-webhook
+                namespace: pii-demo
+                port: 8000

@@ -1,0 +1,28 @@
+# Attach the RateLimitConfig to the /v1/chat/completions HTTPRoute. The
+# `global` block points at the rate-limit-config defined in
+# ratelimit-config.yaml. Targeting the route (not the Gateway) keeps the
+# budgets scoped to LLM traffic only — internal management traffic to the
+# gateway is not counted.
+#
+# Namespacing: EnterpriseAgentgatewayPolicy.spec.targetRefs does NOT accept
+# a `namespace` field (Solo follows the Gateway-API direct-attached policy
+# convention — policy lives in the same namespace as its target). So the
+# policy itself is in `llm`, next to the HTTPRoute it targets.
+# The cross-namespace ref to the RateLimitConfig (in agentgateway-system)
+# IS allowed via rateLimitConfigRefs.namespace below.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: team-budget
+  namespace: llm
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm-route
+  traffic:
+    entRateLimit:
+      global:
+        rateLimitConfigRefs:
+          - name: team-token-budget
+            namespace: agentgateway-system

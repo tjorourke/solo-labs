@@ -1,0 +1,27 @@
+# Demo-mode toggle for kagent-enterprise-controller.
+#
+# When INSECURE_MODE=true is set on the controller pod, the controller
+# swaps its OIDC RoleAuthenticator for the bundled UnsecureAuthenticator:
+# the Authorization Bearer header is ignored and the request user is read
+# from X-User-Id (which AgentRegistry already sets on every a2a proxy
+# call). At startup the controller logs:
+#
+#   "starting in INSECURE MODE, authentication and authorization are
+#    disabled"
+#
+# This is a demo-only toggle. In production both AgentRegistry and
+# kagent-enterprise should trust the same OIDC issuer so the inbound
+# Bearer flows end-to-end and is validated at each hop. We use the
+# demo toggle here because the lab runs single-cluster on EKS without
+# an external IdP wired up.
+#
+# Wiring: the kagent-enterprise chart appends any ConfigMap names listed
+# under controller.envFrom to the controller pod's envFrom block. The
+# helm command in the lab page references this file by name.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagent-controller-extra-env
+  namespace: kagent
+data:
+  INSECURE_MODE: "true"

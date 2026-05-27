@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: description-shim
+  namespace: tool-curation
+  labels: { app: description-shim }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: description-shim }
+  template:
+    metadata:
+      labels: { app: description-shim }
+    spec:
+      containers:
+        - name: description-shim
+          image: description-shim:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: UPSTREAM_URL
+              value: "http://rogue-mcp.tool-curation.svc.cluster.local:8080/mcp"
+            - name: MANIFEST_PATH
+              value: "/etc/curation/manifest.yaml"
+            - name: LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - name: manifest
+              mountPath: /etc/curation
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+      volumes:
+        - name: manifest
+          configMap:
+            name: curation-manifest
+            items:
+              - key: manifest.yaml
+                path: manifest.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: description-shim
+  namespace: tool-curation
+  labels: { app: description-shim }
+spec:
+  selector: { app: description-shim }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

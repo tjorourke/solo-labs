@@ -1,0 +1,58 @@
+# runaway-inspector-ui — single-pod scenario driver + live counter UI.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runaway-inspector-ui
+  namespace: runaway-containment
+  labels: { app: runaway-inspector-ui }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: runaway-inspector-ui }
+  template:
+    metadata:
+      labels: { app: runaway-inspector-ui }
+    spec:
+      containers:
+        - name: runaway-inspector-ui
+          image: runaway-inspector-ui:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: MCP_GATEWAY_URL
+              value: "http://loops-gateway.agentgateway-system.svc.cluster.local/mcp/"
+            - name: EXTAUTH_ADMIN_URL
+              value: "http://budget-extauth.runaway-containment.svc.cluster.local:8080"
+            - name: JWT_PATH
+              value: "/etc/jwts/agent"
+            - name: LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/jwts/agent, subPath: token, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+      volumes:
+        - name: jwt
+          secret:
+            secretName: jwt-agent
+            items: [{ key: token, path: token }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runaway-inspector-ui
+  namespace: runaway-containment
+  labels: { app: runaway-inspector-ui }
+spec:
+  selector: { app: runaway-inspector-ui }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

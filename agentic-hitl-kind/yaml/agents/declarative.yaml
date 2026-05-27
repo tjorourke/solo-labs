@@ -1,0 +1,58 @@
+# DBA Assistant — declarative kagent agent.
+#
+# Two RemoteMCPServer stanzas:
+#   ops-tools-public      — reachable through /public (no gateway HITL)
+#   ops-tools-privileged  — reachable through /privileged (every call gates at the gateway)
+#
+# Agent HITL fires on truncate_table via the requireApproval list. Gateway HITL
+# fires on run_migration via the extAuth policy on the /privileged HTTPRoute.
+# The agent itself has no special config for the gateway HITL — the policy is
+# applied at the gateway, transparent to the agent.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-assistant
+  namespace: kagent
+spec:
+  description: "DBA assistant — queries and mutates a mock orders DB"
+  type: Declarative
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a DBA assistant for a small orders database.
+
+      You have three tools:
+        - cluster_db_query(sql) — read-only SELECTs against the orders DB.
+        - truncate_table(table) — empties a table. Destructive; the user will
+          be asked to approve every call before it runs.
+        - run_migration(version) — applies a schema migration. Gated by the
+          platform team's HITL policy at the gateway; expect the call to
+          pause for a while before it succeeds. That pause is normal.
+
+      Before calling a mutating tool, explain in one sentence what you're
+      about to do and why. After the tool returns, confirm what changed.
+      If a tool call is denied (either by the user or by the gateway), surface
+      the reason verbatim — do not retry without acknowledging the denial.
+
+      Available tables: orders, customers.
+      Available migration versions: v1, v2, v3, v4.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: ops-tools-public
+          toolNames:
+            - cluster_db_query
+            - truncate_table
+          # Agent HITL: every call to truncate_table pauses for the user.
+          requireApproval:
+            - truncate_table
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: ops-tools-privileged
+          toolNames:
+            - run_migration
+          # No requireApproval here — the gateway extAuth policy is the gate.

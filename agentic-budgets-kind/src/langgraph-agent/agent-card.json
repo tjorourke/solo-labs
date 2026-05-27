@@ -1,0 +1,17 @@
+{
+  "name": "budget-team-agent",
+  "description": "BYO LangGraph chat agent. Talks to a mock LLM through the Enterprise agentgateway with a team-scoped JWT. The gateway counts tokens per team and rate-limits at the team budget.",
+  "url": "localhost:8080",
+  "version": "0.1.0",
+  "capabilities": { "streaming": true },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "description": "Plain chat — every prompt is forwarded to the gateway-fronted LLM. Surfaces 429 verbatim when the team budget is exhausted.",
+      "tags": ["budget", "ratelimit", "llm", "langgraph"]
+    }
+  ]
+}

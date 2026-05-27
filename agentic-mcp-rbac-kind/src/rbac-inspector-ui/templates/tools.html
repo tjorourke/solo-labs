@@ -1,0 +1,46 @@
+{# Tools panel fragment — swapped into #tools-panel on dropdown change. #}
+<div id="tools-panel" class="panel">
+  <div class="panel-bar">
+    <span>Identity &mdash; <span class="user-tag user-{{ user }}">{{ user }}</span></span>
+    <span class="right">team=<code>{{ claims.team }}</code> &middot; groups=<code>{{ claims.groups|join(',') }}</code> &middot; iss=<code>agentic-mcp-rbac-kind</code></span>
+  </div>
+
+  {% if error %}
+    <div class="err">{{ error }}</div>
+  {% endif %}
+
+  <div class="tools-grid">
+    {% if visible %}
+      {% for name in all_tool_names if name in visible %}
+        <div class="tool-card visible">
+          <div class="tool-name">{{ name }}</div>
+          <div class="tool-desc">{{ descriptions[name] or '(no description)' }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        <strong>The gateway returned zero visible tools for this identity.</strong>
+        <span class="hint">Either the JWT is being rejected (check jwt-policy.yaml) or the CEL rules deny every tool to <code>{{ user }}</code>.</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if hidden %}
+    <div class="hidden-section">
+      <div class="lab">You don't see these (filtered by the gateway):</div>
+      <div class="tools-grid">
+        {% for name in hidden %}
+          <div class="tool-card hidden">
+            <div class="tool-name">{{ name }}</div>
+            <div class="tool-desc">filtered out of <code>tools/list</code> for this identity</div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="footer-meta">
+    Visible: <strong>{{ visible|length }}</strong> &middot; Hidden: <strong>{{ hidden|length }}</strong> &middot; Total: <strong>{{ all_tool_names|length }}</strong>
+    <span class="hint">&mdash; the gateway evaluates one CEL rule per identity against <code>jwt.*</code> and each tool's <code>mcp.tool.name</code>.</span>
+  </div>
+</div>

@@ -1,0 +1,34 @@
+# jwt-issuer permissions — all in its own namespace (mcp-rbac):
+#
+#   - signing-key Secret (jwt-signing-key) so restarts reuse the same key
+#   - JWKS ConfigMap (jwt-jwks) the gateway fetches via remote-jwks
+#   - per-user JWT Secrets (jwt-alice / jwt-bob / jwt-carol) consumed by the
+#     rbac-inspector-ui Deployment in the same namespace
+#
+# Previous versions of this lab wrote the per-user Secrets into the `kagent`
+# namespace for three BYO LangGraph agents. We dropped that approach in
+# favour of a single inspector UI living next to the issuer; both ns are
+# now `mcp-rbac` and the cross-ns RoleBinding is gone.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jwt-issuer
+  namespace: mcp-rbac
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jwt-issuer
+  namespace: mcp-rbac
+subjects:
+  - kind: ServiceAccount
+    name: jwt-issuer
+    namespace: mcp-rbac
+roleRef:
+  kind: Role
+  name: jwt-issuer
+  apiGroup: rbac.authorization.k8s.io

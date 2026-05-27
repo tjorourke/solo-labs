@@ -1,0 +1,269 @@
+{# Three-panel + tool-call layout, swapped into #panels on intent change. #}
+<div id="panels" class="panels">
+
+  <!-- ─── Demo guide (collapsed by default) ─── -->
+  <details class="demo-guide">
+    <summary>
+      <span class="guide-icon">📋</span>
+      <span class="guide-title">How to drive this demo</span>
+      <span class="guide-hint">click to expand</span>
+    </summary>
+    <div class="guide-body">
+      <div class="guide-section">
+        <div class="guide-step"><strong>1. Set the scene with the three panels above.</strong>
+          <div>Left = what the registry says is approved · Middle = what the gateway lets through · Right = the full upstream surface.
+          The middle should match the left exactly; the right has everything (legit + dangerous + poisoned + late-added).</div>
+        </div>
+        <div class="guide-step"><strong>2. Click the three green buttons</strong> (happy path) to prove the gateway is <em>selective</em>, not blanket-deny.
+          Each returns a real tool result.
+        </div>
+        <div class="guide-step"><strong>3. Click the four red buttons in order</strong> — each bypasses one enforcement layer:
+          deny-by-default · args schema · risk-tier × intent · forbidden chain.
+          Read the trace below each click — the deny message tells you which layer fired.
+        </div>
+        <div class="guide-step"><strong>4. Live edit — registry as authority.</strong> In a terminal, edit the manifest:
+          <pre>kubectl -n tool-curation edit configmap curation-manifest</pre>
+          Remove <code>db_read_secret</code> from <code>approvedTools</code>.
+          Within ~5s, the middle panel updates and attack 3 now returns <code>-32602 Unknown tool</code> from the gateway (the ext-auth layer never sees it).
+          No policy CR was edited by hand — the registry is the authority.
+        </div>
+      </div>
+      <div class="guide-section guide-intent">
+        <div class="guide-step"><strong>About the <code>intent</code> dropdown.</strong>
+          The dropdown switches between two JWTs the in-cluster issuer minted at startup.
+          <strong>Both JWTs have the same <code>sub: agent</code>.</strong>
+          What differs is the <code>intent</code> claim — <em>what the agent is doing</em>, not <em>who it is</em>.
+          See the JWT viewer below for the actual claims being sent.
+          This is purpose-based access control (PBAC) — distinct from role-based (RBAC) or attribute-based (ABAC).
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <!-- ─── JWT viewer (always visible) ─── -->
+  <div class="panel jwt-panel">
+    <div class="panel-bar">
+      JWT being sent on every <code>tools/call</code>
+      <span class="right">raw token + decoded YAML · changes when you switch the dropdown</span>
+    </div>
+    {% if jwt_claims %}
+      <div class="jwt-body">
+        <div class="jwt-section">
+          <div class="jwt-section-label">Raw token (Authorization: Bearer …)</div>
+          <pre class="jwt-raw">{{ jwt_token_short }}</pre>
+        </div>
+        <div class="jwt-section">
+          <div class="jwt-section-label">Decoded claims (YAML)</div>
+          <pre class="jwt-yaml">{{ jwt_yaml_html|safe }}</pre>
+        </div>
+      </div>
+    {% else %}
+      <div class="empty">no JWT loaded</div>
+    {% endif %}
+  </div>
+
+  <div class="panel-row">
+    <!-- ─── LEFT: registry curated manifest ─── -->
+    <div class="panel panel-registry">
+      <div class="panel-bar">
+        Registry — curated manifest
+        <span class="right">source of truth</span>
+      </div>
+      <div class="raw-caption">
+        What the curation board approved. The gateway reads this (via
+        <code>policy-sync</code> + the <code>description-shim</code> + the
+        <code>ext-auth</code>) — three subsystems, one source of truth.
+      </div>
+      {% if manifest.approvedTools %}
+        {% for t in manifest.approvedTools %}
+          <div class="tool-card visible">
+            <div class="tool-name">
+              {{ t.name }}
+              {% if t.riskTier %}<span class="risk risk-{{ t.riskTier }}">risk:{{ t.riskTier }}</span>{% endif %}
+              {% if t.requiredIntent %}<span class="intent-tag">intent:{{ t.requiredIntent }}</span>{% endif %}
+            </div>
+            <div class="tool-desc">{{ t.cleanDescription }}</div>
+          </div>
+        {% endfor %}
+        {% if manifest.forbiddenChains %}
+          <div class="forbidden-chains">
+            <div class="lab">Forbidden chains</div>
+            {% for chain in manifest.forbiddenChains %}
+              <div class="chain">{{ chain|join(' → ') }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="empty">no curation manifest loaded</div>
+      {% endif %}
+    </div>
+
+    <!-- ─── MIDDLE: gateway tools/list ─── -->
+    <div class="panel panel-gateway">
+      <div class="panel-bar">
+        Gateway — <code>tools/list</code>
+        <span class="right">JWT intent: <code>{{ claim }}</code></span>
+      </div>
+      <div class="raw-caption">
+        What an agent sees when it calls <code>tools/list</code> through the
+        gateway. Should match the left panel exactly — that's the curated
+        contract being enforced.
+      </div>
+      {% if gateway_err %}
+        <div class="err">{{ gateway_err }}</div>
+      {% endif %}
+      {% if gateway_tools %}
+        {% for t in gateway_tools %}
+          <div class="tool-card visible">
+            <div class="tool-name">{{ t.name }}</div>
+            <div class="tool-desc">{{ t.description or '(no description)' }}</div>
+          </div>
+        {% endfor %}
+      {% else %}
+        {% if not gateway_err %}
+          <div class="empty">gateway returned zero tools</div>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    <!-- ─── RIGHT: full upstream surface ─── -->
+    <div class="panel panel-raw">
+      <div class="panel-bar">
+        Upstream — full MCP surface
+        <span class="right">approved + rejected + poisoned + late, mixed</span>
+      </div>
+      <div class="raw-caption">
+        Direct call to the upstream MCP, no gateway, no shim. The curators
+        approved a <em>subset</em> of what exists here — everything else is
+        rejected, poisoned, or appeared after curation.
+      </div>
+      {% if raw_err %}
+        <div class="err">{{ raw_err }}</div>
+      {% endif %}
+      {% if raw_tools %}
+        {% for t in raw_tools %}
+          <div class="tool-card raw cat-{{ t.__category }}">
+            <div class="tool-name">
+              {{ t.name }}
+              {% if t.__category == 'approved' %}<span class="cat-badge cat-approved">✓ approved</span>{% endif %}
+              {% if t.__category == 'rejected' %}<span class="cat-badge cat-rejected">✗ not approved</span>{% endif %}
+              {% if t.__category == 'poisoned' %}<span class="cat-badge cat-poisoned">⚠ poisoned description</span>{% endif %}
+              {% if t.__category == 'late'     %}<span class="cat-badge cat-late">🕒 late-added</span>{% endif %}
+            </div>
+            <div class="tool-desc">{{ t.description or '(no description)' }}</div>
+          </div>
+        {% endfor %}
+      {% else %}
+        {% if not raw_err %}
+          <div class="empty">no tools observed on upstream</div>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ─── tool-call buttons + trace ─── -->
+  <div class="panel attack-panel">
+    <div class="panel-bar">
+      Tool calls — bypass the LLM, POST <code>tools/call</code> directly
+      <span class="right">happy path (green) + attacks (red) — proves the gateway is selective</span>
+    </div>
+    <div class="raw-caption">
+      The <strong>top row</strong> shows the three approved tools used the
+      way an agent would normally call them — they should all return data.
+      The <strong>bottom row</strong> bypasses each enforcement layer in
+      turn — they should all be denied. Read the trace to see which layer
+      handled each call.
+    </div>
+
+    <div class="allow-row-label">Happy path · approved tools, valid args, correct intent</div>
+    <div class="attack-row allow-row">
+      <button type="button" class="allow"
+              hx-post="/attack/allow_read_row" hx-target="#panels" hx-swap="outerHTML"
+              hx-vals='{"intent": "{{ intent }}"}'>
+        A. <code>db_read_row({row_id: 1})</code>
+        <div class="attack-hint">allowed · returns an order row</div>
+      </button>
+      <button type="button" class="allow"
+              hx-post="/attack/allow_read_secret" hx-target="#panels" hx-swap="outerHTML"
+              hx-vals='{"intent": "secret-rot"}'
+              hx-on::before-request="document.getElementById('intent-select').value='secret-rot'">
+        B. <code>db_read_secret({key: "db.password"})</code>
+        <div class="attack-hint">allowed under intent <code>ops-secret-rotation</code> · auto-switches</div>
+      </button>
+      <button type="button" class="allow"
+              hx-post="/attack/allow_http_post" hx-target="#panels" hx-swap="outerHTML"
+              hx-vals='{"intent": "{{ intent }}"}'>
+        C. <code>http_post_external({url, body})</code>
+        <div class="attack-hint">allowed · echoes the would-be POST</div>
+      </button>
+    </div>
+
+    <div class="allow-row-label deny">Denial scenarios · not all are attacks — read the category badge</div>
+    <div class="raw-caption raw-caption-inset">
+      <span class="cat-pill cat-pill-attack">ATTACK</span> = genuine malicious call ·
+      <span class="cat-pill cat-pill-bug">BUG</span> = legitimate tool, broken input ·
+      <span class="cat-pill cat-pill-context">CONTEXT</span> = legitimate call, wrong purpose
+    </div>
+    <div class="attack-row">
+      <button type="button" class="attack"
+              hx-post="/attack/unapproved" hx-target="#panels" hx-swap="outerHTML"
+              hx-vals='{"intent": "{{ intent }}"}'>
+        <span class="cat-pill cat-pill-attack">ATTACK</span>
+        1. Deny-by-default — call <code>system_exec</code>
+        <div class="attack-hint">always denied · gateway CEL / ext-auth · tool not in the curated manifest</div>
+      </button>
+      <button type="button" class="attack"
+              hx-post="/attack/bad_args" hx-target="#panels" hx-swap="outerHTML"
+              hx-vals='{"intent": "{{ intent }}"}'>
+        <span class="cat-pill cat-pill-bug">BUG</span>
+        2. Args schema — <code>db_read_row({row_id:"not-a-number"})</code>
+        <div class="attack-hint">always denied · ext-auth schema · this is what catches a buggy agent, not just an attacker</div>
+      </button>
+      <button type="button" class="attack"
+              hx-post="/attack/wrong_intent" hx-target="#panels" hx-swap="outerHTML"
+              hx-vals='{"intent": "{{ intent }}"}'>
+        <span class="cat-pill cat-pill-context">CONTEXT</span>
+        3. Risk-tier — <code>db_read_secret</code> under intent <code>{{ claim }}</code>
+        <div class="attack-hint">denied under intent <code>general</code> · allowed under <code>ops-secret-rotation</code> · same call, different purpose = different outcome</div>
+      </button>
+      <button type="button" class="attack"
+              hx-post="/attack/chain" hx-target="#panels" hx-swap="outerHTML"
+              hx-vals='{"intent": "secret-rot"}'
+              hx-on::before-request="document.getElementById('intent-select').value='secret-rot'">
+        <span class="cat-pill cat-pill-attack">ATTACK</span>
+        4. Forbidden chain — <code>db_read_secret → http_post_external</code>
+        <div class="attack-hint">first call allowed, second denied · ext-auth chain rule · the textbook exfil pattern · auto-switches intent</div>
+      </button>
+    </div>
+
+    <div class="trace">
+      {% if not trace %}
+        <div class="empty hint">Click a button above to see how the gateway / ext-auth respond.</div>
+      {% else %}
+        {% for entry in trace %}
+          {% if entry.role == 'attack' %}
+            <div class="msg msg-attack">
+              <div class="msg-label">test</div>
+              <div class="msg-body">{{ entry.label }}</div>
+            </div>
+          {% elif entry.role == 'request' %}
+            <div class="msg msg-tool-call">
+              <div class="msg-label">tools/call → <code>{{ entry.tool }}</code> · session <code>{{ entry.session_id[:12] }}…</code></div>
+              <pre class="msg-body">{{ entry.args_json }}</pre>
+            </div>
+          {% elif entry.role == 'ok' %}
+            <div class="msg msg-tool-result">
+              <div class="msg-label">allowed · upstream response</div>
+              <pre class="msg-body">{{ entry.text }}</pre>
+            </div>
+          {% elif entry.role == 'deny' %}
+            <div class="msg msg-gateway-error">
+              <div class="msg-label">denied · gateway or ext-auth</div>
+              <div class="msg-body">{{ entry.text }}</div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>

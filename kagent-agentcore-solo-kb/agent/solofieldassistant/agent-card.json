@@ -1,0 +1,20 @@
+{
+  "name": "solofieldassistant",
+  "description": "A solofieldassistant agent",
+  "url": "http://localhost:8080",
+  "version": "0.0.1",
+  "capabilities": {
+    "streaming": true
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "solofieldassistant",
+      "name": "solofieldassistant",
+      "description": "A solofieldassistant agent",
+      "tags": ["solofieldassistant"]
+    }
+  ]
+}
+

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runaway-mcp
+  namespace: runaway-containment
+  labels: { app: runaway-mcp }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: runaway-mcp }
+  template:
+    metadata:
+      labels: { app: runaway-mcp }
+    spec:
+      containers:
+        - name: runaway-mcp
+          image: runaway-mcp:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runaway-mcp
+  namespace: runaway-containment
+  labels: { app: runaway-mcp }
+spec:
+  selector: { app: runaway-mcp }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

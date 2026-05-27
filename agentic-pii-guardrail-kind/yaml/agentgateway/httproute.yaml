@@ -1,0 +1,21 @@
+# Native Anthropic /v1/messages route. agentgateway rewrites the upstream
+# host/path automatically based on the AgentgatewayBackend provider.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: pii-gateway
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/messages
+      backendRefs:
+        - name: anthropic
+          namespace: agentgateway-system
+          group: agentgateway.dev
+          kind: AgentgatewayBackend

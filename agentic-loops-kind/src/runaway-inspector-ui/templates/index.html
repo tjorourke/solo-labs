@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Runaway Containment Inspector — gateway-side budgets</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <div class="brand">
+        <svg width="34" height="34" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M 16 3 L 27 7 V 16 C 27 22 22 26 16 28 C 10 26 5 22 5 16 V 7 Z"
+                fill="#0b0f17" stroke="#f59e0b" stroke-width="1.6"/>
+          <text x="16" y="20" text-anchor="middle" font-family="ui-monospace, monospace"
+                font-size="9" fill="#f59e0b" font-weight="700">R</text>
+        </svg>
+        <div>
+          <h1>Runaway Containment Inspector <span class="role-tag">GATEWAY-SIDE BUDGETS</span></h1>
+          <div class="sub">Max turns · max tool calls · max chain depth · repetition detection — enforced by ext-auth, counters in Redis.</div>
+          <div class="crumbs">
+            <code>budget-extauth</code> · <code>EnterpriseAgentgatewayPolicy.extAuth</code> · <code>forwardBody.maxSize</code> · <code>Mcp-Session-Id</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="panels" hx-get="/panels" hx-trigger="load" hx-swap="outerHTML">
+      <div class="empty">Loading…</div>
+    </div>
+  </main>
+
+  <footer>
+    Sample web app — not a Solo product. Loop / runaway containment at the gateway.
+    <br>solo-demos · agentic-loops-kind
+  </footer>
+</body>
+</html>

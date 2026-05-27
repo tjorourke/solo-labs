@@ -1,0 +1,71 @@
+# curation-manifest — the SINGLE source of truth for what the gateway lets
+# through. The policy-sync controller watches this ConfigMap and reconciles:
+#
+#   1. EnterpriseAgentgatewayPolicy `mcp-tool-allowlist` — CEL allow-list of
+#      tool names (deny-by-default + filter `tools/list`)
+#
+# The description-shim and ext-auth ALSO mount this ConfigMap as a file and
+# reload it on every request, so a change here propagates everywhere within
+# a few seconds.
+#
+# In production this content would come from the registry — an
+# `arctl get mcpserver ops-tools:approved-1.0.0 -o yaml` plus curated
+# extension fields. The "registry as source of truth" story works
+# either way: edit this file → all enforcement layers update.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: curation-manifest
+  namespace: tool-curation
+  annotations:
+    ar.dev/mcpserver: "ops-tools:approved-1.0.0"
+data:
+  manifest.yaml: |
+    # Approved tools — the gateway will reject any tools/call for a name
+    # not in this list. The descriptions here OVERRIDE whatever the upstream
+    # MCP advertises (closing the prompt-injection hole).
+    approvedTools:
+      - name: db_read_row
+        riskTier: low
+        cleanDescription: "Read one row from the orders table by integer id."
+        argsSchema:
+          type: object
+          additionalProperties: false
+          required: [row_id]
+          properties:
+            row_id:
+              type: integer
+              minimum: 1
+
+      - name: db_read_secret
+        riskTier: high
+        requiredIntent: ops-secret-rotation
+        cleanDescription: "Fetch a named secret from vault. High-risk; only allowed during secret-rotation flows."
+        argsSchema:
+          type: object
+          additionalProperties: false
+          required: [key]
+          properties:
+            key:
+              type: string
+              # Restrict to known keys, matching what the upstream actually has.
+              enum: ["db.password", "stripe.api_key", "github.token"]
+
+      - name: http_post_external
+        riskTier: medium
+        cleanDescription: "POST to an external host. Subject to outbound allowlist (enforced elsewhere)."
+        argsSchema:
+          type: object
+          additionalProperties: false
+          required: [url]
+          properties:
+            url:
+              type: string
+              minLength: 8
+            body:
+              type: string
+
+    # Forbidden sequences. Pair semantics: if tool A was the last call in this
+    # session, calling B next is denied. Demo's canonical exfil chain:
+    forbiddenChains:
+      - ["db_read_secret", "http_post_external"]

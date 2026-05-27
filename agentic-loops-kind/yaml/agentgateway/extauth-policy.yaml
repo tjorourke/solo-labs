@@ -1,0 +1,28 @@
+# Wire every gateway request through the budget-extauth gRPC service.
+# forwardBody is REQUIRED so the ext-auth can read the JSON-RPC body
+# (method + params.name + params.arguments) — without it, the runaway
+# counters have nothing to key off.
+#
+# Scoped to the Gateway, not the backend, so the ext-auth sees every
+# request including initialize / notifications/initialized / tools/list
+# (it allows non-tools/call uncounted).
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: budget-extauth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: loops-gateway
+  traffic:
+    extAuth:
+      grpc: {}
+      forwardBody:
+        # MCP tools/call bodies are tiny — 8 kB is plenty.
+        maxSize: 8192
+      backendRef:
+        name: budget-extauth
+        namespace: runaway-containment
+        port: 9001

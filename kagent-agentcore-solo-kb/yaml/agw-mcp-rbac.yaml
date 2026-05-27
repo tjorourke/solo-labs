@@ -1,0 +1,29 @@
+# Per-tool RBAC for the Solo KB MCP, expressed as CEL on the MCP backend.
+#
+# The agentgateway evaluates these expressions against (a) JWT claims that
+# the jwt-keycloak policy validated upstream and (b) the MCP method-call
+# context (tool name). matchExpressions is OR — any expression that
+# returns true grants access. Unmatched tools are silently removed from
+# tools/list and tools/call returns -32602.
+#
+# Tier model:
+#   field-fte   → full catalogue (no tool gate, group membership alone)
+#   field-trial → search + list_products only
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: mcp-tool-rbac
+  namespace: kagent
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: solo-kb-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'jwt.groups.exists(g, g == "field-fte")'
+            - 'jwt.groups.exists(g, g == "field-trial") && mcp.tool.name in ["search", "list_products"]'

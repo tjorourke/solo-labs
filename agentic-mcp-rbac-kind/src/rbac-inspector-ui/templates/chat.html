@@ -1,0 +1,43 @@
+{# Chat feed fragment — swapped into #chat on every send. #}
+{% if not messages %}
+  <div class="empty hint">No messages yet. Try: "What tools do you have?"</div>
+{% else %}
+  {% for m in messages %}
+    {% if m.role == 'user' %}
+      <div class="msg msg-user">
+        <div class="msg-label">user ({{ user }})</div>
+        <div class="msg-body">{{ m.text }}</div>
+      </div>
+    {% elif m.role == 'assistant' %}
+      <div class="msg msg-assistant">
+        <div class="msg-label">assistant</div>
+        <div class="msg-body">{{ m.text }}</div>
+      </div>
+    {% elif m.role == 'tool_call' %}
+      <div class="msg msg-tool-call">
+        <div class="msg-label">tool call &rarr; <code>{{ m.tool }}</code></div>
+        <pre class="msg-body">{{ m.args_json }}</pre>
+      </div>
+    {% elif m.role == 'tool_result' %}
+      <div class="msg msg-tool-result">
+        <div class="msg-label">tool result</div>
+        <pre class="msg-body">{{ m.text }}</pre>
+      </div>
+    {% elif m.role == 'gateway_error' %}
+      <div class="msg msg-gateway-error">
+        <div class="msg-label">gateway</div>
+        <div class="msg-body">{{ m.text }}</div>
+      </div>
+    {% elif m.role == 'attack' %}
+      <div class="msg msg-attack">
+        <div class="msg-label">quick attack</div>
+        <div class="msg-body">{{ m.text }}</div>
+      </div>
+    {% elif m.role == 'error' %}
+      <div class="msg msg-gateway-error">
+        <div class="msg-label">error</div>
+        <div class="msg-body">{{ m.text }}</div>
+      </div>
+    {% endif %}
+  {% endfor %}
+{% endif %}

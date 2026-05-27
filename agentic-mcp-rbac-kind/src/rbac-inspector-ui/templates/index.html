@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>MCP Tool RBAC — Inspector</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <div class="brand">
+        <svg width="34" height="34" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M 16 3 L 27 7 V 16 C 27 22 22 26 16 28 C 10 26 5 22 5 16 V 7 Z"
+                fill="#0b0f17" stroke="#67e8f9" stroke-width="1.6"/>
+          <text x="16" y="20" text-anchor="middle" font-family="ui-monospace, monospace"
+                font-size="9" fill="#67e8f9" font-weight="700">R</text>
+        </svg>
+        <div>
+          <h1>MCP Tool RBAC <span class="role-tag">SEE TOOLS THROUGH A DIFFERENT USER'S EYES</span></h1>
+          <div class="sub">One MCP server. Three identities. Three different tool inventories — filtered at the gateway.</div>
+          <div class="crumbs">
+            <code>EnterpriseAgentgatewayPolicy/mcp-tool-rbac</code> &middot; <code>backend.mcp.authorization</code> &middot; CEL on <code>jwt.*</code> + <code>mcp.tool.name</code>
+          </div>
+        </div>
+      </div>
+
+      <form class="acting-as" onsubmit="return false">
+        <label for="user-select" class="lab">Acting as</label>
+        <select id="user-select" name="user"
+                hx-get="/tools" hx-target="#tools-panel" hx-swap="outerHTML"
+                hx-trigger="change, load"
+                hx-include="this"
+                hx-on::after-request="document.getElementById('chat-form').reset(); htmx.ajax('POST','/chat','#chat',{values:{user:this.value,message:''}})">
+          {% for u in users %}
+            <option value="{{ u }}" {% if u == default_user %}selected{% endif %}>{{ u }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    {# tools-panel is HTMX-swapped on dropdown change. The first render comes
+       from the `load` trigger on the select — see hx-trigger above. #}
+    <div id="tools-panel" class="panel">
+      <div class="empty">Loading tools…</div>
+    </div>
+
+    <div class="panel chat-panel">
+      <div class="panel-bar">Chat</div>
+      <div id="chat" class="chat-feed">
+        <div class="empty hint">Pick "What tools do you have?" below, or ask the agent to do something.</div>
+      </div>
+
+      <form id="chat-form" class="composer"
+            hx-post="/chat" hx-target="#chat" hx-swap="innerHTML"
+            hx-on::after-request="this.message.value=''">
+        <input type="hidden" name="user" value="{{ default_user }}"
+               id="composer-user">
+        <input class="composer-input" type="text" name="message"
+               placeholder="e.g. What tools do you have?" autocomplete="off">
+        <button class="send" type="submit">Send</button>
+      </form>
+
+      <div class="quick-attacks">
+        <span class="lab">Quick attacks (bypass the LLM, POST tools/call directly):</span>
+        <button type="button" class="attack"
+                hx-post="/attack/get_secrets" hx-target="#chat" hx-swap="innerHTML"
+                hx-include="#composer-user">Force call <code>get_secrets</code></button>
+        <button type="button" class="attack"
+                hx-post="/attack/audit_log" hx-target="#chat" hx-swap="innerHTML"
+                hx-include="#composer-user">Force call <code>audit_log</code></button>
+        <button type="button" class="attack"
+                hx-post="/attack/truncate_table" hx-target="#chat" hx-swap="innerHTML"
+                hx-include="#composer-user">Force call <code>truncate_table</code></button>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Sample web app — not a Solo product. Talks to <code>rbac-gateway</code> via MCP streamable-HTTP.
+    <br>solo-demos &middot; agentic-mcp-rbac-kind
+  </footer>
+
+  <script>
+    // Keep the hidden chat "user" field in sync with the dropdown so the
+    // /chat and /attack endpoints always know which JWT to use. HTMX
+    // hx-include picks this up automatically on submit.
+    document.getElementById('user-select').addEventListener('change', function () {
+      document.getElementById('composer-user').value = this.value;
+    });
+  </script>
+</body>
+</html>

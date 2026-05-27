@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tool-policy-extauth
+  namespace: tool-curation
+  labels: { app: tool-policy-extauth }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: tool-policy-extauth }
+  template:
+    metadata:
+      labels: { app: tool-policy-extauth }
+    spec:
+      containers:
+        - name: tool-policy-extauth
+          image: tool-policy-extauth:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9001
+              name: grpc
+              # appProtocol: kubernetes.io/h2c  # set on the Service, not pod
+            - containerPort: 8080
+              name: http
+          env:
+            - name: LISTEN_ADDR
+              value: ":9001"
+            - name: HEALTH_ADDR
+              value: ":8080"
+            - name: MANIFEST_PATH
+              value: "/etc/curation/manifest.yaml"
+            - name: REDIS_ADDR
+              value: "redis.tool-curation.svc.cluster.local:6379"
+            - name: CHAIN_TTL
+              value: "10m"
+          volumeMounts:
+            - name: manifest
+              mountPath: /etc/curation
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+      volumes:
+        - name: manifest
+          configMap:
+            name: curation-manifest
+            items:
+              - key: manifest.yaml
+                path: manifest.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tool-policy-extauth
+  namespace: tool-curation
+  labels: { app: tool-policy-extauth }
+spec:
+  selector: { app: tool-policy-extauth }
+  ports:
+    - name: grpc
+      port: 9001
+      targetPort: 9001
+      # h2c — the AGW ext-auth client speaks plain h2 (no TLS).
+      appProtocol: kubernetes.io/h2c
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jwt-issuer
+  namespace: tool-curation
+  labels: { app: jwt-issuer }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: jwt-issuer } }
+  template:
+    metadata:
+      labels: { app: jwt-issuer }
+    spec:
+      serviceAccountName: jwt-issuer
+      containers:
+        - name: jwt-issuer
+          image: jwt-issuer:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jwt-issuer
+  namespace: tool-curation
+  labels: { app: jwt-issuer }
+spec:
+  selector: { app: jwt-issuer }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

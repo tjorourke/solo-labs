@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hitl-extauth
+  namespace: hitl
+  labels: { app: hitl-extauth }
+spec:
+  replicas: 1   # in-memory queue — multi-replica would need Redis
+  selector:
+    matchLabels: { app: hitl-extauth }
+  template:
+    metadata:
+      labels: { app: hitl-extauth }
+    spec:
+      containers:
+        - name: extauth
+          image: hitl-extauth:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: GRPC_PORT,        value: "9001" }
+            - { name: HTTP_PORT,        value: "8081" }
+            - { name: PARK_TIMEOUT_SEC, value: "600" }
+          ports:
+            - { containerPort: 9001, name: grpc }
+            - { containerPort: 8081, name: http }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8081 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8081 }
+            periodSeconds: 10
+---
+# gRPC service consumed by agentgateway. appProtocol:h2c lets agentgateway use
+# HTTP/2 without TLS — required for envoy ext-auth gRPC.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hitl-extauth
+  namespace: hitl
+  labels: { app: hitl-extauth }
+spec:
+  selector: { app: hitl-extauth }
+  ports:
+    - name: grpc
+      port: 9001
+      targetPort: 9001
+      appProtocol: kubernetes.io/h2c
+---
+# HTTP admin API consumed by hitl-ui.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hitl-extauth-admin
+  namespace: hitl
+  labels: { app: hitl-extauth }
+spec:
+  selector: { app: hitl-extauth }
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      appProtocol: http
