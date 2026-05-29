@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redact-extproc
+  namespace: agentgateway-system
+  labels: { app: redact-extproc }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: redact-extproc }
+  template:
+    metadata:
+      labels: { app: redact-extproc }
+    spec:
+      containers:
+      - name: extproc
+        image: extproc-redactor:v1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - { name: grpc, containerPort: 18080 }
+        readinessProbe:
+          tcpSocket: { port: 18080 }
+          periodSeconds: 2
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits:   { cpu: 500m, memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redact-extproc
+  namespace: agentgateway-system
+spec:
+  selector: { app: redact-extproc }
+  ports:
+  - name: grpc
+    port: 4444
+    targetPort: 18080
+    protocol: TCP
+    appProtocol: kubernetes.io/h2c

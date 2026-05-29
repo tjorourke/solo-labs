@@ -1,0 +1,15 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: redact
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: leaky-echo
+  traffic:
+    extProc:
+      backendRef:
+        name: redact-extproc
+        port: 4444

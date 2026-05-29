@@ -1,0 +1,11 @@
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum* ./
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/leaky-echo ./leaky-echo
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/leaky-echo /leaky-echo
+EXPOSE 8080
+USER nonroot:nonroot
+ENTRYPOINT ["/leaky-echo"]

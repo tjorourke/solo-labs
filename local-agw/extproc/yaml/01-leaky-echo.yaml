@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaky-echo
+  namespace: agentgateway-system
+  labels: { app: leaky-echo }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: leaky-echo }
+  template:
+    metadata:
+      labels: { app: leaky-echo }
+    spec:
+      containers:
+      - name: leaky-echo
+        image: leaky-echo:v1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - { name: http, containerPort: 8080 }
+        readinessProbe:
+          httpGet: { path: /healthz, port: 8080 }
+          periodSeconds: 2
+        resources:
+          requests: { cpu: 10m, memory: 16Mi }
+          limits:   { cpu: 200m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaky-echo
+  namespace: agentgateway-system
+spec:
+  selector: { app: leaky-echo }
+  ports:
+  - { name: http, port: 80, targetPort: 8080, protocol: TCP, appProtocol: http }
