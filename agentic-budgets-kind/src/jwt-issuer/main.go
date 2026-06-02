@@ -61,6 +61,12 @@ type user struct {
 var users = []user{
 	{sub: "dba",     team: "dba"},
 	{sub: "support", team: "support"},
+	// Distinct per-user identities. Budgets stay keyed per team (jwt.team),
+	// but access-log attribution keys per user (jwt.sub) — so these show up
+	// as separate user_id rows in Grafana while sharing their team's bucket.
+	{sub: "alice", team: "dba"},
+	{sub: "bob",   team: "dba"},
+	{sub: "carol", team: "support"},
 }
 
 func main() {

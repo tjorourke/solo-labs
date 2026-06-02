@@ -147,6 +147,67 @@ data:
               "color": { "mode": "palette-classic" }
             }
           }
+        },
+        {
+          "title": "Tokens by user — sum over range (access logs · Loki)",
+          "type": "table",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "gridPos": { "h": 9, "w": 8, "x": 0, "y": 22 },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "loki" },
+              "expr": "sum by (user_id) (sum_over_time({namespace=\"agentgateway-system\"} |= \"user_id=\" | logfmt | tokens_total =~ \"[0-9]+\" | unwrap tokens_total [$__range]))",
+              "queryType": "instant",
+              "instant": true,
+              "editorMode": "code",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "short", "custom": { "align": "auto" } },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Value" },
+                "properties": [ { "id": "displayName", "value": "tokens" } ] }
+            ]
+          },
+          "transformations": [
+            { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+          ]
+        },
+        {
+          "title": "Per-user LLM access log (user · team · tokens · model · status)",
+          "type": "logs",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "gridPos": { "h": 9, "w": 16, "x": 8, "y": 22 },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "loki" },
+              "expr": "{namespace=\"agentgateway-system\"} |= \"user_id=\" | logfmt | line_format \"user={{.user_id}} team={{.team}} tokens_total={{.tokens_total}} in={{.tokens_in}} out={{.tokens_out}} model={{.model}} status={{.status}}\"",
+              "queryType": "range",
+              "editorMode": "code",
+              "refId": "A"
+            }
+          ],
+          "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" }
+        },
+        {
+          "title": "Tokens per user over time (5-min sum)",
+          "type": "timeseries",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "loki" },
+              "expr": "sum by (user_id) (sum_over_time({namespace=\"agentgateway-system\"} |= \"user_id=\" | logfmt | tokens_total =~ \"[0-9]+\" | unwrap tokens_total [5m]))",
+              "legendFormat": "{{user_id}}",
+              "queryType": "range",
+              "editorMode": "code",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+          }
         }
       ],
       "refresh": "10s",
@@ -158,6 +219,6 @@ data:
       "timezone": "",
       "title": "Per-Team LLM Token Budgets",
       "uid": "agentic-budgets-tokens",
-      "version": 2,
+      "version": 4,
       "weekStart": ""
     }

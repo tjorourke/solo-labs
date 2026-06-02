@@ -1,0 +1,24 @@
+# Registers Loki as a Grafana datasource. The kube-prometheus-stack Grafana
+# sidecar discovers datasource ConfigMaps labeled grafana_datasource="1" in
+# its namespace and loads them at runtime (same mechanism as the dashboard
+# ConfigMap, which uses grafana_dashboard="1").
+#
+# uid: loki is referenced by the Loki panels in dashboard-tokens.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.monitoring.svc.cluster.local:3100
+        isDefault: false
+        editable: true

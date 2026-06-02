@@ -23,6 +23,7 @@ case "$cmd" in
     bash "$SCRIPT_DIR/05-budgets.sh"
     bash "$SCRIPT_DIR/06-observability.sh"
     bash "$SCRIPT_DIR/07-agents.sh"
+    bash "$SCRIPT_DIR/08-logging.sh"
 
     echo ""
     cat >&2 <<EOF

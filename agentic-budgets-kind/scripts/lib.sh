@@ -56,6 +56,12 @@ export KPS_CHART="${KPS_CHART:-prometheus-community/kube-prometheus-stack}"
 export KPS_REPO_URL="${KPS_REPO_URL:-https://prometheus-community.github.io/helm-charts}"
 export KPS_VERSION="${KPS_VERSION:-65.5.0}"
 
+# loki-stack — Loki (log store) + Promtail (scrapes pod stdout). Grafana and
+# Prometheus subcharts disabled; we reuse the kube-prometheus-stack Grafana.
+export LOKI_CHART="${LOKI_CHART:-grafana/loki-stack}"
+export LOKI_REPO_URL="${LOKI_REPO_URL:-https://grafana.github.io/helm-charts}"
+export LOKI_VERSION="${LOKI_VERSION:-2.10.2}"
+
 # Image tags for the three custom services we build + kind-load.
 export MOCK_LLM_IMAGE="mock-llm:dev"
 export JWT_ISSUER_IMAGE="jwt-issuer:dev"

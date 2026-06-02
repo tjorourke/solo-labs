@@ -1,0 +1,32 @@
+# Per-user token attribution on the gateway access log.
+#
+# Budgets (ratelimit-config.yaml) are keyed per team. This policy is the
+# *visibility* half: it stamps each LLM access-log line with the caller's
+# identity (jwt.sub) and the LLM token counts, so per-user usage can be
+# summed in Loki/Grafana without paying a per-user Prometheus-label series.
+#
+# llm.* token variables are available in the logging context only (not in
+# rate-limit or transformation policies). Integers must be wrapped in
+# string() with a default() fallback. Do NOT add a `has(llm)` filter guard
+# here — it compile-panics the proxy; non-LLM requests simply log "n/a".
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: token-attribution-logging
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: budgets-gateway
+  frontend:
+    accessLog:
+      attributes:
+        add:
+          - { name: user_id,      expression: 'default(jwt.sub, "unknown")' }
+          - { name: team,         expression: 'default(jwt.team, "unknown")' }
+          - { name: tokens_total, expression: 'default(string(llm.totalTokens), "n/a")' }
+          - { name: tokens_in,    expression: 'default(string(llm.inputTokens), "n/a")' }
+          - { name: tokens_out,   expression: 'default(string(llm.outputTokens), "n/a")' }
+          - { name: model,        expression: 'default(llm.responseModel, "n/a")' }
+          - { name: status,       expression: 'string(response.code)' }
