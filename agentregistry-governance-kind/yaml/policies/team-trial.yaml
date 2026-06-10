@@ -1,0 +1,18 @@
+# Team lane for group `field-trial` (bob): read access to the one published
+# house-style skill, nothing else. No registry:publish anywhere, so any
+# publish attempt is forbidden. The agent and MCP server are simply ABSENT
+# from bob's lists, and a by-name get is forbidden.
+apiVersion: ar.dev/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: team-trial
+spec:
+  description: Trial users may read the published house-style skill, nothing else.
+  principals:
+    - kind: Role
+      name: field-trial
+  rules:
+    - actions: ["registry:read"]
+      resources:
+        - kind: skill
+          name: summary-style

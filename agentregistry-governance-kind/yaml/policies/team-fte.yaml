@@ -1,0 +1,25 @@
+# Team lane for group `field-fte` (alice). Principals are matched against the
+# roles mapped from the token's `groups` claim (RBAC_ROLE_CLAIM=groups).
+# Resources are named explicitly: alice may read the summarizer stack from
+# part 1, and may publish ONLY the one new skill named here. Publishing
+# anything else is forbidden, name-scoped, not kind-scoped.
+apiVersion: ar.dev/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: team-fte
+spec:
+  description: Field FTEs may see and publish the summarizer stack.
+  principals:
+    - kind: Role
+      name: field-fte
+  rules:
+    - actions: ["registry:read", "registry:publish"]
+      resources:
+        - kind: agent
+          name: summarizer
+        - kind: server
+          name: acme/textkit
+        - kind: skill
+          name: summary-style
+        - kind: skill
+          name: release-notes-style

@@ -1,0 +1,18 @@
+# Exposes the part-1 Keycloak on the kind node so the registry daemon
+# (a Docker container outside the cluster) can reach the issuer. Paired with
+# the socat alias container so the IN-CLUSTER hostname resolves on the Docker
+# side and the token `iss` matches the daemon's OIDC_ISSUER exactly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-nodeport
+  namespace: keycloak
+spec:
+  type: NodePort
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30080

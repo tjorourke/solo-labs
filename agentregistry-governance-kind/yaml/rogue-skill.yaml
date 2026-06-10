@@ -1,0 +1,15 @@
+# Deliberately NOT named in any AccessPolicy. alice has registry:publish on
+# four named resources; this is not one of them, so her apply is forbidden.
+# Proves publish grants are name-scoped, not kind-scoped.
+apiVersion: ar.dev/v1alpha1
+kind: Skill
+metadata:
+  name: rogue-skill
+spec:
+  title: Not in any policy
+  description: Publish attempt that every policy should reject.
+  source:
+    repository:
+      url: https://github.com/tjorourke/solo-labs.git
+      branch: main
+      subfolder: agentregistry-governance-kind/yaml
