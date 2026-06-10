@@ -1,0 +1,18 @@
+# Route everything on the gateway to the AI backend. The backendRef points at
+# the AgentgatewayBackend (group agentgateway.dev), not a Service — that is how
+# AGW resolves LLM traffic to a provider.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: semantic-router-vllm
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: vllm-gateway
+      namespace: agentgateway-system
+  rules:
+    - backendRefs:
+        - name: semantic-router-vllm
+          namespace: agentgateway-system
+          group: agentgateway.dev
+          kind: AgentgatewayBackend

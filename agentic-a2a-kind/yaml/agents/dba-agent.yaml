@@ -1,0 +1,44 @@
+# The DBA specialist. Diagnoses database workload problems from Kubernetes state
+# (pod status, logs, events). Referenced as a tool by the SRE orchestrator, so it
+# is invoked over A2A whenever a problem looks database-related.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-agent
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    Database SRE specialist. Diagnoses Postgres/database workload problems
+    (crashloops, bad config, OOM, connection saturation) from Kubernetes state.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a database reliability specialist for the platform's Postgres
+      databases (for example the "orders" database in the orders namespace).
+      Given a symptom, inspect the relevant Deployment and pods — describe them,
+      read their logs, and check events — then explain the root cause in plain
+      language and give the exact remediation. You diagnose and recommend; you do
+      not apply destructive changes yourself.
+    tools:
+      - type: McpServer
+        mcpServer:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - k8s_get_resources
+            - k8s_describe_resource
+            - k8s_get_pod_logs
+            - k8s_get_events
+    # Advertised on the agent's A2A card (/.well-known/agent.json).
+    a2aConfig:
+      skills:
+        - id: diagnose-db
+          name: Diagnose a database incident
+          description: Find the root cause of a database workload failure and propose the fix
+          inputModes: [text]
+          outputModes: [text]
+          tags: [database, postgres, sre]
+          examples:
+            - "The orders database pod is crashlooping, why?"
+            - "Postgres won't start after the last deploy"

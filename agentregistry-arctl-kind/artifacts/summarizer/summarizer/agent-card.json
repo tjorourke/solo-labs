@@ -1,0 +1,20 @@
+{
+  "name": "summarizer",
+  "description": "Summarizes pasted text in the house format, using textkit MCP tools.",
+  "url": "http://localhost:8080",
+  "version": "0.0.1",
+  "capabilities": {
+    "streaming": true
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "summarizer",
+      "name": "summarizer",
+      "description": "Summarizes pasted text in the house format, using textkit MCP tools.",
+      "tags": ["summarizer"]
+    }
+  ]
+}
+

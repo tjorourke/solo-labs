@@ -1,0 +1,44 @@
+# bitnami/keycloak Helm values for the Solo demos shared Keycloak.
+# Realm `solo`, client `kagent`, users alice/bob/carol with three groups.
+#
+# Apply with:
+#   kubectl -n kagent create configmap keycloak-realm-import \
+#     --from-file=realm-solo.json=yaml/realm-solo.json --dry-run=client -o yaml | kubectl apply -f -
+#   helm upgrade --install keycloak bitnami/keycloak -n kagent -f yaml/values.yaml
+
+auth:
+  adminUser: admin
+  adminPassword: admin
+
+production: false
+
+# Use HTTP only — this is a demo install, not for the internet.
+proxy: edge
+
+# Resource sizing: enough headroom for a single-node demo, not production.
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+# Mount the realm-import ConfigMap and pass --import-realm so Keycloak
+# imports it on first boot. Subsequent boots see the realm already
+# exists and skip the import — idempotent enough for a demo.
+extraStartupArgs: "--import-realm"
+
+extraVolumes:
+  - name: realm-import
+    configMap:
+      name: keycloak-realm-import
+
+extraVolumeMounts:
+  - name: realm-import
+    mountPath: /opt/bitnami/keycloak/data/import
+    readOnly: true
+
+# Single replica for the demo — bitnami's chart enables a Postgres
+# subchart by default for persistence; that's fine.
+replicaCount: 1

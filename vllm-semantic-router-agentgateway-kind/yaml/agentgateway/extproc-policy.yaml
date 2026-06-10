@@ -1,0 +1,33 @@
+# Attach the Semantic Router as an external processor on the gateway. The router
+# classifies each prompt over gRPC (:50051) and rewrites the request body to
+# select the model/adapter before agentgateway forwards it to vLLM.
+#
+# processingOptions is the key: requestBodyMode: Buffered makes the gateway send
+# the full body to the router, and allowModeOverride: true lets the router's
+# response update how the body is handled so the rewritten body is forwarded
+# upstream. Without these, the router classifies but its rewrite is dropped.
+#
+# Shape verified against the OSS agentgateway-crds chart v1.3.0-alpha.1.
+# For large prompts, switch requestBodyMode to FullDuplexStreamed.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: semantic-router-extproc
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: vllm-gateway
+  traffic:
+    extProc:
+      backendRef:
+        name: semantic-router
+        namespace: agentgateway-system
+        port: 50051
+      processingOptions:
+        requestHeaderMode: Send
+        requestBodyMode: Buffered
+        responseHeaderMode: Send
+        responseBodyMode: Buffered
+        allowModeOverride: true

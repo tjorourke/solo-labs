@@ -1,0 +1,22 @@
+# The AgentHarness: kagent asks the OpenShell backend to provision a long-lived
+# OpenClaw sandbox you attach to via shell. Unlike an Agent/SandboxAgent it has
+# no runtime baked in — the backend owns the environment's lifecycle and kagent
+# surfaces it in the API/UI next to standard agents.
+#
+# Verified against the installed CRD (kagent.dev/v1alpha2):
+#   - spec.backend enum is openclaw | nemoclaw (no "hermes")
+#   - network.allowedDomains gates the sandbox's OUTBOUND access; in-cluster
+#     API access (kubernetes.default) is not an egress hop, so kubectl from
+#     inside the sandbox still works once RBAC is granted (04-harness.sh).
+apiVersion: kagent.dev/v1alpha2
+kind: AgentHarness
+metadata:
+  name: sre-oncall
+  namespace: kagent
+spec:
+  backend: openclaw
+  description: "SRE on-call sandbox — attach, triage the cluster, and fix it"
+  modelConfigRef: anthropic-haiku
+  network:
+    allowedDomains:
+      - api.anthropic.com

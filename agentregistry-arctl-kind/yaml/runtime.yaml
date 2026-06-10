@@ -1,0 +1,15 @@
+# Reference shape only. 06-runtime-deploy.sh generates the real manifest at run
+# time, filling spec.config.kubeconfig with the cluster's *internal* kubeconfig
+# (`kind get kubeconfig --internal`) so the daemon container can reach the API
+# server over the kind docker network.
+apiVersion: ar.dev/v1alpha1
+kind: Runtime
+metadata:
+  name: kind-kagent
+spec:
+  type: Kubernetes
+  config:
+    namespace: kagent
+    kubeconfig: |
+      <the kind cluster's internal kubeconfig — server points at the
+       control-plane container hostname, not 127.0.0.1>

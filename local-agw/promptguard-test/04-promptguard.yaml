@@ -1,0 +1,28 @@
+# Regex prompt guard: Reject requests whose text matches a system-prompt-override
+# / instruction-override signature. This is the LITERAL-text matcher under test.
+# The encoded variants in the harness carry the SAME phrase, hidden from these patterns.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: pg-test-guard
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: pg-test-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - response:
+              statusCode: 403
+              message: "Blocked by prompt guard: instruction-override signature detected"
+            regex:
+              action: Reject
+              matches:
+                - "(?i)ignore (all )?(your )?(previous|prior|earlier|above) instructions"
+                - "(?i)disregard (all )?(previous|prior|above)"
+                - "(?i)override (the )?system prompt"
+                - "(?i)(reveal|show|print|repeat) (your |the )?system prompt"
+                - "(?i)you are now"

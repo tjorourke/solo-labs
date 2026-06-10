@@ -1,0 +1,23 @@
+# The model the OpenClaw harness agent reasons with. kagent translates this
+# ModelConfig into OpenClaw's own config inside the sandbox once it is Ready.
+# The apiKeySecret is created by 04-harness.sh from ANTHROPIC_API_KEY.
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: anthropic-haiku
+  namespace: kagent
+spec:
+  provider: Anthropic
+  model: claude-haiku-4-5
+  apiKeySecret: kagent-anthropic
+  apiKeySecretKey: ANTHROPIC_API_KEY
+  anthropic:
+    maxTokens: 4096
+    temperature: "0.2"
+    # Point OpenClaw straight at the Anthropic API. Without this, kagent falls
+    # back to its DefaultInferenceBaseURL (https://inference.local/v1) — the
+    # enterprise L7 inference proxy, which does not exist in this self-contained
+    # OSS/kind lab, so model calls from the sandbox would fail to resolve.
+    # kagent reads spec.anthropic.baseUrl and writes it into the sandbox's
+    # ~/.openclaw/openclaw.json (see provider.go:modelConfigExplicitBaseURL).
+    baseUrl: https://api.anthropic.com/v1

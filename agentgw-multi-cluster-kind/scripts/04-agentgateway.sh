@@ -28,10 +28,12 @@ CLUSTER2="${CLUSTER2:-kind-west}"
 CLUSTERS=("$CLUSTER1" "$CLUSTER2")
 CLUSTER_NAMES=("east" "west")
 
-# Enterprise agentgateway v2.3.0+ is required for waypoint support.
-AGW_VERSION="${AGENTGATEWAY_ENTERPRISE_VERSION:-2.3.0}"
-AGW_CHART="${AGENTGATEWAY_ENTERPRISE_CHART:-oci://us-docker.pkg.dev/solo-public/agentgateway-enterprise/charts/enterprise-agentgateway}"
-AGW_CRDS_CHART="${AGENTGATEWAY_ENTERPRISE_CRDS_CHART:-oci://us-docker.pkg.dev/solo-public/agentgateway-enterprise/charts/enterprise-agentgateway-crds}"
+# Enterprise agentgateway v2026.5.1 (calver, succeeds v2.3.x) is the GA default.
+# Registry path is `enterprise-agentgateway/charts/...` — the swapped
+# `agentgateway-enterprise/charts/...` form 404s on the public Solo registry.
+AGW_VERSION="${AGENTGATEWAY_ENTERPRISE_VERSION:-v2026.5.1}"
+AGW_CHART="${AGENTGATEWAY_ENTERPRISE_CHART:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway}"
+AGW_CRDS_CHART="${AGENTGATEWAY_ENTERPRISE_CRDS_CHART:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway-crds}"
 
 [[ -n "${AGENTGATEWAY_LICENSE_KEY:-}" ]] || {
   echo "ERROR: AGENTGATEWAY_LICENSE_KEY not set (source secrets-envs.sh first)"

@@ -1,0 +1,23 @@
+# AI backend pointing at the in-cluster vLLM simulator.
+#
+# Two deliberate choices:
+#   * openai: {} with NO model override. The model name comes from the request
+#     body, which is exactly what the Semantic Router rewrites. Pinning a model
+#     here would override the router's decision.
+#   * host + port target the simulator Service directly. The vLLM sim speaks the
+#     OpenAI wire format, so the openai provider with a host override is the
+#     right adapter for a self-hosted OpenAI-compatible endpoint.
+#
+# Shape verified against the OSS agentgateway-crds chart v1.3.0-alpha.1:
+# spec.ai.provider has openai/host/port as siblings.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: semantic-router-vllm
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai: {}
+      host: vllm-llama3-8b-instruct.default.svc.cluster.local
+      port: 8000

@@ -1,0 +1,22 @@
+# Contrast backend: the SAME petstore OpenAPI without toolMode (defaults to
+# Standard). The client sees each operation as its own MCP tool (addPet,
+# findPetsByStatus, getPetById, deletePet) instead of one run_code tool. Apply
+# this and re-run show-tools.sh to see the difference.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: petstore-standard
+  namespace: agentgateway-system
+spec:
+  entMcp:
+    sessionRouting: Stateless
+    failureMode: FailClosed
+    targets:
+      - name: petstore
+        static:
+          host: petstore3.swagger.io
+          port: 443
+          protocol: OpenAPI
+          openAPI:
+            schemaRef:
+              name: petstore-openapi

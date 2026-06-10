@@ -24,9 +24,11 @@ CLUSTER2=kind-west-ag
 GLOO_OPERATOR_VERSION="${GLOO_OPERATOR_VERSION:-0.5.2}"
 SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.2-solo}"
 ISTIO_VERSION_OPERATOR="${SOLO_ISTIO_VERSION%-solo}"
-# AG chart switched to v-prefixed tags at 2.2; chart appVersion + proxy image
-# tag are the plain semver (2.3.3) without the v.
-AGW_VERSION="${AGW_VERSION:-v2.3.3}"
+# AG chart uses v-prefixed tags (2.2+). Solo switched from semver (v2.3.x) to
+# calver (vYYYY.M.X) at v2026.5.0. v2026.5.1 (2026-05-22) is the latest GA on
+# the public Solo registry — succeeds v2.3.3 and includes the cross-cluster
+# WorkloadEntry fix (no more "unknown address type" NACK on failover).
+AGW_VERSION="${AGW_VERSION:-v2026.5.1}"
 AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 # When pulling from a private/dev registry that the kind nodes can't reach
 # (e.g. the dev/nightly registry below), set AGW_IMAGE_REGISTRY to the image
@@ -35,15 +37,11 @@ AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-age
 # empty for the public Solo registry (kind nodes pull directly).
 AGW_IMAGE_REGISTRY="${AGW_IMAGE_REGISTRY:-}"
 
-# Convenience flag — flip to the verified-fixed nightly with one env var.
-# v2.3.3 NACKs istiod's synthetic cross-cluster WorkloadEntry as
-# "unknown address type" → ingress-initiated failover returns 503.
-# v2026.5.0-beta.4-nightly-2026-05-15 was tested end-to-end on this exact
-# multicluster topology and returns 200 across 3/3 attempts (NACK gone from
-# the proxy xDS logs).
+# Escape hatch — flip to a dev/nightly build for pre-release testing. The
+# default (v2026.5.1 GA) is what you want for normal use.
 if [[ "${AGW_NIGHTLY:-false}" == "true" ]]; then
   AGW_REGISTRY="oci://us-central1-docker.pkg.dev/developers-369321/enterprise-agentgateway-dev/charts"
-  AGW_VERSION="v2026.5.0-beta.4-nightly-2026-05-15"
+  AGW_VERSION="${AGW_VERSION_NIGHTLY:-v2026.5.0-beta.4-nightly-2026-05-15}"
   AGW_IMAGE_REGISTRY="us-central1-docker.pkg.dev/developers-369321/enterprise-agentgateway-dev"
 fi
 GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
@@ -786,6 +784,9 @@ done
 step "Installing Enterprise agentgateway control plane $AGW_VERSION"
 for CTX in "$CLUSTER1" "$CLUSTER2"; do
   NAME="${CTX#kind-}"
+  # tokenExchange is enabled later by init-demo.sh once Keycloak is up
+  # (the STS validators in tokenExchange config reference Keycloak's JWKS,
+  # so AGW would crash-loop if we enabled it before Keycloak exists).
   helm upgrade --install enterprise-agentgateway \
     "${AGW_REGISTRY}/enterprise-agentgateway" \
     --kube-context "$CTX" \
@@ -796,7 +797,73 @@ for CTX in "$CLUSTER1" "$CLUSTER2"; do
   log_ok "[$NAME] Enterprise agentgateway installed"
 done
 
-# ── Step 11: Infra smoke test ─────────────────────────────────────────────────
+# ── Step 11: Solo Enterprise management chart (ClickHouse + UI + telemetry) ───
+# Adds solo-enterprise-ui, ClickHouse, and the OTel telemetry collectors
+# referenced by the agentgateway-enterprise-demo notebook §9. Installed only
+# on CLUSTER1 (single-pane-of-glass; no need on the peer cluster).
+
+SOLO_MGMT_CHART="oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management"
+SOLO_MGMT_VERSION="${SOLO_MGMT_VERSION:-0.4.3}"
+
+if [[ "${SKIP_SOLO_MGMT:-false}" == "true" ]]; then
+  step "Skipping Solo Enterprise management chart (SKIP_SOLO_MGMT=true)"
+else
+  step "Installing Solo Enterprise management chart $SOLO_MGMT_VERSION on ${CLUSTER1#kind-}"
+  helm upgrade --install solo-enterprise-mgmt "$SOLO_MGMT_CHART" \
+    --kube-context "$CLUSTER1" \
+    --namespace agentgateway-system \
+    --version "$SOLO_MGMT_VERSION" \
+    --set cluster="${CLUSTER1#kind-}" \
+    --set products.agentgateway.enabled=true \
+    --set products.agentgateway.namespace=agentgateway-system \
+    --set licensing.licenseKey="${AGENTGATEWAY_LICENSE_KEY}" \
+    --set clickhouse.persistentVolume.enabled=false \
+    --wait --timeout 8m >/dev/null
+  log_ok "[${CLUSTER1#kind-}] solo-enterprise management chart installed"
+
+  # Wait for the UI Service so init-demo.sh can resolve it deterministically.
+  for i in $(seq 1 30); do
+    if kubectl --context "$CLUSTER1" -n agentgateway-system get svc solo-enterprise-ui >/dev/null 2>&1; then
+      log_ok "[${CLUSTER1#kind-}] solo-enterprise-ui Service ready"
+      break
+    fi
+    sleep 2
+  done
+fi
+
+# ── Step 12: Keycloak (Auth0 substitute for the demo notebook §7-§8) ──────────
+# Mirrors solo-demos/keycloak-setup: realm 'solo', client 'kagent' (password
+# grant), users alice/bob/carol with field-fte/field-trial/field-admin groups.
+# The demo notebook reads Auth0 creds from ~/.auth0.env; init-demo.sh emits a
+# Keycloak-populated file at that path so the notebook setup cell needs no
+# code changes — only the OAuth2 token URL in §8 cell 53 changes (Keycloak's
+# /realms/.../protocol/openid-connect/token instead of Auth0's /oauth/token).
+
+KEYCLOAK_NS="${KEYCLOAK_NS:-keycloak}"
+KEYCLOAK_REALM_JSON="$REPO_ROOT/yaml/keycloak/realm-solo.json"
+KEYCLOAK_MANIFEST="$REPO_ROOT/yaml/keycloak/keycloak.yaml"
+
+if [[ "${SKIP_KEYCLOAK:-false}" == "true" ]]; then
+  step "Skipping Keycloak (SKIP_KEYCLOAK=true)"
+elif [[ ! -f "$KEYCLOAK_REALM_JSON" || ! -f "$KEYCLOAK_MANIFEST" ]]; then
+  log "Keycloak assets missing under yaml/keycloak/ — skipping Keycloak install"
+else
+  step "Installing Keycloak (realm solo) on ${CLUSTER1#kind-}"
+  # Upstream quay.io/keycloak/keycloak via raw manifest. We dropped the
+  # bitnami chart because docker.io/bitnami/keycloak:*-debian-12-r* was
+  # pulled from Docker Hub when Bitnami ended free distribution in 2025.
+  kubectl --context "$CLUSTER1" create namespace "$KEYCLOAK_NS" \
+    --dry-run=client -o yaml | kubectl --context "$CLUSTER1" apply -f - >/dev/null
+  kubectl --context "$CLUSTER1" -n "$KEYCLOAK_NS" create configmap keycloak-realm-import \
+    --from-file=realm-solo.json="$KEYCLOAK_REALM_JSON" \
+    --dry-run=client -o yaml | kubectl --context "$CLUSTER1" apply -f - >/dev/null
+  kubectl --context "$CLUSTER1" apply -f "$KEYCLOAK_MANIFEST" >/dev/null
+  kubectl --context "$CLUSTER1" -n "$KEYCLOAK_NS" \
+    rollout status statefulset/keycloak --timeout 5m >/dev/null
+  log_ok "[${CLUSTER1#kind-}] Keycloak installed (realm: solo, ns: $KEYCLOAK_NS)"
+fi
+
+# ── Step 13: Infra smoke test ─────────────────────────────────────────────────
 # No workload deployment — quick.sh is platform-only. The lab pages
 # (agentgw-cloud-connectivity, agentgw-agentic-mcp) install their own test
 # workloads. Verify the infra is healthy.
@@ -971,6 +1038,17 @@ echo "      (MCP federation, JWT RBAC, OAuth2 token exchange)"
 echo ""
 echo "  Verify peering (both should show 'remote clusters: 1'):"
 echo "    istioctl --context $CLUSTER1 multicluster check"
+echo ""
+echo "  Run the agentgateway-enterprise-demo notebook:"
+echo "    ./scripts/init-demo.sh                # Gateway + Keycloak port-forward + ~/.auth0.env"
+echo "    cd /path/to/agentgateway-enterprise-demo && ./init.sh"
+echo "    jupyter notebook demo.ipynb"
+echo ""
+echo "  ⚠ One-time notebook patch (§8 cell 53) — Keycloak token URL differs from Auth0:"
+echo "      -    \"https://\$AUTH0_DOMAIN/oauth/token\""
+echo "      +    \"http://\$AUTH0_DOMAIN\${AUTH0_TOKEN_PATH:-/oauth/token}\""
+echo "    (init-demo.sh sets AUTH0_TOKEN_PATH to /realms/solo/protocol/openid-connect/token.)"
+echo "    Full notebook workflow: see README-demo-notebook.md"
 echo ""
 if [[ "$GLOO_UI_INSTALLED" == "yes" ]]; then
   echo "  Launch Gloo UI:"

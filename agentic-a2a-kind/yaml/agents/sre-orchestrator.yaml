@@ -1,0 +1,36 @@
+# The on-call SRE orchestrator. Triages incidents across the cluster, and when a
+# problem is database-related it DELEGATES diagnosis to the dba-agent over A2A
+# (via the tools[].type: Agent reference) and folds the specialist's findings
+# into its incident summary.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-orchestrator
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    On-call SRE orchestrator. Triages cluster incidents and delegates
+    database-specific diagnosis to the dba-agent.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are the on-call SRE. Triage incidents by inspecting Kubernetes
+      resources and events. When the problem is database-related — a Postgres
+      workload, a crashlooping database pod, connection errors, slow queries —
+      DELEGATE the diagnosis to the dba-agent and incorporate its findings.
+      Produce a short incident summary: what is broken, the root cause, and the
+      recommended remediation. Note which finding came from the DBA specialist.
+    tools:
+      - type: McpServer
+        mcpServer:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - k8s_get_resources
+            - k8s_get_events
+            - k8s_describe_resource
+      # A2A delegation: invoke the DBA specialist as a tool.
+      - type: Agent
+        agent:
+          name: dba-agent

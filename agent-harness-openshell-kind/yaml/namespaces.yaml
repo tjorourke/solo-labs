@@ -1,0 +1,25 @@
+# Two app namespaces with different blast-radius policy:
+#
+#   incident  — labeled autofix=true. 04-harness.sh binds the sandbox SA's
+#               write ClusterRole here, so OpenClaw may APPLY fixes.
+#   payments  — NOT labeled. No write binding is created, so any attempt by
+#               OpenClaw to patch here gets a 403 from Kubernetes RBAC. The
+#               agent can still READ/triage it (cluster-wide read), and
+#               escalates to Slack instead of forcing a change.
+#
+# The autofix label is the single source of truth for "may the agent fix here".
+# (kagent/openshell namespaces are created by their Helm installs.)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: incident
+  labels:
+    purpose: agent-harness-demo
+    autofix: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: payments
+  labels:
+    purpose: agent-harness-demo

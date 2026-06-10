@@ -1,0 +1,40 @@
+# RBAC for the OpenClaw sandbox's ServiceAccount — the real guardrail.
+#
+#   READ  (sre-harness-read)  — cluster-wide, bound everywhere. The agent can
+#                               triage any namespace it is asked about.
+#   FIX   (sre-harness-fix)   — a ClusterRole holding the WRITE rules, but with
+#                               NO cluster-wide binding. 04-harness.sh creates a
+#                               namespaced RoleBinding to it ONLY in namespaces
+#                               labeled autofix=true. RBAC has no label selector,
+#                               so that reconcile is what turns the label into an
+#                               authorization boundary. In any namespace without
+#                               the label, kubectl patch returns 403 Forbidden.
+#
+# The ClusterRoleBinding subject (the sandbox SA) is patched in by 04-harness.sh
+# once the backend-assigned SA is known.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-harness-read
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "events", "nodes", "namespaces", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+---
+# WRITE rules. A ClusterRole so a namespaced RoleBinding can grant it in exactly
+# the namespaces we choose (the autofix=true ones) — not cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-harness-fix
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete"]

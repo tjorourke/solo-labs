@@ -1,0 +1,20 @@
+# Alice (Keycloak group field-fte) may call the SRE orchestrator.
+# Subject is matched on the OBO/OIDC token's `groups` claim, so this is identity
+# driven: it is alice-as-field-fte, validated against the Keycloak issuer.
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: allow-fieldfte-orchestrator
+  namespace: kagent
+spec:
+  action: ALLOW
+  from:
+    subjects:
+      - kind: UserGroup
+        userGroup:
+          claimName: groups
+          claimValue: field-fte
+          issuer: http://keycloak.keycloak.svc.cluster.local/realms/solo
+  targetRef:
+    kind: Agent
+    name: sre-orchestrator

@@ -1,0 +1,53 @@
+# The planted failure the SRE harness triages (and, where allowed, fixes).
+#
+# Pinned to an image tag that does not exist, so pods stick in ImagePullBackOff
+# with a "manifest unknown" event — the most classic, unambiguous SRE triage.
+# 06-broken-app.sh applies this into BOTH the `incident` (autofix=true) and
+# `payments` (locked) namespaces, so the demo shows the same fault handled two
+# ways: fixed in incident, escalated to Slack in payments.
+#
+# No metadata.namespace here on purpose — the script applies it with `-n <ns>`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  labels:
+    app: checkout
+  annotations:
+    incident/summary: "checkout pods will not start after a release"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+    spec:
+      containers:
+        - name: checkout
+          # BROKEN ON PURPOSE: this tag does not exist on Docker Hub.
+          image: nginx:9.99-doesnotexist
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+  labels:
+    app: checkout
+spec:
+  selector:
+    app: checkout
+  ports:
+    - port: 80
+      targetPort: 80

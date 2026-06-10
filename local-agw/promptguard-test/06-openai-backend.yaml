@@ -1,0 +1,16 @@
+# OpenAI backend (client picks the model). Needs Secret openai-secret with
+# key "Authorization" = "Bearer sk-...". The same route policy (BLUE system
+# prompt + regex guard) applies, so the test is apples-to-apples with Claude.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: pg-oai-real
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai: {}
+  policies:
+    auth:
+      secretRef:
+        name: openai-secret

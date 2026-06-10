@@ -34,15 +34,14 @@ SECRETS_FILE="${SECRETS_FILE:-}"
 GLOO_OPERATOR_VERSION="${GLOO_OPERATOR_VERSION:-0.5.2}"
 SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.2-solo}"
 ISTIO_VERSION_OPERATOR="${SOLO_ISTIO_VERSION%-solo}"
-AGW_VERSION="${AGW_VERSION:-v2.3.3}"
+AGW_VERSION="${AGW_VERSION:-v2026.5.1}"
 AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 AGW_IMAGE_REGISTRY="${AGW_IMAGE_REGISTRY:-}"
 
-# Flip to the verified-fixed nightly with one env var. v2.3.3 NACKs istiod's
-# synthetic cross-cluster WorkloadEntry; the nightly below has the fix.
+# Escape hatch — flip to a dev/nightly build for pre-release testing.
 if [[ "${AGW_NIGHTLY:-false}" == "true" ]]; then
   AGW_REGISTRY="oci://us-central1-docker.pkg.dev/developers-369321/enterprise-agentgateway-dev/charts"
-  AGW_VERSION="v2026.5.0-beta.4-nightly-2026-05-15"
+  AGW_VERSION="${AGW_VERSION_NIGHTLY:-v2026.5.0-beta.4-nightly-2026-05-15}"
   AGW_IMAGE_REGISTRY="us-central1-docker.pkg.dev/developers-369321/enterprise-agentgateway-dev"
 fi
 GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"

@@ -1,0 +1,13 @@
+apiVersion: ar.dev/v1alpha1
+kind: Skill
+metadata:
+  name: summary-style
+spec:
+  description: The house format for summaries — length budget, bullets, and a sources line.
+  title: Summary house style
+  source:
+    repository:
+      # The public mirror of this lab's artifacts (the source repo is private).
+      url: https://github.com/tjorourke/solo-labs.git
+      branch: main
+      subfolder: agentregistry-arctl-kind/artifacts/summary-style

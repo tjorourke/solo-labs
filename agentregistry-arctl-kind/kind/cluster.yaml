@@ -1,0 +1,15 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: arctl-lab
+nodes:
+  - role: control-plane
+  - role: worker
+# Tell containerd to read per-registry config from /etc/containerd/certs.d so the
+# nodes can pull `localhost:5001/...` (the arctl scaffolds' default image host)
+# from the host-side kind-registry container. 01-cluster.sh writes the hosts.toml.
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+networking:
+  apiServerAddress: "127.0.0.1"

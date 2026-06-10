@@ -1,0 +1,30 @@
+# The code-mode backend. entMcp turns the petstore OpenAPI into MCP tools, and
+# toolMode: Code collapses them into a single `run_code` tool: the gateway hands
+# the client a generated TypeScript API (one async function per operation) and
+# executes the JavaScript the client sends back, in a sandbox bounded by
+# codeMode.timeout. The OpenAPI target points at the public Swagger petstore.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: petstore-codemode
+  namespace: agentgateway-system
+spec:
+  entMcp:
+    toolMode: Code
+    codeMode:
+      timeout: 10s
+    sessionRouting: Stateless
+    failureMode: FailClosed
+    targets:
+      - name: petstore
+        static:
+          host: petstore3.swagger.io
+          port: 443
+          protocol: OpenAPI
+          # The petstore listens on 443 (TLS). Without this the gateway sends
+          # plain HTTP to an HTTPS port and every upstream call returns 400.
+          policies:
+            tls: {}
+          openAPI:
+            schemaRef:
+              name: petstore-openapi

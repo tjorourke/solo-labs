@@ -1,0 +1,4 @@
+framework: adk
+language: python
+modelProvider: anthropic
+modelName: claude-haiku-4-5

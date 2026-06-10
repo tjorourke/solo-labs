@@ -1,0 +1,19 @@
+# Anthropic AI backend in the ai.provider (single-provider) shape.
+# IMPORTANT: the prompt guard only binds to this shape. With the
+# ai.groups[]/providers[] failover shape, promptGuard is silently ignored
+# (policy still shows Accepted/Attached, config_dump still shows the guard,
+# but nothing is masked or rejected). Verified live on 2.3.3.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: pg-prov-claude
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      anthropic:
+        model: claude-sonnet-4-5
+  policies:
+    auth:
+      secretRef:
+        name: corp-anthropic-secret

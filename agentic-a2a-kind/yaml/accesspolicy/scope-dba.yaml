@@ -1,0 +1,41 @@
+# Reduced perms for the DBA specialist: it is reachable ONLY through the SRE
+# orchestrator, never by the end user directly. The orchestrator delegates on
+# Alice's behalf (the OBO token carries sub: alice, act.sub: sre-orchestrator),
+# and the DBA's blast radius is the narrower of the two identities.
+#
+#   - ALLOW: the orchestrator (acting agent) may invoke the dba-agent.
+#   - DENY:  the end user's group may NOT invoke the dba-agent directly.
+---
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: allow-orchestrator-to-dba
+  namespace: kagent
+spec:
+  action: ALLOW
+  from:
+    subjects:
+      - kind: Agent
+        name: sre-orchestrator
+        namespace: kagent
+  targetRef:
+    kind: Agent
+    name: dba-agent
+---
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: deny-user-direct-dba
+  namespace: kagent
+spec:
+  action: DENY
+  from:
+    subjects:
+      - kind: UserGroup
+        userGroup:
+          claimName: groups
+          claimValue: field-fte
+          issuer: http://keycloak.keycloak.svc.cluster.local/realms/solo
+  targetRef:
+    kind: Agent
+    name: dba-agent

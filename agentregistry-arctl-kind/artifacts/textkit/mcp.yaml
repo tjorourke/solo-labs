@@ -1,0 +1,13 @@
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: acme/textkit
+spec:
+  description: Text utilities for summarization agents — word_count and extract_links.
+  source:
+    package:
+      identifier: localhost:5001/textkit:latest
+      registryType: oci
+      transport:
+        type: stdio
+  title: textkit

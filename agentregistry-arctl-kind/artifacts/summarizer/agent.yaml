@@ -1,0 +1,13 @@
+apiVersion: ar.dev/v1alpha1
+kind: Agent
+metadata:
+  name: summarizer
+spec:
+  description: Summarizes pasted text in the house format, using textkit MCP tools.
+  modelName: claude-haiku-4-5
+  modelProvider: anthropic
+  source:
+    image: localhost:5001/summarizer:latest
+  mcpServers:
+    - kind: MCPServer
+      name: acme/textkit
