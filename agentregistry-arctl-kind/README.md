@@ -1,6 +1,8 @@
 # agentregistry-arctl-kind
 
-The full AgentRegistry lifecycle with `arctl`, end to end on a kind cluster:
+**AgentRegistry end to end, part 1.** The full AgentRegistry lifecycle with
+`arctl`, end to end on a kind cluster (part 2 covers registry governance:
+AccessPolicies, per-team visibility, and approval flows):
 
 1. `arctl init` scaffolds the three artifact kinds: the **textkit** MCP server
    (FastMCP, `word_count` + `extract_links`), the **summary-style** skill, and
