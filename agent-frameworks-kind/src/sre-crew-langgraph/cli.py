@@ -20,7 +20,9 @@ def main() -> None:
     with open(os.path.join(os.path.dirname(__file__), "agent-card.json"), "r") as f:
         agent_card = json.load(f)
     config = KAgentConfig()
-    app = KAgentApp(graph=graph, agent_card=agent_card, config=config, tracing=False)
+    # tracing on: kagent-core configures OTel (OpenAI/Anthropic/httpx instrumentation)
+    # and exports OTLP to OTEL_EXPORTER_OTLP_ENDPOINT, which agentevals scores.
+    app = KAgentApp(graph=graph, agent_card=agent_card, config=config, tracing=True)
     port = int(os.getenv("PORT", "8080"))
     host = os.getenv("HOST", "0.0.0.0")
     logger.info("starting kagent A2A server on %s:%d", host, port)

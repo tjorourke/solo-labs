@@ -10,7 +10,7 @@ import os
 import uvicorn
 from a2a.types import AgentCard
 from kagent.adk import KAgentApp
-from kagent.core import KAgentConfig
+from kagent.core import KAgentConfig, configure_tracing
 
 from agent import root_agent
 
@@ -35,7 +35,11 @@ def main() -> None:
     port = int(os.getenv("PORT", "8080"))
     host = os.getenv("HOST", "0.0.0.0")
     logger.info("starting kagent A2A server on %s:%d", host, port)
-    uvicorn.run(app.build(), host=host, port=port, log_level="info")
+    fastapi_app = app.build()
+    # Initialise OTel tracing (the ADK KAgentApp does not do this itself). Gated by
+    # OTEL_TRACING_ENABLED; exports to OTEL_EXPORTER_OTLP_TRACES_ENDPOINT for agentevals.
+    configure_tracing(name=config.name, namespace=config.namespace, fastapi_app=fastapi_app)
+    uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

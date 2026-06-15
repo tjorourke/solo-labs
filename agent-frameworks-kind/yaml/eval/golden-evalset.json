@@ -1,0 +1,30 @@
+{
+  "eval_set_id": "sre-checkout-incident",
+  "name": "Checkout ImagePullBackOff remediation",
+  "description": "Expected tool trajectory: inspect the workload, then patch the bad image. Scored against each framework's captured OTel trace with agentevals tool_trajectory_avg_score.",
+  "eval_cases": [
+    {
+      "eval_id": "diagnose-and-fix-checkout",
+      "conversation": [
+        {
+          "invocation_id": "incident-1",
+          "user_content": {
+            "role": "user",
+            "parts": [{"text": "the checkout service is down - investigate, then fix it"}]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "get_pods", "args": {"namespace": "incident"}},
+              {"name": "describe_deployment", "args": {"namespace": "incident", "name": "checkout"}},
+              {"name": "patch_deployment_image", "args": {"namespace": "incident", "name": "checkout", "container": "checkout", "image": "nginx:1.27"}}
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [{"text": "Root cause: the checkout deployment is pinned to a nonexistent image nginx:1.27-doesnotexist, so the pod is in ImagePullBackOff. Fix: patch the image to a valid tag (nginx:1.27)."}]
+          }
+        }
+      ]
+    }
+  ]
+}

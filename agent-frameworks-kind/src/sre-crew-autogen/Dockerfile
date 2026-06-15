@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY team.py executor.py main.py agent-card.json ./
+COPY team.py executor.py main.py tracing_setup.py agent-card.json ./
 
 ENV PORT=8080
 EXPOSE 8080

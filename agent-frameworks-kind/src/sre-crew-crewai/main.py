@@ -9,6 +9,7 @@ import logging
 import os
 
 import uvicorn
+from kagent.core import KAgentConfig, configure_tracing
 from kagent.crewai import KAgentApp
 
 from crew import build_crew
@@ -22,6 +23,10 @@ def main() -> None:
         agent_card = json.load(f)
     app = KAgentApp(crew=build_crew(), agent_card=agent_card)
     server = app.build()
+    # Initialise OTel tracing (gated by OTEL_TRACING_ENABLED), exporting to
+    # OTEL_EXPORTER_OTLP_TRACES_ENDPOINT for agentevals.
+    cfg = KAgentConfig()
+    configure_tracing(name=cfg.name, namespace=cfg.namespace, fastapi_app=server)
     port = int(os.getenv("PORT", "8080"))
     host = os.getenv("HOST", "0.0.0.0")
     logger.info("starting kagent A2A server on %s:%d", host, port)

@@ -7,3 +7,8 @@ autogen-ext[openai,mcp]>=0.4
 # Stable mcp 1.x (avoid the 2.0.0a1 alpha).
 mcp>=1.12,<2
 uvicorn[standard]>=0.30.0
+# OTel tracing (AutoGen has no kagent-core) so agentevals can score its traces.
+opentelemetry-sdk>=1.27
+opentelemetry-exporter-otlp-proto-http>=1.27
+opentelemetry-instrumentation-openai
+opentelemetry-instrumentation-httpx

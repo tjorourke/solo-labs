@@ -19,6 +19,13 @@ import os
 from crewai import LLM, Agent, Crew, Process, Task
 from crewai_tools import MCPServerAdapter
 
+# CrewAI runs the model through LiteLLM, which the OpenAI instrumentor does not see.
+# LiteLLM's own OTel callback emits GenAI-semconv spans (which agentevals scores).
+if os.environ.get("OTEL_TRACING_ENABLED", "false").lower() == "true":
+    import litellm
+
+    litellm.callbacks = ["otel"]
+
 LLM_BASE_URL = os.environ.get(
     "LLM_BASE_URL", "http://frameworks-gw.agentgateway-system.svc.cluster.local/v1"
 )

@@ -14,12 +14,14 @@ from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard
 
 from executor import AutogenExecutor
+from tracing_setup import configure_tracing
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    configure_tracing()  # no-op unless OTEL_TRACING_ENABLED=true
     with open(os.path.join(os.path.dirname(__file__), "agent-card.json"), "r") as f:
         agent_card = AgentCard.model_validate(json.load(f))
 
