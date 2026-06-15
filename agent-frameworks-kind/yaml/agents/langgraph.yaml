@@ -1,0 +1,23 @@
+# Crew #3b — BYO LangGraph. The same three roles as a stateful graph. type: BYO,
+# our custom image. LLM_BASE_URL and MCP_URL point at the gateway, so both the
+# model calls and the tool calls are fronted by agentgateway; the image carries no
+# provider key. State persists via KAgentCheckpointer (KAGENT_URL, injected by the
+# controller). Compare with langchain.yaml (the single-loop AgentExecutor variant).
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-crew-langgraph
+  namespace: kagent
+spec:
+  type: BYO
+  description: "BYO LangGraph SRE crew — diagnose/plan/review/apply as a stateful graph, LLM + tools via agentgateway, HITL via interrupt()."
+  byo:
+    deployment:
+      image: sre-crew-langgraph:dev
+      env:
+        - name: LLM_BASE_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/v1"
+        - name: MCP_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/mcp"
+        - name: MODEL
+          value: "claude-haiku-4-5"

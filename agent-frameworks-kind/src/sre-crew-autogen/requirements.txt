@@ -1,0 +1,9 @@
+# AutoGen has no first-class kagent adapter, so this image talks A2A directly via
+# the a2a-sdk (the same contract the kagent adapters implement).
+# [http-server] pulls FastAPI/uvicorn deps that A2AFastAPIApplication needs.
+a2a-sdk[http-server]>=0.3.23,<1.0
+autogen-agentchat>=0.4
+autogen-ext[openai,mcp]>=0.4
+# Stable mcp 1.x (avoid the 2.0.0a1 alpha).
+mcp>=1.12,<2
+uvicorn[standard]>=0.30.0

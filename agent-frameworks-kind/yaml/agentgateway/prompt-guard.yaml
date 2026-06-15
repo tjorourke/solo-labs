@@ -1,0 +1,30 @@
+# Augmentation: a prompt guard on the LLM route. Because every crew's model calls
+# go through this one route, the guard protects all five frameworks at once, with
+# zero change to any agent. It binds to the ai.provider backend (the single-provider
+# shape; it silently no-ops on the ai.groups[] failover shape). A request whose text
+# matches an instruction-override signature is rejected with 403 before it reaches
+# the model.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: llm-prompt-guard
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - response:
+              statusCode: 403
+              message: "Blocked by prompt guard: instruction-override signature detected"
+            regex:
+              action: Reject
+              matches:
+                - "(?i)ignore (all )?(your )?(previous|prior|earlier|above) instructions"
+                - "(?i)disregard (all )?(previous|prior|above)"
+                - "(?i)override (the )?system prompt"
+                - "(?i)(reveal|show|print|repeat) (your |the )?system prompt"

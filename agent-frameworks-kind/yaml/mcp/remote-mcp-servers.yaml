@@ -1,0 +1,19 @@
+# How the kagent-native declarative crew reaches the k8s-ops tools: a
+# RemoteMCPServer pointed at the gateway /mcp route (never directly at the MCP
+# server). The BYO crews (ADK / LangChain / LangGraph / CrewAI / AutoGen) load the
+# same tools from the same gateway URL via their own MCP clients, so all five
+# crews share one toolset and one policy enforcement point.
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: k8s-ops
+  namespace: kagent
+spec:
+  description: "Kubernetes ops tools (get_pods, get_events, get_pod_logs, describe_deployment, patch_deployment_image) for the incident namespace, fronted by agentgateway."
+  protocol: STREAMABLE_HTTP
+  url: http://frameworks-gw.agentgateway-system.svc.cluster.local/mcp
+  # patch_deployment_image parks at the gateway HITL gate (07-augment.sh), so the
+  # client must tolerate a long Check(). Generous timeouts.
+  timeout: 10m0s
+  sseReadTimeout: 10m0s
+  terminateOnClose: true

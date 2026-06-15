@@ -1,0 +1,19 @@
+{
+  "name": "sre-crew-langgraph",
+  "description": "BYO LangGraph SRE crew. A stateful multi-node graph (diagnose -> plan -> review -> apply -> summarize) that resolves a Kubernetes incident. LLM and tools both go through agentgateway; the Reviewer step pauses on a LangGraph interrupt() for human approval of the fix.",
+  "url": "localhost:8080",
+  "version": "0.1.0",
+  "capabilities": {
+    "streaming": true
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "resolve-incident",
+      "name": "Resolve a Kubernetes incident",
+      "description": "Diagnose a failing workload, plan the fix, and apply it after human approval.",
+      "tags": ["sre", "kubernetes", "incident", "langgraph", "hitl"]
+    }
+  ]
+}

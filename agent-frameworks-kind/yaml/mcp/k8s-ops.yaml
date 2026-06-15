@@ -1,0 +1,79 @@
+# The k8s-ops MCP server: the shared toolset every crew calls. RBAC scopes it to
+# the `incident` namespace — read pods/events/logs/deployments, and patch
+# deployments (the single mutating tool). It runs in `incident` and is reached by
+# the crews only through the agentgateway /mcp route, never directly.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-ops
+  namespace: incident
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k8s-ops
+  namespace: incident
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k8s-ops
+  namespace: incident
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: k8s-ops
+subjects:
+  - kind: ServiceAccount
+    name: k8s-ops
+    namespace: incident
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-ops
+  namespace: incident
+  labels: { app: k8s-ops }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: k8s-ops }
+  template:
+    metadata:
+      labels: { app: k8s-ops }
+    spec:
+      serviceAccountName: k8s-ops
+      containers:
+        - name: k8s-ops
+          image: k8s-ops-mcp:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-ops
+  namespace: incident
+  labels: { app: k8s-ops }
+spec:
+  selector: { app: k8s-ops }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

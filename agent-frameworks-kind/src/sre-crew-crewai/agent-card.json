@@ -1,0 +1,19 @@
+{
+  "name": "sre-crew-crewai",
+  "description": "BYO CrewAI SRE crew. Three role-based agents (Diagnostician, Remediation Planner, SRE Operator) run a sequential process to resolve a Kubernetes incident. LLM and tools route through agentgateway; the mutating patch is gated by the gateway ext-auth HITL policy.",
+  "url": "localhost:8080",
+  "version": "0.1.0",
+  "capabilities": {
+    "streaming": true
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "resolve-incident",
+      "name": "Resolve a Kubernetes incident",
+      "description": "Diagnose a failing workload, plan the fix, and apply it.",
+      "tags": ["sre", "kubernetes", "incident", "crewai"]
+    }
+  ]
+}

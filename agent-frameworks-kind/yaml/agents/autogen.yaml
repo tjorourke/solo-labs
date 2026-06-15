@@ -1,0 +1,22 @@
+# Crew #5 — BYO AutoGen. A RoundRobinGroupChat team. type: BYO, our image. kagent
+# ships adapters for ADK/LangGraph/CrewAI; AutoGen runs via the same BYO A2A
+# contract through a thin a2a-sdk shim. LLM + tools via the gateway; the mutating
+# patch is gated by the gateway ext-auth HITL policy (07-augment.sh).
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-crew-autogen
+  namespace: kagent
+spec:
+  type: BYO
+  description: "BYO AutoGen SRE crew — Diagnostician/Planner/Operator take turns in a RoundRobinGroupChat; LLM + tools via agentgateway."
+  byo:
+    deployment:
+      image: sre-crew-autogen:dev
+      env:
+        - name: LLM_BASE_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/v1"
+        - name: MCP_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/mcp"
+        - name: MODEL
+          value: "claude-haiku-4-5"

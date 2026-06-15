@@ -1,0 +1,21 @@
+# Crew #4 — BYO CrewAI. Roles + tasks as a sequential process. type: BYO, our
+# image. LLM + tools via the gateway (LLM_BASE_URL, MCP_URL). The mutating patch
+# is gated by the gateway ext-auth HITL policy (07-augment.sh), not agent-side.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-crew-crewai
+  namespace: kagent
+spec:
+  type: BYO
+  description: "BYO CrewAI SRE crew — Diagnostician/Planner/Operator roles run a sequential process; LLM + tools via agentgateway."
+  byo:
+    deployment:
+      image: sre-crew-crewai:dev
+      env:
+        - name: LLM_BASE_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/v1"
+        - name: MCP_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/mcp"
+        - name: MODEL
+          value: "claude-haiku-4-5"

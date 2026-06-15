@@ -1,0 +1,13 @@
+# kagent packages pinned to 0.9.1 to match the enterprise controller (app:0.9.1).
+kagent-crewai==0.9.1
+kagent-core==0.9.1
+a2a-sdk>=0.3.23,<1.0
+crewai>=0.80
+# [mcp] pulls mcpadapt, which crewai_tools.MCPServerAdapter needs (without it the
+# adapter prints an interactive install prompt and the pod crashes).
+crewai-tools[mcp]>=0.17
+# crewai 1.x made LiteLLM optional; crewai.LLM needs it for the openai/ provider.
+litellm>=1.0
+# Stable mcp 1.x (--pre would otherwise pull the 2.0.0a1 alpha that breaks MCP clients).
+mcp>=1.12,<2
+uvicorn[standard]>=0.30.0

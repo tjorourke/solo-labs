@@ -1,0 +1,118 @@
+# Crew #1 — the kagent-native way. No custom image: three declarative agents, the
+# coordinator referencing the two specialists as tools (kagent "agent teams" /
+# agent-as-tool). The same three roles every framework crew implements:
+#   sre-diagnostician      — read-only cluster inspection -> root cause
+#   sre-remediation-planner — turns the root cause into an exact image patch
+#   sre-crew-kagent        — coordinator: delegates, then applies the patch, but
+#                            patch_deployment_image is gated by requireApproval
+#                            (the Reviewer role — a human approves before it runs)
+#
+# Tools come from the k8s-ops RemoteMCPServer, which points at the agentgateway
+# /mcp route — so even this no-image crew has its tool calls fronted by the gateway.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-diagnostician
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    Kubernetes diagnostician. Inspects a failing workload from cluster state
+    (pods, events, logs, deployment spec) and names the root cause.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a Kubernetes diagnostician. Given a symptom, inspect the workload
+      in the incident namespace: list pods and their reasons, read recent events,
+      read pod logs if any, and describe the deployment. State the single root
+      cause in one or two sentences. You diagnose only; you never change anything.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: k8s-ops
+          toolNames:
+            - get_pods
+            - get_events
+            - get_pod_logs
+            - describe_deployment
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-remediation-planner
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    Remediation planner. Turns a diagnosed root cause into one concrete,
+    minimal Kubernetes change and states it precisely.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are an SRE remediation planner. Given a root cause for a workload in
+      the incident namespace, propose the single minimal fix as an image patch:
+      give the namespace, deployment name, container name, and the exact image
+      (with a valid tag) to set. Use describe_deployment to confirm the current
+      image and container name first. Output only the proposed patch; do not
+      apply it.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: k8s-ops
+          toolNames:
+            - describe_deployment
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-crew-kagent
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    On-call SRE coordinator. Delegates diagnosis and planning to specialists,
+    then applies the agreed fix once a human approves it.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are the on-call SRE coordinator for the incident namespace. Resolve an
+      incident in three steps:
+        1. Delegate to sre-diagnostician to find the root cause.
+        2. Delegate to sre-remediation-planner to get the exact image patch.
+        3. Apply it with patch_deployment_image. This is destructive, so the user
+           is asked to approve the call before it runs. Explain what you will
+           patch and why before requesting approval.
+      Finish with a short incident summary: what broke, the root cause, and the
+      fix you applied. Note which findings came from which specialist.
+    tools:
+      - type: Agent
+        agent:
+          name: sre-diagnostician
+      - type: Agent
+        agent:
+          name: sre-remediation-planner
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: k8s-ops
+          toolNames:
+            - patch_deployment_image
+          # The Reviewer role: every fix pauses for human approval in the chat.
+          requireApproval:
+            - patch_deployment_image
+    a2aConfig:
+      skills:
+        - id: resolve-incident
+          name: Resolve a Kubernetes incident
+          description: Diagnose a failing workload, plan the fix, and apply it after approval
+          inputModes: [text]
+          outputModes: [text]
+          tags: [sre, kubernetes, incident, remediation]
+          examples:
+            - "the checkout service is down - investigate and fix it"
+            - "checkout pods won't start, find the root cause and remediate"

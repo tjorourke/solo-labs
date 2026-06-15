@@ -1,0 +1,22 @@
+# Crew #2 — BYO Google ADK. A coordinator + three sub-agents. type: BYO, our
+# image. (ADK is also kagent's native declarative runtime — the kagent-native crew
+# runs on it without a custom image; this shows the same framework brought BYO with
+# explicit multi-agent code.) LLM + tools via the gateway.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-crew-adk
+  namespace: kagent
+spec:
+  type: BYO
+  description: "BYO Google ADK SRE crew — coordinator transfers across diagnostician/planner/operator sub-agents; LLM + tools via agentgateway."
+  byo:
+    deployment:
+      image: sre-crew-adk:dev
+      env:
+        - name: LLM_BASE_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/v1"
+        - name: MCP_URL
+          value: "http://frameworks-gw.agentgateway-system.svc.cluster.local/mcp"
+        - name: MODEL
+          value: "claude-haiku-4-5"

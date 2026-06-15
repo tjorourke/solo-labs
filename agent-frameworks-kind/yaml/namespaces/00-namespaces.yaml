@@ -1,0 +1,6 @@
+# incident — the scenario namespace. Holds the deliberately-broken `checkout`
+# Deployment and the k8s-ops MCP server that inspects and (with approval) fixes it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: incident

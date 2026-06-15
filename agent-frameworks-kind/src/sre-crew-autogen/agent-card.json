@@ -1,0 +1,19 @@
+{
+  "name": "sre-crew-autogen",
+  "description": "BYO AutoGen SRE crew. Three conversational agents (Diagnostician, Planner, Operator) take turns in a RoundRobinGroupChat to resolve a Kubernetes incident. Runs as a BYO kagent agent via a thin A2A shim; LLM and tools route through agentgateway.",
+  "url": "localhost:8080",
+  "version": "0.1.0",
+  "capabilities": {
+    "streaming": false
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "resolve-incident",
+      "name": "Resolve a Kubernetes incident",
+      "description": "Diagnose a failing workload, plan the fix, and apply it.",
+      "tags": ["sre", "kubernetes", "incident", "autogen"]
+    }
+  ]
+}

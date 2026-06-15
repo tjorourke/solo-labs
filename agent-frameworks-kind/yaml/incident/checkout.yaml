@@ -1,0 +1,37 @@
+# The incident. `checkout` is pinned to an image tag that does not exist, so the
+# pod never starts: it sits in ImagePullBackOff and the Deployment never becomes
+# Available. Deterministic and recoverable — the crew diagnoses it from pod state
+# + events, and the fix is a single image patch back to a real tag.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: incident
+  labels: { app: checkout }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: checkout }
+  template:
+    metadata:
+      labels: { app: checkout }
+    spec:
+      containers:
+        - name: checkout
+          # Bogus tag — this image:tag does not exist on Docker Hub.
+          image: nginx:1.27-doesnotexist
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+  namespace: incident
+  labels: { app: checkout }
+spec:
+  selector: { app: checkout }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

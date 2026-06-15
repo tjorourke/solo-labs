@@ -1,0 +1,19 @@
+# One enterprise-agentgateway in front of everything the crews touch. A single
+# HTTP listener carries both the LLM traffic (/v1/chat/completions, translated to
+# Claude) and the tool traffic (/mcp, forwarded to the k8s-ops MCP server). Routes
+# from any namespace may attach, so the LLM route (agentgateway-system) and the
+# MCP route (incident) both bind here.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: frameworks-gw
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All

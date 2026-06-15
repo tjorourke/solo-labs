@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# lib.sh — shared helpers for agent-frameworks-kind.
+#
+# One K8s SRE incident, one three-role crew (Diagnostician -> Remediation planner
+# -> Reviewer/HITL), built five ways: a kagent-native declarative team, and BYO
+# crews in Google ADK, LangChain/LangGraph, CrewAI and AutoGen. Every crew runs on
+# Solo Enterprise for kagent and routes its LLM calls and tool calls through
+# enterprise agentgateway. Reuses the enterprise bring-up from agentic-a2a-kind
+# (Keycloak + OBO + agentgateway) plus the BYO image pattern from agentic-hitl-kind.
+
+set -Eeuo pipefail
+
+__has_color() { [[ -t 2 ]] && command -v tput >/dev/null 2>&1; }
+if __has_color; then
+  __dim(){ tput dim;printf '%s' "$*";tput sgr0;}; __ok(){ tput setaf 2;printf '✓ ';tput sgr0;printf '%s' "$*";}
+  __warn(){ tput setaf 3;printf '! ';tput sgr0;printf '%s' "$*";}; __err(){ tput setaf 1;printf 'ERROR: ';tput sgr0;printf '%s' "$*";}
+  __step(){ tput bold;printf '%s' "$*";tput sgr0;}
+else
+  __dim(){ printf '%s' "$*";}; __ok(){ printf '✓ %s' "$*";}; __warn(){ printf '! %s' "$*";}; __err(){ printf 'ERROR: %s' "$*";}; __step(){ printf '%s' "$*";}
+fi
+log(){ { __dim "  $*";printf '\n';} >&2; }
+ok(){ { __ok "$*";printf '\n';} >&2; }
+warn(){ { __warn "$*";printf '\n';} >&2; }
+die(){ { __err "$*";printf '\n';} >&2; exit 1; }
+step(){ printf '\n' >&2; { __step "══> $*";printf '\n';} >&2; }
+require(){ command -v "$1" >/dev/null 2>&1 || die "$1 not found — install it first"; }
+
+export CLUSTER_NAME="${CLUSTER_NAME:-frameworks}"
+export CTX="kind-${CLUSTER_NAME}"
+
+export GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
+export METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"
+
+# Keycloak (dev mode, H2, --import-realm) — the shared `solo` realm (alice/field-fte).
+export KEYCLOAK_NS="${KEYCLOAK_NS:-keycloak}"
+export KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.3}"
+export KEYCLOAK_REALM="${KEYCLOAK_REALM:-solo}"
+export KEYCLOAK_CLIENT="${KEYCLOAK_CLIENT:-kagent}"
+export KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local/realms/${KEYCLOAK_REALM}}"
+
+# Solo Enterprise for kagent (controller has the OBO signer + AccessPolicy).
+export KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.4.3}"
+export KENT_CRDS_CHART="${KENT_CRDS_CHART:-oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds}"
+export KENT_CHART="${KENT_CHART:-oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise}"
+
+# Enterprise agentgateway — fronts every framework's LLM call and tool call.
+export AGW_VERSION="${AGW_VERSION:-v2.3.3}"
+export AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
+export AGW_CHART="${AGW_CHART:-${AGW_REGISTRY}/enterprise-agentgateway}"
+export AGW_CRDS_CHART="${AGW_CRDS_CHART:-${AGW_REGISTRY}/enterprise-agentgateway-crds}"
+export GAR_HOST="${GAR_HOST:-us-docker.pkg.dev}"
+
+# ── locally-built images (built on the host, loaded into kind; no registry) ────
+# The model behind the gateway. Frameworks speak OpenAI-compatible to the gateway;
+# the gateway fronts Claude. Default model name the frameworks request.
+export MODEL="${MODEL:-claude-haiku-4-5}"
+export K8S_OPS_IMAGE="${K8S_OPS_IMAGE:-k8s-ops-mcp:dev}"
+export ADK_CREW_IMAGE="${ADK_CREW_IMAGE:-sre-crew-adk:dev}"
+export LANGCHAIN_CREW_IMAGE="${LANGCHAIN_CREW_IMAGE:-sre-crew-langchain:dev}"
+export LANGGRAPH_CREW_IMAGE="${LANGGRAPH_CREW_IMAGE:-sre-crew-langgraph:dev}"
+export CREWAI_CREW_IMAGE="${CREWAI_CREW_IMAGE:-sre-crew-crewai:dev}"
+export AUTOGEN_CREW_IMAGE="${AUTOGEN_CREW_IMAGE:-sre-crew-autogen:dev}"
+
+# ── secrets ───────────────────────────────────────────────────────────────────
+# Required: ANTHROPIC_API_KEY (model behind the gateway), plus enterprise license(s):
+#   SOLO_LICENSE_KEY        — Solo Enterprise for kagent (controller)
+#   AGENTGATEWAY_LICENSE_KEY — enterprise agentgateway
+# (KAGENT_ENT_LICENSE_KEY overrides the kagent license if your key is separate.)
+load_secrets() {
+  if [[ -n "${SECRETS_FILE:-}" ]]; then
+    [[ -f "$SECRETS_FILE" ]] || die "SECRETS_FILE='$SECRETS_FILE' does not exist"
+    set -a; source "$SECRETS_FILE"; set +a
+  fi
+  export KAGENT_ENT_LICENSE_KEY="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-}}"
+}
+require_secrets() {
+  load_secrets
+  local missing=()
+  [[ -z "${ANTHROPIC_API_KEY:-}" ]]        && missing+=("ANTHROPIC_API_KEY")
+  [[ -z "${KAGENT_ENT_LICENSE_KEY:-}" ]]   && missing+=("SOLO_LICENSE_KEY (or KAGENT_ENT_LICENSE_KEY)")
+  [[ -z "${AGENTGATEWAY_LICENSE_KEY:-}" ]] && missing+=("AGENTGATEWAY_LICENSE_KEY")
+  if (( ${#missing[@]} > 0 )); then
+    cat >&2 <<EOF
+
+ERROR: missing required env vars: ${missing[*]}
+
+  export ANTHROPIC_API_KEY=sk-ant-...
+  export SOLO_LICENSE_KEY=...            # Solo Enterprise for kagent
+  export AGENTGATEWAY_LICENSE_KEY=...    # enterprise agentgateway
+  ./scripts/quick.sh up
+
+  or:  SECRETS_FILE=/path/to/secrets.sh ./scripts/quick.sh up
+EOF
+    exit 1
+  fi
+}
+
+kc(){ kubectl --context "$CTX" "$@"; }
+check_docker(){ docker info >/dev/null 2>&1 || die "docker daemon not reachable"; }
+
+# build_and_load — build a custom image on the host and load it into the kind
+# cluster. kind nodes can't pull non-cached local builds, so every BYO crew image
+# and the MCP server image goes through here. Tag is `dev`; imagePullPolicy is
+# IfNotPresent everywhere. Pattern from agentic-hitl-kind / agentic-tool-curation-kind.
+build_and_load() {
+  local context="$1" image="$2"
+  log "docker build → $image"
+  docker build --quiet -t "$image" "$context" >/dev/null
+  ok "built $image"
+  log "kind load → $image (cluster $CLUSTER_NAME)"
+  kind load docker-image --name "$CLUSTER_NAME" "$image" >/dev/null
+  ok "loaded $image into kind"
+}
+
+wait_deploy() {
+  local ns="$1" name="$2" timeout="${3:-300s}"; local end=$(( $(date +%s) + 240 ))
+  until kc -n "$ns" get deployment "$name" >/dev/null 2>&1; do
+    [[ $(date +%s) -ge $end ]] && { warn "deployment $ns/$name not created in 4m"; return 1; }; sleep 3
+  done
+  kc -n "$ns" wait --for=condition=Available deployment/"$name" --timeout="$timeout" >/dev/null
+}
+wait_agent() {
+  local name="$1" timeout="${2:-300}"; local end=$(( $(date +%s) + timeout ))
+  until [[ "$(kc -n kagent get agent "$name" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]]; do
+    [[ $(date +%s) -ge $end ]] && { warn "agent $name not Ready in ${timeout}s"; return 1; }; sleep 5
+  done
+}
+
+helm_install_with_progress() {
+  local release="$1" chart="$2" namespace="$3"; shift 3
+  helm --kube-context "$CTX" upgrade --install "$release" "$chart" --namespace "$namespace" --create-namespace "$@" >/dev/null &
+  local pid=$!; local start; start=$(date +%s)
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 15; kill -0 "$pid" 2>/dev/null || break
+    local e=$(( $(date +%s) - start )); local p; p=$(kc -n "$namespace" get pods --no-headers 2>/dev/null | awk '{printf "%s[%s] ",$1,$2}')
+    [[ -n "$p" ]] && log "[+${e}s] pods: ${p}" || log "[+${e}s] pulling images / creating pods..."
+  done
+  wait "$pid"
+}
+
+# ensure_gar_auth — gcloud + helm OCI login for the Solo public GAR (charts are
+# public but helm OCI pull still needs a token). Lifted from the verified labs.
+ensure_gar_auth() {
+  local host="${1:-$GAR_HOST}"
+  command -v gcloud >/dev/null 2>&1 || die "gcloud required for the Solo enterprise charts ($host). Install: brew install --cask google-cloud-sdk; gcloud auth login"
+  if ! gcloud auth print-access-token >/dev/null 2>&1; then
+    [[ -t 0 ]] || die "gcloud not authenticated and no TTY. Run: gcloud auth login"
+    gcloud auth login || die "gcloud auth login failed"
+  fi
+  gcloud auth print-access-token | helm registry login -u oauth2accesstoken --password-stdin "$host" >/dev/null \
+    || die "helm registry login failed for $host"
+}
+
+# decode_jwt — print a JWT payload (2nd segment) as pretty JSON. Used to SHOW the
+# token at each hop. Reads the token from $1 or stdin.
+decode_jwt() {
+  local t="${1:-$(cat)}"
+  printf '%s' "$t" | cut -d. -f2 | tr '_-' '/+' | { cat; printf '=='; } | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null
+}
