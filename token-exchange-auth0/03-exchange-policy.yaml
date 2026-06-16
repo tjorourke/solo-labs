@@ -1,0 +1,14 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: auth0-exchange-policy
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayBackend
+    name: acme-mcp-backend
+  backend:
+    tokenExchange:
+      elicitation:
+        secretName: auth0-token-exchange

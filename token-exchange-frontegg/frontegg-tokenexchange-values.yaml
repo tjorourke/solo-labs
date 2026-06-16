@@ -1,0 +1,16 @@
+# Helm override pointing the STS validators at the Frontegg demo environment.
+# Applied on kind-a2a-obo to prove Frontegg as the inbound IdP for the gateway STS.
+tokenExchange:
+  enabled: true
+  issuer: "enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777"
+  tokenExpiration: 24h
+  subjectValidator:
+    validatorType: remote
+    remoteConfig:
+      url: "https://app-0nieh7hz8iun.frontegg.com/.well-known/jwks.json"
+  actorValidator:
+    validatorType: k8s
+  apiValidator:
+    validatorType: remote
+    remoteConfig:
+      url: "https://app-0nieh7hz8iun.frontegg.com/.well-known/jwks.json"

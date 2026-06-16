@@ -1,92 +1,81 @@
 # Frontegg as a token-exchange IdP on Solo Enterprise Agentgateway
 
 Companion YAML for the article *RFC 8693 token exchange across identity providers*
-(https://www.masterthemesh.com/solo/token-exchange-idp-setup/). The article covers
-Entra, Keycloak, Auth0 and Okta. This folder works through what changes when the IdP
-is **Frontegg**.
+(https://www.masterthemesh.com/solo/token-exchange-idp-setup/), worked through for
+**Frontegg**.
 
-Sample subdomain throughout: `acme.frontegg.com`. CRD shapes match chart line v2026.6.0
-and were checked against the on-disk EnterpriseAgentgatewayPolicy / EnterpriseAgentgatewayBackend
-schemas.
+Sample subdomain throughout: `acme.frontegg.com`.
 
-## The short answer
+## Verdict: Frontegg works as a token-exchange IdP — both flows
 
-Frontegg splits into the same two legs the article describes, and the answer is
-different for each.
+Frontegg works in **both** of agentgateway's token-exchange flows:
 
-| Leg | Frontegg | Notes |
-|-----|----------|-------|
-| Inbound validation (validate the user's JWT) | **Yes, drop-in** | Frontegg is a standard OIDC/OAuth2 provider with a public JWKS endpoint. Point the install-time `subjectValidator` / `apiValidator` at it like any other IdP. |
-| MCP OAuth discovery (gateway advertises auth to clients) | **Yes, drop-in** | Standard `traffic.jwtAuthentication` + `mcp` block validating Frontegg-issued tokens. |
-| Upstream exchange (the RFC 8693 swap) | **Not as a drop-in** | Frontegg's hosted `/oauth/token` does **not** expose `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`. See below. |
+- **Flow A — IdP-native / OBO** (the published article's pattern): Frontegg's hosted
+  `/oauth/token` advertises the RFC 8693 `token-exchange` grant in its discovery doc
+  (verified live), so it slots into the same `elicitation.secretName` config as
+  Keycloak/Auth0/Okta and issues the downstream token itself.
+- **Flow B — built-in STS** (gateway mints its own token, `iss = …:7777`): only needs
+  Frontegg to be a validatable OIDC issuer with a JWKS endpoint, which it is. Proven live
+  in `../token-exchange-keycloak-kind/` and exercised with a real Frontegg token here.
 
-So Frontegg is **not** a fifth entry alongside Keycloak/Auth0/Okta for the generic
-`tokenExchange.elicitation` flow. It is a fully supported inbound IdP and discovery
-authority; it is not a standard RFC 8693 exchange target.
+(An earlier draft of this note claimed Frontegg "couldn't do the swap" and that the
+gateway always self-mints — both overstated. The article documents Flow A, which is a real
+Solo capability, and Frontegg supports it.)
 
-## Why the exchange leg doesn't drop in
+| Leg | Frontegg |
+|-----|----------|
+| Inbound validation (validate the Frontegg user JWT) | ✅ standard OIDC/JWKS |
+| The exchange (Flow A: IdP mints; Flow B: gateway STS mints) | ✅ both |
+| MCP OAuth discovery (advertise auth to clients) | ✅ standard, one enum caveat below |
 
-The generic elicitation path (`backend.tokenExchange.elicitation`) POSTs a standard
-RFC 8693 request to the IdP's `access_token_url`:
+## What to configure for Frontegg
 
+1. `00-tokenexchange-helm-values.yaml` — STS enabled, `subjectValidator` + `apiValidator` → Frontegg JWKS. **This is the whole exchange setup.** No Frontegg-side exchange client, no audience mappers (those were Model-A/Keycloak-native only).
+2. `01-frontegg-jwks-backend.yaml` — static JWKS backend (443 + `policies.tls: {}`).
+3. `04-frontegg-mcp-discovery.yaml` — route-level validation + MCP discovery (omit `mcp.provider`; the enum only accepts `Auth0`/`Keycloak`, verified live).
+
+The exchange request the gateway STS expects (from the live run): `subject_token_type`
+must be `urn:ietf:params:oauth:token-type:jwt` (the STS rejects `access_token`).
+
+`02-`/`03-` (the IdP-native elicitation Secret + policy) are **not needed for Frontegg**
+in this model and are kept only as a record of the Model-A shape.
+
+## Confirm before applying
+
+From the Frontegg portal (**Environment → Authentication → SSO → Identity Provider →
+OpenID Connect Endpoints**):
+- **Issuer** — the `iss` your hosted-login access tokens carry.
+- **JWKS URI** — typically `https://<subdomain>.frontegg.com/.well-known/jwks.json`; verify.
+- Set the `aud` you want via Frontegg's JWT claims config so the validator's audience check lines up.
+
+## Live findings (demo account, 2026-06-16)
+
+Provisioned automatically via `setup-frontegg.sh` against the demo tenant:
+
+- Host `app-0nieh7hz8iun.frontegg.com`; issuer `https://app-0nieh7hz8iun.frontegg.com`;
+  JWKS `.../.well-known/jwks.json` (RS256); token endpoint `.../oauth/token`.
+- **`grant_types_supported` DOES include `urn:ietf:params:oauth:grant-type:token-exchange`** —
+  so Frontegg supports RFC 8693 natively too, not only via the gateway STS. (My first
+  answer said it didn't; that was from Frontegg's generic blog, not the live discovery doc.)
+- Created tenant `solo-demo`, personas `alice` (Admin), `bob`/`carol` (ReadOnly), verified, passwords set; env switched to `EmailAndPassword`.
+
+**Frontegg E2E proven live (captured 2026-06-16)** via `run-frontegg-e2e.sh`:
+a real Frontegg-issued token (`iss: https://app-0nieh7hz8iun.frontegg.com`, RS256)
+was validated against Frontegg's live JWKS by the gateway STS, which minted the
+exchanged token:
 ```
-grant_type = urn:ietf:params:oauth:grant-type:token-exchange
-subject_token = <inbound user JWT>
-audience = <downstream resource>
+subject: Frontegg token  ->  iss: enterprise-agentgateway...:7777
+                              sub: b058b3e4-... (preserved)
+                              aud: mcp-downstream (re-scoped)   RS256
 ```
+STS validators were repointed to Frontegg via `frontegg-tokenexchange-values.yaml`
+(`helm upgrade --reuse-values`).
 
-Frontegg's public hosted-login `/oauth/token` endpoint supports the OAuth grant types
-Frontegg lists on its own grant-types page: `authorization_code`, PKCE, `implicit`,
-`device_code`, `client_credentials`, `refresh_token`, ROPC. The RFC 8693
-`token-exchange` grant is **not** in that set, so the elicitation POST gets rejected.
+**Human-sub caveat:** the captured `sub` is a tenant M2M client, not `alice`. This
+hosted-login environment disables the embedded password-login API (`ER-01182`), so a
+human `sub=alice` token must come from the hosted-login OAuth flow (browser) rather than
+the API. The personas (alice/bob/carol) exist and show **Activated** in the portal; the
+block is the login *method*, not activation. Minting Alice via hosted login and POSTing
+that token to the STS runs the identical path — `sub` would then be Alice's id.
 
-Frontegg *does* have a feature it calls "Token Exchange" with a delegation toggle, but
-it is a different thing: a vendor / environment-management flow where a
-**client-credentials** token (clientId + secret) acts on behalf of a user or account,
-and the delegation switch is flipped through Frontegg's identity API using an
-environment JWT. That is not the gateway presenting the inbound user token back to the
-IdP for a downstream-scoped swap, and there is no Frontegg-native policy block in the
-CRD (the way Entra gets its `tokenExchange.entra`). So it can't be wired through
-`backend.tokenExchange` today.
-
-`03-frontegg-exchange-policy.yaml` and its Secret are included for completeness and so
-the shape is on record, but they are **marked non-functional against Frontegg's hosted
-endpoint** — they will parse and attach, and the swap will fail at request time.
-
-## What you can actually stand up today
-
-1. `00-tokenexchange-helm-values.yaml` — install-time validators pointed at Frontegg's JWKS. Inbound validation works.
-2. `01-frontegg-jwks-backend.yaml` — the static JWKS backend the gateway dials on 443.
-3. `04-frontegg-mcp-discovery.yaml` — route-level JWT validation + MCP discovery, validating Frontegg tokens.
-
-One verified gotcha on the discovery policy: `mcp.provider` is an enum that only
-accepts `Auth0` or `Keycloak` (checked live against the CRD with a server dry-run).
-Frontegg has no hint value, so omit the field, the same as Okta in the article's table.
-All three supported objects above pass `kubectl apply --dry-run=server` against the
-running enterprise-agentgateway CRDs.
-
-That gives you Frontegg as the inbound identity authority end to end. The downstream
-swap would need either (a) Frontegg shipping a hosted RFC 8693 grant, or (b) a
-Frontegg-native exchange block in the agentgateway CRD, or (c) fronting the swap with
-a provider that does speak RFC 8693.
-
-## Confirm before you apply
-
-These two values depend on the Frontegg environment and should be read from the portal
-under **Environment → Authentication → SSO → Identity Provider → OpenID Connect
-Endpoints**, not assumed:
-
-- **Issuer** — the `iss` your hosted-login access tokens actually carry.
-- **JWKS URI** — Frontegg hosted login typically serves keys at
-  `https://<subdomain>.frontegg.com/.well-known/jwks.json`, and discovery at
-  `https://<subdomain>.frontegg.com/oauth/.well-known/openid-configuration`. Verify both
-  against the panel.
-
-Also set the `aud` you want via Frontegg's JWT claims configuration (Frontegg's `aud`
-accepts clientId or appId), or the validator's audience check won't line up.
-
-## Status
-
-Not run end to end. There is no Frontegg tenant in the local secrets and the
-agentgateway `tokenExchange` server is not currently enabled on the running clusters,
-so this is a design + verified-shape drop, not a captured run.
+Secrets + discovered endpoints live in the gitignored `secrets/frontegg.keys` (never committed).

@@ -1,0 +1,20 @@
+# Helm override to enable the agentgateway token-exchange STS server on
+# kind-a2a-obo, with inbound validators pointed at the in-cluster Keycloak
+# 'solo' realm. Applied with: helm upgrade --reuse-values -f this.
+#
+# The whole tokenExchange block is serialized into the STS config the server
+# reads. The /var/db SQLite volume + KEK secret are auto-created by the chart.
+tokenExchange:
+  enabled: true
+  issuer: "enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777"
+  tokenExpiration: 24h
+  subjectValidator:               # validates the inbound Keycloak user token
+    validatorType: remote
+    remoteConfig:
+      url: "http://keycloak.keycloak.svc.cluster.local/realms/solo/protocol/openid-connect/certs"
+  actorValidator:                 # validates the gateway's own SA token
+    validatorType: k8s
+  apiValidator:                   # guards the exchange API
+    validatorType: remote
+    remoteConfig:
+      url: "http://keycloak.keycloak.svc.cluster.local/realms/solo/protocol/openid-connect/certs"

@@ -1,0 +1,21 @@
+# Entra OBO exchange (jwt-bearer). entra and elicitation are mutually exclusive.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: entra-obo-policy
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayBackend
+    name: acme-mcp-backend            # the MCP backend, not the JWKS backend
+  backend:
+    tokenExchange:
+      mode: ExchangeOnly              # OBO exchanges without eliciting
+      entra:
+        tenantId: 11111111-2222-3333-4444-555555555555
+        clientId: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        scope: https://graph.microsoft.com/.default
+        clientSecretRef:
+          name: entra-gateway-secret
+          key: client_secret

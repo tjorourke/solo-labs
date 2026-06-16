@@ -19,6 +19,7 @@ tokenExchange:
     validatorType: remote
     remoteConfig:
       url: "https://acme.frontegg.com/.well-known/jwks.json"
-  # elicitation is intentionally NOT configured here for Frontegg: the hosted
-  # /oauth/token endpoint does not honour the RFC 8693 token-exchange grant.
-  # See README. Inbound validation + discovery are the supported legs.
+  # No elicitation block needed for the core swap: the gateway STS validates the
+  # Frontegg token (above) and mints the exchanged token itself. Frontegg never
+  # performs an RFC 8693 exchange, so its lack of that grant is irrelevant here.
+  # Proven with Keycloak in ../token-exchange-keycloak-kind/. See README.
