@@ -1,0 +1,14 @@
+# Static backend the gateway dials to fetch Frontegg's public signing keys.
+# Egress path for the install-time validators and the route-level discovery
+# policy reaching Frontegg on 443.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: frontegg-jwks
+  namespace: agentgateway-system
+spec:
+  static:
+    host: acme.frontegg.com        # your Frontegg subdomain (or custom domain)
+    port: 443
+  policies:
+    tls: {}                        # Frontegg is hosted on 443; omit and the key fetch fails TLS

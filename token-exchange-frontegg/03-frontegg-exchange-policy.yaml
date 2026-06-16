@@ -1,0 +1,21 @@
+# NON-FUNCTIONAL against Frontegg's hosted endpoint. On record for shape only.
+#
+# Parses and attaches fine (same generic elicitation shape as Keycloak/Auth0/Okta),
+# but the swap fails at request time because Frontegg's hosted /oauth/token does
+# not expose grant_type=urn:ietf:params:oauth:grant-type:token-exchange.
+# There is no Frontegg-native exchange block in the CRD (unlike Entra's
+# tokenExchange.entra). See README for the supported legs.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: frontegg-exchange-policy
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: acme-mcp-backend
+  backend:
+    tokenExchange:
+      elicitation:
+        secretName: frontegg-token-exchange
