@@ -1,9 +1,9 @@
 # Augmentation: a prompt guard on the LLM route. Because every crew's model calls
 # go through this one route, the guard protects all five frameworks at once, with
-# zero change to any agent. It binds to the ai.provider backend (the single-provider
-# shape; it silently no-ops on the ai.groups[] failover shape). A request whose text
-# matches an instruction-override signature is rejected with 403 before it reaches
-# the model.
+# zero change to any agent. It targets the single-provider ai.provider backend used
+# by the lab. A request whose text matches an instruction-override signature is
+# rejected with 403 before it reaches the model. Always confirm enforcement by sending
+# a real request (a 200 for a normal prompt, a 403 for an injection).
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:

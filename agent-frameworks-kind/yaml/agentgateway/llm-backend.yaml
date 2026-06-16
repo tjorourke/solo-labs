@@ -1,7 +1,6 @@
-# The LLM backend. ai.provider.anthropic in the single-provider shape (NOT the
-# ai.groups[] failover shape — the prompt guard added in 07-augment.sh only binds
-# to this shape). Agentgateway accepts OpenAI-compatible /v1/chat/completions and
-# translates to Anthropic /v1/messages and back, so every framework can point a
+# The LLM backend: ai.provider.anthropic, the single-provider shape the prompt guard
+# in 07-augment.sh targets. Agentgateway accepts OpenAI-compatible /v1/chat/completions
+# and translates to Anthropic /v1/messages and back, so every framework can point a
 # plain OpenAI client at the gateway and reach Claude. The Anthropic key lives in
 # Secret `anthropic-secret` (key: Authorization); the gateway sends it as x-api-key.
 apiVersion: agentgateway.dev/v1alpha1
