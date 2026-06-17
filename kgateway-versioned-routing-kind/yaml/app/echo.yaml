@@ -1,0 +1,98 @@
+# Echo app for a versioned app cluster. No image build: a tiny stdlib-only
+# Python server runs straight off the stock python:3.12-alpine image, with the
+# script mounted from a ConfigMap. It answers any path with JSON that makes the
+# routing outcome obvious:
+#   - servedBy   : which cluster handled the request (CLUSTER_VERSION env)
+#   - headers    : the request headers the gateway forwarded (so we can SEE the
+#                  x-target-version header the routing decision was based on)
+#
+# __CLUSTER_VERSION__ is replaced by scripts/03-apps.sh before apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: echo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: echo-src
+  namespace: echo
+data:
+  server.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    VERSION = os.environ.get("CLUSTER_VERSION", "unknown")
+    HOST = os.environ.get("HOSTNAME", "unknown")
+
+    class H(BaseHTTPRequestHandler):
+        def _reply(self):
+            body = json.dumps({
+                "servedBy": VERSION,
+                "pod": HOST,
+                "method": self.command,
+                "path": self.path,
+                "headers": {k: v for k, v in self.headers.items()},
+            }, indent=2).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("x-served-by", VERSION)
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):  self._reply()
+        def do_POST(self): self._reply()
+        def log_message(self, *a): pass
+
+    print(f"echo up: version={VERSION} :8080", flush=True)
+    ThreadingHTTPServer(("0.0.0.0", 8080), H).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo
+  namespace: echo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: echo }
+  template:
+    metadata:
+      labels: { app: echo }
+    spec:
+      containers:
+        - name: echo
+          image: python:3.12-alpine
+          command: ["python", "/app/server.py"]
+          env:
+            - name: CLUSTER_VERSION
+              value: "__CLUSTER_VERSION__"
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: src
+              mountPath: /app
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 2
+            periodSeconds: 3
+      volumes:
+        - name: src
+          configMap:
+            name: echo-src
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo
+  namespace: echo
+spec:
+  type: NodePort
+  selector:
+    app: echo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080

@@ -1,0 +1,10 @@
+# "latest" versioned app cluster. The echo app is exposed on NodePort 30080;
+# the edge gateway reaches it at <this node's docker IP>:30080.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: app-latest
+networking:
+  podSubnet: "10.10.0.0/16"
+  serviceSubnet: "10.96.0.0/16"
+nodes:
+  - role: control-plane

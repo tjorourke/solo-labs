@@ -1,0 +1,15 @@
+# Gateway cluster. Solo Enterprise for kgateway lives here and nothing else —
+# it routes to the versioned app clusters as out-of-cluster Backends, so it
+# never needs to know what runs inside them.
+#
+# Distinct pod/service CIDRs across the three clusters so nothing collides on
+# the shared kind docker network. We only ever route to the app clusters by
+# node-IP:NodePort, never by pod IP, but distinct ranges keep it clean.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kgw-edge
+networking:
+  podSubnet: "10.30.0.0/16"
+  serviceSubnet: "10.98.0.0/16"
+nodes:
+  - role: control-plane

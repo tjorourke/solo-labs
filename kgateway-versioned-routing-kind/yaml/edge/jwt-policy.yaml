@@ -1,0 +1,48 @@
+# JWT-claim -> version routing input.
+#
+# Validates a JWT (RS256) against an inline JWKS and projects the `version`
+# claim into the x-target-version header via entJWT.claimsToHeaders. The
+# HTTPRoute then matches on that header.
+#
+# validationPolicy: AllowMissing -> requests with no token still pass (so the
+# header-only and default-to-latest demos keep working); a present-but-invalid
+# token is still rejected.
+#
+# The JWKS is inline (jwks.local.key) so the whole demo is offline and
+# reproducible — no JWKS server to run. scripts/04-routing.sh generates the
+# RSA keypair, fills in __JWKS_JSON__ here, and writes the private key so
+# scripts/mint-token.sh can sign matching tokens.
+#
+# IMPORTANT (verified live, see README): kgateway's JWT filter resolves the
+# route during its own per-route config lookup, BEFORE claimsToHeaders runs.
+# So whether the HTTPRoute re-routes on this injected header is exactly what
+# the lab tests — do not assume it does.
+apiVersion: enterprisekgateway.solo.io/v1alpha1
+kind: EnterpriseKgatewayTrafficPolicy
+metadata:
+  name: jwt-version
+  namespace: kgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: http
+  entJWT:
+    beforeExtAuth:
+      validationPolicy: AllowMissing
+      providers:
+        tenant-idp:
+          issuer: versioned-routing-lab
+          audiences:
+            - public-api
+          tokenSource:
+            headers:
+              - header: authorization
+                prefix: "Bearer "
+          jwks:
+            local:
+              key: |
+                __JWKS_JSON__
+          claimsToHeaders:
+            - claim: version
+              header: x-target-version

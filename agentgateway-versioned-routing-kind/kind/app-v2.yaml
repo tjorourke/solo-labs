@@ -1,0 +1,10 @@
+# "v2" versioned app cluster. Same shape as app-latest, different CIDRs and a
+# different CLUSTER_VERSION baked into the echo app.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: app-v2
+networking:
+  podSubnet: "10.20.0.0/16"
+  serviceSubnet: "10.97.0.0/16"
+nodes:
+  - role: control-plane

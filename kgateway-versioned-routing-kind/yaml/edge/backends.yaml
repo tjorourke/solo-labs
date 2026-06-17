@@ -1,0 +1,30 @@
+# Out-of-cluster Backends — one per versioned app cluster. These are what make
+# the gateway "live outside the cluster": each app cluster is just a static
+# host:port from the edge gateway's point of view, reached over the shared kind
+# docker network at <app node IP>:<NodePort 30080>.
+#
+# __APP_*_HOST__ / __APP_*_PORT__ are filled in by scripts/04-routing.sh after
+# it discovers each app cluster's kind node IP.
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: Backend
+metadata:
+  name: app-latest
+  namespace: kgateway-system
+spec:
+  type: Static
+  static:
+    hosts:
+      - host: __APP_LATEST_HOST__
+        port: __APP_LATEST_PORT__
+---
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: Backend
+metadata:
+  name: app-v2
+  namespace: kgateway-system
+spec:
+  type: Static
+  static:
+    hosts:
+      - host: __APP_V2_HOST__
+        port: __APP_V2_PORT__

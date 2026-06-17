@@ -1,0 +1,24 @@
+# Out-of-cluster Backends, one per versioned app cluster. On agentgateway the
+# static backend is a single host + port (not a list, and no policies block on
+# the static type). Plain HTTP to the app cluster's NodePort, so no TLS here.
+#
+# __APP_*_HOST__ / __APP_*_PORT__ are filled in by scripts/04-routing.sh.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: app-latest
+  namespace: agentgateway-system
+spec:
+  static:
+    host: __APP_LATEST_HOST__
+    port: __APP_LATEST_PORT__
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: app-v2
+  namespace: agentgateway-system
+spec:
+  static:
+    host: __APP_V2_HOST__
+    port: __APP_V2_PORT__

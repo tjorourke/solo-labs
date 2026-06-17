@@ -1,0 +1,75 @@
+# Versioned routing table. Lives entirely on the edge gateway — the app
+# clusters know nothing about each other.
+#
+# Two version inputs, on two different headers — on purpose:
+#
+#   x-version-override  client/ops-controlled. NOT managed by the JWT policy,
+#                       so it survives to routing. Use it for tenants with no
+#                       version claim, or to force a target during testing.
+#   x-target-version    projected from the JWT `version` claim by the
+#                       EnterpriseKgatewayTrafficPolicy. The JWT filter strips
+#                       any inbound value of this header before setting it from
+#                       the token, so clients can't spoof their version.
+#
+# Gateway API precedence (all rules match path "/" implicitly; more header
+# matches wins, ties break to the lower rule index):
+#   1. x-version-override  -> explicit override wins over everything
+#   2. x-target-version    -> JWT-claim-derived version
+#   3. default             -> latest
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: versioned-routing
+  namespace: kgateway-system
+spec:
+  parentRefs:
+    - name: http
+      namespace: kgateway-system
+  rules:
+    # 1. explicit client/ops override (not touched by the JWT filter)
+    - matches:
+        - headers:
+            - name: x-version-override
+              value: v2
+              type: Exact
+      backendRefs:
+        - group: gateway.kgateway.dev
+          kind: Backend
+          name: app-v2
+    - matches:
+        - headers:
+            - name: x-version-override
+              value: latest
+              type: Exact
+      backendRefs:
+        - group: gateway.kgateway.dev
+          kind: Backend
+          name: app-latest
+    # 2. JWT-claim-derived version
+    - matches:
+        - headers:
+            - name: x-target-version
+              value: v2
+              type: Exact
+      backendRefs:
+        - group: gateway.kgateway.dev
+          kind: Backend
+          name: app-v2
+    - matches:
+        - headers:
+            - name: x-target-version
+              value: latest
+              type: Exact
+      backendRefs:
+        - group: gateway.kgateway.dev
+          kind: Backend
+          name: app-latest
+    # 3. default to latest
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: gateway.kgateway.dev
+          kind: Backend
+          name: app-latest
