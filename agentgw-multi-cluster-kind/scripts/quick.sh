@@ -22,7 +22,7 @@ CLUSTER1=kind-east-ag
 CLUSTER2=kind-west-ag
 
 GLOO_OPERATOR_VERSION="${GLOO_OPERATOR_VERSION:-0.5.2}"
-SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.2-solo}"
+SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.3-solo}"
 ISTIO_VERSION_OPERATOR="${SOLO_ISTIO_VERSION%-solo}"
 # AG chart uses v-prefixed tags (2.2+). Solo switched from semver (v2.3.x) to
 # calver (vYYYY.M.X) at v2026.5.0. v2026.5.1 (2026-05-22) is the latest GA on

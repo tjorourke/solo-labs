@@ -19,7 +19,7 @@ CLUSTER1=kind-east-istio
 CLUSTER2=kind-west-istio
 
 GLOO_OPERATOR_VERSION="${GLOO_OPERATOR_VERSION:-0.5.2}"
-SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.2-solo}"
+SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.3-solo}"
 ISTIO_VERSION_OPERATOR="${SOLO_ISTIO_VERSION%-solo}"   # 1.29.2 — for SMC .spec.version
 GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"   # v1.5.0 ships a safe-upgrades ValidatingAdmissionPolicy that blocks SMC's bundled CRD install
 METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"
