@@ -10,7 +10,7 @@ image:
 
 extraArgs:
   provider: oidc
-  oidc-issuer-url: http://keycloak.localtest.me:8080/realms/solo
+  oidc-issuer-url: http://keycloak.localtest.me:18080/realms/solo
   client-id: oauth2-proxy
   email-domain: '*'
   insecure-oidc-allow-unverified-email: 'true'

@@ -61,8 +61,12 @@ export KEYCLOAK_CLIENT="${KEYCLOAK_CLIENT:-kagent}"
 # The issuer host. keycloak.localtest.me resolves to 127.0.0.1 via PUBLIC DNS,
 # so the browser reaches the issuer with no /etc/hosts; in-cluster pods reach it
 # via a hostAlias -> Keycloak ClusterIP (bridge_keycloak_hostalias). Same `iss`
-# on both sides — which is what lets the kagent UI's OIDC login work on kind.
-export KEYCLOAK_OIDC_HOST="${KEYCLOAK_OIDC_HOST:-keycloak.localtest.me:8080}"
+# on both sides, which is what lets the kagent UI's OIDC login work on kind.
+# Port 18080 (not 8080) on purpose: a local `arctl run` agent binds host :8080
+# for its A2A chat (the chat URL is hardcoded to localhost:8080 in arctl), so the
+# Keycloak issuer lives on a high port to avoid shadowing it. Keycloak still
+# listens on 8080 inside the cluster; only its host/issuer port is 18080.
+export KEYCLOAK_OIDC_HOST="${KEYCLOAK_OIDC_HOST:-keycloak.localtest.me:18080}"
 # What the controller/oauth2-proxy validate (and the token `iss`).
 export KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-http://${KEYCLOAK_OIDC_HOST}/realms/${KEYCLOAK_REALM}}"
 # Where ask.sh mints tokens FROM, in-cluster (the svc; KC_HOSTNAME stamps the

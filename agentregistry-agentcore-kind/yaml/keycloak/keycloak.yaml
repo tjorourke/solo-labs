@@ -12,9 +12,12 @@ spec:
   selector: { app: keycloak }
   ports:
     - { name: http, port: 80, targetPort: 8080 }
-    # 8080 too: the browser-consistent issuer is keycloak.localtest.me:8080, which
-    # the controller/oauth2-proxy reach via a hostAlias -> this ClusterIP:8080.
+    # 8080: in-cluster mint URL (ask.sh) hits this svc port directly.
     - { name: http-8080, port: 8080, targetPort: 8080 }
+    # 18080: the browser-consistent issuer is keycloak.localtest.me:18080, which
+    # the controller/oauth2-proxy reach via a hostAlias -> this ClusterIP:18080.
+    # High port so it never collides with a local `arctl run` agent on host :8080.
+    - { name: http-18080, port: 18080, targetPort: 8080 }
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -36,12 +39,14 @@ spec:
             - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
             - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: admin }
             - { name: KC_HTTP_RELATIVE_PATH, value: / }
-            # Issuer = keycloak.localtest.me:8080 so the SAME iss works in the
+            # Issuer = keycloak.localtest.me:18080 so the SAME iss works in the
             # browser (keycloak.localtest.me resolves to 127.0.0.1 via public DNS,
             # no /etc/hosts) and in-cluster (controller/oauth2-proxy via a hostAlias).
             # This is what lets the kagent UI's OIDC login complete on kind.
             # Backchannel-dynamic lets ask.sh still mint via the in-cluster svc.
-            - { name: KC_HOSTNAME, value: "http://keycloak.localtest.me:8080" }
+            # 18080 (not 8080) so the issuer never shadows a local `arctl run`
+            # agent, whose A2A chat is hardcoded to host :8080.
+            - { name: KC_HOSTNAME, value: "http://keycloak.localtest.me:18080" }
             - { name: KC_HOSTNAME_STRICT, value: "false" }
             - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true" }
             - { name: KC_HEALTH_ENABLED, value: "true" }
