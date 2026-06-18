@@ -3,12 +3,13 @@
 # TERMINAL (not a notebook cell — it starts background port-forwards).
 #
 #   AgentRegistry UI : http://localhost:12121   (the local daemon, already bound)
-#   kagent UI        : http://localhost:18007    (via oauth2-proxy SSO; login admin@kagent.local / admin)
+#   kagent UI        : http://localhost:18007    (via oauth2-proxy SSO; login alice / alice)
 #
 # Two forwards back the kagent UI:
 #   oauth2-proxy :18007  — the SSO front door the browser hits
-#   dex          :5556   — the IdP; the browser is redirected here to log in
-#                          (host.docker.internal:5556, needs the /etc/hosts entry)
+#   keycloak     :8080   — the IdP; the browser is redirected to the issuer
+#                          keycloak.localtest.me:8080, which public DNS resolves
+#                          to 127.0.0.1 (no /etc/hosts, no sudo).
 #
 # AWS Bedrock AgentCore is shown manually in the AWS console (no local URL).
 # Leave this running during the demo; Ctrl-C tears the forwards down.
@@ -19,11 +20,6 @@ source "$SCRIPT_DIR/lib.sh"
 
 REGISTRY_URL="${ARCTL_API_BASE_URL:-http://localhost:12121}"
 KAGENT_URL="http://localhost:18007"
-
-if ! grep -q host.docker.internal /etc/hosts 2>/dev/null; then
-  warn "host.docker.internal not in /etc/hosts — the kagent UI login will fail."
-  warn "Run once:  echo '127.0.0.1 host.docker.internal' | sudo tee -a /etc/hosts"
-fi
 
 step "Port-forwarding the kagent UI (oauth2-proxy:18007) + Keycloak (:8080)"
 kc -n kagent port-forward svc/oauth2-proxy 18007:4180 >/tmp/kagent-ui-pf.log 2>&1 &
