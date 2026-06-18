@@ -24,9 +24,9 @@ else
 fi
 
 step "Waiting for the registry API on ${ARCTL_API_BASE_URL}"
-end=$(( $(date +%s) + 90 ))
+end=$(( $(date +%s) + 240 ))
 until curl -sf "${ARCTL_API_BASE_URL}/v0/version" >/dev/null 2>&1 || curl -sf "${ARCTL_API_BASE_URL}/" >/dev/null 2>&1; do
-  [[ $(date +%s) -ge $end ]] && die "registry API did not come up in 90s"; sleep 2
+  [[ $(date +%s) -ge $end ]] && die "registry API did not come up in 240s"; sleep 2
 done
 ok "registry API reachable"
 

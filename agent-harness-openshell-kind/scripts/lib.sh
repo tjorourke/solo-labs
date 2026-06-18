@@ -58,7 +58,7 @@ export OPENSHELL_NS="${OPENSHELL_NS:-openshell}"
 # kagent controller can target (openshell.openshell.svc.cluster.local:8080).
 export OPENSHELL_FULLNAME="${OPENSHELL_FULLNAME:-openshell}"
 # The agent-sandbox controller (sandboxes.agents.x-k8s.io) OpenShell builds on.
-export AGENT_SANDBOX_MANIFEST="${AGENT_SANDBOX_MANIFEST:-https://raw.githubusercontent.com/NVIDIA/OpenShell/refs/heads/main/deploy/kube/manifests/agent-sandbox.yaml}"
+export AGENT_SANDBOX_MANIFEST="${AGENT_SANDBOX_MANIFEST:-https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml}"
 
 # The gRPC target the kagent controller uses to reach the OpenShell gateway.
 export OPENSHELL_GRPC_ADDR="${OPENSHELL_GRPC_ADDR:-${OPENSHELL_FULLNAME}.${OPENSHELL_NS}.svc.cluster.local:8080}"

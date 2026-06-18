@@ -32,7 +32,7 @@ if kctx "$EDGE_CTX" get crd ratelimitconfigs.ratelimit.solo.io >/dev/null 2>&1; 
 fi
 helm --kube-context "$EDGE_CTX" upgrade --install enterprise-agentgateway-crds \
   "$AGW_CRDS_CHART" --version "$AGW_VERSION" \
-  --namespace "$GW_NS" --create-namespace "${crd_flags[@]}" --wait --timeout 3m >/dev/null
+  --namespace "$GW_NS" --create-namespace ${crd_flags[@]+"${crd_flags[@]}"} --wait --timeout 3m >/dev/null
 ok "CRDs installed"
 
 step "Installing enterprise-agentgateway control plane ($AGW_VERSION)"

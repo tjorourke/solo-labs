@@ -470,6 +470,17 @@ log_ok "[${CLUSTER1#kind-}] east-west gateway exposed"
 istioctl --context "$CLUSTER2" multicluster expose -n istio-gateways >/dev/null
 log_ok "[${CLUSTER2#kind-}] east-west gateway exposed"
 
+step "Waiting for east-west services to be labelled before linking"
+# `expose` provisions the istio-eastwest Gateway; its Service is created and
+# labelled istio.io/expose-istiod asynchronously. `link` fails ("no services
+# with istio.io/expose-istiod label") if it runs before the label lands. Wait.
+for CTX in "$CLUSTER1" "$CLUSTER2"; do
+  for _ in $(seq 1 40); do
+    [[ -n "$(kubectl --context "$CTX" -n istio-gateways get svc -l istio.io/expose-istiod -o name 2>/dev/null)" ]] && break
+    sleep 3
+  done
+done
+
 step "Linking clusters bidirectionally for cross-cluster discovery"
 # `multicluster link` creates istio-remote Gateways in each cluster that point
 # at the peer's east-west GW IP — replaces the old remote-secret dance.
