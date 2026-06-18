@@ -1,0 +1,15 @@
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: demo/everything-server
+spec:
+  description: 'Approved org tool server: sum, echo, uppercase, reverse.'
+  source:
+    package:
+      identifier: localhost:5001/everything-server:latest
+      registryType: oci
+      transport:
+        path: /mcp
+        port: 3000
+        type: http
+  title: everything-server

@@ -1,0 +1,9 @@
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: agentdemo
+spec:
+  targetRef:  { kind: Agent,   name: agentdemo }
+  runtimeRef: { kind: Runtime, name: kind-kagent }
+  env:
+    ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"

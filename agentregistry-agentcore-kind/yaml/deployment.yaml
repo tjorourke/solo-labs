@@ -1,0 +1,19 @@
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  # Keep this short: the registry derives the in-cluster MCP service name from
+  # <mcp-name>-<deployment-name>, and an over-long combined name gets truncated,
+  # which breaks the agent's MCP wiring. `summarizer` keeps everything in range.
+  name: summarizer
+spec:
+  targetRef:
+    kind: Agent
+    name: summarizer
+  runtimeRef:
+    kind: Runtime
+    name: kind-kagent
+  # Per-instance env. The agent's LiteLlm model reads ANTHROPIC_API_KEY; the
+  # registry injects the MCP wiring (MCP_SERVERS_CONFIG) from the Agent's
+  # spec.mcpServers, so it does not need to be set here.
+  env:
+    ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
