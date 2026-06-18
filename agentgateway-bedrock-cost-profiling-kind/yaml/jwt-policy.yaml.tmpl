@@ -1,0 +1,36 @@
+# Pattern A inbound governance, the agentgateway way (AGW has no claimsToHeaders).
+# Rendered by 07-jwt-teams.sh (fills __JWKS_JSON__).
+#
+# phase: PreRouting runs the JWT check AND the transformation BEFORE route
+# selection, so the HTTPRoute can match a header derived from the token. The
+# transformation projects the signed `team` claim into x-team and OVERWRITES any
+# client-supplied x-team, so the routing header is spoof-safe. The client sends
+# only its token: it never sets x-team and never holds a Bedrock ARN.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: bedrock-team-auth
+  namespace: ${GW_NS}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+  traffic:
+    phase: PreRouting
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: ${JWT_ISSUER}
+          audiences:
+            - ${JWT_AUDIENCE}
+          jwks:
+            inline: |
+              __JWKS_JSON__
+    transformation:
+      request:
+        set:
+          # project the signed team claim into the routing header (overwrites
+          # any client-supplied x-team — that is the spoof protection)
+          - name: x-team
+            value: "jwt.team"
