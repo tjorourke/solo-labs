@@ -68,5 +68,13 @@ spec:
   config: {roleArn: "${AWS_ROLE_ARN}", externalId: "${AWS_EXTERNAL_ID}", region: "${AWS_REGION}"}
 EOF
 arctl apply -f "$RT"; rm -f "$RT"
-ok "AWS Bedrock AgentCore platform connected (runtime 'aws-agentcore')"
+
+step "Verifying the AWS platform is registered and ready"
+arctl get runtime aws-agentcore >/dev/null 2>&1 || die "aws-agentcore runtime not registered"
+case "$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null)" in
+  *COMPLETE) ok "CloudFormation stack $STACK ready" ;;
+  *) die "CloudFormation stack $STACK is not in a COMPLETE state" ;;
+esac
+aws ecr describe-repositories --repository-names agentdemo >/dev/null 2>&1 || die "ECR repo agentdemo missing"
+ok "AWS Bedrock AgentCore platform 'aws-agentcore' registered and verified (role + ECR ready)"
 arctl get runtimes 2>/dev/null | sed 's/^/  /' >&2 || true
