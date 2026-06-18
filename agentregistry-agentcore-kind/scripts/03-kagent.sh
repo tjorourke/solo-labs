@@ -51,6 +51,7 @@ helm_install_with_progress kagent "$KENT_CHART" kagent \
   --set oidc.clientId="${KEYCLOAK_CLIENT}" \
   --set oidc.skipOBO=false \
   --set kagent-tools.enabled=true \
+  --set ui.enabled=true \
   --set-json 'rbac.roleMapping={"roleMapper":"claims.groups.transformList(i, v, v in rolesMap, rolesMap[v])","roleMappings":{"field-fte":"global.Admin","field-trial":"global.Reader","field-admin":"global.Admin","admins":"global.Admin","readers":"global.Reader","writers":"global.Writer"}}' \
   --wait --timeout 12m
 # NB roleMapper uses claims.groups (lowercase) — the chart default claims.Groups

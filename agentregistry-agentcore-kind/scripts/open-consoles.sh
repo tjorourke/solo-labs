@@ -14,10 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 REGISTRY_URL="${ARCTL_API_BASE_URL:-http://localhost:12121}"
-KAGENT_URL="http://localhost:8083"
+KAGENT_URL="http://localhost:8080"
 
-step "Port-forwarding the kagent UI (kagent-controller:8083)"
-kc -n kagent port-forward svc/kagent-controller 8083:8083 >/tmp/kagent-ui-pf.log 2>&1 &
+step "Port-forwarding the kagent UI (kagent-ui:8080)"
+kc -n kagent port-forward svc/kagent-ui 8080:8080 >/tmp/kagent-ui-pf.log 2>&1 &
 PF_PID=$!
 trap 'kill $PF_PID 2>/dev/null' EXIT INT TERM
 sleep 2
