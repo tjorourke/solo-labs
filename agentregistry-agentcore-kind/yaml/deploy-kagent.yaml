@@ -5,5 +5,6 @@ metadata:
 spec:
   targetRef:  { kind: Agent,   name: agentdemo }
   runtimeRef: { kind: Runtime, name: kind-kagent }
-  env:
-    ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+  # No env needed: the agent's anthropic key comes from kagent's default
+  # ModelConfig (apiKeySecret: kagent-anthropic), configured at install time.
+  # So this deploys with a plain `arctl apply -f yaml/deploy-kagent.yaml`.
