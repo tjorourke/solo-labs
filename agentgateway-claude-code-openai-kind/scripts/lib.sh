@@ -8,10 +8,13 @@
 
 set -Eeuo pipefail
 
-# Central product/infra versions (generated from versions.json). Sourcing
-# this lets a version bump in one place flow to every lab; runtime env wins.
+# Central product/infra versions (generated from versions.json). Sourcing this
+# lets a version bump in one place flow to every lab; runtime env still wins.
+# Mirrored into solo-labs too (sync-to-labs.sh). The := fallbacks keep a lab
+# runnable even if versions.env is absent (e.g. a dir copied out standalone).
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
+: "${AGW_ENT_VERSION:=v2.3.4}"; : "${AGW_OSS_VERSION:=v1.3.0-alpha.1}"; : "${AGW_CALVER_VERSION:=v2026.5.2}"
 
 # ── logging ───────────────────────────────────────────────────────────────────
 __has_color() { [[ -t 2 ]] && command -v tput >/dev/null 2>&1; }

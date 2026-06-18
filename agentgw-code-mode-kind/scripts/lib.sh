@@ -8,10 +8,13 @@
 
 set -Eeuo pipefail
 
-# Central product/infra versions (generated from versions.json). Sourcing
-# this lets a version bump in one place flow to every lab; runtime env wins.
+# Central product/infra versions (generated from versions.json). Sourcing this
+# lets a version bump in one place flow to every lab; runtime env still wins.
+# Mirrored into solo-labs too (sync-to-labs.sh). The := fallbacks keep a lab
+# runnable even if versions.env is absent (e.g. a dir copied out standalone).
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
+: "${AGW_ENT_VERSION:=v2.3.4}"; : "${AGW_OSS_VERSION:=v1.3.0-alpha.1}"; : "${AGW_CALVER_VERSION:=v2026.5.2}"
 
 # ── logging ───────────────────────────────────────────────────────────────────
 __has_color() { [[ -t 2 ]] && command -v tput >/dev/null 2>&1; }
@@ -43,7 +46,7 @@ export CTX="kind-${CLUSTER_NAME}"
 # JS sandbox) ships in the CalVer line — present since the first CalVer release
 # v2026.5.0, and absent from the older SemVer 2.3.x backend. Pin v2026.5.2, the
 # latest monthly at time of writing.
-export AGW_VERSION="${AGW_VERSION:-v2026.5.2}"
+export AGW_VERSION="${AGW_VERSION:-$AGW_CALVER_VERSION}"
 export AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 export AGW_GAR_HOST="${AGW_GAR_HOST:-us-docker.pkg.dev}"
 export AGW_CHART="${AGW_CHART:-${AGW_REGISTRY}/enterprise-agentgateway}"
