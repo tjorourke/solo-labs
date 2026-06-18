@@ -1,0 +1,42 @@
+# oauth2-proxy — the login front door for the kagent Enterprise UI. The UI's
+# "Sign in with SSO" button hits /oauth2/start, which oauth2-proxy intercepts;
+# it runs the OIDC login against dex, then proxies authenticated traffic to
+# kagent-ui (which routes /api/* to the controller) and injects the bearer so
+# the controller's AuthnMiddleware sees a session.
+#
+# __DEX_CLIENT_SECRET__ / __COOKIE_SECRET__ are substituted at install time by
+# 06-kagent-ui-auth.sh.
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+
+extraArgs:
+  provider: oidc
+  oidc-issuer-url: http://host.docker.internal:5556
+  client-id: kagent-enterprise
+  email-domain: '*'
+  upstream: http://kagent-ui.kagent.svc.cluster.local:8080
+  redirect-url: http://localhost:18007/oauth2/callback
+  cookie-secure: 'false'        # plain http on localhost
+  cookie-samesite: lax
+  pass-authorization-header: 'true'
+  pass-access-token: 'true'
+  set-authorization-header: 'true'
+  set-xauthrequest: 'true'
+  skip-provider-button: 'true'
+  reverse-proxy: 'true'
+  http-address: 0.0.0.0:4180
+
+config:
+  clientID: kagent-enterprise
+  clientSecret: __DEX_CLIENT_SECRET__
+  cookieSecret: __COOKIE_SECRET__
+
+service:
+  type: ClusterIP
+  portNumber: 4180
+
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits:   { cpu: 200m, memory: 64Mi }

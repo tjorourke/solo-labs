@@ -1,0 +1,51 @@
+# Dex — a static-user OIDC IdP so the kagent Enterprise UI has a real issuer to
+# log in against on local kind. The enterprise controller requires an OIDC
+# issuer; rather than make the in-cluster Keycloak browser-reachable, dex serves
+# the issuer at host.docker.internal:5556 — a name that resolves the SAME from
+# inside the cluster (Docker host gateway) and from the browser (add
+# `127.0.0.1 host.docker.internal` to /etc/hosts), so the `iss` claim is
+# consistent everywhere. Single static user: admin@kagent.local / admin.
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+
+config:
+  issuer: http://host.docker.internal:5556
+  storage:
+    type: memory
+  web:
+    http: 0.0.0.0:5556
+    allowedOrigins: ['*']
+  oauth2:
+    skipApprovalScreen: true
+    alwaysShowLoginScreen: false
+    # passwordConnector enables grant_type=password on /token so ask.sh can
+    # mint a token non-interactively (no browser) for the A2A endpoint.
+    passwordConnector: local
+  enablePasswordDB: true
+  staticPasswords:
+    - email: admin@kagent.local
+      # bcrypt of "admin"
+      hash: $2y$10$as1hoARJEojALjYpAxQTqeg.LKYndQ1lc7wLqoesMOwbvlifcU.mi
+      username: admin
+      userID: kagent-admin-id
+  staticClients:
+    - id: kagent-enterprise
+      name: kagent-enterprise
+      secret: 19885cfdd79015377150d560dfdf71d2
+      redirectURIs:
+        - http://localhost:18007/oauth2/callback
+        - http://localhost:18007/api/auth/callback/oidc
+      trustedPeers:
+        - kagent-enterprise
+
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: 5556
+
+resources:
+  requests: { cpu: 25m, memory: 64Mi }
+  limits:   { cpu: 200m, memory: 128Mi }
