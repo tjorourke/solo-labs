@@ -79,7 +79,7 @@
       "enabled": true,
       "publicClient": true,
       "directAccessGrantsEnabled": true,
-      "standardFlowEnabled": false,
+      "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
@@ -111,6 +111,13 @@
             "userinfo.token.claim": "true"
           }
         }
+      ],
+      "redirectUris": [
+        "http://localhost:12121/*"
+      ],
+      "webOrigins": [
+        "http://localhost:12121",
+        "+"
       ]
     },
     {

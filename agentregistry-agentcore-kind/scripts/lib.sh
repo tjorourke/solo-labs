@@ -74,6 +74,19 @@ export KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-http://${KEYCLOAK_OIDC_HOST}/realms/$
 # because a pod can't resolve keycloak.localtest.me to the host.
 export KEYCLOAK_MINT_URL="${KEYCLOAK_MINT_URL:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}}"
 
+# ── Registry daemon behind Keycloak (so it forwards the user's token to kagent) ─
+# The daemon is a Docker container; to validate Keycloak bearers it must resolve
+# and reach the issuer host. We expose Keycloak + the kagent controller on the
+# kind node via NodePorts, and run a socat container whose Docker network-alias
+# IS the issuer host (keycloak.localtest.me), forwarding :18080 -> node:KEYCLOAK_NODEPORT.
+export DAEMON_CONTAINER="${DAEMON_CONTAINER:-agentregistry-enterprise-server}"
+export DAEMON_NETWORK="${DAEMON_NETWORK:-agentregistry_agentregistry-network}"
+export ALIAS_CONTAINER="${ALIAS_CONTAINER:-arctl-keycloak-alias}"
+export KEYCLOAK_NODEPORT="${KEYCLOAK_NODEPORT:-30080}"     # node -> Keycloak (for the daemon's OIDC discovery)
+export CONTROLLER_NODEPORT="${CONTROLLER_NODEPORT:-30083}" # node -> kagent controller (the Kagent runtime's kagentUrl)
+export KAGENT_URL="${KAGENT_URL:-http://${CLUSTER_NAME}-control-plane:${CONTROLLER_NODEPORT}}"
+export RBAC_SUPERUSER_ROLE="${RBAC_SUPERUSER_ROLE:-field-fte}"  # alice's group -> registry superuser
+
 # bridge_keycloak_hostalias <deployment> — add/replace a hostAlias mapping the
 # issuer host (keycloak.localtest.me) to Keycloak's ClusterIP on a deployment,
 # so its pods resolve the browser-style issuer in-cluster. Idempotent.
@@ -192,15 +205,23 @@ ensure_gar_auth() {
     || die "helm registry login failed for $host"
 }
 
-# arctl_token — mint a demo-auth bearer for the local OSS daemon and export it as
-# ARCTL_API_TOKEN. The embedded IDP at /api/autoauth issues a client_credentials
-# token for the built-in `admin` profile. No-op (returns ok) if the daemon needs
-# no auth.
+# arctl_token — mint alice's Keycloak bearer and export it as ARCTL_API_TOKEN.
+# The registry daemon runs behind the SAME Keycloak as kagent (04-daemon), so the
+# setup scripts authenticate as a real user (alice: field-fte -> registry superuser
+# + kagent Admin) and that one token is also forwarded to the kagent controller on
+# deploy. Keycloak isn't on the host, so mint via a short-lived port-forward; setup
+# runs in a normal shell, so backgrounding it here is fine (the notebook can't —
+# connect.sh uses the persistent open-consoles forward instead).
 arctl_token() {
-  local tok
-  tok=$(curl -s -X POST "${ARCTL_API_BASE_URL}/api/autoauth/oauth/token" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "grant_type=client_credentials&client_id=admin&scope=openid profile email Groups" \
-    2>/dev/null | jq -r '.access_token // empty' 2>/dev/null)
+  local user="${AS_USER:-alice}" pf tok
+  kc -n "$KEYCLOAK_NS" port-forward svc/keycloak 18080:8080 >/dev/null 2>&1 & pf=$!
+  for _ in $(seq 1 30); do
+    curl -sf -m2 "http://localhost:18080/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" >/dev/null 2>&1 && break; sleep 1
+  done
+  tok="$(curl -s -X POST "http://localhost:18080/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d "grant_type=password&client_id=${KEYCLOAK_CLIENT}&username=${user}&password=${user}" \
+    2>/dev/null | jq -r '.access_token // empty' 2>/dev/null)"
+  kill "$pf" 2>/dev/null || true
   if [[ -n "$tok" ]]; then export ARCTL_API_TOKEN="$tok"; fi
 }
