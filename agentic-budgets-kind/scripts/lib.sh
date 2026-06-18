@@ -6,6 +6,11 @@
 
 set -Eeuo pipefail
 
+# Central product/infra versions (generated from versions.json). Sourcing
+# this lets a version bump in one place flow to every lab; runtime env wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+[ -f "$__versions_env" ] && . "$__versions_env"
+
 # ── logging ───────────────────────────────────────────────────────────────────
 __has_color() { [[ -t 2 ]] && command -v tput >/dev/null 2>&1; }
 if __has_color; then
@@ -41,7 +46,7 @@ export CTX="kind-${CLUSTER_NAME}"
 #
 # Public OCI registry (no auth needed). Path + version match
 # `agentic-pii-guardrail-kind/scripts/lib.sh` which is end-to-end verified.
-export AGW_VERSION="${AGW_VERSION:-v2.3.3}"
+export AGW_VERSION="${AGW_VERSION:-$AGW_ENT_VERSION}"
 export AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 export AGW_GAR_HOST="${AGW_GAR_HOST:-us-docker.pkg.dev}"
 export AGW_CHART="${AGW_CHART:-${AGW_REGISTRY}/enterprise-agentgateway}"

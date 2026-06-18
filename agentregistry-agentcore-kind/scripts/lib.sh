@@ -14,6 +14,11 @@
 
 set -Eeuo pipefail
 
+# Central product/infra versions (generated from versions.json). Sourcing
+# this lets a version bump in one place flow to every lab; runtime env wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+[ -f "$__versions_env" ] && . "$__versions_env"
+
 __has_color() { [[ -t 2 ]] && command -v tput >/dev/null 2>&1; }
 if __has_color; then
   __dim(){ tput dim;printf '%s' "$*";tput sgr0;}; __ok(){ tput setaf 2;printf '✓ ';tput sgr0;printf '%s' "$*";}
