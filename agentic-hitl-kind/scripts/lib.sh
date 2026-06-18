@@ -41,7 +41,7 @@ require() { command -v "$1" >/dev/null 2>&1 || die "$1 not found — install it 
 # ── cluster constants ─────────────────────────────────────────────────────────
 export CLUSTER_NAME="${CLUSTER_NAME:-hitl}"
 export CTX="kind-${CLUSTER_NAME}"
-export AGW_VERSION="${AGW_VERSION:-$AGW_ENT_VERSION}"
+export AGW_VERSION="${AGW_VERSION:-$AGW_OSS_VERSION}"
 export AGW_CHART="${AGW_CHART:-oci://cr.agentgateway.dev/charts/agentgateway}"
 export AGW_CRDS_CHART="${AGW_CRDS_CHART:-oci://cr.agentgateway.dev/charts/agentgateway-crds}"
 export KAGENT_VERSION="${KAGENT_VERSION:-}"   # empty = chart default
