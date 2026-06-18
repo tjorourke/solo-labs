@@ -17,7 +17,18 @@ step "Starting the arctl daemon"
 export DOCKER_REPO="${DOCKER_REPO:-solo-public/agentregistry-enterprise}"
 export OIDC_AUTO_AUTH_ENABLED="${OIDC_AUTO_AUTH_ENABLED:-true}"
 if arctl daemon status >/dev/null 2>&1; then
-  ok "daemon already running"
+  # A daemon from a prior run survives (it's a local container, not in the kind
+  # cluster) and can be wedged — `status` says running but the API at :12121
+  # never responds. Probe it; if it isn't actually serving, restart fresh
+  # instead of waiting out the readiness timeout on a dead daemon.
+  if curl -sf "${ARCTL_API_BASE_URL}/v0/version" >/dev/null 2>&1 || curl -sf "${ARCTL_API_BASE_URL}/" >/dev/null 2>&1; then
+    ok "daemon already running"
+  else
+    warn "daemon reports running but API not responding — restarting it"
+    arctl daemon stop >/dev/null 2>&1 || true
+    arctl daemon start >/dev/null 2>&1 || die "arctl daemon restart failed"
+    ok "daemon restarted"
+  fi
 else
   arctl daemon start >/dev/null 2>&1 || die "arctl daemon start failed (is Docker running? can you pull ${DOCKER_REGISTRY:-us-docker.pkg.dev}/${DOCKER_REPO}/server?)"
   ok "daemon started (auto-auth IDP, server image ${DOCKER_REPO}/server)"
