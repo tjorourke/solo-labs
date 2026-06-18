@@ -78,6 +78,10 @@ load_secrets() {
     set -a; source "$SECRETS_FILE"; set +a
   fi
   export KAGENT_ENT_LICENSE_KEY="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-}}"
+  # Solo Istio (the waypoint mesh) is licensed by the same Solo enterprise key,
+  # so SOLO_LICENSE_KEY alone satisfies 05-waypoint.sh. Only agentgateway needs
+  # its own AGENTGATEWAY_LICENSE_KEY.
+  export SOLO_ISTIO_LICENSE_KEY="${SOLO_ISTIO_LICENSE_KEY:-${SOLO_LICENSE_KEY:-}}"
 }
 require_secrets() {
   load_secrets
