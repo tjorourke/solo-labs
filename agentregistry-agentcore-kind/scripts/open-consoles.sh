@@ -3,7 +3,7 @@
 # TERMINAL (not a notebook cell — it starts background port-forwards).
 #
 #   AgentRegistry UI : http://localhost:12121     (the local daemon, already bound)
-#   kagent UI        : http://localhost:8083      (port-forward to kagent-controller)
+#   kagent UI        : http://localhost:8080      (port-forward to kagent-ui)
 #
 # AWS Bedrock AgentCore is shown manually in the AWS console (no local URL).
 #
