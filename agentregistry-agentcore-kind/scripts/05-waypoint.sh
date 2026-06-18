@@ -61,12 +61,30 @@ ISTIO_IMAGES=(
 step "Gateway API experimental CRDs ($GW_API_VER)"
 # Gateway API >=1.5 standard CRDs (from 01-cluster) ship a safe-upgrades
 # ValidatingAdmissionPolicy that forbids layering the experimental channel on
-# top. The ambient waypoint needs experimental, so drop that policy first
-# (idempotent — recreated on a fresh standard install).
-kc delete validatingadmissionpolicybinding safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
-kc delete validatingadmissionpolicy        safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
-kc apply --server-side --force-conflicts \
-  -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GW_API_VER}/experimental-install.yaml" >/dev/null
+# top. The ambient waypoint needs experimental, so drop that policy first.
+# Deleting it is eventually-consistent: the apiserver keeps enforcing a
+# just-deleted policy until its admission cache resyncs (a few seconds), so an
+# immediate apply can still be denied. Drop it, then retry the apply with
+# backoff, re-dropping on each denial (idempotent — a fresh standard install in
+# 01-cluster recreates the policy, so every re-run re-drops it).
+drop_safe_upgrades() {
+  kc delete validatingadmissionpolicybinding safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
+  kc delete validatingadmissionpolicy        safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
+}
+EXP_URL="https://github.com/kubernetes-sigs/gateway-api/releases/download/${GW_API_VER}/experimental-install.yaml"
+drop_safe_upgrades
+applied=0
+for attempt in $(seq 1 12); do
+  if kc apply --server-side --force-conflicts -f "$EXP_URL" >/tmp/gwexp.$$.log 2>&1; then applied=1; break; fi
+  if grep -q 'safe-upgrades' /tmp/gwexp.$$.log 2>/dev/null; then
+    log "safe-upgrades policy still enforced (attempt $attempt); re-dropping and retrying"
+    drop_safe_upgrades; sleep 5
+  else
+    cat /tmp/gwexp.$$.log >&2; rm -f /tmp/gwexp.$$.log; die "experimental Gateway API CRD apply failed"
+  fi
+done
+rm -f /tmp/gwexp.$$.log
+[[ "$applied" == 1 ]] || die "experimental Gateway API CRDs still blocked by safe-upgrades policy after retries — delete it manually: kubectl delete validatingadmissionpolicy,validatingadmissionpolicybinding safe-upgrades.gateway.networking.k8s.io"
 ok "Gateway API experimental CRDs applied"
 
 # ── 2. Gloo Operator ──────────────────────────────────────────────────────────
