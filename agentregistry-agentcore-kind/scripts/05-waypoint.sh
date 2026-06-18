@@ -59,6 +59,12 @@ ISTIO_IMAGES=(
 
 # ── 1. Gateway API experimental CRDs (ambient waypoints need these) ───────────
 step "Gateway API experimental CRDs ($GW_API_VER)"
+# Gateway API >=1.5 standard CRDs (from 01-cluster) ship a safe-upgrades
+# ValidatingAdmissionPolicy that forbids layering the experimental channel on
+# top. The ambient waypoint needs experimental, so drop that policy first
+# (idempotent — recreated on a fresh standard install).
+kc delete validatingadmissionpolicybinding safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
+kc delete validatingadmissionpolicy        safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
 kc apply --server-side --force-conflicts \
   -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GW_API_VER}/experimental-install.yaml" >/dev/null
 ok "Gateway API experimental CRDs applied"

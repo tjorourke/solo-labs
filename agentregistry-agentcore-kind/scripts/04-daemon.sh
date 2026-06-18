@@ -16,9 +16,14 @@ step "Starting the arctl daemon"
 # Keycloak is needed — `arctl_token` then mints an admin bearer against it).
 export DOCKER_REPO="${DOCKER_REPO:-solo-public/agentregistry-enterprise}"
 export OIDC_AUTO_AUTH_ENABLED="${OIDC_AUTO_AUTH_ENABLED:-true}"
-if arctl daemon status >/dev/null 2>&1; then
-  ok "daemon already running"
+# Check the actual API, not `arctl daemon status` — status can report a stale
+# "running" from a previous Docker context (e.g. after switching Docker Desktop
+# <-> OrbStack) while nothing is actually serving on :12121. If the API is down,
+# clear any stale state and start fresh.
+if curl -sf -m3 "${ARCTL_API_BASE_URL}/" >/dev/null 2>&1 || curl -sf -m3 "${ARCTL_API_BASE_URL}/v0/version" >/dev/null 2>&1; then
+  ok "daemon already serving on ${ARCTL_API_BASE_URL}"
 else
+  arctl daemon stop >/dev/null 2>&1 || true   # clear stale state from a prior context
   arctl daemon start >/dev/null 2>&1 || die "arctl daemon start failed (is Docker running? can you pull ${DOCKER_REGISTRY:-us-docker.pkg.dev}/${DOCKER_REPO}/server?)"
   ok "daemon started (auto-auth IDP, server image ${DOCKER_REPO}/server)"
 fi
