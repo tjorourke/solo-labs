@@ -23,9 +23,11 @@ PUSH_URL="$AGENT_GIT_URL"
 command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && PUSH_URL="https://x-access-token:$(gh auth token)@github.com/${SLUG}.git"
 
 step "Pushing the agent source to $SLUG@$BR"
-T="$(mktemp -d)"; cp -R "$PROJ/." "$T/"; rm -rf "$T/.git" "$T/.venv"
+# Push the project under agentdemo/ — the same subfolder agentcore-deploy.sh
+# records as the AgentCore source subfolder, so the two stay consistent.
+T="$(mktemp -d)"; cp -R "$PROJ" "$T/agentdemo"; rm -rf "$T/agentdemo/.git" "$T/agentdemo/.venv"
 ( cd "$T" && git init -qb "$BR" && git add -A \
   && git -c user.email=demo@local -c user.name=demo commit -qm "agentdemo source" \
   && git remote add origin "$PUSH_URL" && git push -fq origin "$BR" ) \
-  && ok "pushed source to $SLUG@$BR" || die "git push failed"
+  && ok "pushed source to $SLUG@$BR (agentdemo/)" || die "git push failed"
 rm -rf "$T"

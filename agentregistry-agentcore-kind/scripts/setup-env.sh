@@ -66,15 +66,23 @@ else
   echo "  (no AWS profiles found via 'aws configure list-profiles')"
   ask AWS_PROFILE "AWS CLI profile (SSO-backed)"
 fi
-ask AWS_REGION "AWS region" "${AWS_REGION:-us-east-1}"
+# Default to us-east-1 (where Bedrock AgentCore + Claude access live for this
+# demo). Hardcoded rather than inheriting $AWS_REGION, because the AWS SSO
+# profile often sets a different home region (e.g. eu-west-2) that AgentCore
+# isn't enabled in. Override at the prompt if you really run AgentCore elsewhere.
+ask AWS_REGION "AWS region (Bedrock AgentCore; us-east-1 recommended)" "us-east-1"
 
 echo
-echo "AgentCore agent source — a git repo AWS clones at deploy (AgentCore only):"
+echo "AgentCore agent source (AgentCore add-on only):"
+echo "  kagent runs the OCI image directly, but Bedrock AgentCore runs the agent"
+echo "  inside YOUR AWS account and clones its SOURCE from a git repo you own at"
+echo "  deploy time. So it needs a repo URL + branch to clone from; the deploy"
+echo "  pushes the scaffolded agentdemo/ there for you (under agentdemo/, which it"
+echo "  sets as the source subfolder automatically — nothing to enter here)."
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   GH_USER="$(gh api user -q .login 2>/dev/null)"
-  ask AGENT_GIT_URL       "  source repo URL"  "${AGENT_GIT_URL:-https://github.com/${GH_USER}/agentregistry-agentcore-demo.git}"
-  ask AGENT_GIT_BRANCH    "  branch"           "${AGENT_GIT_BRANCH:-main}"
-  ask AGENT_GIT_SUBFOLDER "  agent subfolder"  "${AGENT_GIT_SUBFOLDER:-artifacts/summarizer}"
+  ask AGENT_GIT_URL    "  source repo URL"  "${AGENT_GIT_URL:-https://github.com/${GH_USER}/agentregistry-agentcore-demo.git}"
+  ask AGENT_GIT_BRANCH "  branch"           "${AGENT_GIT_BRANCH:-main}"
   _repo="${AGENT_GIT_URL#https://github.com/}"; _repo="${_repo%.git}"
   if [ -n "$_repo" ] && ! gh repo view "$_repo" >/dev/null 2>&1; then
     read -r -p "  repo '$_repo' does not exist — create it (private) and push the agent source? [y/N]: " _yn
@@ -95,7 +103,6 @@ export AWS_PROFILE="${AWS_PROFILE:-}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AGENT_GIT_URL="${AGENT_GIT_URL:-}"
 export AGENT_GIT_BRANCH="${AGENT_GIT_BRANCH:-main}"
-export AGENT_GIT_SUBFOLDER="${AGENT_GIT_SUBFOLDER:-artifacts/summarizer}"
 EOF
 chmod 600 "$ENVFILE"
 
