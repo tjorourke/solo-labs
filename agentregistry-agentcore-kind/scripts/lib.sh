@@ -58,7 +58,30 @@ export REG_PORT="${REG_PORT:-5001}"
 export KEYCLOAK_NS="${KEYCLOAK_NS:-keycloak}"
 export KEYCLOAK_REALM="${KEYCLOAK_REALM:-solo}"
 export KEYCLOAK_CLIENT="${KEYCLOAK_CLIENT:-kagent}"
-export KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local/realms/${KEYCLOAK_REALM}}"
+# The issuer host. keycloak.localtest.me resolves to 127.0.0.1 via PUBLIC DNS,
+# so the browser reaches the issuer with no /etc/hosts; in-cluster pods reach it
+# via a hostAlias -> Keycloak ClusterIP (bridge_keycloak_hostalias). Same `iss`
+# on both sides — which is what lets the kagent UI's OIDC login work on kind.
+export KEYCLOAK_OIDC_HOST="${KEYCLOAK_OIDC_HOST:-keycloak.localtest.me:8080}"
+# What the controller/oauth2-proxy validate (and the token `iss`).
+export KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-http://${KEYCLOAK_OIDC_HOST}/realms/${KEYCLOAK_REALM}}"
+# Where ask.sh mints tokens FROM, in-cluster (the svc; KC_HOSTNAME stamps the
+# localtest.me `iss` regardless of which URL is hit). Distinct from the issuer
+# because a pod can't resolve keycloak.localtest.me to the host.
+export KEYCLOAK_MINT_URL="${KEYCLOAK_MINT_URL:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}}"
+
+# bridge_keycloak_hostalias <deployment> — add/replace a hostAlias mapping the
+# issuer host (keycloak.localtest.me) to Keycloak's ClusterIP on a deployment,
+# so its pods resolve the browser-style issuer in-cluster. Idempotent.
+bridge_keycloak_hostalias() {
+  local dep="$1" host="${KEYCLOAK_OIDC_HOST%%:*}" ip
+  ip="$(kc -n "$KEYCLOAK_NS" get svc keycloak -o jsonpath='{.spec.clusterIP}' 2>/dev/null)"
+  [[ -n "$ip" ]] || { warn "keycloak ClusterIP not found; skipping hostAlias on $dep"; return 0; }
+  kc -n kagent patch deploy "$dep" --type=json \
+    -p "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"$ip\",\"hostnames\":[\"$host\"]}]}]" >/dev/null 2>&1 \
+  || kc -n kagent patch deploy "$dep" --type=json \
+    -p "[{\"op\":\"add\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"$ip\",\"hostnames\":[\"$host\"]}]}]" >/dev/null 2>&1 || true
+}
 
 # ── Solo Enterprise for kagent ──────────────────────────────────────────────
 export KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.4.3}"

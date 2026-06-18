@@ -49,16 +49,25 @@ helm_install_with_progress kagent "$KENT_CHART" kagent \
   --set providers.anthropic.apiKey="${ANTHROPIC_API_KEY}" \
   --set oidc.issuer="${KEYCLOAK_ISSUER}" \
   --set oidc.clientId="${KEYCLOAK_CLIENT}" \
+  --set oidc.secretRef="kagent-enterprise-oidc-secret" \
+  --set oidc.secretKey="clientSecret" \
   --set oidc.skipOBO=false \
   --set kagent-tools.enabled=true \
   --set ui.enabled=true \
   --set-json 'rbac.roleMapping={"roleMapper":"claims.groups.transformList(i, v, v in rolesMap, rolesMap[v])","roleMappings":{"field-fte":"global.Admin","field-trial":"global.Reader","field-admin":"global.Admin","admins":"global.Admin","readers":"global.Reader","writers":"global.Writer"}}' \
-  --wait --timeout 12m
+  --timeout 12m
 # NB roleMapper uses claims.groups (lowercase) — the chart default claims.Groups
 # (capital G) fails against Keycloak's lowercase `groups` claim and returns 401.
-ok "kagent-enterprise controller installed"
+# No --wait above: the controller does OIDC discovery at startup against
+# keycloak.localtest.me, which a pod can't resolve until we add the hostAlias
+# below — so it would never go Ready under --wait.
+ok "kagent-enterprise controller applied"
 
-step "Waiting for controller"
+step "Bridging the issuer host in-cluster, then waiting for the controller"
+# Map keycloak.localtest.me -> Keycloak ClusterIP on the controller pod so OIDC
+# discovery resolves. This patch also rolls the controller; then it goes Ready.
+bridge_keycloak_hostalias kagent-controller
+ok "hostAlias keycloak.localtest.me -> Keycloak ClusterIP added to controller"
 wait_deploy kagent kagent-controller 360s || warn "controller not Available in 6m — continuing"
 
 step "kagent-enterprise installed"; echo "  Next: ./scripts/04-daemon.sh" >&2

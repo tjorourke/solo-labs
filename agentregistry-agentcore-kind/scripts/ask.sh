@@ -20,7 +20,10 @@ POD="$(kc -n kagent get pods -l "app.kubernetes.io/name=$AGENT" -o name 2>/dev/n
 [[ -n "$POD" ]] || die "no running pod for agent '$AGENT' — check: kubectl -n kagent get pods"
 
 echo "Asking '$AGENT' as $AS_USER (OIDC) ..."
-ISSUER="${KEYCLOAK_ISSUER:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local/realms/${KEYCLOAK_REALM}}"
+# Mint from the IN-CLUSTER Keycloak URL (the agent pod can't resolve the
+# browser-facing keycloak.localtest.me issuer). KC_HOSTNAME stamps the same
+# localtest.me `iss` on the token, which the controller validates.
+ISSUER="${KEYCLOAK_MINT_URL:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}}"
 kc -n kagent exec -i "${POD#*/}" -- python3 - "$AGENT" "$AS_USER" "$PROMPT" "$ISSUER" "$KEYCLOAK_CLIENT" <<'PY'
 import sys, json, urllib.request, urllib.parse
 agent, user, prompt, issuer, client = sys.argv[1:6]
