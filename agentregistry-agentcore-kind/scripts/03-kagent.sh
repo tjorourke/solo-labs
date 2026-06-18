@@ -42,6 +42,11 @@ kc get crd agents.kagent.dev >/dev/null 2>&1 && ok "Agent CRD present" || warn "
 step "Installing kagent-enterprise controller $KAGENT_ENT_VERSION"
 log "provider: anthropic; OIDC -> Keycloak; bundled postgres + tool server"
 log "image pulls (controller + postgres + tools) can take several minutes"
+# On a re-run, 06-kagent-ui-auth.sh has patched kagent-ui-config's .data.nginx.conf
+# with the "kubectl-client-side-apply" field manager; helm's server-side apply then
+# fails with a field-manager conflict on that ConfigMap. Drop it so helm recreates
+# it cleanly (06 re-applies the nginx patch afterwards). No-op on a fresh install.
+kc -n kagent delete configmap kagent-ui-config --ignore-not-found >/dev/null 2>&1 || true
 helm_install_with_progress kagent "$KENT_CHART" kagent \
   --version "$KAGENT_ENT_VERSION" \
   --set global.licensing.licenseKey="${KAGENT_ENT_LICENSE_KEY}" \
