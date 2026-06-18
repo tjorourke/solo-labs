@@ -25,6 +25,7 @@ bash "$SCRIPT_DIR/03-kagent.sh"
 bash "$SCRIPT_DIR/04-daemon.sh"
 bash "$SCRIPT_DIR/04b-register-runtime.sh"
 bash "$SCRIPT_DIR/04c-publish-mcp.sh"   # publish the approved MCP tool servers + skill
+bash "$SCRIPT_DIR/04d-connect-aws.sh"   # connect the AWS Bedrock AgentCore platform (CONNECT_AWS=false to skip)
 bash "$SCRIPT_DIR/05-waypoint.sh"       # ambient mesh + agentgateway waypoint (for AccessPolicy)
 bash "$SCRIPT_DIR/06-kagent-ui-auth.sh" # kagent UI SSO front door (oauth2-proxy -> Keycloak)
 bash "$SCRIPT_DIR/notebook-kernel.sh"   # register the Bash kernel demo.ipynb uses
