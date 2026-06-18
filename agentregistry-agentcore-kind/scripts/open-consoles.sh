@@ -25,16 +25,18 @@ if ! grep -q host.docker.internal /etc/hosts 2>/dev/null; then
   warn "Run once:  echo '127.0.0.1 host.docker.internal' | sudo tee -a /etc/hosts"
 fi
 
-step "Port-forwarding the kagent UI (oauth2-proxy:18007) + dex IdP (:5556)"
+step "Port-forwarding the kagent UI (oauth2-proxy:18007) + Keycloak (:8080)"
 kc -n kagent port-forward svc/oauth2-proxy 18007:4180 >/tmp/kagent-ui-pf.log 2>&1 &
 PF1=$!
-kc -n kagent port-forward svc/dex 5556:5556 >/tmp/dex-pf.log 2>&1 &
+# Keycloak on host :8080 so the browser's SSO redirect to the issuer
+# (host.docker.internal:8080) resolves; pods reach it via a hostAlias.
+kc -n "${KEYCLOAK_NS:-keycloak}" port-forward svc/keycloak 8080:8080 >/tmp/keycloak-pf.log 2>&1 &
 PF2=$!
 trap 'kill $PF1 $PF2 2>/dev/null' EXIT INT TERM
 sleep 2
 
 ok "AgentRegistry UI : $REGISTRY_URL"
-ok "kagent UI        : $KAGENT_URL   (login: admin@kagent.local / admin)"
+ok "kagent UI        : $KAGENT_URL   (login: alice / alice  — real Keycloak user, field-fte → Admin)"
 log "AWS AgentCore    : open the AWS console → Bedrock AgentCore (manual)"
 
 if command -v open >/dev/null 2>&1; then

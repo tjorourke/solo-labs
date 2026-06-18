@@ -12,6 +12,9 @@ spec:
   selector: { app: keycloak }
   ports:
     - { name: http, port: 80, targetPort: 8080 }
+    # 8080 too: the browser-consistent issuer is host.docker.internal:8080, which
+    # the controller/oauth2-proxy reach via a hostAlias -> this ClusterIP:8080.
+    - { name: http-8080, port: 8080, targetPort: 8080 }
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -33,11 +36,12 @@ spec:
             - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
             - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: admin }
             - { name: KC_HTTP_RELATIVE_PATH, value: / }
-            # Pin the issuer to the in-cluster URL so the `iss` claim is stable
-            # regardless of how the token is minted (port-forward vs in-cluster).
-            # This must match the controller's oidc.issuer. Backchannel-dynamic
-            # lets the token endpoint still answer on localhost via port-forward.
-            - { name: KC_HOSTNAME, value: "http://keycloak.keycloak.svc.cluster.local" }
+            # Issuer = host.docker.internal:8080 so the SAME iss works in the
+            # browser (via /etc/hosts + port-forward) and in-cluster (controller/
+            # oauth2-proxy reach it via a hostAlias -> Keycloak ClusterIP:8080).
+            # This is what lets the kagent UI's OIDC login complete on kind.
+            # Backchannel-dynamic lets ask.sh still mint via the in-cluster svc.
+            - { name: KC_HOSTNAME, value: "http://host.docker.internal:8080" }
             - { name: KC_HOSTNAME_STRICT, value: "false" }
             - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true" }
             - { name: KC_HEALTH_ENABLED, value: "true" }

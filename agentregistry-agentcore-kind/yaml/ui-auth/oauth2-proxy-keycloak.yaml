@@ -1,0 +1,40 @@
+# oauth2-proxy for the kagent Enterprise UI, backed by the lab's Keycloak
+# `solo` realm (real users: alice/bob/carol). The UI's "Sign in with SSO" hits
+# /oauth2/start; oauth2-proxy runs the OIDC login against Keycloak, then proxies
+# authenticated traffic to kagent-ui (which routes /api/* to the controller) and
+# injects the bearer. The token carries aud=kagent + groups (realm mappers), so
+# the controller accepts it and maps alice's field-fte group to global.Admin.
+replicaCount: 1
+image:
+  pullPolicy: IfNotPresent
+
+extraArgs:
+  provider: oidc
+  oidc-issuer-url: http://host.docker.internal:8080/realms/solo
+  client-id: oauth2-proxy
+  email-domain: '*'
+  insecure-oidc-allow-unverified-email: 'true'
+  upstream: http://kagent-ui.kagent.svc.cluster.local:8080
+  redirect-url: http://localhost:18007/oauth2/callback
+  cookie-secure: 'false'
+  cookie-samesite: lax
+  pass-authorization-header: 'true'
+  pass-access-token: 'true'
+  set-authorization-header: 'true'
+  set-xauthrequest: 'true'
+  skip-provider-button: 'true'
+  reverse-proxy: 'true'
+  http-address: 0.0.0.0:4180
+
+config:
+  clientID: oauth2-proxy
+  clientSecret: oauth2proxysecret0123456789abcdef
+  cookieSecret: __COOKIE_SECRET__
+
+service:
+  type: ClusterIP
+  portNumber: 4180
+
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits:   { cpu: 200m, memory: 64Mi }
