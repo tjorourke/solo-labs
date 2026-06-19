@@ -23,26 +23,7 @@ ok "AWS $AWS_ACCOUNT_ID / $AWS_REGION → platform aws-agentcore"
 
 step "Making the agent multi-cloud (Bedrock model via MODEL_PROVIDER)"
 cp "$LAB_ROOT/templates/bedrock_model.py" "$PROJ/agentdemo/bedrock_model.py"
-python3 - "$PROJ" <<'PY'
-import re, sys, pathlib
-proj = pathlib.Path(sys.argv[1])
-p = proj/'agentdemo'/'agent.py'; s = p.read_text()
-if 'MODEL_PROVIDER' not in s:
-    s = s.replace('from google.adk.models.lite_llm import LiteLlm\n', '')
-    new = ('def create_model():\n'
-           '    import os\n'
-           '    if os.environ.get("MODEL_PROVIDER", "anthropic").lower() == "bedrock":\n'
-           '        from .bedrock_model import BedrockClaude\n'
-           '        return BedrockClaude(model=os.environ.get("MODEL_NAME", "us.anthropic.claude-haiku-4-5-20251001-v1:0"))\n'
-           '    from google.adk.models.lite_llm import LiteLlm\n'
-           '    return LiteLlm(model=os.environ.get("MODEL_NAME", "anthropic/claude-haiku-4-5"))\n')
-    s = re.sub(r'def create_model\(\):.*?(?=\n\nroot_agent|\nroot_agent|\Z)', new.rstrip()+'\n', s, count=1, flags=re.S)
-    p.write_text(s)
-pp = proj/'pyproject.toml'; t = pp.read_text()
-if 'anthropic[bedrock]' not in t:
-    pp.write_text(t.replace('dependencies = [', 'dependencies = [\n  "anthropic[bedrock]>=0.40",', 1))
-print("  multi-cloud patch applied")
-PY
+python3 "$SCRIPT_DIR/agentcore_multicloud_patch.py" "$PROJ"
 ok "agent is multi-cloud"
 
 step "Pushing the agent image to ECR (linux/amd64)"
@@ -74,6 +55,21 @@ spec:
     repository: {url: ${CLONE_URL}, branch: ${BR}, subfolder: ${AGENT}}
 EOF
 arctl apply -f "$A"; rm -f "$A"
+
+# Re-deploy hygiene: the image tag is fixed (:0.0.1), so AgentCore would keep
+# serving the CACHED image if the runtime already exists — a re-run of this
+# script would silently ship stale code. Delete any existing runtime first so
+# the deploy below pulls the freshly-pushed image. (On a clean run there's none;
+# reset.sh also removes it.)
+EXIST_RID="$(aws bedrock-agentcore-control list-agent-runtimes --region "$AWS_REGION" 2>/dev/null | jq -r '.agentRuntimes[]?|select(.agentRuntimeName=="agentdemo_agentcore")|.agentRuntimeId')"
+if [[ -n "$EXIST_RID" ]]; then
+  log "existing AgentCore runtime found — deleting so the new image is pulled"
+  aws bedrock-agentcore-control delete-agent-runtime --region "$AWS_REGION" --agent-runtime-id "$EXIST_RID" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do
+    aws bedrock-agentcore-control list-agent-runtimes --region "$AWS_REGION" 2>/dev/null | jq -e '.agentRuntimes[]?|select(.agentRuntimeName=="agentdemo_agentcore")' >/dev/null 2>&1 || break
+    sleep 5
+  done
+fi
 D="$(mktemp)"; cat > "$D" <<EOF
 apiVersion: ar.dev/v1alpha1
 kind: Deployment
