@@ -87,6 +87,28 @@ export CONTROLLER_NODEPORT="${CONTROLLER_NODEPORT:-30083}" # node -> kagent cont
 export KAGENT_URL="${KAGENT_URL:-http://${CLUSTER_NAME}-control-plane:${CONTROLLER_NODEPORT}}"
 export RBAC_SUPERUSER_ROLE="${RBAC_SUPERUSER_ROLE:-field-fte}"  # alice's group -> registry superuser
 
+# ── Telemetry: Solo Enterprise management chart (ClickHouse + OTel collectors) ──
+# The AR UI Tracing tab queries ClickHouse (platformdb.otel_traces_json). Agents
+# export OTLP -> the telemetry collector -> ClickHouse; the daemon (Docker) reads
+# ClickHouse via a NodePort on the kind node.
+export SOLO_MGMT_NS="${SOLO_MGMT_NS:-solo-enterprise}"
+# Version of solo-public/solo-enterprise-helm/charts/management (ClickHouse +
+# telemetry + the Solo Enterprise UI). This is the kagent enterprise release line
+# (0.4.3), NOT the Istio mgmt-plane SOLO_MGMT_VERSION from versions.env (2.12.x) —
+# a name collision, so keep this its own variable or the helm pull 404s.
+export SOLO_ENT_MGMT_VERSION="${SOLO_ENT_MGMT_VERSION:-0.4.3}"
+export CLICKHOUSE_SVC="${CLICKHOUSE_SVC:-solo-mgmt-clickhouse}"
+export CLICKHOUSE_NATIVE_PORT="${CLICKHOUSE_NATIVE_PORT:-9000}"
+export CLICKHOUSE_NODEPORT="${CLICKHOUSE_NODEPORT:-30900}"
+export TELEMETRY_COLLECTOR_ENDPOINT="${TELEMETRY_COLLECTOR_ENDPOINT:-http://solo-enterprise-telemetry-collector.${SOLO_MGMT_NS}.svc.cluster.local:4317}"
+# What the daemon validates traces against (config.go: CLICKHOUSE_*). ADDR is the
+# kind node (reachable from the daemon over the kind network), via the NodePort.
+export CLICKHOUSE_ADDR="${CLICKHOUSE_ADDR:-${CLUSTER_NAME}-control-plane}"
+export CLICKHOUSE_PORT="${CLICKHOUSE_PORT:-${CLICKHOUSE_NODEPORT}}"
+export CLICKHOUSE_DB="${CLICKHOUSE_DB:-platformdb}"
+export CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
+export CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-password}"
+
 # bridge_keycloak_hostalias <deployment> — add/replace a hostAlias mapping the
 # issuer host (keycloak.localtest.me) to Keycloak's ClusterIP on a deployment,
 # so its pods resolve the browser-style issuer in-cluster. Idempotent.

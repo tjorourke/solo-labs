@@ -1,0 +1,12 @@
+# Exposes the management chart's ClickHouse (native :9000) on the kind node so the
+# AgentRegistry daemon (a Docker container) can query traces (otel_traces_json).
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse-nodeport
+  namespace: solo-enterprise
+spec:
+  type: NodePort
+  selector: {"app.kubernetes.io/component": "clickhouse", "app.kubernetes.io/instance": "solo-mgmt", "app.kubernetes.io/name": "clickhouse"}
+  ports:
+    - { name: native, port: 9000, targetPort: 9000, nodePort: 30900 }

@@ -59,8 +59,17 @@ helm_install_with_progress kagent "$KENT_CHART" kagent \
   --set oidc.skipOBO=false \
   --set kagent-tools.enabled=true \
   --set ui.enabled=true \
+  --set otel.tracing.enabled=true \
+  --set otel.tracing.exporter.otlp.endpoint="${TELEMETRY_COLLECTOR_ENDPOINT}" \
+  --set otel.logging.enabled=true \
+  --set otel.logging.exporter.otlp.endpoint="${TELEMETRY_COLLECTOR_ENDPOINT}" \
   --set-json 'rbac.roleMapping={"roleMapper":"claims.groups.transformList(i, v, v in rolesMap, rolesMap[v])","roleMappings":{"field-fte":"global.Admin","field-trial":"global.Reader","field-admin":"global.Admin","admins":"global.Admin","readers":"global.Reader","writers":"global.Writer"}}' \
   --timeout 12m
+# OTel above makes the controller stamp OTEL_TRACING_ENABLED=true + the collector
+# endpoint into every agent it deploys (default is false → no spans). Traces land
+# in ClickHouse (platformdb.otel_traces_json) and render in the Enterprise UI's
+# Tracing tab. The collector itself is installed next by 03b-telemetry.sh; the
+# endpoint is just a string here, resolved when an agent actually exports.
 # NB roleMapper uses claims.groups (lowercase) — the chart default claims.Groups
 # (capital G) fails against Keycloak's lowercase `groups` claim and returns 401.
 # No --wait above: the controller does OIDC discovery at startup against

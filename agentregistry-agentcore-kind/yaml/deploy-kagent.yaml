@@ -12,3 +12,6 @@ spec:
   # connect.sh sources it from .env.local / the secrets file, so it's never committed.
   env:
     ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    # OTel tracing is NOT set here: the kagent controller stamps OTEL_TRACING_ENABLED
+    # + the collector endpoint into every agent it deploys (03-kagent.sh enables it
+    # chart-wide). Spans land in ClickHouse and show in the Enterprise UI Tracing tab.

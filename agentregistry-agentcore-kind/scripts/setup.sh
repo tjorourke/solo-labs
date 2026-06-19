@@ -22,6 +22,7 @@ bash "$SCRIPT_DIR/00-prereqs.sh"
 bash "$SCRIPT_DIR/01-cluster.sh"
 bash "$SCRIPT_DIR/02-keycloak.sh"
 bash "$SCRIPT_DIR/03-kagent.sh"
+bash "$SCRIPT_DIR/03b-telemetry.sh"     # ClickHouse + telemetry + Enterprise UI (Tracing). SKIP_TELEMETRY=true to skip
 bash "$SCRIPT_DIR/04-daemon.sh"
 bash "$SCRIPT_DIR/04b-register-runtime.sh"
 bash "$SCRIPT_DIR/04c-publish-mcp.sh"   # publish the approved MCP tool servers + skill

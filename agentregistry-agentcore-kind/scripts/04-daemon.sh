@@ -40,6 +40,13 @@ export OIDC_CLIENT_ID="$KEYCLOAK_CLIENT"
 export OIDC_PUBLIC_CLIENT_ID="$KEYCLOAK_CLIENT"
 export OIDC_CLIENT_SECRET="public-client-no-secret"
 export RBAC_ROLE_CLAIM=groups
+# ClickHouse for the Tracing tab (03b installed it; reachable via the NodePort).
+# Unset if 03b was skipped, so the daemon doesn't try a dead ClickHouse.
+if kc -n "$SOLO_MGMT_NS" get svc "$CLICKHOUSE_SVC" >/dev/null 2>&1; then
+  export CLICKHOUSE_ADDR CLICKHOUSE_PORT CLICKHOUSE_DB CLICKHOUSE_USER CLICKHOUSE_PASSWORD
+else
+  unset CLICKHOUSE_ADDR CLICKHOUSE_PORT CLICKHOUSE_DB CLICKHOUSE_USER CLICKHOUSE_PASSWORD
+fi
 arctl daemon stop >/dev/null 2>&1 || true; sleep 2
 arctl daemon start >/dev/null 2>&1 || true   # crash-loops until the alias is on its compose network (next step)
 ok "daemon starting (issuer ${KEYCLOAK_ISSUER}, role claim 'groups', superuser '${RBAC_SUPERUSER_ROLE}')"

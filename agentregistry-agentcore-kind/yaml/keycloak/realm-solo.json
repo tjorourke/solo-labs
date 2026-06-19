@@ -113,10 +113,12 @@
         }
       ],
       "redirectUris": [
-        "http://localhost:12121/*"
+        "http://localhost:12121/*",
+        "http://localhost:18090/*"
       ],
       "webOrigins": [
         "http://localhost:12121",
+        "http://localhost:18090",
         "+"
       ]
     },
