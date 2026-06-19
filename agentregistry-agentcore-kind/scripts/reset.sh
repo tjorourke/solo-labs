@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
-# reset.sh — put the demo back to the start WITHOUT tearing down the platform.
-# Removes everything the notebook creates so you can run it again from a clean
-# slate: the scaffolded agentdemo/ project, the catalog entries, the kagent and
-# AgentCore deployments, the AWS AgentCore runtimes, the CloudFormation stack,
-# and the ECR repos. Leaves the kind cluster + Keycloak + kagent + the arctl
-# daemon running.
+# reset.sh — put the demo back to the EXACT post-setup state, so the notebook
+# runs from the top as if you'd just brought the cluster up and started the demo
+# for the first time. Removes everything the notebook CREATES; keeps everything
+# setup.sh established.
 #
+# REMOVES: the scaffolded agentdemo/ project, the agent catalog entry, the agent
+# + MCP-server deployments on kagent (and the kagent Agent/MCPServer CRs + waypoints
+# + AccessPolicies they spawn), and the deployed AgentCore agent runtime instance.
+# KEEPS (platform, from setup.sh): kind cluster + Keycloak + kagent + Enterprise UI
+# + arctl daemon; the published catalog (MCP servers + skills); BOTH connected
+# runtimes (kind-kagent AND aws-agentcore); and the AWS platform wiring (the
+# CloudFormation cross-account role + the agent ECR repo) — so the notebook's
+# AgentCore step deploys cleanly against the existing platform with no re-connect.
+#
+# Set RESET_KEEP_AWS_PLATFORM=false to ALSO tear down the AWS platform (CF role,
+# ECR repo, aws-agentcore runtime) — only if you intend to re-run 04d-connect-aws.
 # For a FULL teardown (cluster, daemon, registry too) use ./scripts/cleanup.sh.
 #
 #   ./scripts/reset.sh
@@ -21,12 +30,22 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 
 # Names the notebook/scripts use (override via env if you changed them).
 AGENTS="${RESET_AGENTS:-agentdemo}"
-DEPLOYMENTS="${RESET_DEPLOYMENTS:-agentdemo agentdemo-agentcore}"
+# The notebook deploys the agent AND its MCP servers (each its own Deployment on
+# a Kagent runtime). Remove all three so the next run re-creates them cleanly.
+DEPLOYMENTS="${RESET_DEPLOYMENTS:-agentdemo agentdemo-agentcore everything-server my-mcp}"
 AWS_RUNTIME_NAMES="${RESET_AWS_RUNTIMES:-agentdemo_agentcore}"
-# Keep kind-kagent — it's platform plumbing registered by setup.sh, not a demo
-# artifact. Only the AWS runtime is torn down on reset.
-AR_RUNTIMES="${RESET_AR_RUNTIMES:-aws-agentcore}"
-ECR_REPOS="${RESET_ECR_REPOS:-agentdemo}"
+# Keep BOTH runtimes — kind-kagent AND aws-agentcore are platform connections
+# registered by setup.sh (04b/04d), not demo artifacts. Default = keep them.
+KEEP_AWS_PLATFORM="${RESET_KEEP_AWS_PLATFORM:-true}"
+if [[ "$KEEP_AWS_PLATFORM" == "true" ]]; then
+  AR_RUNTIMES="${RESET_AR_RUNTIMES:-}"            # keep aws-agentcore + kind-kagent
+  ECR_REPOS="${RESET_ECR_REPOS:-}"                # keep the agent ECR repo (platform)
+  DELETE_STACK=false                               # keep the CloudFormation role (platform)
+else
+  AR_RUNTIMES="${RESET_AR_RUNTIMES:-aws-agentcore}"
+  ECR_REPOS="${RESET_ECR_REPOS:-agentdemo}"
+  DELETE_STACK=true
+fi
 STACK_NAME="${STACK_NAME:-AgentRegistryAccess}"
 
 have_aws() { command -v aws >/dev/null 2>&1 && aws sts get-caller-identity >/dev/null 2>&1; }
@@ -57,12 +76,16 @@ if have_aws; then
       | jq -r --arg n "$rn" '.agentRuntimes[]? | select(.agentRuntimeName==$n) | .agentRuntimeId')"
     if [[ -n "$rid" ]]; then aws bedrock-agentcore-control delete-agent-runtime --region "$AWS_REGION" --agent-runtime-id "$rid" >/dev/null 2>&1 && ok "AWS runtime $rn"; else log "no AWS runtime $rn"; fi
   done
-  step "Deleting CloudFormation stack '$STACK_NAME'"
-  if aws cloudformation describe-stacks --stack-name "$STACK_NAME" >/dev/null 2>&1; then
-    aws cloudformation delete-stack --stack-name "$STACK_NAME" \
-      && aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" 2>/dev/null \
-      && ok "stack deleted" || warn "stack delete may still be in progress"
-  else log "no stack $STACK_NAME"; fi
+  if [[ "$DELETE_STACK" == "true" ]]; then
+    step "Deleting CloudFormation stack '$STACK_NAME'"
+    if aws cloudformation describe-stacks --stack-name "$STACK_NAME" >/dev/null 2>&1; then
+      aws cloudformation delete-stack --stack-name "$STACK_NAME" \
+        && aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" 2>/dev/null \
+        && ok "stack deleted" || warn "stack delete may still be in progress"
+    else log "no stack $STACK_NAME"; fi
+  else
+    log "keeping CloudFormation role '$STACK_NAME' (platform; set RESET_KEEP_AWS_PLATFORM=false to remove)"
+  fi
   step "Deleting ECR repos"
   for r in $ECR_REPOS; do
     aws ecr delete-repository --repository-name "$r" --force >/dev/null 2>&1 && ok "ECR $r" || log "no ECR repo $r"
