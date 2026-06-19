@@ -1,0 +1,65 @@
+# Versioned routing table on the agentgateway proxy. Same shape as part 1:
+#   x-version-override  client/ops-controlled, matched first
+#   x-tenant-version    set from the JWT `version` claim by the policy
+#   default             latest
+#
+# Whether agentgateway strips a client-supplied x-tenant-version (the way
+# kgateway's JWT filter does) is exactly what the demo checks.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: versioned-routing
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+  rules:
+    # 1. explicit client/ops override
+    - matches:
+        - headers:
+            - name: x-version-override
+              value: v2
+              type: Exact
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: app-v2
+    - matches:
+        - headers:
+            - name: x-version-override
+              value: latest
+              type: Exact
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: app-latest
+    # 2. JWT-claim-derived version
+    - matches:
+        - headers:
+            - name: x-tenant-version
+              value: v2
+              type: Exact
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: app-v2
+    - matches:
+        - headers:
+            - name: x-tenant-version
+              value: latest
+              type: Exact
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: app-latest
+    # 3. default to latest
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: app-latest

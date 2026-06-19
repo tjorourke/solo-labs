@@ -148,7 +148,7 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "kagent",
-            "id.token.claim": "false",
+            "id.token.claim": "true",
             "access.token.claim": "true"
           }
         },

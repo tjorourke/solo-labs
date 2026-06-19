@@ -1,0 +1,18 @@
+# The edge gateway, on the agentgateway data plane. Creating this Gateway
+# auto-provisions an agentgateway proxy Deployment + Service in
+# agentgateway-system. Coexists with the part-1 kgateway Gateway (different
+# GatewayClass + namespace).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway-proxy
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All

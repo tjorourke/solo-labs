@@ -1,0 +1,28 @@
+# JWT authentication on the Gateway. Strict mode — every request must carry
+# a valid token signed by the in-cluster jwt-issuer.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: jwt-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: curation-gateway
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "agentic-tool-curation-kind"
+          audiences: ["rogue-mcp"]
+          jwks:
+            remote:
+              jwksPath: "/.well-known/jwks.json"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: jwt-issuer
+                namespace: tool-curation
+                port: 8080

@@ -38,10 +38,11 @@ missing=0
 step "Core tooling"
 formula_for() {
   case "$1" in
+    envsubst) echo "gettext" ;;   # envsubst ships in gettext (injects ANTHROPIC_API_KEY into the deploy)
     *)        echo "$1" ;;
   esac
 }
-for cli in docker kind kubectl helm jq gh uv curl openssl; do
+for cli in docker kind kubectl helm jq gh uv curl openssl envsubst; do
   if have "$cli"; then ok "$cli: $(command -v "$cli")"; else
     warn "$cli not found"; missing=1
     case "$cli" in

@@ -1,0 +1,33 @@
+# Inbound governance for the Anthropic API surface. The gateway issues the
+# identity contract: every caller presents a JWT this lab mints, validated
+# against the inline JWKS. Authorization is a CEL expression over the JWT
+# claims, so only the right org/team reaches the model. The OpenAI key is never
+# part of this — the client only ever holds its own JWT.
+#
+# 04-rbac.sh fills in the inline JWKS below with the public key generated
+# alongside the signing key, then applies this to the cluster.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: claude-code-rbac
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agentgateway-proxy
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: claude-code-lab
+          audiences:
+            - anthropic-api
+          jwks:
+            inline: |
+              __JWKS_JSON__
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - 'jwt.org == "acme" && jwt.team == "data-platform"'

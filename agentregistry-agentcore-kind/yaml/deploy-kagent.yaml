@@ -5,6 +5,10 @@ metadata:
 spec:
   targetRef:  { kind: Agent,   name: agentdemo }
   runtimeRef: { kind: Runtime, name: kind-kagent }
-  # No env needed: the agent's anthropic key comes from kagent's default
-  # ModelConfig (apiKeySecret: kagent-anthropic), configured at install time.
-  # So this deploys with a plain `arctl apply -f yaml/deploy-kagent.yaml`.
+  # The agent is a BYO/ADK image whose own LiteLlm reads ANTHROPIC_API_KEY from its
+  # environment (kagent's default ModelConfig is for kagent-native models, not this
+  # agent). The Deployment env is a literal string map (no secretKeyRef), so the key
+  # must be injected at deploy time:  envsubst < yaml/deploy-kagent.yaml | arctl apply -f -
+  # connect.sh sources it from .env.local / the secrets file, so it's never committed.
+  env:
+    ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"

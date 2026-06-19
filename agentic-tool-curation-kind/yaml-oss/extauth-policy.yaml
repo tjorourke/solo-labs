@@ -1,0 +1,27 @@
+# Ext-auth policy. Routes every gateway request through the tool-policy-extauth
+# gRPC service. forwardBody is REQUIRED so the ext-auth service can see the
+# JSON-RPC params.name + arguments — without it, the body is empty and the
+# ext-auth has nothing to gate on.
+#
+# Scoped to the Gateway (not the backend), so every route gets the ext-auth.
+# In a real setup you'd narrow this to MCP-shaped HTTPRoutes only.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: tool-policy-extauth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: curation-gateway
+  traffic:
+    extAuth:
+      grpc: {}
+      forwardBody:
+        # MCP tools/call bodies are tiny — 1-2 kB is plenty.
+        maxSize: 8192
+      backendRef:
+        name: tool-policy-extauth
+        namespace: tool-curation
+        port: 9001

@@ -1,0 +1,28 @@
+# The model behind the Anthropic API. The provider is OpenAI, so agentgateway
+# translates each inbound Anthropic Messages request into an OpenAI
+# chat-completions call and translates the reply back. Swap the provider block
+# (anthropic/azure/bedrock/gemini) or point host/port at a self-hosted
+# OpenAI-compatible server (vLLM, Ollama) for an on-prem model — the client
+# contract does not change.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: openai
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: gpt-4o-mini
+  policies:
+    auth:
+      secretRef:
+        name: openai-secret
+    ai:
+      # Treat requests whose path ends with /v1/messages as Anthropic Messages
+      # input. Paired with an OpenAI provider this is what runs the bidirectional
+      # translation: Messages -> chat-completions on the way in, and
+      # chat-completions -> Messages on the way back. Without it the gateway
+      # falls back to passthrough and the client gets raw OpenAI JSON.
+      routes:
+        "/v1/messages": Messages

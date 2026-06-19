@@ -1,0 +1,33 @@
+# One HTTPRoute pointing at runaway-mcp through an AgentgatewayBackend of
+# type `mcp`. MCP-aware backend gives us session tracking via
+# Mcp-Session-Id, which the budget-extauth keys every counter off.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: runaway-mcp-backend
+  namespace: runaway-containment
+spec:
+  mcp:
+    targets:
+      - name: runaway-mcp
+        static:
+          host: runaway-mcp.runaway-containment.svc.cluster.local
+          port: 8080
+          path: /mcp
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-route
+  namespace: runaway-containment
+spec:
+  parentRefs:
+    - name: loops-gateway
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mcp }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: runaway-mcp-backend
