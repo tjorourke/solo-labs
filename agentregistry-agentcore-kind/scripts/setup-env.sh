@@ -77,6 +77,16 @@ fi
 ask AWS_REGION "AWS region (Bedrock AgentCore; us-east-1 recommended)" "us-east-1"
 
 echo
+echo "Only for the Google Cloud (Vertex AI) add-on (leave blank to skip):"
+echo "  Deploys the agent to Vertex AI Agent Engine + the MCP to Cloud Run."
+echo "  Bootstrap once first:  arctl runtime setup gemini-agent-runtime --project-id <project>"
+echo "  (creates a deployer service account + key; needs rights to create custom IAM roles)."
+ask GCP_PROJECT_ID "GCP project id (blank = skip Google)" "${GCP_PROJECT_ID:-}"
+if [ -n "${GCP_PROJECT_ID:-}" ]; then
+  ask GCP_SA_KEY_FILE "deployer SA key json path (from 'arctl runtime setup')" "${GCP_SA_KEY_FILE:-.agentcore/sa-gcp-deployer.json}"
+fi
+
+echo
 echo "AgentCore agent source (AgentCore add-on only):"
 echo "  kagent runs the OCI image directly, but Bedrock AgentCore runs the agent"
 echo "  inside YOUR AWS account and clones its SOURCE from a git repo you own at"
@@ -108,6 +118,9 @@ export SOLO_ISTIO_LICENSE_KEY="\${SOLO_ISTIO_LICENSE_KEY:-\$SOLO_LICENSE_KEY}"
 export AGENTGATEWAY_LICENSE_KEY="${AGENTGATEWAY_LICENSE_KEY:-}"
 export AWS_PROFILE="${AWS_PROFILE:-}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
+# Google Cloud / Vertex AI add-on (blank = skip). GCP_PROJECT_ID set turns on 04e.
+export GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
+export GCP_SA_KEY_FILE="${GCP_SA_KEY_FILE:-}"
 export AGENT_GIT_URL="${AGENT_GIT_URL:-}"
 export AGENT_GIT_BRANCH="${AGENT_GIT_BRANCH:-main}"
 EOF
@@ -121,6 +134,7 @@ echo "  SOLO_LICENSE_KEY         : $(mask "${SOLO_LICENSE_KEY:-}")  (also licens
 echo "  AGENTGATEWAY_LICENSE_KEY : $(mask "${AGENTGATEWAY_LICENSE_KEY:-}")"
 echo "  AWS_PROFILE       : ${AWS_PROFILE:-<unset> (AgentCore add-on only)}"
 echo "  AWS_REGION        : ${AWS_REGION:-us-east-1}"
+echo "  GCP_PROJECT_ID    : ${GCP_PROJECT_ID:-<unset> (Vertex add-on only)}"
 echo "  AGENT_GIT_URL     : ${AGENT_GIT_URL:-<unset> (AgentCore add-on only)}"
 echo
 echo "Next: ./scripts/setup.sh   (then open demo.ipynb)"

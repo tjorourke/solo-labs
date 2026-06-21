@@ -15,21 +15,32 @@
 # service-account key is optional and not validated at apply time, so the runtime
 # row is created and visible without any live GCP access.
 #
-# GCP is opt-in. Skip with CONNECT_GCP=false.
+# GCP is opt-in and independent of AWS: it connects only when you set GCP_PROJECT_ID
+# (and, to make it deployable, GCP_SA_KEY_FILE). With neither set it skips, so the
+# lab runs kagent-only or kagent+AWS unchanged. Force-skip with CONNECT_GCP=false.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-if [[ "${CONNECT_GCP:-true}" == "false" ]]; then
+if [[ "${CONNECT_GCP:-}" == "false" ]]; then
   log "CONNECT_GCP=false — skipping the Google Cloud GeminiAgentRuntime platform"; exit 0
 fi
 
 # ── config (override via env) ────────────────────────────────────────────────
 GCP_RUNTIME_ID="${GCP_RUNTIME_ID:-gcp-vertex}"
-GCP_PROJECT_ID="${GCP_PROJECT_ID:-gcp-demo-project}"   # required to create the runtime row
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"                   # set this to connect Google; unset = skip
 GCP_LOCATION="${GCP_LOCATION:-us-central1}"            # Vertex AI / Cloud Run region
 GCP_SA_KEY_FILE="${GCP_SA_KEY_FILE:-}"                 # optional: sa-gcp-deployer.json from `arctl runtime setup`
+
+# Google is opt-in and independent of AWS. Skip cleanly unless you point it at a
+# project (mirrors 04d-connect-aws.sh, which skips when there's no AWS session).
+if [[ -z "$GCP_PROJECT_ID" ]]; then
+  log "no GCP_PROJECT_ID — skipping the Google Vertex runtime (kagent + any AWS runtime still work)."
+  log "  to connect it:  arctl runtime setup gemini-agent-runtime --project-id <project>   then"
+  log "                  GCP_PROJECT_ID=<project> GCP_SA_KEY_FILE=sa-gcp-deployer.json ./scripts/04e-connect-gcp.sh"
+  exit 0
+fi
 
 step "Connecting the Google Cloud platform (GeminiAgentRuntime '${GCP_RUNTIME_ID}', project ${GCP_PROJECT_ID})"
 arctl_login
