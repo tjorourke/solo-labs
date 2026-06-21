@@ -22,6 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
+load_secrets   # pull GCP_PROJECT_ID / GCP_SA_KEY_FILE from .env.local when run via setup.sh
 
 if [[ "${CONNECT_GCP:-}" == "false" ]]; then
   log "CONNECT_GCP=false — skipping the Google Cloud GeminiAgentRuntime platform"; exit 0

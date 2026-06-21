@@ -15,9 +15,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
+load_secrets   # pull AWS_PROFILE / AWS_REGION from .env.local when run via setup.sh
 
 if [[ "${CONNECT_AWS:-true}" == "false" ]]; then
   log "CONNECT_AWS=false — skipping the AWS Bedrock AgentCore platform"; exit 0
+fi
+
+# .env.local decides: with no aws CLI, or no AWS_PROFILE and no live session, skip
+# cleanly. A cloud you didn't set up is simply not connected; the install never fails.
+if ! command -v aws >/dev/null 2>&1; then
+  log "aws CLI not installed — skipping the AWS Bedrock AgentCore platform (kagent/GCP still work)."; exit 0
+fi
+if [[ -z "${AWS_PROFILE:-}" ]] && ! aws sts get-caller-identity >/dev/null 2>&1; then
+  log "no AWS_PROFILE in .env.local and no AWS session — skipping the AWS Bedrock AgentCore platform."
+  log "  to connect it: set AWS_PROFILE via ./scripts/setup-env.sh, then ./scripts/04d-connect-aws.sh"
+  exit 0
 fi
 
 step "Connecting the AWS Bedrock AgentCore platform"
