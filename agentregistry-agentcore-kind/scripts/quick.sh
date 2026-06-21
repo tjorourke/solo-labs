@@ -12,7 +12,7 @@ case "${1:-up}" in
     bash "$SCRIPT_DIR/01-cluster.sh"
     bash "$SCRIPT_DIR/02-keycloak.sh"
     bash "$SCRIPT_DIR/03-kagent.sh"
-    bash "$SCRIPT_DIR/04-daemon.sh"
+    bash "$SCRIPT_DIR/04-agentregistry.sh"
     bash "$SCRIPT_DIR/05-scaffold.sh"
     bash "$SCRIPT_DIR/06-build-publish.sh"
     bash "$SCRIPT_DIR/07-runtime-deploy.sh"
@@ -61,13 +61,11 @@ EOF
     bash "$SCRIPT_DIR/cleanup.sh" agentcore
     step "Deleting kind cluster '$CLUSTER_NAME'"
     kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME" && { kind delete cluster --name "$CLUSTER_NAME"; ok "deleted"; } || log "not present"
-    step "Stopping the arctl daemon"
-    arctl daemon stop >/dev/null 2>&1 && ok "daemon stopped" || log "daemon not running"
     step "Removing the local registry container '$REG_NAME'"
     docker rm -f "$REG_NAME" >/dev/null 2>&1 && ok "registry removed" || log "registry not present"
     ;;
   status)
-    step "arctl daemon"; arctl daemon status 2>/dev/null | sed 's/^/  /' >&2 || log "not running"
+    step "registry runtimes"; arctl get runtimes 2>/dev/null | sed 's/^/  /' >&2 || log "arctl not logged in"
     step "catalog"; { arctl get mcp acme/textkit; arctl get skill summary-style; arctl get agent summarizer; arctl get runtimes; } 2>/dev/null | sed 's/^/  /' >&2 || true
     step "keycloak"; kc -n "$KEYCLOAK_NS" get pods 2>/dev/null | sed 's/^/  /' >&2 || true
     step "kagent"; kc -n kagent get agent,pods 2>/dev/null | sed 's/^/  /' >&2 || true

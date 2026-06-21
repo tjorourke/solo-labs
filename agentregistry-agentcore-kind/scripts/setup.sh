@@ -22,13 +22,15 @@ bash "$SCRIPT_DIR/00-prereqs.sh"
 bash "$SCRIPT_DIR/01-cluster.sh"
 bash "$SCRIPT_DIR/02-keycloak.sh"
 bash "$SCRIPT_DIR/03-kagent.sh"
-bash "$SCRIPT_DIR/03b-telemetry.sh"     # ClickHouse + telemetry + Enterprise UI (Tracing). SKIP_TELEMETRY=true to skip
-bash "$SCRIPT_DIR/04-daemon.sh"
-bash "$SCRIPT_DIR/04b-register-runtime.sh"
+bash "$SCRIPT_DIR/03b-telemetry.sh"     # ClickHouse + telemetry + Enterprise UI (Tracing + Agents). SKIP_TELEMETRY=true to skip
+bash "$SCRIPT_DIR/04-agentregistry.sh"  # AgentRegistry IN-CLUSTER (replaces the old Docker daemon)
+bash "$SCRIPT_DIR/05-waypoint.sh"       # ambient mesh + enterprise-agentgateway (GatewayClass for ingress + the AccessPolicy waypoint)
+bash "$SCRIPT_DIR/06-gateway.sh"        # ingress Gateway + HTTPRoutes -> consoles at *.localtest.me (no port-forwards)
+# From here arctl talks to the registry via the gateway issuer, so the gateway (06) must be up first.
+bash "$SCRIPT_DIR/04b-register-runtime.sh"  # arctl login + register the kagent runtime
 bash "$SCRIPT_DIR/04c-publish-mcp.sh"   # publish the approved MCP tool servers + skill
-bash "$SCRIPT_DIR/04d-connect-aws.sh"   # connect the AWS Bedrock AgentCore platform (CONNECT_AWS=false to skip)
-bash "$SCRIPT_DIR/05-waypoint.sh"       # ambient mesh + agentgateway waypoint (for AccessPolicy)
-bash "$SCRIPT_DIR/06-kagent-ui-auth.sh" # kagent UI SSO front door (oauth2-proxy -> Keycloak)
+bash "$SCRIPT_DIR/04d-connect-aws.sh"   # connect the AWS Bedrock AgentCore runtime (CONNECT_AWS=false to skip)
+bash "$SCRIPT_DIR/04e-connect-gcp.sh"   # register the Google Cloud GeminiAgentRuntime so it shows up (CONNECT_GCP=false to skip)
 bash "$SCRIPT_DIR/notebook-kernel.sh"   # register the Bash kernel demo.ipynb uses
 
 cat >&2 <<EOF
@@ -36,6 +38,10 @@ cat >&2 <<EOF
 ══════════════════════════════════════════════════════════════════
   Platform ready — open demo.ipynb and start at "1. Scaffold"
 ══════════════════════════════════════════════════════════════════
-  Context: $CTX        Registry UI: ${ARCTL_API_BASE_URL}
-  The notebook's Connect cell loads .env.local and mints the arctl token.
+  Context: $CTX
+  Consoles (no port-forward — served by the agentgateway ingress):
+    AgentRegistry : http://${AR_HOST}
+    Enterprise UI : http://${KAGENT_UI_HOST}     (login admin-user / password)
+    Keycloak      : http://${KEYCLOAK_HOST}
+  The notebook's Connect cell loads .env.local and runs `arctl user login`.
 EOF

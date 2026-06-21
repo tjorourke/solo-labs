@@ -21,6 +21,9 @@ if [[ "${CONNECT_AWS:-true}" == "false" ]]; then
 fi
 
 step "Connecting the AWS Bedrock AgentCore platform"
+# Pin us-east-1: Bedrock AgentCore isn't GA in every region (a stray AWS_REGION /
+# profile region like eu-west-2 makes `runtime setup` / deploy fail), and the CF
+# role + ECR + runtime must all share one region. Override AWS_REGION to use another.
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 STACK="${STACK_NAME:-AgentRegistryAccess}"
 ROLE_NAME="${AWS_ROLE_NAME:-AgentRegistryAccessRole-agentcore-demo}"
@@ -34,7 +37,10 @@ if ! aws sts get-caller-identity >/dev/null 2>&1; then
   warn "  connect it later:  source scripts/aws-login.sh && ./scripts/04d-connect-aws.sh"
   exit 0
 fi
-arctl_token
+arctl_login
+# `arctl runtime setup` (below) authenticates via ARCTL_API_TOKEN, not the keychain.
+export ARCTL_API_TOKEN="$(arctl_token)"
+[[ -n "$ARCTL_API_TOKEN" ]] || die "could not mint a registry token — is the gateway up so ${KEYCLOAK_ISSUER} resolves?"
 AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ok "AWS $AWS_ACCOUNT_ID / $AWS_REGION"
 
@@ -65,6 +71,7 @@ kind: Runtime
 metadata: {name: aws-agentcore}
 spec:
   type: BedrockAgentCore
+  telemetryEndpoint: ${AR_TELEMETRY_ENDPOINT}
   config: {roleArn: "${AWS_ROLE_ARN}", externalId: "${AWS_EXTERNAL_ID}", region: "${AWS_REGION}"}
 EOF
 arctl apply -f "$RT"; rm -f "$RT"

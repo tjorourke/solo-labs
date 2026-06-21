@@ -1,15 +1,18 @@
 apiVersion: ar.dev/v1alpha1
 kind: MCPServer
 metadata:
-  name: demo/my-mcp
+  name: my-mcp
 spec:
   description: 'Text utilities tool server: word_count.'
+  title: my-mcp
   source:
     package:
-      identifier: localhost:5001/my-mcp:latest
-      registryType: oci
+      origin:
+        identifier: localhost:5001/my-mcp:latest
+        type: oci
+        oci:
+          serverName: my-mcp
       transport:
         path: /mcp
         port: 3000
         type: http
-  title: my-mcp

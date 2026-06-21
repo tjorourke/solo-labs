@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 AGENT="${AGENT:-$(resolve_kagent_agent "${AGENT_PREFIX:-agentdemo}")}"
-AS_USER="${AS_USER:-alice}"
+AS_USER="${AS_USER:-admin-user}"; AS_PASSWORD="${AS_PASSWORD:-password}"
 [[ -n "$AGENT" ]] || die "no kagent Agent matching '${AGENT_PREFIX:-agentdemo}' — is it deployed?"
 PROMPT="${*:-Roll a 20-sided die and tell me whether the result is a prime number.}"
 
@@ -24,11 +24,11 @@ echo "Asking '$AGENT' as $AS_USER (OIDC) ..."
 # browser-facing keycloak.localtest.me issuer). KC_HOSTNAME stamps the same
 # localtest.me `iss` on the token, which the controller validates.
 ISSUER="${KEYCLOAK_MINT_URL:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}}"
-kc -n kagent exec -i "${POD#*/}" -- python3 - "$AGENT" "$AS_USER" "$PROMPT" "$ISSUER" "$KEYCLOAK_CLIENT" <<'PY'
+kc -n kagent exec -i "${POD#*/}" -- python3 - "$AGENT" "$AS_USER" "$PROMPT" "$ISSUER" "$KAGENT_CLI_CLIENT" "$AS_PASSWORD" <<'PY'
 import sys, json, urllib.request, urllib.parse
-agent, user, prompt, issuer, client = sys.argv[1:6]
+agent, user, prompt, issuer, client, password = sys.argv[1:7]
 tok = json.load(urllib.request.urlopen(issuer + "/protocol/openid-connect/token",
-      urllib.parse.urlencode({"grant_type":"password","client_id":client,"username":user,"password":user}).encode()))["access_token"]
+      urllib.parse.urlencode({"grant_type":"password","client_id":client,"username":user,"password":password}).encode()))["access_token"]
 body = json.dumps({"jsonrpc":"2.0","id":"1","method":"message/send","params":{"message":{
       "role":"user","parts":[{"kind":"text","text":prompt}],"messageId":"ask-1"}}}).encode()
 req = urllib.request.Request("http://kagent-controller.kagent.svc.cluster.local:8083/api/a2a/kagent/%s/" % agent,

@@ -9,9 +9,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
-arctl_token
+arctl_login
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 AGENT=agentdemo; PROJ="$LAB_ROOT/agentdemo"
+# AgentCore publishes its OWN Agent record (with the ECR image), so it never
+# touches the kagent `agentdemo` Agent (which stays on the localhost image). That
+# keeps the two runtimes' images independent — no shared-record race — so this
+# script is safe to run in the background while the kagent steps run.
+AC_AGENT="${AGENT}-agentcore"
 
 step "Preflight"
 aws sts get-caller-identity >/dev/null 2>&1 || die "no AWS session — run: source scripts/aws-login.sh"
@@ -45,7 +50,7 @@ step "Deploying the agent to the aws-agentcore platform"
 A="$(mktemp)"; cat > "$A" <<EOF
 apiVersion: ar.dev/v1alpha1
 kind: Agent
-metadata: {name: ${AGENT}}
+metadata: {name: ${AC_AGENT}}
 spec:
   description: Dice-rolling agent (roll_die, check_prime).
   modelName: us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -75,18 +80,16 @@ apiVersion: ar.dev/v1alpha1
 kind: Deployment
 metadata: {name: ${AGENT}-agentcore}
 spec:
-  targetRef: {kind: Agent, name: ${AGENT}}
+  targetRef: {kind: Agent, name: ${AC_AGENT}}
   runtimeRef: {kind: Runtime, name: aws-agentcore}
   runtimeConfig: {region: ${AWS_REGION}}
   env: {MODEL_PROVIDER: bedrock, AWS_REGION: ${AWS_REGION}}
 EOF
 arctl apply -f "$D"; rm -f "$D"
 
-step "Waiting for the AWS runtime (CREATING → READY)"
-for i in $(seq 1 25); do
-  S="$(aws bedrock-agentcore-control list-agent-runtimes --region "$AWS_REGION" 2>/dev/null | jq -r '.agentRuntimes[]?|select(.agentRuntimeName=="agentdemo_agentcore")|.status')"
-  log "[$i] agentdemo_agentcore: ${S:-<none>}"
-  echo "$S" | grep -qiE 'READY|FAILED' && break
-  sleep 30
-done
-ok "AgentCore deploy submitted — test with ./scripts/ac-invoke.sh"
+# Non-blocking on purpose: the runtime now provisions in the background (CREATING
+# → READY, ~2-4 min) while you carry on with the kagent steps. ./scripts/ac-invoke.sh
+# waits for READY before it invokes, so there's no dead wait here.
+S="$(aws bedrock-agentcore-control list-agent-runtimes --region "$AWS_REGION" 2>/dev/null | jq -r '.agentRuntimes[]?|select(.agentRuntimeName=="agentdemo_agentcore")|.status')"
+ok "AgentCore deploy submitted (status: ${S:-CREATING}) — it provisions in the background."
+log "Carry on with the kagent steps; the final step (./scripts/ac-invoke.sh) waits for READY."

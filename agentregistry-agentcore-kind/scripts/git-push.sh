@@ -12,11 +12,21 @@ source "$SCRIPT_DIR/lib.sh"
 load_secrets
 cd "$LAB_ROOT"
 
+# Notebook bash kernels often run with a minimal PATH (no Homebrew), so make sure
+# the tools this script needs are reachable even when launched from a cell.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.arctl/bin:$PATH"
+
 : "${AGENT_GIT_URL:?set AGENT_GIT_URL in .env.local}"
 [[ -d agentdemo ]] || die "no agentdemo/ here — scaffold it first (arctl init agent agentdemo ...)"
+command -v gh  >/dev/null 2>&1 || die "gh CLI not found on PATH. PATH=$PATH"
+command -v git >/dev/null 2>&1 || die "git not found on PATH. PATH=$PATH"
 
 SLUG="${AGENT_GIT_URL#https://github.com/}"; SLUG="${SLUG%.git}"; BR="${AGENT_GIT_BRANCH:-main}"
-PUSH_URL="https://x-access-token:$(gh auth token)@github.com/${SLUG}.git"
+# gh's token may live in the macOS keychain, which a notebook-kernel process can't
+# always read. Fail with a clear message instead of pushing with an empty token.
+TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-$(gh auth token 2>/dev/null)}}"
+[[ -n "$TOKEN" ]] || die "no GitHub token available in this shell. From a cell, gh can't always read the keychain — run \`gh auth token\` in a terminal to confirm, then either run this script from a terminal, or export GH_TOKEN before launching the notebook."
+PUSH_URL="https://x-access-token:${TOKEN}@github.com/${SLUG}.git"
 T="$(mktemp -d)"; cp -R agentdemo "$T/agentdemo"; rm -rf "$T/agentdemo/.git" "$T/agentdemo/.venv"
 ( cd "$T" \
   && git init -qb "$BR" && git add -A \

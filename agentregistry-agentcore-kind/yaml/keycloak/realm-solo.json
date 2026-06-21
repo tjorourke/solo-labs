@@ -84,7 +84,7 @@
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
       "attributes": {
-        "access.token.lifespan": "1800"
+        "access.token.lifespan": "28800"
       },
       "protocolMappers": [
         {
@@ -140,7 +140,7 @@
         "http://localhost:18007"
       ],
       "attributes": {
-        "access.token.lifespan": "1800"
+        "access.token.lifespan": "28800"
       },
       "protocolMappers": [
         {

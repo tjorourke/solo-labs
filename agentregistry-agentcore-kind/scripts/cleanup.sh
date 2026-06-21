@@ -19,7 +19,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 # ── config (override via env) ────────────────────────────────────────────────
 export AWS_REGION="${AWS_REGION:-us-east-1}"
-AGENT_NAME="${AGENT_NAME:-summarizer}"
+AGENT_NAME="${AGENT_NAME:-agentdemo}"
 AWS_RUNTIME_ID="${AWS_RUNTIME_ID:-aws-agentcore}"
 STACK_NAME="${STACK_NAME:-AgentRegistryAccess}"
 ECR_REPO_NAME="${ECR_REPO_NAME:-$AGENT_NAME}"
@@ -37,7 +37,7 @@ cleanup_agentcore() {
   fi
 
   if command -v arctl >/dev/null 2>&1; then
-    arctl_token
+    arctl_login
     log "deleting registry Deployment '${AGENT_NAME}-agentcore'"
     arctl delete deployment "${AGENT_NAME}-agentcore" >/dev/null 2>&1 || true
     log "deleting BedrockAgentCore runtime '$AWS_RUNTIME_ID'"
@@ -66,8 +66,8 @@ cleanup_local() {
   step "Deleting kind cluster '$CLUSTER_NAME'"
   kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME" \
     && { kind delete cluster --name "$CLUSTER_NAME"; ok "deleted"; } || log "not present"
-  step "Stopping the arctl daemon"
-  arctl daemon stop >/dev/null 2>&1 && ok "daemon stopped" || log "daemon not running"
+  step "Uninstalling the in-cluster AgentRegistry (best-effort; the cluster delete also removes it)"
+  helm --kube-context "$CTX" uninstall agentregistry -n "$AR_NS" >/dev/null 2>&1 && ok "agentregistry uninstalled" || log "agentregistry not present"
   step "Removing the local registry container '$REG_NAME'"
   docker rm -f "$REG_NAME" >/dev/null 2>&1 && ok "registry removed" || log "registry not present"
   step "Removing the local .agentcore/ scratch dir"

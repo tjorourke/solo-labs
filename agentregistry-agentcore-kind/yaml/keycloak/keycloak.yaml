@@ -1,7 +1,7 @@
-# Upstream Keycloak (dev mode, in-memory H2, --import-realm) for the OBO lab.
-# Realm `solo` (alice/field-fte) is imported from the keycloak-realm-import
-# ConfigMap rendered by 02-keycloak.sh from yaml/keycloak/realm-solo.json.
-# Dev posture only — not for production.
+# Upstream Keycloak (dev mode, in-memory H2, --import-realm).
+# Realm `agentregistry` (admin-user/admins; clients ar-* + kagent-*) is imported
+# from the keycloak-realm-import ConfigMap that 02-keycloak.sh renders from
+# yaml/keycloak/agentregistry-realm.json. Dev posture only — not for production.
 ---
 apiVersion: v1
 kind: Service
@@ -11,13 +11,12 @@ metadata:
 spec:
   selector: { app: keycloak }
   ports:
+    # Issuer is now http://keycloak.localtest.me (port 80): the browser reaches it
+    # via the agentgateway ingress (HTTPRoute keycloak.localtest.me), and in-cluster
+    # pods reach it via a hostAlias pointing keycloak.localtest.me at this ClusterIP.
     - { name: http, port: 80, targetPort: 8080 }
     # 8080: in-cluster mint URL (ask.sh) hits this svc port directly.
     - { name: http-8080, port: 8080, targetPort: 8080 }
-    # 18080: the browser-consistent issuer is keycloak.localtest.me:18080, which
-    # the controller/oauth2-proxy reach via a hostAlias -> this ClusterIP:18080.
-    # High port so it never collides with a local `arctl run` agent on host :8080.
-    - { name: http-18080, port: 18080, targetPort: 8080 }
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -39,16 +38,16 @@ spec:
             - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
             - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: admin }
             - { name: KC_HTTP_RELATIVE_PATH, value: / }
-            # Issuer = keycloak.localtest.me:18080 so the SAME iss works in the
-            # browser (keycloak.localtest.me resolves to 127.0.0.1 via public DNS,
-            # no /etc/hosts) and in-cluster (controller/oauth2-proxy via a hostAlias).
-            # This is what lets the kagent UI's OIDC login complete on kind.
+            # Issuer = http://keycloak.localtest.me (port 80). The SAME iss works in
+            # the browser (keycloak.localtest.me -> 127.0.0.1 via public DNS -> host
+            # :80 -> agentgateway -> this svc) and in-cluster (consumers add a
+            # hostAlias keycloak.localtest.me -> this ClusterIP:80). Keycloak sits
+            # behind the gateway proxy, so trust the X-Forwarded headers.
             # Backchannel-dynamic lets ask.sh still mint via the in-cluster svc.
-            # 18080 (not 8080) so the issuer never shadows a local `arctl run`
-            # agent, whose A2A chat is hardcoded to host :8080.
-            - { name: KC_HOSTNAME, value: "http://keycloak.localtest.me:18080" }
+            - { name: KC_HOSTNAME, value: "http://keycloak.localtest.me" }
             - { name: KC_HOSTNAME_STRICT, value: "false" }
             - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true" }
+            - { name: KC_PROXY_HEADERS, value: "xforwarded" }
             - { name: KC_HEALTH_ENABLED, value: "true" }
           ports:
             - { containerPort: 8080, name: http }

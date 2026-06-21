@@ -13,9 +13,9 @@
 #                    the server in a second terminal with `arctl run ./<path>`).
 #
 # Usage:
-#   ./scripts/add-mcp.sh demo/everything-server@latest            # deploy + local (:3000)
-#   ./scripts/add-mcp.sh demo/my-mcp@latest --deploy-only         # agent.yaml only
-#   AGENT_DIR=agentdemo LOCAL_PORT=3000 ./scripts/add-mcp.sh demo/everything-server@latest
+#   ./scripts/add-mcp.sh everything-server@latest            # deploy + local (:3000)
+#   ./scripts/add-mcp.sh my-mcp@latest --deploy-only         # agent.yaml only
+#   AGENT_DIR=agentdemo LOCAL_PORT=3000 ./scripts/add-mcp.sh everything-server@latest
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
@@ -26,7 +26,7 @@ DEPLOY_ONLY=0; [[ "${2:-}" == "--deploy-only" ]] && DEPLOY_ONLY=1
 
 AGENT_DIR="${AGENT_DIR:-agentdemo}"
 LOCAL_PORT="${LOCAL_PORT:-3000}"
-NAME="${REF%@*}"                      # demo/everything-server
+NAME="${REF%@*}"                      # everything-server
 TAG="${REF#*@}"; [[ "$TAG" == "$REF" ]] && TAG=latest
 SHORT="${NAME#*/}"                    # everything-server
 

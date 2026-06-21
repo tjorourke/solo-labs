@@ -25,11 +25,11 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 cd "$LAB_ROOT"
-arctl_token || true
+arctl_login || true
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 
 # Names the notebook/scripts use (override via env if you changed them).
-AGENTS="${RESET_AGENTS:-agentdemo}"
+AGENTS="${RESET_AGENTS:-agentdemo agentdemo-agentcore}"
 # The notebook deploys the agent AND its MCP servers (each its own Deployment on
 # a Kagent runtime). Remove all three so the next run re-creates them cleanly.
 DEPLOYMENTS="${RESET_DEPLOYMENTS:-agentdemo agentdemo-agentcore everything-server my-mcp}"
@@ -67,7 +67,7 @@ done
 
 # ── 2. AWS AgentCore runtimes + CloudFormation + ECR ─────────────────────────
 if have_aws; then
-  # Re-arm the daemon with creds so it can delete the AgentCore runtime cleanly.
+  # Export local AWS creds so the aws CLI below can delete the AgentCore runtime.
   creds="$(aws configure export-credentials --format env 2>/dev/null)" && eval "$creds" \
     && export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION
   step "Deleting AWS AgentCore runtimes"

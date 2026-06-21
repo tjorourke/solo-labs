@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-MCP="${MCP_SERVER:-demo-everything-server}"
+MCP="${MCP_SERVER:-everything-server}"
 ALLOW_TOOL="${ALLOW_TOOL:-sum}"
 POLICY="${POLICY_NAME:-allow-${ALLOW_TOOL}-only}"
 AGENT="$(resolve_kagent_agent agentdemo)"

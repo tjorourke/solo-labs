@@ -10,8 +10,8 @@
 # kagent MCPServer the registry generates at deploy time can reach them.
 #
 # Servers (under mcp/):
-#   demo/everything-server   sum, echo, to_uppercase, reverse_text
-#   demo/my-mcp              word_count
+#   everything-server   sum, echo, to_uppercase, reverse_text
+#   my-mcp              word_count
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -19,7 +19,7 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 cd "$LAB_ROOT"
-arctl_token   # refresh bearer in case this script is run on its own
+arctl_login   # log in to the in-cluster registry (in case this script runs on its own)
 
 MCP_SERVERS=(everything-server my-mcp)
 
@@ -40,4 +40,4 @@ ok "published dice-game (Skill)"
 step "Approved catalog"
 { echo "tool servers:"; arctl get mcpservers; echo "skills:"; arctl get skills; } 2>/dev/null | sed 's/^/  /' >&2 || true
 
-echo "  Next: the notebook scaffolds the agent with --mcp demo/everything-server@latest --mcp demo/my-mcp@latest" >&2
+echo "  Next: the notebook scaffolds the agent with --mcp everything-server@latest --mcp my-mcp@latest" >&2

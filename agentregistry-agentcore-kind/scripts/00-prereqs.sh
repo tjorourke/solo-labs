@@ -62,7 +62,7 @@ step "Docker daemon"
 if docker info >/dev/null 2>&1; then ok "docker daemon reachable"; else warn "docker daemon not reachable — start Docker Desktop"; missing=1; fi
 
 # ── arctl (pinned) ───────────────────────────────────────────────────────────
-step "arctl ${ARCTL_VERSION} (enterprise; must still have the local 'daemon')"
+step "arctl ${ARCTL_VERSION} (enterprise; in-cluster registry model — no local daemon)"
 need_install=1
 if have arctl; then
   cur="$(arctl version 2>/dev/null | awk '/arctl version/{print $3}')"
@@ -79,10 +79,8 @@ if (( need_install )); then
     ok "arctl installed: $(arctl version 2>/dev/null | awk '/arctl version/{print $3}')"
   fi
 fi
-# Sanity: this arctl must still expose `daemon` (v2026.6.x dropped it).
-if have arctl && ! arctl daemon --help >/dev/null 2>&1; then
-  warn "this arctl has no 'daemon' subcommand — pin ARCTL_VERSION=v2026.5.4"; missing=1
-fi
+# v2026.6.x drops the local `daemon` (the registry is now the in-cluster server);
+# `arctl user login` + init/build/run are what we use. Nothing daemon-specific to check.
 echo "  Add arctl to PATH for this shell:  export PATH=\$HOME/.arctl/bin:\$PATH" >&2
 
 # ── secrets / auth reminders (validated, not installed) ──────────────────────
