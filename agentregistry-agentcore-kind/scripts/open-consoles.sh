@@ -13,6 +13,7 @@ ok  "Enterprise UI : http://${KAGENT_UI_HOST}   (login admin-user / password)"
 ok  "Keycloak      : http://${KEYCLOAK_HOST}"
 log "Chat with the agent from the CLI:  ./scripts/ask.sh \"<prompt>\""
 log "AWS AgentCore : open the AWS console -> Bedrock AgentCore (manual)"
+log "Google Cloud  : open the Google Cloud console -> Vertex AI (manual)"
 
 URLS=("http://${AR_HOST}" "http://${KAGENT_UI_HOST}")
 if command -v open >/dev/null 2>&1; then open "${URLS[@]}" 2>/dev/null || true
