@@ -5,17 +5,20 @@
 # setup.sh established.
 #
 # REMOVES: the scaffolded agentdemo/ project, the agent catalog entry, the agent
-# + MCP-server deployments on kagent (and the kagent Agent/MCPServer CRs + waypoints
-# + AccessPolicies they spawn), and the deployed AgentCore agent runtime instance.
+# + MCP-server deployments across ALL runtimes (kagent objects + waypoints +
+# AccessPolicies they spawn), the deployed AgentCore agent runtime instance, and
+# the deployed Google bits (the Vertex AI reasoning engine + the Cloud Run MCP).
 # KEEPS (platform, from setup.sh): kind cluster + Keycloak + kagent + Enterprise UI
-# + arctl daemon; the published catalog (MCP servers + skills); BOTH connected
-# runtimes (kind-kagent AND aws-agentcore); and the AWS platform wiring (the
-# CloudFormation cross-account role + the agent ECR repo) — so the notebook's
-# AgentCore step deploys cleanly against the existing platform with no re-connect.
+# + arctl daemon; the published catalog (MCP servers + skills); ALL connected
+# runtimes (kind-kagent, aws-agentcore, gcp-vertex); the AWS platform wiring (the
+# CloudFormation role + agent ECR repo); and the GCP platform wiring (the deployer
+# service account + custom roles) — so the next demo redeploys to every runtime
+# with no re-connect.
 #
 # Set RESET_KEEP_AWS_PLATFORM=false to ALSO tear down the AWS platform (CF role,
-# ECR repo, aws-agentcore runtime) — only if you intend to re-run 04d-connect-aws.
-# For a FULL teardown (cluster, daemon, registry too) use ./scripts/cleanup.sh.
+# ECR repo, aws-agentcore runtime), or RESET_KEEP_GCP_PLATFORM=false to tear down
+# the GCP platform (gcp-vertex runtime + deployer SA/roles). For a FULL teardown
+# (cluster, registry too) use ./scripts/cleanup.sh.
 #
 #   ./scripts/reset.sh
 
@@ -26,13 +29,14 @@ source "$SCRIPT_DIR/lib.sh"
 
 cd "$LAB_ROOT"
 arctl_login || true
+[ -f "$LAB_ROOT/.env.local" ] && { set -a; . "$LAB_ROOT/.env.local"; set +a; }  # GCP_PROJECT_ID / AWS_*
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 
 # Names the notebook/scripts use (override via env if you changed them).
 AGENTS="${RESET_AGENTS:-agentdemo agentdemo-agentcore}"
-# The notebook deploys the agent AND its MCP servers (each its own Deployment on
-# a Kagent runtime). Remove all three so the next run re-creates them cleanly.
-DEPLOYMENTS="${RESET_DEPLOYMENTS:-agentdemo agentdemo-agentcore everything-server my-mcp}"
+# The notebook deploys the agent AND its MCP servers across runtimes (each its own
+# Deployment). Remove them all so the next run re-creates them cleanly.
+DEPLOYMENTS="${RESET_DEPLOYMENTS:-agentdemo agentdemo-agentcore agentdemo-gcp everything-server my-mcp my-mcp-gcp}"
 AWS_RUNTIME_NAMES="${RESET_AWS_RUNTIMES:-agentdemo_agentcore}"
 # Keep BOTH runtimes — kind-kagent AND aws-agentcore are platform connections
 # registered by setup.sh (04b/04d), not demo artifacts. Default = keep them.
@@ -48,7 +52,16 @@ else
 fi
 STACK_NAME="${STACK_NAME:-AgentRegistryAccess}"
 
+# Google Cloud (Vertex AI + Cloud Run). Like AWS, keep the platform by default
+# (the gcp-vertex runtime + deployer SA/roles); just remove the deployed agent
+# engine + Cloud Run MCP so the next demo redeploys clean.
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+GCP_LOCATION="${GCP_LOCATION:-us-central1}"
+GCP_MCP_SERVICE="${GCP_MCP_SERVICE:-my-mcp}"
+KEEP_GCP_PLATFORM="${RESET_KEEP_GCP_PLATFORM:-true}"
+
 have_aws() { command -v aws >/dev/null 2>&1 && aws sts get-caller-identity >/dev/null 2>&1; }
+have_gcp() { command -v gcloud >/dev/null 2>&1 && [ -n "$GCP_PROJECT_ID" ] && gcloud projects describe "$GCP_PROJECT_ID" >/dev/null 2>&1; }
 
 # ── 0. drop the AccessPolicy + waypoint label the notebook's step 10 adds ─────
 if kubectl --context "$CTX" get ns kagent >/dev/null 2>&1; then
@@ -92,6 +105,41 @@ if have_aws; then
   done
 else
   warn "no live AWS session — skipping AWS cleanup (run 'aws sso login' to also clear AWS)"
+fi
+
+# ── 2b. Google Cloud: Vertex reasoning engine + Cloud Run MCP ────────────────
+if have_gcp; then
+  tok="$(gcloud auth print-access-token 2>/dev/null)"
+  step "Deleting the Google Vertex reasoning engine (agentdemo) + Cloud Run MCP"
+  if [ -n "$tok" ]; then
+    eng="$(curl -s -H "Authorization: Bearer $tok" \
+      "https://${GCP_LOCATION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/reasoningEngines" 2>/dev/null \
+      | AGENT="agentdemo" python3 -c "import sys,json,os
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    d={}
+for x in d.get('reasoningEngines',[]):
+    if x.get('displayName')==os.environ['AGENT']: print(x['name'])" 2>/dev/null)"
+    for e in $eng; do
+      curl -s -X DELETE -H "Authorization: Bearer $tok" \
+        "https://${GCP_LOCATION}-aiplatform.googleapis.com/v1/${e}?force=true" >/dev/null 2>&1 \
+        && ok "Vertex engine ${e##*/}" || log "engine ${e##*/} (an op may be in flight)"
+    done
+  fi
+  gcloud run services delete "$GCP_MCP_SERVICE" --project "$GCP_PROJECT_ID" --region "$GCP_LOCATION" --quiet >/dev/null 2>&1 \
+    && ok "Cloud Run $GCP_MCP_SERVICE" || log "no Cloud Run $GCP_MCP_SERVICE"
+  if [[ "$KEEP_GCP_PLATFORM" == "true" ]]; then
+    log "keeping gcp-vertex runtime + deployer SA/roles (platform; RESET_KEEP_GCP_PLATFORM=false to remove)"
+  else
+    arctl delete runtime gcp-vertex >/dev/null 2>&1 && ok "runtime gcp-vertex" || true
+    gcloud iam service-accounts delete "agentregistry-deployer@${GCP_PROJECT_ID}.iam.gserviceaccount.com" --project "$GCP_PROJECT_ID" --quiet >/dev/null 2>&1 && ok "deployer SA" || true
+    for r in AgentRegistrySecretManager AgentRegistryIAMManager; do
+      gcloud iam roles delete "$r" --project "$GCP_PROJECT_ID" --quiet >/dev/null 2>&1 && ok "role $r" || true
+    done
+  fi
+else
+  warn "no GCP project/access — skipping Google cleanup (set GCP_PROJECT_ID + 'gcloud auth login' to also clear Google)"
 fi
 
 # ── 3. registry catalog entries + runtimes ───────────────────────────────────
