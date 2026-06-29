@@ -21,6 +21,7 @@ traffic with zero dropped requests** (`evidence/availability-evidence.log`,
 | agentgateway supports that version | installs and serves on 1.3.0, no `standard-install.yaml`, supported range is 1.3-1.5 |
 | Coexistence (no controller to disable) | `openshift-default` and `enterprise-agentgateway` GatewayClasses both `Accepted=True`, side by side |
 | Zero-downtime migration | DNS cutover OpenShift-gw -> agentgateway, `fail=0` across the flip |
+| agentgateway below the floor (OCP 4.20, GW API 1.2.1) | installs and serves core Gateway + HTTPRoute (functional, but **unsupported** and feature-limited) |
 
 Tested builds: **OpenShift 4.21.20** (k8s 1.34, Gateway API 1.3.0), OpenShift
 Service Mesh 3.2 / Istio 1.27.3 (auto-installed), **Solo Enterprise for
@@ -103,6 +104,40 @@ Operator owns them, goes `Degraded` on a conflict, and incompatible CRDs can
 block cluster upgrades). If you ever need newer CRDs, OpenShift 4.22 ships
 Gateway API 1.4.1 and also lifts the restriction so you can self-manage up to
 1.5.
+
+## Below the floor: OpenShift 4.20 / Gateway API 1.2.1
+We also tested OCP 4.20.25, which the Ingress Operator pins to Gateway API
+`1.2.1`, below agentgateway's documented `1.3` floor. agentgateway still
+installed and served end to end: control plane up, Gateway `Programmed`,
+HTTPRoute attached, proxy serving `200`s (same `anyuid` SCC step). So for core
+`Gateway` + `HTTPRoute`, agentgateway functionally runs on 1.2.1.
+
+Keep it honest: **it works but 1.2.1 is unsupported** (docs floor is 1.3), and we
+exercised only the core routing path, anything needing a CRD field/kind newer
+than 1.2.1, or `ListenerSet`, is not there. Net: OpenShift is not a hard wall
+even on 1.2.1, but the supported guidance is 1.3+ (OCP 4.21 or later). The install
+is identical to the steps above, the only difference is the cluster's CRD version.
+
+## Helm: what to install (and the ListenerSet flag)
+On OpenShift, the install is exactly three pieces, the same on 1.2.1, 1.3.0 and
+1.4.1:
+1. **Do NOT** apply the upstream Gateway API CRDs (`standard-install.yaml`). The
+   Ingress Operator owns them.
+2. `enterprise-agentgateway-crds` chart (agentgateway's own config CRDs).
+3. `enterprise-agentgateway` control plane (with `licensing.licenseKey`).
+Then grant the gateway's service account `anyuid` so the proxy schedules.
+
+**ListenerSet / `installEnterpriseListenerSetCRD` — verified, and not what the
+chart-source suggests.** The agentgateway CRD chart *source* carries an
+`installEnterpriseListenerSetCRD` value, but the **released `v2026.6.1` chart does
+not ship `EnterpriseListenerSet`**: the value is not recognised (a no-op) and no
+such CRD renders or installs. Verified with `helm show values` and
+`helm template`. So:
+- On **agentgateway** today, there is no working `EnterpriseListenerSet`. If you
+  need `ListenerSet` on OpenShift, upgrade to 4.22 for the native upstream one.
+- The working `EnterpriseListenerSet` bridge currently lives in **kgateway**
+  enterprise (Solo's `enterprise.solo.io` group, which sidesteps OpenShift's CRD
+  ownership). The agentgateway equivalent is in the codebase but not yet released.
 
 ## Files
 - `scripts/` - 00 install OpenShift, 01 sample app, 02 monitor, 03 install
