@@ -132,12 +132,23 @@ chart-source suggests.** The agentgateway CRD chart *source* carries an
 `installEnterpriseListenerSetCRD` value, but the **released `v2026.6.1` chart does
 not ship `EnterpriseListenerSet`**: the value is not recognised (a no-op) and no
 such CRD renders or installs. Verified with `helm show values` and
-`helm template`. So:
-- On **agentgateway** today, there is no working `EnterpriseListenerSet`. If you
-  need `ListenerSet` on OpenShift, upgrade to 4.22 for the native upstream one.
-- The working `EnterpriseListenerSet` bridge currently lives in **kgateway**
-  enterprise (Solo's `enterprise.solo.io` group, which sidesteps OpenShift's CRD
-  ownership). The agentgateway equivalent is in the codebase but not yet released.
+`helm template`. **ListenerSet itself is a different matter, and the feature is NOT missing from
+agentgateway.** agentgateway's controller does implement the upstream Gateway
+API `ListenerSet` (builder, status reconciliation, GEP-1713 precedence,
+conformance tests). The blocker on OpenShift is the CRD's release channel:
+upstream `ListenerSet` is experimental-channel in GW API 1.3/1.4 and only reaches
+the **standard** channel in **1.5**. OpenShift installs the standard channel and
+blocks adding CRDs, so the `ListenerSet` CRD is absent on current OpenShift,
+neither 4.21 (1.3.0) nor 4.22 (1.4.1 standard) has it; you'd need an OpenShift
+release on GW API 1.5. So:
+- **Off OpenShift:** install the ListenerSet CRD (experimental pre-1.5, standard
+  from 1.5) and agentgateway honours it.
+- **On OpenShift today:** no native ListenerSet (standard channel lacks it until
+  1.5), and the `EnterpriseListenerSet` bridge isn't in the released agentgateway
+  chart. The working `EnterpriseListenerSet` bridge currently lives in **kgateway**
+  enterprise. So for ListenerSet on agentgateway on OpenShift today there is no
+  path yet: use kgateway, or wait for agentgateway's EnterpriseListenerSet release
+  or an OCP release on GW API 1.5.
 
 ## Files
 - `scripts/` - 00 install OpenShift, 01 sample app, 02 monitor, 03 install
