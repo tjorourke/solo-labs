@@ -1,0 +1,12 @@
+# Creating this GatewayClass makes the OpenShift Ingress Operator install its
+# Istio-based gateway implementation (OSSM) via OLM, automatically.
+#
+# GOTCHA: the controllerName MUST be "openshift.io/gateway-controller/v1".
+# Without the "/v1" suffix the operator silently ignores the class: no OSSM
+# install, no error, GatewayClass stays Accepted=Unknown forever.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: openshift-default
+spec:
+  controllerName: openshift.io/gateway-controller/v1

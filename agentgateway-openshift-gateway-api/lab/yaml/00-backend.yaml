@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gwtest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: gwtest
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: hello }
+  template:
+    metadata:
+      labels: { app: hello }
+    spec:
+      containers:
+      - name: hello
+        # runs cleanly under OpenShift's restricted-v2 SCC (arbitrary UID)
+        image: docker.io/openshift/hello-openshift:latest
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet: { path: /, port: 8080 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+  namespace: gwtest
+spec:
+  selector: { app: hello }
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

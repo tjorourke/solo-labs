@@ -1,0 +1,23 @@
+# The agentgateway gateway. Uses the enterprise-agentgateway GatewayClass
+# (controllerName solo.io/enterprise-agentgateway), which the agentgateway
+# control plane registers. Unlike OpenShift's istiod, agentgateway programs
+# Gateways in any namespace, so this can live with the app in gwtest.
+#
+# GOTCHA: the agentgateway PROXY pod hardcodes runAsUser: 10101, which
+# restricted-v2 rejects. Grant the gateway's service account (named after the
+# gateway, here "hello-agw") an SCC that allows the UID, or the proxy pod will
+# never schedule (ReplicaFailure, FailedCreate). See scripts/04.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: hello-agw
+  namespace: gwtest
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: Same

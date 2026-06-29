@@ -1,0 +1,20 @@
+# The OpenShift (OSSM/istiod) gateway.
+#
+# GOTCHA: OpenShift's istiod only programs Gateways in the openshift-ingress
+# namespace. A Gateway for the openshift-default class created in an app
+# namespace stays Accepted=Unknown ("Waiting for controller") with no
+# diagnostic and no proxy/LB ever created. Put it in openshift-ingress.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: hello-gw
+  namespace: openshift-ingress
+spec:
+  gatewayClassName: openshift-default
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: All
