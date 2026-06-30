@@ -1,0 +1,15 @@
+# OSS variant — AgentgatewayBackend is the same group/kind on OSS and Enterprise.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      anthropic:
+        model: claude-haiku-4-5-20251001
+  policies:
+    auth:
+      secretRef:
+        name: anthropic-secret

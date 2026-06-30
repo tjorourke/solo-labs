@@ -1,0 +1,34 @@
+# EnterpriseAgentgatewayPolicy — a single promptGuard webhook layer on both
+# request and response, pointed at the guard-adapter. The adapter forwards the
+# canonical messages/choices to the EXTERNAL guardrail (NeuralTrust GAF, or the
+# bundled stub) and maps the verdict back to Pass / Mask / Reject.
+#
+# There is deliberately no built-in regex layer here — the whole point of Part 2
+# is that ALL inspection is delegated to the external guardrail service.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: external-guardrail
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - webhook:
+              backendRef:
+                kind: Service
+                name: guard-adapter
+                namespace: extguard-demo
+                port: 8000
+        response:
+          - webhook:
+              backendRef:
+                kind: Service
+                name: guard-adapter
+                namespace: extguard-demo
+                port: 8000

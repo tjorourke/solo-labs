@@ -1,0 +1,21 @@
+# Anthropic provider — claude-haiku-4-5 by default (cheap + fast for a demo).
+# The secret is created by 04-policy.sh from $ANTHROPIC_API_KEY.
+#
+# The point of the lab: the external guardrail behind the webhook is decoupled
+# from THIS backend. Swap this for an openai or gemini provider and the same
+# guard-adapter / external guard protects the route with no change — agentgateway
+# normalises the payload before the webhook sees it.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      anthropic:
+        model: claude-haiku-4-5-20251001
+  policies:
+    auth:
+      secretRef:
+        name: anthropic-secret

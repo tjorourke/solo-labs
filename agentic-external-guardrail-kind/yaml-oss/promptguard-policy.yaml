@@ -1,0 +1,30 @@
+# OSS variant — AgentgatewayPolicy (agentgateway.dev) instead of the Enterprise
+# wrapper. Current OSS builds expose promptGuard with the same webhook shape, so
+# the external-guardrail wiring is identical; only the policy group/kind changes.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: external-guardrail
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - webhook:
+              backendRef:
+                kind: Service
+                name: guard-adapter
+                namespace: extguard-demo
+                port: 8000
+        response:
+          - webhook:
+              backendRef:
+                kind: Service
+                name: guard-adapter
+                namespace: extguard-demo
+                port: 8000

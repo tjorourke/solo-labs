@@ -1,0 +1,66 @@
+# guard-adapter — the agentgateway Custom Guardrails Webhook that forwards to
+# the external guardrail. GUARD_URL / GUARD_MODE are rendered by 03-guardrail.sh
+# (sed on the __PLACEHOLDERS__); GUARD_API_KEY comes from the guard-api-key
+# Secret so the token is never inlined in a manifest.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guard-adapter
+  namespace: extguard-demo
+  labels:
+    app: guard-adapter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guard-adapter
+  template:
+    metadata:
+      labels:
+        app: guard-adapter
+    spec:
+      containers:
+        - name: adapter
+          image: guard-adapter:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: LOG_LEVEL
+              value: INFO
+            - name: GUARD_URL
+              value: "__GUARD_URL__"
+            - name: GUARD_MODE
+              value: "__GUARD_MODE__"
+            - name: GUARD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: guard-api-key
+                  key: GUARD_API_KEY
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guard-adapter
+  namespace: extguard-demo
+spec:
+  selector:
+    app: guard-adapter
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
