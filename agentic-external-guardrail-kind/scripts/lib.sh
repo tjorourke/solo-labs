@@ -61,6 +61,8 @@ export TRUSTGUARD_STUB_IMAGE="trustguard-stub:dev"
 export GUARD_URL="${GUARD_URL:-http://trustguard-stub.extguard-demo.svc:8080/v1/guard}"
 export GUARD_API_KEY="${GUARD_API_KEY:-}"
 export GUARD_MODE="${GUARD_MODE:-stub}"
+# NeuralTrust GAF only: the policy_id the actions API is keyed to (from the console).
+export GUARD_POLICY_ID="${GUARD_POLICY_ID:-}"
 
 # ── secrets loader ────────────────────────────────────────────────────────────
 #   ANTHROPIC_API_KEY        — the Anthropic backend (the actual LLM call)

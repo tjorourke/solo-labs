@@ -42,6 +42,7 @@ step "Deploying guard-adapter"
 sed \
   -e "s|__GUARD_URL__|${GUARD_URL}|g" \
   -e "s|__GUARD_MODE__|${GUARD_MODE}|g" \
+  -e "s|__GUARD_POLICY_ID__|${GUARD_POLICY_ID}|g" \
   "$LAB_ROOT/yaml/guardrail/adapter-deployment.yaml" \
   | kc apply -f - >/dev/null
 

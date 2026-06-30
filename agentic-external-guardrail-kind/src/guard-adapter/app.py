@@ -52,8 +52,10 @@ EVENT_BUFFER_SIZE = int(os.getenv("EVENT_BUFFER_SIZE", "200"))
 # Outbound guardrail service. Stub by default; real NeuralTrust = URL + key swap.
 GUARD_URL = os.getenv("GUARD_URL", "http://trustguard-stub.extguard-demo.svc:8080/v1/guard")
 GUARD_API_KEY = os.getenv("GUARD_API_KEY", "")
-GUARD_MODE = os.getenv("GUARD_MODE", "stub")  # label only; surfaced in /events
+GUARD_MODE = os.getenv("GUARD_MODE", "stub")  # "stub" | "neuraltrust"; also surfaced in /events
 GUARD_TIMEOUT = float(os.getenv("GUARD_TIMEOUT", "10"))
+# NeuralTrust GAF actions API: keyed to a specific policy. Header is X-TG-API-Key.
+GUARD_POLICY_ID = os.getenv("GUARD_POLICY_ID", "")
 # Fail-open (allow on guard error) or fail-closed (reject). Default closed.
 GUARD_FAIL_OPEN = os.getenv("GUARD_FAIL_OPEN", "false").lower() == "true"
 
@@ -135,20 +137,39 @@ def _record(entry: AuditEntry) -> None:
 
 # ── The one swap point for real NeuralTrust ───────────────────────────────────
 def _call_guard(text: str, phase: str) -> dict[str, Any]:
-    """POST one piece of text to the external guardrail and return its verdict.
+    """POST one piece of text to the external guardrail and return a normalised
+    verdict: { verdict: allow|flag|block, sanitized: str|null, categories: [...] }.
 
-    Stub/NeuralTrust-API-Engine shape:
-      response = { verdict: allow|flag|block, sanitized: str|null, categories: [...] }
-
-    If the real provider uses different field names, map them to that shape
-    here — nothing else in the adapter needs to change.
+    Two providers, dispatched on GUARD_MODE:
+      - "stub"       → the bundled trustguard-stub (its own {input, phase} shape)
+      - "neuraltrust"→ NeuralTrust GAF actions API (verified live 2026-06-30):
+          POST $GUARD_URL  (https://actions.neuraltrust.ai/v1/actions)
+          header X-TG-API-Key: <key>
+          body   { policy_id, conversation: { messages: [{role, content}] }, direction }
+          resp   { is_flagged, transformed_payload, findings:[{detection_type,...}], ... }
     """
-    headers = {"Content-Type": "application/json"}
-    if GUARD_API_KEY:
-        headers["Authorization"] = f"Bearer {GUARD_API_KEY}"
-    payload = {"input": text, "phase": phase, "metadata": {"source": "agentgateway-webhook"}}
     try:
         with httpx.Client(timeout=GUARD_TIMEOUT) as client:
+            if GUARD_MODE == "neuraltrust":
+                headers = {"Content-Type": "application/json", "X-TG-API-Key": GUARD_API_KEY}
+                # Always send the text in a single `user` turn. Verified live
+                # 2026-06-30: a lone `assistant`-role message false-positives the
+                # moderation plugin (personal_information), and sending
+                # `direction: output` breaks its field mapping the same way. The
+                # content is what the detectors inspect, so the response phase
+                # moderates the LLM's output by presenting it as user content.
+                body = {
+                    "policy_id": GUARD_POLICY_ID,
+                    "conversation": {"messages": [{"role": "user", "content": text}]},
+                }
+                r = client.post(GUARD_URL, headers=headers, json=body)
+                r.raise_for_status()
+                return _map_neuraltrust(r.json())
+            # stub mode
+            headers = {"Content-Type": "application/json"}
+            if GUARD_API_KEY:
+                headers["Authorization"] = f"Bearer {GUARD_API_KEY}"
+            payload = {"input": text, "phase": phase, "metadata": {"source": "agentgateway-webhook"}}
             r = client.post(GUARD_URL, headers=headers, json=payload)
             r.raise_for_status()
             return r.json()
@@ -157,6 +178,70 @@ def _call_guard(text: str, phase: str) -> dict[str, Any]:
         if GUARD_FAIL_OPEN:
             return {"verdict": "allow", "categories": ["guard_error"], "sanitized": None}
         return {"verdict": "block", "categories": ["guard_error"], "sanitized": None}
+
+
+def _map_neuraltrust(resp: dict[str, Any]) -> dict[str, Any]:
+    """Map a NeuralTrust GAF actions response to the adapter's internal verdict.
+
+    Verified live (2026-06-30). HTTP is always 200; the verdict lives in the
+    body. Shape:
+      { "status": 200|403,
+        "error": { "code", "message" } | absent,
+        "payload": { "messages": [{role, content}] } | null,   # masked payload
+        "metadata": [ { "plugin_name", "data": { "blocked": bool,
+                        "violation": {"type", ...}, "masked": bool,
+                        "events": [{entity, masked_with}] } }, ... ] }
+
+    Mapping: any plugin block / status>=400 / error → block. Otherwise, if the
+    data_masking plugin rewrote the payload → flag (mask). Else allow.
+    """
+    log.info("neuraltrust raw response: %s", json.dumps(resp)[:600])
+    meta = resp.get("metadata") or []
+    status = resp.get("status")
+    error = resp.get("error")
+
+    blocked_types: list[str] = []
+    masked = False
+    mask_events: list[dict[str, Any]] = []
+    for m in meta:
+        d = m.get("data") or {}
+        if d.get("blocked"):
+            v = d.get("violation") or {}
+            blocked_types.append(v.get("type") or m.get("plugin_name") or "blocked")
+        if m.get("plugin_name") == "data_masking" and d.get("masked"):
+            masked = True
+            mask_events = d.get("events") or []
+
+    pii_cats = [f"pii:{e.get('entity')}" for e in mask_events if e.get("entity")]
+
+    if (isinstance(status, int) and status >= 400) or error or blocked_types:
+        return {
+            "verdict": "block",
+            "categories": blocked_types or pii_cats or ["blocked"],
+            "sanitized": None,
+        }
+    if masked:
+        return {
+            "verdict": "flag",
+            "categories": pii_cats or ["data_masking"],
+            "sanitized": _extract_transformed_text(resp.get("payload")),
+        }
+    return {"verdict": "allow", "categories": [], "sanitized": None}
+
+
+def _extract_transformed_text(payload: Any) -> str | None:
+    """Pull the masked text out of NeuralTrust's rewritten payload."""
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, dict):
+        msgs = payload.get("messages")
+        if isinstance(msgs, list) and msgs:
+            last = msgs[-1]
+            if isinstance(last, dict) and isinstance(last.get("content"), str):
+                return last["content"]
+        if isinstance(payload.get("content"), str):
+            return payload["content"]
+    return None
 
 
 app = FastAPI(

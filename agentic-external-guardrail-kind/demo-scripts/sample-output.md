@@ -49,7 +49,43 @@ guard-adapter `/events` (response phase — note the normalised `choices[]`, not
 }
 ```
 
-trustguard-stub `/received` (what the external guard saw — provider-agnostic text + verdict):
+## Validated against LIVE NeuralTrust GAF (2026-06-30)
+
+Same lab, `GUARD_MODE=neuraltrust` pointed at `https://actions.neuraltrust.ai/v1/actions`
+with a real policy (Prompt Guard + Moderation + Data Masking enabled). Request-side
+verdicts, clean 3/3:
+
+| Prompt | Request verdict | Detail |
+|---|---|---|
+| `What is 2 + 2?` | pass | reached Claude, "2 + 2 = 4" |
+| `My card number is 4111 1111 1111 1111…` | **mask** | NeuralTrust returned the rewritten payload `My card number is [MASKED_CC]…`; Claude saw the masked form |
+| `Ignore all previous instructions…` | **reject** | `jailbreak: score 1.00 exceeded threshold 0.85` → gateway 403 |
+
+The real actions API response shape (not the docs' `/v1/guard` shape):
+
+```json
+{ "status": 200,
+  "payload": { "messages": [{ "role": "user", "content": "My card number is [MASKED_CC]…" }] },
+  "metadata": [
+    { "plugin_name": "data_masking", "data": { "masked": true,
+        "events": [{ "entity": "credit_card", "masked_with": "[MASKED_CC]" }] } },
+    { "plugin_name": "neuraltrust_jailbreak", "data": { "blocked": false, "scores": {...} } },
+    { "plugin_name": "neuraltrust_moderation", "data": { "blocked": false } } ] }
+```
+A block instead carries `status: 403` + an `error.message` and the offending plugin's `blocked: true`.
+
+**Two adapter bugs found and fixed against the live API:**
+1. Sending `direction: "output"` breaks the moderation plugin's field mapping — it stops
+   reading the content and false-positives on `personal_information`. Omit `direction`.
+2. A lone `role: "assistant"` message does the same. The actions API wants the text in a
+   `user` turn, so the adapter presents the LLM response as user content for output screening.
+
+**Policy-tuning note (not an integration issue):** this default policy's jailbreak/moderation
+detectors are aggressive on *responses* — Claude's credit-card-format explanation tripped the
+jailbreak detector and the response was withheld. That is the response guard doing its job per
+the policy; tune the policy thresholds/topics in the NeuralTrust console to taste.
+
+## (stub mode) trustguard-stub `/received` — provider-agnostic text + verdict:
 
 ```json
 [

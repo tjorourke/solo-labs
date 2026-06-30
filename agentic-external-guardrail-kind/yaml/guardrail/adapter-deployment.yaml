@@ -33,6 +33,8 @@ spec:
               value: "__GUARD_URL__"
             - name: GUARD_MODE
               value: "__GUARD_MODE__"
+            - name: GUARD_POLICY_ID
+              value: "__GUARD_POLICY_ID__"
             - name: GUARD_API_KEY
               valueFrom:
                 secretKeyRef:
