@@ -1,0 +1,26 @@
+# Route on the x-team header that the JWT policy derives from the verified `team`
+# claim. team=sales -> team-sales backend (sales key); team=engineering ->
+# team-engineering backend (engineering key). A request whose JWT carries neither
+# value matches no rule and gets a 404 (and a missing JWT is already 401 upstream).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: team-llm
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: teamkey-gateway
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /v1/chat/completions }
+          headers:
+            - { type: Exact, name: x-team, value: sales }
+      backendRefs:
+        - { group: agentgateway.dev, kind: AgentgatewayBackend, name: team-sales, namespace: agentgateway-system }
+    - matches:
+        - path: { type: PathPrefix, value: /v1/chat/completions }
+          headers:
+            - { type: Exact, name: x-team, value: engineering }
+      backendRefs:
+        - { group: agentgateway.dev, kind: AgentgatewayBackend, name: team-engineering, namespace: agentgateway-system }

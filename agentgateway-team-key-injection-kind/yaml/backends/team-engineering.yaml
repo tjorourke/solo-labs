@@ -1,0 +1,19 @@
+# Engineering backend — same shape as team-sales but injects the ENGINEERING
+# static key via its own Secret. Routing (by JWT claim) decides which of these
+# two backends a request reaches, and therefore which static key is injected.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: team-engineering
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: echo
+      host: echo-upstream.teamkey-demo.svc.cluster.local
+      port: 8080
+  policies:
+    auth:
+      secretRef:
+        name: engineering-secret

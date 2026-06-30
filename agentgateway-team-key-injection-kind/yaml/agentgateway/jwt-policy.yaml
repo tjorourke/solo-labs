@@ -1,0 +1,43 @@
+# EnterpriseAgentgatewayPolicy on the Gateway: validate the JWT, then lift the
+# verified `team` claim into the x-team header that the HTTPRoute matches on.
+#
+# Order matters: the transformation runs after signature verification, so x-team
+# is a trusted, gateway-written value. The `remove` strips any client-supplied
+# x-team first, so a caller can't smuggle a different team past the gate.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: team-jwt
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: teamkey-gateway
+  traffic:
+    # Run JWT validation + the claim→header transformation BEFORE route matching,
+    # so the derived x-team is available for the HTTPRoute match (and any client
+    # x-team is stripped first). Without PreRouting, route selection happens on the
+    # inbound headers and the JWT-derived value never reaches the matcher.
+    phase: PreRouting
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "https://mock-idp.teamkey.demo"
+          audiences: ["agentgateway"]
+          jwks:
+            # Inline JWKS avoids the enterprise "jwks ConfigMap" remote-fetch
+            # dependency. 04-policy.sh renders __JWKS_INLINE__ from the running
+            # mock-idp's /jwks.json (its key is generated per-clone, never committed).
+            # For a real IdP, use jwks.remote.backendRef pointed at its JWKS URL.
+            inline: '__JWKS_INLINE__'
+    transformation:
+      request:
+        # `set` OVERWRITES any client-supplied value, so it is the anti-spoof here.
+        # Do NOT also `remove` these names — on this AGW build remove wins over set
+        # for the same header, which would delete the value before route matching.
+        set:
+          - name: x-team
+            value: "jwt.team"
+          - name: x-user-id
+            value: "jwt.sub"

@@ -1,0 +1,21 @@
+# Sales backend — an OpenAI-shaped provider pointed at the echo upstream (host/port
+# override). policies.auth.secretRef injects the SALES team's static key; the inbound
+# JWT is validated then stripped, so the user never carries the upstream credential.
+# Swap host/port for a real provider (drop the override to hit api.openai.com) and
+# put the real sales key in the Secret — nothing else changes.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: team-sales
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: echo
+      host: echo-upstream.teamkey-demo.svc.cluster.local
+      port: 8080
+  policies:
+    auth:
+      secretRef:
+        name: sales-secret
