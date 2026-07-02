@@ -1,6 +1,7 @@
 {
   "realm": "agentregistry",
   "enabled": true,
+  "accessTokenLifespan": 28800,
   "clients": [
     {
       "clientId": "ar-backend",
