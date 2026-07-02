@@ -19,10 +19,17 @@ export AGENTCORE_LOG="${TMPDIR:-/tmp}/agentcore-deploy.log"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.arctl/bin:$PATH"
 
 printf '→ Signing in to AWS and preparing the daemon (foreground, ~30-45s)…\n'
-# Source aws-login in a redirected group: env it exports (AWS_*, ARCTL_API_TOKEN)
-# still lands in THIS shell; the noisy daemon-restart output goes to a log.
+# Source aws-login in a redirected group: the AWS_* env it exports still lands in
+# THIS shell; the noisy daemon-restart output goes to a log.
 { source "$SCRIPT_DIR/aws-login.sh"; } >"${AGENTCORE_LOG}.login" 2>&1
+# aws-login establishes AWS creds but NOT the registry bearer. In a fresh notebook
+# kernel (where only connect.sh ran) ARCTL_API_TOKEN is unset — only setup-time
+# 04d-connect-aws.sh exports it. Mint it here the same way (lib.sh's arctl_token),
+# in a subshell so lib.sh's `set -e` can't kill this sourced script.
 if [ -z "${ARCTL_API_TOKEN:-}" ] || [ "${ARCTL_API_TOKEN}" = "null" ]; then
+  export ARCTL_API_TOKEN="$(source "$SCRIPT_DIR/lib.sh" >/dev/null 2>&1; arctl_token 2>/dev/null)"
+fi
+if [ -z "${AWS_ACCOUNT_ID:-}" ] || [ -z "${ARCTL_API_TOKEN:-}" ] || [ "${ARCTL_API_TOKEN}" = "null" ]; then
   echo "  AWS / daemon preparation failed — last lines of ${AGENTCORE_LOG}.login:"
   tail -25 "${AGENTCORE_LOG}.login"
   return 1 2>/dev/null || exit 1
