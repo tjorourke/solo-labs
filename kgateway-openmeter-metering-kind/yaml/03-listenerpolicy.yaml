@@ -1,0 +1,32 @@
+# Native metering tap: kgateway emits each request as an OpenTelemetry (OTLP)
+# access-log record to the OpenMeter collector. No stdout, no log scraping.
+# ListenerPolicy.spec.default.httpSettings.accessLog (HTTPListenerPolicy is deprecated).
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: ListenerPolicy
+metadata:
+  name: metering-accesslog
+  namespace: kgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: http
+  default:
+    httpSettings:
+      accessLog:
+        - openTelemetry:
+            grpcService:
+              backendRef:
+                kind: Service
+                name: otlp-collector
+                namespace: telemetry
+                port: 4317
+              logName: "kgateway-metering"
+            body: "%REQ(:METHOD)% %REQ(:PATH)% %RESPONSE_CODE%"
+            attributes:
+              values:
+                - { key: subject, value: { stringValue: "%REQ(X-CUSTOMER-ID)%" } }
+                - { key: method,  value: { stringValue: "%REQ(:METHOD)%" } }
+                - { key: route,   value: { stringValue: "%REQ(:PATH)%" } }
+                - { key: status,  value: { stringValue: "%RESPONSE_CODE%" } }
+                - { key: id,      value: { stringValue: "%REQ(X-REQUEST-ID)%" } }

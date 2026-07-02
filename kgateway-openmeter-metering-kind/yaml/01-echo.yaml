@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Namespace
+metadata: { name: demo }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: echo-src, namespace: demo }
+data:
+  server.py: |
+    import json
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    class H(BaseHTTPRequestHandler):
+        def _r(self):
+            b = json.dumps({"path": self.path, "method": self.command,
+                            "headers": {k: v for k, v in self.headers.items()}}, indent=2).encode()
+            self.send_response(200); self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(b))); self.end_headers(); self.wfile.write(b)
+        def do_GET(self): self._r()
+        def do_POST(self): self._r()
+        def log_message(self, *a): pass
+    print("echo up :8080", flush=True)
+    ThreadingHTTPServer(("0.0.0.0", 8080), H).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: echo, namespace: demo }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: echo } }
+  template:
+    metadata: { labels: { app: echo } }
+    spec:
+      containers:
+        - name: echo
+          image: python:3.12-alpine
+          command: ["python", "/app/server.py"]
+          ports: [{ containerPort: 8080 }]
+          volumeMounts: [{ name: src, mountPath: /app }]
+      volumes:
+        - name: src
+          configMap: { name: echo-src }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: echo, namespace: demo }
+spec:
+  selector: { app: echo }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]

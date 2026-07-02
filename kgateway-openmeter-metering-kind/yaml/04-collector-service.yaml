@@ -1,0 +1,30 @@
+# The benthos-collector chart's default Service targetPort is wrong for otel_log,
+# so we expose 4317 explicitly. selector matches the chart's pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: otlp-collector
+  namespace: telemetry
+spec:
+  selector:
+    app.kubernetes.io/name: benthos-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      appProtocol: kubernetes.io/h2c
+---
+# Allow the kgateway-system ListenerPolicy to reference the telemetry Service.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-listenerpolicy-to-collector
+  namespace: telemetry
+spec:
+  from:
+    - group: gateway.kgateway.dev
+      kind: ListenerPolicy
+      namespace: kgateway-system
+  to:
+    - group: ""
+      kind: Service

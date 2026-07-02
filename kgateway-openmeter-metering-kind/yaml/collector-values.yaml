@@ -1,0 +1,27 @@
+fullnameOverride: opentelemetry-collector
+openmeter:
+  url: http://host.docker.internal:48888
+  token: "local-no-auth"
+service:
+  enabled: true
+  type: ClusterIP
+  port: 4317
+config:
+  input:
+    otel_log:
+      address: 0.0.0.0:4317
+  pipeline:
+    processors:
+      - mapping: |
+          root.id = this.record.attributes.id.or(uuid_v4())
+          root.specversion = "1.0"
+          root.type = "request"
+          root.source = "kgateway"
+          root.subject = this.record.attributes.subject.or("anonymous")
+          root.data.method = this.record.attributes.method
+          root.data.route  = this.record.attributes.route
+          root.data.status = this.record.attributes.status
+  output:
+    openmeter:
+      url: ${OPENMETER_URL:http://host.docker.internal:48888}
+      token: ${OPENMETER_TOKEN:local-no-auth}
