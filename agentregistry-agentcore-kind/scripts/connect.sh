@@ -15,7 +15,11 @@ set -a
 [ -n "${SECRETS_FILE:-}" ] && [ -f "$SECRETS_FILE" ] && . "$SECRETS_FILE"
 set +a
 export PATH="$HOME/.arctl/bin:$PATH"
-export NO_COLOR=1 CLICOLOR=0 TERM=dumb   # clean output (no color / terminal-probe escapes)
+export NO_COLOR=1 CLICOLOR=0             # clean arctl output (no color / terminal-probe escapes)
+# Default TERM to dumb ONLY when it's unset/empty (the notebook bash kernel). An
+# interactive terminal that SOURCEs this keeps its real TERM (e.g. xterm-256color),
+# so `export TERM=dumb` no longer clobbers readline and corrupts the live prompt.
+: "${TERM:=dumb}"; export TERM
 export CLUSTER_NAME="${CLUSTER_NAME:-agentcore-demo}"
 export AR_HOST="${AR_HOST:-agentregistry.localtest.me}"
 export KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.localtest.me}"
