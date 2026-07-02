@@ -5,13 +5,8 @@ metadata:
 spec:
   targetRef:  { kind: Agent,   name: agentdemo }
   runtimeRef: { kind: Runtime, name: kind-kagent }
-  # No env here on purpose. The agent is a BYO/ADK image whose own LiteLlm reads
-  # ANTHROPIC_API_KEY from its environment, but we do NOT pass the key through the
-  # registry: the Deployment env is a literal string map (no secretKeyRef/envFrom),
-  # so anything here lands in cleartext in the registry record, the kagent Agent CR
-  # and the pod. Instead ./scripts/deploy-agent-kagent.sh applies this, then patches
-  # the kagent Agent CR to source ANTHROPIC_API_KEY from Secret/kagent-anthropic via
-  # env.valueFrom.secretKeyRef. So deploy the agent with that script, not a bare
-  # `arctl apply`.
+  # No env here on purpose — the model key is not hardcoded in the deploy. Deploy
+  # this agent with ./scripts/deploy-agent-kagent.sh, which sources ANTHROPIC_API_KEY
+  # into the kagent Agent CR from Secret/kagent-anthropic via env.valueFrom.secretKeyRef.
   # (OTel tracing is stamped in by the kagent controller for every agent it deploys;
   # MCP_SERVERS_CONFIG is derived by the registry from the MCP servers on the runtime.)

@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 # deploy-agent-kagent.sh — deploy the agentdemo agent onto the kagent runtime with
-# its Anthropic key sourced from the kagent-anthropic Secret, never in cleartext.
-#
-# The registry Deployment API only accepts a literal string env map (no
-# secretKeyRef / envFrom), so any key passed through spec.env lands in cleartext in
-# the registry record, the generated kagent Agent CR and the pod. So we deploy the
-# agent WITHOUT the key, then patch the kagent v1alpha2 Agent CR to pull
-# ANTHROPIC_API_KEY from the kagent-anthropic Secret via env.valueFrom.secretKeyRef
-# (which that CRD supports). The registry re-creates the CR on every apply, so this
-# script re-applies the patch each run — call it wherever you'd `arctl apply` the
-# agent.
+# its model key sourced from the kagent-anthropic Secret (not hardcoded in the
+# deploy). Deploys the agent, then wires ANTHROPIC_API_KEY into the kagent v1alpha2
+# Agent CR from the Secret via env.valueFrom.secretKeyRef. Re-applies the wiring on
+# every run, so call it wherever you'd `arctl apply` the agent.
 #
 #   ./scripts/deploy-agent-kagent.sh                       # default deploy file
 #   ./scripts/deploy-agent-kagent.sh yaml/deploy-kagent.yaml
