@@ -24,7 +24,18 @@ fi
 
 step "Creating kind cluster '$CLUSTER_NAME'"
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
-  ok "cluster '$CLUSTER_NAME' already exists — skipping"
+  # Only reuse a cluster that was created from kind/cluster.yaml — i.e. one that
+  # publishes host :80 -> the ingress NodePort. A cluster of the same name created
+  # some other way (e.g. a bare `kind create cluster --name agentcore-demo`) has no
+  # :80 mapping, so every *.localtest.me console would be unreachable and arctl login
+  # would fail. Detect that and recreate, so the lab works every time.
+  if docker port "${CLUSTER_NAME}-control-plane" 2>/dev/null | grep -q '^80/tcp'; then
+    ok "cluster '$CLUSTER_NAME' already exists with the :80 ingress mapping — reusing"
+  else
+    warn "cluster '$CLUSTER_NAME' exists but is missing the host :80 -> ingress mapping — recreating from kind/cluster.yaml"
+    kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
+    kind create cluster --name "$CLUSTER_NAME" --config "$LAB_ROOT/kind/cluster.yaml"; ok "cluster recreated"
+  fi
 else
   kind create cluster --name "$CLUSTER_NAME" --config "$LAB_ROOT/kind/cluster.yaml"; ok "cluster created"
 fi
