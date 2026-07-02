@@ -30,6 +30,13 @@ export AR_CLI_CLIENT="${AR_CLI_CLIENT:-ar-cli-password}"
 export AS_USER="${AS_USER:-admin-user}"
 export AS_PASSWORD="${AS_PASSWORD:-password}"
 
+# Clear any ARCTL_API_TOKEN left in this shell by a setup step (agentcore.sh /
+# 04d-connect-aws.sh export one, minted at that moment). arctl prefers that env var
+# over the `user login` token, so a stale one makes every arctl call 401 even after
+# a fresh login. Unset it so plain arctl commands use the login token below; the
+# steps that need ARCTL_API_TOKEN re-mint it themselves.
+unset ARCTL_API_TOKEN
+
 OIDC_ISSUER="$KEYCLOAK_ISSUER" OIDC_CLIENT_ID="$AR_CLI_CLIENT" \
 arctl user login \
   --oidc-flow password-credentials \
