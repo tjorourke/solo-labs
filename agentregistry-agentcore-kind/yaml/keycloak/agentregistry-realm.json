@@ -6,6 +6,7 @@
       "clientId": "ar-backend",
       "enabled": true,
       "publicClient": false,
+      "secret": "ar-backend-demo-secret-fixed-000000",
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false
     },
@@ -124,6 +125,7 @@
       "clientId": "kagent-backend",
       "enabled": true,
       "publicClient": false,
+      "secret": "kagent-backend-demo-secret-fixed-00",
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,

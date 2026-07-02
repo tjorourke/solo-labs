@@ -26,9 +26,14 @@ kc -n "$KEYCLOAK_NS" rollout status statefulset/keycloak --timeout=300s >/dev/nu
 ok "Keycloak up; issuer ${KEYCLOAK_ISSUER}"
 
 step "Scraping the confidential client secrets (ar-backend, kagent-backend)"
-# Keycloak generates these at realm import; the AR + kagent charts need them.
-# Persist to .env.local (gitignored, already sourced by load_secrets) so a later
-# script run picks them up without re-scraping.
+# These are PINNED in agentregistry-realm.json (a fixed "secret" per client), so
+# the value survives a Keycloak restart. Keycloak has no PVC here, so on any pod
+# restart it re-imports the realm; an unpinned confidential secret would be
+# regenerated at random and no longer match the value baked into the AR + kagent
+# installs -> the registry's kagent token mint fails "unauthorized_client" and MCP
+# deploys silently fail. We still scrape (not hardcode) so the charts stay in sync
+# whatever the realm holds. Persist to .env.local (gitignored, already sourced by
+# load_secrets) so a later script run picks them up without re-scraping.
 AR_BACKEND_SECRET="$(keycloak_client_secret ar-backend)"
 KAGENT_BACKEND_SECRET="$(keycloak_client_secret kagent-backend)"
 [[ -n "$AR_BACKEND_SECRET" && -n "$KAGENT_BACKEND_SECRET" ]] \
