@@ -29,7 +29,7 @@ if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
   # some other way (e.g. a bare `kind create cluster --name agentcore-demo`) has no
   # :80 mapping, so every *.localtest.me console would be unreachable and arctl login
   # would fail. Detect that and recreate, so the lab works every time.
-  if docker port "${CLUSTER_NAME}-control-plane" 2>/dev/null | grep -q '^80/tcp'; then
+  if docker port "${CLUSTER_NAME}-control-plane" 30080 2>/dev/null | grep -q ':80$'; then
     ok "cluster '$CLUSTER_NAME' already exists with the :80 ingress mapping — reusing"
   else
     warn "cluster '$CLUSTER_NAME' exists but is missing the host :80 -> ingress mapping — recreating from kind/cluster.yaml"
