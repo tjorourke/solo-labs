@@ -5,13 +5,13 @@ metadata:
 spec:
   targetRef:  { kind: Agent,   name: agentdemo }
   runtimeRef: { kind: Runtime, name: kind-kagent }
-  # The agent is a BYO/ADK image whose own LiteLlm reads ANTHROPIC_API_KEY from its
-  # environment (kagent's default ModelConfig is for kagent-native models, not this
-  # agent). The Deployment env is a literal string map (no secretKeyRef), so the key
-  # must be injected at deploy time:  envsubst < yaml/deploy-kagent.yaml | arctl apply -f -
-  # connect.sh sources it from .env.local / the secrets file, so it's never committed.
-  env:
-    ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
-    # OTel tracing is NOT set here: the kagent controller stamps OTEL_TRACING_ENABLED
-    # + the collector endpoint into every agent it deploys (03-kagent.sh enables it
-    # chart-wide). Spans land in ClickHouse and show in the Enterprise UI Tracing tab.
+  # No env here on purpose. The agent is a BYO/ADK image whose own LiteLlm reads
+  # ANTHROPIC_API_KEY from its environment, but we do NOT pass the key through the
+  # registry: the Deployment env is a literal string map (no secretKeyRef/envFrom),
+  # so anything here lands in cleartext in the registry record, the kagent Agent CR
+  # and the pod. Instead ./scripts/deploy-agent-kagent.sh applies this, then patches
+  # the kagent Agent CR to source ANTHROPIC_API_KEY from Secret/kagent-anthropic via
+  # env.valueFrom.secretKeyRef. So deploy the agent with that script, not a bare
+  # `arctl apply`.
+  # (OTel tracing is stamped in by the kagent controller for every agent it deploys;
+  # MCP_SERVERS_CONFIG is derived by the registry from the MCP servers on the runtime.)
