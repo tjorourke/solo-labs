@@ -92,4 +92,17 @@ bridge_keycloak_hostalias kagent-controller
 ok "hostAlias keycloak.localtest.me -> Keycloak ClusterIP added to controller"
 wait_deploy kagent kagent-controller 360s || warn "controller not Available in 6m — continuing"
 
+step "Installing Kyverno + the model-key injection policy"
+# Kyverno mutates every kagent BYO Agent CR to read ANTHROPIC_API_KEY from the
+# kagent-anthropic Secret. That lets agents deploy KEYLESS: the model key never
+# appears in a manifest, the registry record, the Agent CR spec or the pod spec —
+# it stays in the Secret and resolves at runtime. See yaml/kyverno/.
+KYVERNO_VER="${KYVERNO_VERSION:-v1.13.4}"
+if ! kc get deploy -n kyverno kyverno-admission-controller >/dev/null 2>&1; then
+  kc apply --server-side --force-conflicts -f "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VER}/install.yaml" >/dev/null 2>&1
+  kc -n kyverno rollout status deploy/kyverno-admission-controller --timeout=180s >/dev/null 2>&1 || warn "Kyverno not Ready in 3m — continuing"
+fi
+kc apply -f "$SCRIPT_DIR/../yaml/kyverno/inject-agent-model-key.yaml" >/dev/null 2>&1 \
+  && ok "Kyverno model-key policy applied (agents deploy keyless)" || warn "Kyverno policy apply failed"
+
 step "kagent-enterprise installed"; echo "  Next: ./scripts/04-agentregistry.sh" >&2

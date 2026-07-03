@@ -1,0 +1,44 @@
+# Mutating policy: give every kagent BYO agent its model key from the
+# kagent-anthropic Secret, without anyone putting the key in a deploy manifest.
+#
+# Why: a BYO agent's LiteLlm reads ANTHROPIC_API_KEY from its pod env, but the
+# AgentRegistry Deployment API only accepts literal env values (no secretKeyRef).
+# Rather than ship the key in cleartext, we deploy the agent keyless and let this
+# policy inject it as a secretKeyRef when the kagent controller creates the Agent
+# CR. The key never lands in the registry record, the Agent CR spec, or the pod
+# spec — it stays in the Secret and is resolved at runtime. Installed once at
+# setup; every `arctl apply` of a kagent agent gets it automatically.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-agent-model-key
+  annotations:
+    policies.kyverno.io/title: Inject agent model key from Secret
+    policies.kyverno.io/category: AgentRegistry
+spec:
+  background: false            # mutate on admission only (the CR is created by the registry)
+  rules:
+    - name: add-anthropic-secretref
+      match:
+        any:
+          - resources:
+              kinds:
+                - kagent.dev/v1alpha2/Agent
+              namespaces:
+                - kagent
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: BYO
+      mutate:
+        patchStrategicMerge:
+          spec:
+            byo:
+              deployment:
+                env:
+                  - name: ANTHROPIC_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: kagent-anthropic
+                        key: ANTHROPIC_API_KEY
