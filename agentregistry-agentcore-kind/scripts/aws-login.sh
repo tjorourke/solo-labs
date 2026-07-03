@@ -19,6 +19,12 @@ export GAR_HOST="${GAR_HOST:-us-docker.pkg.dev}"
 if [ -z "${AWS_PROFILE:-}" ]; then
   echo "Set AWS_PROFILE in .env.local (./scripts/setup-env.sh), then: source scripts/aws-login.sh"; return 2>/dev/null || exit 1
 fi
+# Drop static creds a PRIOR aws-login run exported into this shell/kernel (line
+# below). They expire in ~1h and explicit AWS_ACCESS_KEY_ID/… override AWS_PROFILE,
+# so a stale set makes the SSO login be ignored and get-caller-identity fail with
+# InvalidClientTokenId -> "AWS login failed" on every re-run. Unset them so the SSO
+# profile establishes fresh creds; we re-export a fresh set further down.
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 aws sts get-caller-identity >/dev/null 2>&1 || aws sso login --profile "$AWS_PROFILE"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
