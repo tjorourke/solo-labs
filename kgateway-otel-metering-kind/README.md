@@ -105,5 +105,7 @@ Then two pieces of wiring and the policy (`yaml/04-collector-service.yaml`,
 - **Self-hosted target.** The collector's native `openmeter` output posts to
   `/api/v1/events`, which matches self-hosted OpenMeter.
 - **Spoof-safe identity.** The billed `subject` comes from `x-customer-id` here to keep the
-  demo simple; in production take it from a validated JWT claim so a client cannot send
-  another customer's id.
+  demo simple; to bill the authenticated identity, validate a JWT at the gateway with
+  kgateway's native `jwtAuth` + a `GatewayExtension` whose `claimsToHeaders` copies the
+  verified `sub` claim into `x-customer-id`. Nothing downstream changes. Inline JWKS works,
+  so no identity provider is needed to try it. (Config in the lab page, not run here.)
