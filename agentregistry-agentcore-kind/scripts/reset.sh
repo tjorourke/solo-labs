@@ -28,6 +28,11 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 cd "$LAB_ROOT"
+# Heal an expired agentgateway XDS cert FIRST: reset's registry cleanup (arctl) and
+# the login below go through the agentgateway ingress, which is dead while that cert
+# is expired on a stale cluster. No-op on a healthy cluster; SKIP_MESH_HEAL=1 skips.
+[ -f "$SCRIPT_DIR/heal-mesh.sh" ] && . "$SCRIPT_DIR/heal-mesh.sh"
+[ -n "${SKIP_MESH_HEAL:-}" ] || _heal_mesh_certs
 arctl_login || true
 [ -f "$LAB_ROOT/.env.local" ] && { set -a; . "$LAB_ROOT/.env.local"; set +a; }  # GCP_PROJECT_ID / AWS_*
 export AWS_REGION="${AWS_REGION:-us-east-1}"

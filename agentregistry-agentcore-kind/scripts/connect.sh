@@ -31,41 +31,11 @@ export AS_USER="${AS_USER:-admin-user}"
 export AS_PASSWORD="${AS_PASSWORD:-password}"
 
 # --- mesh cert self-heal ----------------------------------------------------
-# On a kind cluster reused for days, the agentgateway XDS control-plane serving
-# cert (CN=agw-xds-server, ~24h TTL, minted in-memory at pod start) stops
-# rotating and expires. Every data-plane proxy that pulls config from it (the
-# ingress agentgateway-proxy + the kagent waypoints) then rejects the peer with
-# "invalid peer certificate: certificate expired", never goes Ready, and the demo
-# 500s. There is no TTL knob to make it long-lived in 2026.5.1, so we detect the
-# symptom at session start and bounce the XDS servers + data planes to re-mint and
-# re-fetch fresh certs. No-op on a healthy cluster. Set SKIP_MESH_HEAL=1 to skip.
-_heal_mesh_certs() {
-  local ctx="kind-${CLUSTER_NAME}"
-  kubectl --context "$ctx" cluster-info >/dev/null 2>&1 || return 0   # cluster not up yet
-  local dp ns res r bad=0
-  for dp in agentgateway-system/agentgateway-proxy \
-            kagent/agent-agentdemo-waypoint \
-            kagent/mcpserver-my-mcp-waypoint; do
-    ns="${dp%%/*}"; res="deploy/${dp#*/}"
-    kubectl --context "$ctx" -n "$ns" get "$res" >/dev/null 2>&1 || continue
-    kubectl --context "$ctx" -n "$ns" logs "$res" --tail=40 2>/dev/null | grep -q "certificate expired" && bad=1
-    r=$(kubectl --context "$ctx" -n "$ns" get "$res" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
-    [ "${r:-0}" -ge 1 ] 2>/dev/null || bad=1
-  done
-  if [ "$bad" != 1 ]; then echo "mesh certs · ok"; return 0; fi
-  echo "mesh certs · expired xds cert detected, healing (this takes ~1-2 min) ..."
-  kubectl --context "$ctx" -n istio-system        rollout restart deploy/istiod-gloo ds/ztunnel    >/dev/null 2>&1
-  kubectl --context "$ctx" -n agentgateway-system rollout restart deploy/enterprise-agentgateway   >/dev/null 2>&1
-  kubectl --context "$ctx" -n agentgateway-system rollout status  deploy/enterprise-agentgateway --timeout=120s >/dev/null 2>&1
-  # bounce every data plane so it re-fetches a fresh cert from the restarted xds server
-  kubectl --context "$ctx" -n agentgateway-system rollout restart deploy --all                     >/dev/null 2>&1
-  for res in agent-agentdemo-waypoint mcpserver-my-mcp-waypoint; do
-    kubectl --context "$ctx" -n kagent get deploy "$res" >/dev/null 2>&1 &&
-      kubectl --context "$ctx" -n kagent rollout restart "deploy/$res" >/dev/null 2>&1
-  done
-  kubectl --context "$ctx" -n agentgateway-system rollout status deploy/agentgateway-proxy --timeout=120s >/dev/null 2>&1
-  echo "mesh certs · healed"
-}
+# Heal an expired agentgateway XDS serving cert on a long-lived kind cluster before
+# any registry call. Shared with reset.sh via scripts/heal-mesh.sh (see that file
+# for the why). No-op on a healthy cluster; set SKIP_MESH_HEAL=1 to skip.
+_SD="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+[ -f "$_SD/heal-mesh.sh" ] && . "$_SD/heal-mesh.sh"
 [ -n "${SKIP_MESH_HEAL:-}" ] || _heal_mesh_certs
 
 # Clear any ARCTL_API_TOKEN left in this shell by a setup step (agentcore.sh /
