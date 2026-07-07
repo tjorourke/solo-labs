@@ -81,45 +81,68 @@ PY
 fi
 bash "$SCRIPT_DIR/git-push.sh" 2>&1 | sed 's/^/  /'
 
-step "Pushing the MCP source to a repo-root branch ($MCP_BR) for Cloud Run"
-# Cloud Run's source builder only finds a Dockerfile at the repo root, so push the
-# MCP project's contents (not as a subfolder) to a dedicated branch.
-T="$(mktemp -d)"; cp -R "mcp/$MCP_NAME/." "$T/"; rm -rf "$T/.git" "$T/.venv"
-( cd "$T" && git init -qb "$MCP_BR" && git add -A \
-  && git -c user.email=demo@local -c user.name=demo commit -qm "$MCP_NAME at root for Cloud Run" \
-  && git remote add origin "$GITURL" && git push -fq origin "$MCP_BR" ) && ok "pushed $MCP_NAME -> ${SLUG}@${MCP_BR} (root)"
-rm -rf "$T"
+# The agent may declare more than one MCP tool. Non-kagent runtimes (GCP/AWS)
+# enforce set-equality: EVERY non-remote MCPServer in agent.spec.mcpServers must
+# have a matching deploymentRef, or the agent reconcile is rejected. So deploy each
+# declared MCP to Cloud Run and link them all. (kagent auto-derives instead, so its
+# path only needs the servers Ready on the runtime — no deploymentRefs.) Read the
+# declared MCPs off the catalog agent; yaml-free awk so there's no pyyaml dependency.
+MCP_NAMES="$(arctl get agent "$AGENT" -o yaml 2>/dev/null | awk '
+  /^  mcpServers:/ {inblk=1; next}
+  inblk && /^  [^ -]/ {inblk=0}
+  inblk && $1=="name:" {print $2}
+')"
+[[ -n "$MCP_NAMES" ]] || MCP_NAMES="$MCP_NAME"     # fallback to the single default MCP
+log "agent declares MCP tools: $(echo $MCP_NAMES | tr '\n' ' ')"
 
-step "Deploying the MCP tool '$MCP_NAME' to Cloud Run ($MCP_DEPLOY)"
-reset_deployment "$MCP_DEPLOY"
-arctl apply -f - <<EOF
+DEPLOY_REFS=""
+for m in $MCP_NAMES; do
+  md="${m}-gcp"; mbr="gcp-mcp-${m}"
+  [[ -d "mcp/$m" ]] || die "agent references MCP '$m' but there is no mcp/$m/ project to deploy"
+
+  step "Pushing MCP '$m' source to a repo-root branch ($mbr) for Cloud Run"
+  # Cloud Run's source builder only finds a Dockerfile at the repo root, so push each
+  # MCP project's contents (not as a subfolder) to its own dedicated branch.
+  T="$(mktemp -d)"; cp -R "mcp/$m/." "$T/"; rm -rf "$T/.git" "$T/.venv"
+  ( cd "$T" && git init -qb "$mbr" && git add -A \
+    && git -c user.email=demo@local -c user.name=demo commit -qm "$m at root for Cloud Run" \
+    && git remote add origin "$GITURL" && git push -fq origin "$mbr" ) && ok "pushed $m -> ${SLUG}@${mbr} (root)"
+  rm -rf "$T"
+
+  step "Deploying MCP '$m' to Cloud Run ($md)"
+  reset_deployment "$md"
+  arctl apply -f - <<EOF
 apiVersion: ar.dev/v1alpha1
 kind: Deployment
-metadata: {name: ${MCP_DEPLOY}}
+metadata: {name: ${md}}
 spec:
-  targetRef:  {kind: MCPServer, name: ${MCP_NAME}}
+  targetRef:  {kind: MCPServer, name: ${m}}
   runtimeRef: {kind: Runtime,   name: ${GCP_RUNTIME_ID}}
   runtimeConfig:
     gitRepoUrl: "${GITURL}"
-    gitBranch: ${MCP_BR}
+    gitBranch: ${mbr}
     useDockerfile: true
     allowUnauthenticated: true
 EOF
 
-step "Waiting for the MCP to be Ready on Cloud Run (the agent links to it)"
-ph=""
-for i in $(seq 1 45); do
-  ph="$(arctl get deployment "$MCP_DEPLOY" -o yaml 2>/dev/null | awk '/^  phase:/{print $2; exit}')"
-  case "$ph" in
-    ready|active|deployed|succeeded|running) ok "MCP '$MCP_DEPLOY' is $ph"; break ;;
-    failed|error) die "MCP '$MCP_DEPLOY' deploy $ph — see: arctl get deployment $MCP_DEPLOY -o yaml" ;;
-    *) log "MCP '$MCP_DEPLOY': ${ph:-pending} [$i/45]"; sleep 20 ;;
-  esac
+  step "Waiting for MCP '$md' to be Ready on Cloud Run (the agent links to it)"
+  ph=""
+  for i in $(seq 1 45); do
+    ph="$(arctl get deployment "$md" -o yaml 2>/dev/null | awk '/^  phase:/{print $2; exit}')"
+    case "$ph" in
+      ready|active|deployed|succeeded|running) ok "MCP '$md' is $ph"; break ;;
+      failed|error) die "MCP '$md' deploy $ph — see: arctl get deployment $md -o yaml" ;;
+      *) log "MCP '$md': ${ph:-pending} [$i/45]"; sleep 20 ;;
+    esac
+  done
+
+  [[ -n "$DEPLOY_REFS" ]] && DEPLOY_REFS="${DEPLOY_REFS}"$'\n'
+  DEPLOY_REFS="${DEPLOY_REFS}    - name: ${md}"
 done
 
 step "Deploying the agent '$AGENT' to Vertex AI Agent Engine ($AGENT_DEPLOY)"
 # Source comes from git (Cloud Build); the agent's MCP tools are linked via
-# deploymentRefs -> the Cloud Run MCP deployment above.
+# deploymentRefs -> the Cloud Run MCP deployment(s) above.
 reset_deployment "$AGENT_DEPLOY"
 arctl apply -f - <<EOF
 apiVersion: ar.dev/v1alpha1
@@ -129,7 +152,7 @@ spec:
   targetRef: {kind: Agent, name: ${AGENT}}
   runtimeRef: {kind: Runtime, name: ${GCP_RUNTIME_ID}}
   deploymentRefs:
-    - name: ${MCP_DEPLOY}
+${DEPLOY_REFS}
   runtimeConfig:
     gitRepoUrl: "${GITURL}"
     gitBranch: ${AGENT_BR}
