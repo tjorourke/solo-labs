@@ -1,0 +1,25 @@
+# Cost budgets with per-scope enforcement. onBudgetExceeded: Audit logs the
+# overage (spend keeps flowing); Block denies further spend for that subject
+# (denial-of-wallet). subject selects a budget dimension the gateway emits.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBudget
+metadata:
+  name: cost-profiling-budgets
+  namespace: gloo-system
+spec:
+  budgets:
+    - name: individual-alice
+      subject: {user: alice}
+      limit:  {amount: 4,  unit: USD}
+      window: {unit: Month}
+      onBudgetExceeded: Audit
+    - name: team-engineering
+      subject: {group: engineering}
+      limit:  {amount: 50, unit: USD}
+      window: {unit: Month}
+      onBudgetExceeded: Block
+    - name: org-wide-tokens
+      subject: {}
+      limit:  {amount: 20000000, unit: Tokens}
+      window: {unit: Month}
+      onBudgetExceeded: Block

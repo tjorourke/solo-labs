@@ -1,0 +1,9 @@
+entry,key,id,metadata.organization,metadata.costCenter,metadata.group,metadata.user
+acme-prod,sk-acme-prod-001,vk-acme-prod,acme-corp,engineering,developers,alice
+acme-dev,sk-acme-dev-001,vk-acme-dev,acme-corp,engineering,developers,bob
+globex-ml,sk-globex-ml-001,vk-globex-ml,globex,ml-platform,data-science,carol
+initech-ops,sk-initech-ops-001,vk-initech-ops,initech,product,infra,dave
+umbrella-ai,sk-umbrella-ai-001,vk-umbrella-ai,umbrella,research,team-1,eve
+wayne-labs,sk-wayne-labs-001,vk-wayne-labs,wayne-enterprises,research,team-2,frank
+stark-ent,sk-stark-ent-001,vk-stark-ent,acme-corp,ml-platform,team-1,
+oscorp-dev,sk-oscorp-dev-001,vk-oscorp-dev,globex,product,team-2,alice

@@ -1,0 +1,128 @@
+# Live-traffic path for the Cost Management demo, applied by
+# apply-gateway-resources.sh (envsubst template — ${OPENAI_API_KEY},
+# ${GATEWAY_NAMESPACE}, ${VIRTUAL_KEY_SET} are substituted).
+#
+# The Gateway / openai backend / /openai HTTPRoute intentionally reuse the same
+# names as scripts/agentgateway-ent/resources.yaml, so applying both setups is
+# idempotent rather than duplicative. On top of that base this adds the
+# EnterpriseAgentgatewayPolicy the cost pipeline needs:
+#   - apiKeyAuthentication: verifies virtual keys from the Secrets labeled
+#     agentgateway.solo.io/virtual-key-set=${VIRTUAL_KEY_SET} and exposes their
+#     metadata to CEL as `apiKey.*` (what the budget-dimension expressions read).
+#   - entBudgetEnforcement: installs the budget HTTP filter, which resolves the
+#     dimensions and emits them on request spans (agw.llm.custom_dimensions)
+#     even when no budgets exist yet.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: agentgateway-params
+  namespace: ${GATEWAY_NAMESPACE}
+spec:
+  rawConfig:
+    config:
+      tracing:
+        otlpProtocol: grpc
+        otlpEndpoint: http://solo-enterprise-telemetry-collector.kagent.svc.cluster.local:4317
+        randomSampling: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openai-secret
+  namespace: ${GATEWAY_NAMESPACE}
+  labels:
+    app: agentgateway
+type: Opaque
+stringData:
+  Authorization: ${OPENAI_API_KEY}
+---
+kind: Gateway
+apiVersion: gateway.networking.k8s.io/v1
+metadata:
+  name: agentgateway
+  namespace: ${GATEWAY_NAMESPACE}
+spec:
+  gatewayClassName: enterprise-agentgateway
+  infrastructure:
+    parametersRef:
+      name: agentgateway-params
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+  listeners:
+  - protocol: HTTP
+    port: 8080
+    name: http
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  labels:
+    app: agentgateway
+  name: openai
+  namespace: ${GATEWAY_NAMESPACE}
+spec:
+  ai:
+    provider:
+      openai:
+        model: "gpt-3.5-turbo"
+  policies:
+    auth:
+      secretRef:
+        name: openai-secret
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: openai
+  namespace: ${GATEWAY_NAMESPACE}
+  labels:
+    app: agentgateway
+spec:
+  parentRefs:
+    - name: agentgateway
+      namespace: ${GATEWAY_NAMESPACE}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /openai
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplaceFullPath
+          replaceFullPath: /v1/chat/completions
+    backendRefs:
+    - name: openai
+      namespace: ${GATEWAY_NAMESPACE}
+      group: agentgateway.dev
+      kind: AgentgatewayBackend
+---
+# Must live in the same namespace as the HTTPRoute it targets, or it never
+# attaches (status ATTACHED stays False and no dimensions are emitted).
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: cost-management-api-key
+  namespace: ${GATEWAY_NAMESPACE}
+  labels:
+    app: agentgateway
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: openai
+  traffic:
+    apiKeyAuthentication:
+      # Strict: requests on /openai without a valid virtual key are rejected.
+      mode: Strict
+      secretSelector:
+        matchLabels:
+          agentgateway.solo.io/virtual-key-set: ${VIRTUAL_KEY_SET}
+    entBudgetEnforcement:
+      discovery:
+        namespaces:
+          from: All
