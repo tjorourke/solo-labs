@@ -33,6 +33,26 @@ MCP_DEPLOY="${GCP_MCP_DEPLOY:-${MCP_NAME}-gcp}"      # (kagent already uses '${M
 AGENT_BR="${AGENT_GIT_BRANCH:-main}"                 # agent source: subfolder '${AGENT}' on this branch
 MCP_BR="${GCP_MCP_BRANCH:-gcp-mcp}"                  # MCP source: repo ROOT on this branch (Cloud Run build)
 
+# reset_deployment NAME — delete a prior Deployment and WAIT for it to be purged.
+# arctl delete is async: the row goes to `terminating` and a background GC removes
+# it only once the runtime-side teardown (Cloud Run / Vertex) finishes. Re-applying
+# before it's gone is rejected with "object ... is terminating", so a plain
+# delete-then-apply races on every re-run.
+# NOTE: `arctl get deployment NAME` (single) HIDES terminating rows (reports
+# not-found), so it can't tell "purged" from "still terminating". The LIST
+# (`arctl get deployments`) does show terminating rows, so poll that instead.
+_dep_present() { arctl get deployments 2>/dev/null | awk -v n="$1" '{split($1,a,"/"); if (a[2]==n||$1==n) f=1} END{exit f?0:1}'; }
+reset_deployment() {
+  local name="$1" i
+  _dep_present "$name" || return 0   # nothing to remove
+  arctl delete deployment "$name" >/dev/null 2>&1 || true
+  for i in $(seq 1 60); do
+    _dep_present "$name" || { ok "cleared previous $name"; return 0; }
+    log "waiting for previous '$name' to finish terminating [$i/60]"; sleep 5
+  done
+  log "warning: '$name' still terminating after 5m — its runtime teardown may be stuck (e.g. GCP billing disabled on the project the row was created under); the apply below may fail until the row is purged"
+}
+
 step "Preflight"
 : "${AGENT_GIT_URL:?set AGENT_GIT_URL in .env.local}"
 [[ -d "$AGENT" ]] || die "no $AGENT/ project — scaffold it first (Step 1)"
@@ -71,7 +91,7 @@ T="$(mktemp -d)"; cp -R "mcp/$MCP_NAME/." "$T/"; rm -rf "$T/.git" "$T/.venv"
 rm -rf "$T"
 
 step "Deploying the MCP tool '$MCP_NAME' to Cloud Run ($MCP_DEPLOY)"
-arctl delete deployment "$MCP_DEPLOY" >/dev/null 2>&1 || true
+reset_deployment "$MCP_DEPLOY"
 arctl apply -f - <<EOF
 apiVersion: ar.dev/v1alpha1
 kind: Deployment
@@ -100,7 +120,7 @@ done
 step "Deploying the agent '$AGENT' to Vertex AI Agent Engine ($AGENT_DEPLOY)"
 # Source comes from git (Cloud Build); the agent's MCP tools are linked via
 # deploymentRefs -> the Cloud Run MCP deployment above.
-arctl delete deployment "$AGENT_DEPLOY" >/dev/null 2>&1 || true
+reset_deployment "$AGENT_DEPLOY"
 arctl apply -f - <<EOF
 apiVersion: ar.dev/v1alpha1
 kind: Deployment
