@@ -1,0 +1,25 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: agentcore-demo
+nodes:
+  - role: control-plane
+    # Map host :80/:443 to the agentgateway ingress (a NodePort Service on
+    # 30080/30443), so the consoles are reachable at http://*.localtest.me with no
+    # kubectl port-forward. *.localtest.me resolves to 127.0.0.1 via public DNS.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 30443
+        hostPort: 443
+        protocol: TCP
+  - role: worker
+# Tell containerd to read per-registry config from /etc/containerd/certs.d so the
+# nodes can pull `localhost:5001/...` (the arctl scaffolds' default image host)
+# from the host-side kind-registry container. 01-cluster.sh writes the hosts.toml.
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+networking:
+  apiServerAddress: "127.0.0.1"

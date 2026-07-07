@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# setup-env.sh — interactively create (or update) .env.local for this demo.
+# Prompts for each variable; secrets are read hidden and never echoed. Existing
+# values are offered as defaults (press Enter to keep). Writes .env.local with
+# 600 perms — the notebook and scripts source it automatically.
+#
+#   ./scripts/setup-env.sh
+
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENVFILE="$LAB_ROOT/.env.local"
+
+# Preload existing values so we can offer them as defaults.
+if [ -f "$ENVFILE" ]; then set -a; . "$ENVFILE"; set +a; fi
+
+# ask VAR "prompt" ["default"] — if a value already exists, offer to keep it
+# (Enter = keep, no re-typing); otherwise prompt for it.
+ask() {
+  local var="$1" prompt="$2" def="${3:-}" cur ans yn
+  cur="$(eval "printf '%s' \"\${$var:-}\"")"; [ -n "$cur" ] || cur="$def"
+  if [ -n "$cur" ]; then
+    read -r -p "  $prompt — keep \"$cur\"? [Y/n]: " yn
+    case "$yn" in [Nn]*) ;; *) printf -v "$var" '%s' "$cur"; return;; esac
+  fi
+  read -r -p "  enter $prompt: " ans
+  printf -v "$var" '%s' "${ans:-$cur}"
+}
+
+# ask_secret VAR "prompt" — like ask but hidden; shows only the length, never
+# the value, in the keep prompt.
+ask_secret() {
+  local var="$1" prompt="$2" cur ans yn
+  cur="$(eval "printf '%s' \"\${$var:-}\"")"
+  if [ -n "$cur" ]; then
+    read -r -p "  $prompt — keep existing (${#cur} chars)? [Y/n]: " yn
+    case "$yn" in [Nn]*) ;; *) printf -v "$var" '%s' "$cur"; return;; esac
+  fi
+  read -r -s -p "  enter $prompt: " ans; echo
+  if [ -n "$ans" ]; then printf -v "$var" '%s' "$ans"; else printf -v "$var" '%s' "$cur"; fi
+}
+
+echo "Setting up $ENVFILE"
+echo
+echo "Required for the local kagent path:"
+ask_secret ANTHROPIC_API_KEY "Anthropic API key (sk-ant-...)"
+ask_secret SOLO_LICENSE_KEY  "Solo Enterprise for kagent license key"
+echo
+echo "Required for the AccessPolicy / agentgateway-waypoint step (05-waypoint.sh):"
+echo "  Solo Istio reuses the Solo license above; agentgateway needs its own key."
+ask_secret AGENTGATEWAY_LICENSE_KEY "Enterprise agentgateway license key"
+echo
+echo "Only for the AWS Bedrock AgentCore add-on (choose 0 / leave blank to skip):"
+# Offer a numbered picker of the profiles in ~/.aws/config (aws configure
+# list-profiles), or let the user type a name. 0 = skip.
+profiles=()
+if command -v aws >/dev/null 2>&1; then
+  while IFS= read -r _p; do [ -n "$_p" ] && profiles+=("$_p"); done < <(aws configure list-profiles 2>/dev/null | sort)
+fi
+if [ "${#profiles[@]}" -gt 0 ]; then
+  echo "    [0] none / skip"
+  _i=1; for _p in "${profiles[@]}"; do echo "    [$_i] $_p"; _i=$((_i+1)); done
+  read -r -p "  AWS profile — pick a number or type a name${AWS_PROFILE:+ [$AWS_PROFILE]}: " _c
+  if   [ -z "$_c" ]; then :                                   # keep current
+  elif [ "$_c" = "0" ]; then AWS_PROFILE=""
+  elif printf '%s' "$_c" | grep -qE '^[0-9]+$' && [ "$_c" -le "${#profiles[@]}" ]; then
+       AWS_PROFILE="${profiles[$((_c-1))]}"
+  else AWS_PROFILE="$_c"; fi
+else
+  echo "  (no AWS profiles found via 'aws configure list-profiles')"
+  ask AWS_PROFILE "AWS CLI profile (SSO-backed)"
+fi
+# Default to us-east-1 (where Bedrock AgentCore + Claude access live for this
+# demo). Hardcoded rather than inheriting $AWS_REGION, because the AWS SSO
+# profile often sets a different home region (e.g. eu-west-2) that AgentCore
+# isn't enabled in. Override at the prompt if you really run AgentCore elsewhere.
+ask AWS_REGION "AWS region (Bedrock AgentCore; us-east-1 recommended)" "us-east-1"
+
+echo
+echo "Only for the Google Cloud (Vertex AI) add-on (leave blank to skip):"
+echo "  Deploys the agent to Vertex AI Agent Engine + the MCP to Cloud Run."
+echo "  Bootstrap once first:  arctl runtime setup gemini-agent-runtime --project-id <project>"
+echo "  (creates a deployer service account + key; needs rights to create custom IAM roles)."
+ask GCP_PROJECT_ID "GCP project id (blank = skip Google)" "${GCP_PROJECT_ID:-}"
+if [ -n "${GCP_PROJECT_ID:-}" ]; then
+  ask GCP_SA_KEY_FILE "deployer SA key json path (from 'arctl runtime setup')" "${GCP_SA_KEY_FILE:-.agentcore/sa-gcp-deployer.json}"
+fi
+
+echo
+echo "AgentCore agent source (AgentCore add-on only):"
+echo "  kagent runs the OCI image directly, but Bedrock AgentCore runs the agent"
+echo "  inside YOUR AWS account and clones its SOURCE from a git repo you own at"
+echo "  deploy time. So it needs a repo URL + branch to clone from; the deploy"
+echo "  pushes the scaffolded agentdemo/ there for you (under agentdemo/, which it"
+echo "  sets as the source subfolder automatically — nothing to enter here)."
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  GH_USER="$(gh api user -q .login 2>/dev/null)"
+  ask AGENT_GIT_URL    "  source repo URL"  "${AGENT_GIT_URL:-https://github.com/${GH_USER}/agentregistry-agentcore-demo.git}"
+  ask AGENT_GIT_BRANCH "  branch"           "${AGENT_GIT_BRANCH:-main}"
+  _repo="${AGENT_GIT_URL#https://github.com/}"; _repo="${_repo%.git}"
+  if [ -n "$_repo" ] && ! gh repo view "$_repo" >/dev/null 2>&1; then
+    read -r -p "  repo '$_repo' does not exist — create it (private) and push the agent source? [y/N]: " _yn
+    if [ "$_yn" = y ] || [ "$_yn" = Y ]; then
+      AGENT_GIT_URL="$AGENT_GIT_URL" AGENT_GIT_BRANCH="$AGENT_GIT_BRANCH" bash "$SCRIPT_DIR/create-agent-repo.sh" || true
+    fi
+  fi
+else
+  echo "  (gh not authenticated — run 'gh auth login', or set AGENT_GIT_URL by hand)"
+fi
+
+umask 077
+cat > "$ENVFILE" <<EOF
+# Generated by scripts/setup-env.sh — gitignored, do not commit.
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+export SOLO_LICENSE_KEY="${SOLO_LICENSE_KEY:-}"
+# Solo Istio is licensed by the same Solo key; agentgateway needs its own.
+export SOLO_ISTIO_LICENSE_KEY="\${SOLO_ISTIO_LICENSE_KEY:-\$SOLO_LICENSE_KEY}"
+export AGENTGATEWAY_LICENSE_KEY="${AGENTGATEWAY_LICENSE_KEY:-}"
+export AWS_PROFILE="${AWS_PROFILE:-}"
+export AWS_REGION="${AWS_REGION:-us-east-1}"
+# Google Cloud / Vertex AI add-on (blank = skip). GCP_PROJECT_ID set turns on 04e.
+export GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
+export GCP_SA_KEY_FILE="${GCP_SA_KEY_FILE:-}"
+export AGENT_GIT_URL="${AGENT_GIT_URL:-}"
+export AGENT_GIT_BRANCH="${AGENT_GIT_BRANCH:-main}"
+EOF
+chmod 600 "$ENVFILE"
+
+echo
+echo "Wrote $ENVFILE (600). Values (masked):"
+mask() { if [ -n "${1:-}" ]; then echo "set (${#1} chars)"; else echo "MISSING"; fi; }
+echo "  ANTHROPIC_API_KEY        : $(mask "${ANTHROPIC_API_KEY:-}")"
+echo "  SOLO_LICENSE_KEY         : $(mask "${SOLO_LICENSE_KEY:-}")  (also licenses Solo Istio)"
+echo "  AGENTGATEWAY_LICENSE_KEY : $(mask "${AGENTGATEWAY_LICENSE_KEY:-}")"
+echo "  AWS_PROFILE       : ${AWS_PROFILE:-<unset> (AgentCore add-on only)}"
+echo "  AWS_REGION        : ${AWS_REGION:-us-east-1}"
+echo "  GCP_PROJECT_ID    : ${GCP_PROJECT_ID:-<unset> (Vertex add-on only)}"
+echo "  AGENT_GIT_URL     : ${AGENT_GIT_URL:-<unset> (AgentCore add-on only)}"
+echo
+echo "Next: ./scripts/setup.sh   (then open demo.ipynb)"

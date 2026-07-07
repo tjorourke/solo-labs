@@ -21,34 +21,39 @@ Everything else (kind, kubectl, helm, jq, yq, uv, aws, `arctl`) is installed by 
 
 ```bash
 # 1. capture credentials (prompts for each; secrets hidden; AWS profile picker)
-./scripts/setup-env.sh
+./deploy/scripts/setup-env.sh
 
 # 2. bring up the platform: kind + Keycloak + kagent + arctl daemon + the two MCP
 #    servers + the dice skill + the agentgateway waypoint data plane (~20 min first run)
-./scripts/setup.sh
+./deploy/scripts/setup.sh
 ```
 
 Then open **`demo.ipynb`** (Bash kernel) and run it top to bottom. To open the consoles
-(AgentRegistry UI + kagent UI) in a terminal: `./scripts/open-consoles.sh`.
+(AgentRegistry UI + kagent UI) in a terminal: `./deploy/scripts/open-consoles.sh`.
 
 ## Layout
-- `demo.ipynb` — the customer-facing walkthrough.
-- `scripts/` — numbered setup steps (`00`–`05`), the per-demo helpers (`add-mcp.sh`,
-  `accesspolicy-on.sh`/`-off.sh`, `ask.sh`, `open-consoles.sh`), and `lib.sh`.
-- `mcp/` — the two MCP tool servers (`everything-server`, `my-mcp`).
-- `skill/` — the `dice-game` skill.
-- `yaml/`, `kind/`, `templates/` — manifests, kind config, the Bedrock model adapter.
+
+The lab root holds just **`demo.ipynb`** and a **`deploy/`** folder; a freshly scaffolded
+agent (`agentdemo/`) is created at the root next to them.
+
+- `demo.ipynb` — the customer-facing walkthrough (at the lab root).
+- `deploy/` — all the lab machinery:
+  - `deploy/scripts/` — numbered setup steps (`00`–`05`), the per-demo helpers (`add-mcp.sh`,
+    `accesspolicy-on.sh`/`-off.sh`, `ask.sh`, `open-consoles.sh`), and `lib.sh`.
+  - `deploy/mcp/` — the two MCP tool servers (`everything-server`, `my-mcp`).
+  - `deploy/skill/` — the `dice-game` skill.
+  - `deploy/yaml/`, `deploy/kind/`, `deploy/templates/` — manifests, kind config, the Bedrock model adapter.
 
 ## The AccessPolicy demo
 
 ```bash
-./scripts/accesspolicy-on.sh    # deny the printenv tool at the waypoint (least privilege)
-./scripts/accesspolicy-off.sh   # restore the full tool list
+./deploy/scripts/accesspolicy-on.sh    # deny the printenv tool at the waypoint (least privilege)
+./deploy/scripts/accesspolicy-off.sh   # restore the full tool list
 ```
 
 ## Reset / teardown
 
 ```bash
-./scripts/reset.sh      # back to start: clears agentdemo/, deployments; platform stays up
-./scripts/cleanup.sh    # full teardown (cluster, daemon, registry, AWS)
+./deploy/scripts/reset.sh      # back to start: clears agentdemo/, deployments; platform stays up
+./deploy/scripts/cleanup.sh    # full teardown (cluster, daemon, registry, AWS)
 ```
