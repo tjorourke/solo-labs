@@ -8,6 +8,14 @@
 # CR. The key never lands in the registry record, the Agent CR spec, or the pod
 # spec — it stays in the Secret and is resolved at runtime. Installed once at
 # setup; every `arctl apply` of a kagent agent gets it automatically.
+#
+# It APPENDS via a JSON patch, it does NOT patchStrategicMerge. On the kagent
+# Agent CRD, strategic merge has no merge-key for spec.byo.deployment.env, so it
+# REPLACES the whole env list with just this one entry — silently wiping the
+# registry-injected MCP_SERVERS_CONFIG (and with it every MCP tool the agent
+# should have). Appending to .../env/- preserves every registry env var. The
+# precondition skips injection when ANTHROPIC_API_KEY is already present so a
+# re-apply (admission UPDATE) doesn't append a duplicate.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -31,14 +39,18 @@ spec:
           - key: "{{ request.object.spec.type || '' }}"
             operator: Equals
             value: BYO
+          # inject once: skip if ANTHROPIC_API_KEY is already in env (re-applies
+          # come through as admission UPDATEs and would otherwise duplicate it).
+          - key: "{{ request.object.spec.byo.deployment.env[?name=='ANTHROPIC_API_KEY'] | length(@) }}"
+            operator: Equals
+            value: 0
       mutate:
-        patchStrategicMerge:
-          spec:
-            byo:
-              deployment:
-                env:
-                  - name: ANTHROPIC_API_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: kagent-anthropic
-                        key: ANTHROPIC_API_KEY
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/byo/deployment/env/-"
+            value:
+              name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-anthropic
+                  key: ANTHROPIC_API_KEY
