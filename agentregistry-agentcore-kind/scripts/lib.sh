@@ -266,3 +266,65 @@ arctl_token() {
     -d grant_type=password -d client_id="$AR_CLI_CLIENT" \
     -d username="$AS_USER" -d password="$AS_PASSWORD" | jq -r '.access_token // empty'
 }
+
+# --- GCP agent teardown workaround (released-image bug) ----------------------
+# The GeminiAgentRuntime adapter stores a deployed agent's remoteId as the agent
+# NAME (e.g. "agentdemo") instead of the Vertex reasoning-engine resource path, so
+# arctl's Undeploy calls DeleteReasoningEngine(Name="agentdemo"). The Vertex API
+# reads "agentdemo" as the PROJECT and returns BILLING_DISABLED for project
+# "agentdemo"; the delete never succeeds, the finalizer never clears, and the
+# Deployment row wedges in `terminating`, blocking the next GCP agent deploy. Until
+# the image is fixed, the lab deletes the real engine itself and hard-purges the row.
+
+# _gcp_delete_vertex_engine DISPLAYNAME — delete the Vertex reasoning engine(s) whose
+# displayName matches, by full resource path (what arctl should do but can't).
+# No-op without gcloud / an access token / a project.
+_gcp_delete_vertex_engine() {
+  local dn="$1" proj loc tok eng e
+  command -v gcloud >/dev/null 2>&1 || return 0
+  proj="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"; [ -n "$proj" ] || return 0
+  loc="${GCP_LOCATION:-us-central1}"
+  tok="$(gcloud auth print-access-token 2>/dev/null)"; [ -n "$tok" ] || return 0
+  eng="$(curl -s -H "Authorization: Bearer $tok" \
+    "https://${loc}-aiplatform.googleapis.com/v1/projects/${proj}/locations/${loc}/reasoningEngines" 2>/dev/null \
+    | DN="$dn" python3 -c 'import sys,json,os
+try: d=json.load(sys.stdin)
+except Exception: d={}
+[print(x["name"]) for x in d.get("reasoningEngines",[]) if x.get("displayName")==os.environ["DN"]]' 2>/dev/null)"
+  for e in $eng; do
+    curl -s -X DELETE -H "Authorization: Bearer $tok" \
+      "https://${loc}-aiplatform.googleapis.com/v1/${e}?force=true" >/dev/null 2>&1 && ok "deleted Vertex engine ${e##*/} (displayName $dn)"
+  done
+}
+
+# _force_purge_deployment NAME — hard-delete a registry Deployment row from Postgres.
+# Use ONLY after the real cloud resource is gone; needed because the broken Undeploy
+# above leaves the row wedged in `terminating` with an uncleaable finalizer, and
+# clearing the finalizer alone does not trigger GC (verified) — the row must be deleted.
+_force_purge_deployment() {
+  local name="$1" pg
+  pg="$(kc -n agentregistry-system get pods -l app.kubernetes.io/name=postgresql -o name 2>/dev/null | head -1)"
+  [ -n "$pg" ] || pg="$(kc -n agentregistry-system get pods --no-headers 2>/dev/null | awk '/enterprise-postgresql/{print "pod/"$1; exit}')"
+  [ -n "$pg" ] || { log "force-purge: no registry postgres pod found for '$name'"; return 1; }
+  kc -n agentregistry-system exec "${pg#pod/}" -- sh -c \
+    "PGPASSWORD=\$POSTGRES_PASSWORD psql -U agentregistry -d agentregistry -c \"DELETE FROM deployments WHERE name='$name';\"" >/dev/null 2>&1 \
+    && ok "force-purged stuck deployment row '$name'" || log "force-purge of '$name' failed"
+}
+
+# _dep_present NAME — true if a Deployment row (incl. terminating) is listed.
+_dep_present() { arctl get deployments 2>/dev/null | awk -v n="$1" '{split($1,a,"/"); if (a[2]==n||$1==n) f=1} END{exit f?0:1}'; }
+
+# gcp_reset_agent DEPLOY_NAME AGENT_DISPLAYNAME — fully clear a prior GCP agent
+# deployment so a fresh one can apply: delete the real Vertex engine, arctl-delete the
+# row (graceful), and force-purge it if the broken Undeploy wedges it in terminating.
+gcp_reset_agent() {
+  local dep="$1" name="$2" i
+  _gcp_delete_vertex_engine "$name"
+  _dep_present "$dep" || return 0
+  arctl delete deployment "$dep" >/dev/null 2>&1 || true
+  for i in $(seq 1 10); do _dep_present "$dep" || { ok "cleared $dep"; return 0; }; sleep 2; done
+  log "'$dep' stuck terminating (GeminiAgentRuntime Undeploy bug) — force-purging the registry row"
+  _force_purge_deployment "$dep"
+  for i in $(seq 1 15); do _dep_present "$dep" || { ok "cleared $dep"; return 0; }; sleep 2; done
+  log "warning: '$dep' still present after force-purge"
+}

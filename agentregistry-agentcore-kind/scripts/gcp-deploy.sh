@@ -143,7 +143,10 @@ done
 step "Deploying the agent '$AGENT' to Vertex AI Agent Engine ($AGENT_DEPLOY)"
 # Source comes from git (Cloud Build); the agent's MCP tools are linked via
 # deploymentRefs -> the Cloud Run MCP deployment(s) above.
-reset_deployment "$AGENT_DEPLOY"
+# NB: arctl can't tear down a prior GCP agent (released-image bug stores the wrong
+# remoteId, so its Vertex delete 401s and the row wedges in `terminating`). gcp_reset_agent
+# deletes the real engine + force-purges the row so this apply isn't blocked. See lib.sh.
+gcp_reset_agent "$AGENT_DEPLOY" "$AGENT"
 arctl apply -f - <<EOF
 apiVersion: ar.dev/v1alpha1
 kind: Deployment

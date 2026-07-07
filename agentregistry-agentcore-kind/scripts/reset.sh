@@ -134,6 +134,11 @@ for x in d.get('reasoningEngines',[]):
   fi
   gcloud run services delete "$GCP_MCP_SERVICE" --project "$GCP_PROJECT_ID" --region "$GCP_LOCATION" --quiet >/dev/null 2>&1 \
     && ok "Cloud Run $GCP_MCP_SERVICE" || log "no Cloud Run $GCP_MCP_SERVICE"
+  # The arctl delete in step 1 can't tear down the Vertex engine (released-image bug
+  # stores the wrong remoteId), so agentdemo-gcp is left wedged in `terminating`. The
+  # real engine is deleted above, so force-purge the stuck row (see lib.sh) or the next
+  # GCP agent deploy is blocked.
+  _dep_present agentdemo-gcp && _force_purge_deployment agentdemo-gcp
   if [[ "$KEEP_GCP_PLATFORM" == "true" ]]; then
     log "keeping gcp-vertex runtime + deployer SA/roles (platform; RESET_KEEP_GCP_PLATFORM=false to remove)"
   else
