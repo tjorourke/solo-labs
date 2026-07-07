@@ -16,6 +16,11 @@ set -a
 set +a
 export PATH="$HOME/.arctl/bin:$PATH"
 export NO_COLOR=1 CLICOLOR=0             # clean arctl output (no color / terminal-probe escapes)
+# The notebook Bash kernel inherits PROMPT_COMMAND from the launching terminal (e.g.
+# cmux exports PROMPT_COMMAND=_cmux_prompt_command) but not the shell FUNCTION it names,
+# so every cell ends with "bash: _cmux_prompt_command: command not found". A kernel needs
+# no prompt hook, so drop it to keep the demo output clean.
+unset PROMPT_COMMAND
 # Default TERM to dumb ONLY when it's unset/empty (the notebook bash kernel). An
 # interactive terminal that SOURCEs this keeps its real TERM (e.g. xterm-256color),
 # so `export TERM=dumb` no longer clobbers readline and corrupts the live prompt.
