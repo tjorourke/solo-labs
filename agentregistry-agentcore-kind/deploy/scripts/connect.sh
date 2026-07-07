@@ -21,10 +21,19 @@ export NO_COLOR=1 CLICOLOR=0             # clean arctl output (no color / termin
 # so every cell ends with "bash: _cmux_prompt_command: command not found". A kernel needs
 # no prompt hook, so drop it to keep the demo output clean.
 unset PROMPT_COMMAND
-# Default TERM to dumb ONLY when it's unset/empty (the notebook bash kernel). An
-# interactive terminal that SOURCEs this keeps its real TERM (e.g. xterm-256color),
-# so `export TERM=dumb` no longer clobbers readline and corrupts the live prompt.
-: "${TERM:=dumb}"; export TERM
+# TERM: the notebook Bash kernel runs an interactive bash over a pty and INHERITS a real
+# TERM (e.g. xterm-256color) from the launching terminal. arctl's colour library then emits
+# terminal probes (OSC 11 background-colour `]11;?` + cursor-position `[6n`) that no terminal
+# answers, so they leak into cell output and mangle table headers. Only TERM=dumb suppresses
+# them (NO_COLOR does not). Force TERM=dumb when we're in the kernel (parent process is the
+# Python kernel, or the pty has ECHO OFF as bash_kernel sets it); a real terminal that SOURCEs
+# this keeps its TERM so readline/colours there are unaffected.
+if ps -o comm= -p "$PPID" 2>/dev/null | grep -qi python \
+   || stty -a 2>/dev/null | grep -Eq '(^|[[:space:]])-echo([[:space:],]|$)'; then
+  export TERM=dumb
+else
+  : "${TERM:=dumb}"; export TERM
+fi
 export CLUSTER_NAME="${CLUSTER_NAME:-agentcore-demo}"
 export AR_HOST="${AR_HOST:-agentregistry.localtest.me}"
 export KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.localtest.me}"
