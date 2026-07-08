@@ -283,8 +283,10 @@ KIND_CIDR="$(docker network inspect kind \
   --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' 2>/dev/null \
   | grep -v ':' | head -1)"
 [[ -n "$KIND_CIDR" ]] || die "kind Docker network not found — cluster must be up first"
-BASE="$(echo "$KIND_CIDR" | cut -d. -f1,2)"
-log "kind network: $KIND_CIDR  (base: $BASE)"
+# First THREE octets of the actual kind subnet so the pool sits inside the
+# Docker /24 (or /16) — otherwise MetalLB hands out unroutable LB IPs.
+BASE="$(echo "$KIND_CIDR" | cut -d. -f1,2,3)"
+log "kind network: $KIND_CIDR  (pool base: $BASE)"
 
 kubectl --context "$CTX" apply -f \
   "https://raw.githubusercontent.com/metallb/metallb/${METALLB_VERSION}/config/manifests/metallb-native.yaml" \
@@ -299,7 +301,7 @@ apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata: { name: kind-pool, namespace: metallb-system }
 spec:
-  addresses: ["${BASE}.255.100-${BASE}.255.110"]
+  addresses: ["${BASE}.100-${BASE}.110"]
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement

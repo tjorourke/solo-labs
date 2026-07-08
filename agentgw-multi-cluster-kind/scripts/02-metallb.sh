@@ -3,8 +3,9 @@
 # IP address pools derived from the docker kind network CIDR.
 #
 # Pool assignment:
-#   east  <base>.255.200 – <base>.255.210  (agw-ingress LoadBalancer)
-#   west  <base>.255.220 – <base>.255.230  (agw-ingress LoadBalancer)
+#   east  <base>.200 – <base>.210  (agw-ingress LoadBalancer)
+#   west  <base>.220 – <base>.230  (agw-ingress LoadBalancer)
+# where <base> is the first three octets of the kind Docker subnet.
 
 set -Eeuo pipefail
 
@@ -50,8 +51,10 @@ KIND_CIDR="$(docker network inspect kind \
 if [[ -z "$KIND_CIDR" ]]; then
   echo "ERROR: 'kind' docker network not found — run 01-clusters.sh first"; exit 1
 fi
-BASE="$(echo "$KIND_CIDR" | cut -d. -f1,2)"
-echo "  docker kind network: $KIND_CIDR  (base: $BASE)"
+# First THREE octets of the actual kind subnet — the pool must sit inside the
+# Docker /24 (or /16) or the other cluster's nodes can't route to the LB IP.
+BASE="$(echo "$KIND_CIDR" | cut -d. -f1,2,3)"
+echo "  docker kind network: $KIND_CIDR  (pool base: $BASE)"
 
 echo ""
 echo "==> Installing MetalLB $METALLB_VERSION"
@@ -69,8 +72,8 @@ wait_ready "$CLUSTER2"
 
 echo ""
 echo "==> Configuring IP pools"
-apply_pool "$CLUSTER1" "${BASE}.255.200" "${BASE}.255.210"
-apply_pool "$CLUSTER2" "${BASE}.255.220" "${BASE}.255.230"
+apply_pool "$CLUSTER1" "${BASE}.200" "${BASE}.210"
+apply_pool "$CLUSTER2" "${BASE}.220" "${BASE}.230"
 
 echo ""
 echo "LoadBalancer services:"

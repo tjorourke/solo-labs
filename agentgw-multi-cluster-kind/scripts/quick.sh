@@ -307,8 +307,13 @@ KIND_CIDR="$(docker network inspect kind \
   --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' 2>/dev/null \
   | grep -v ':' | head -1)"
 [[ -n "$KIND_CIDR" ]] || die "kind Docker network not found — clusters must be up first"
-BASE="$(echo "$KIND_CIDR" | cut -d. -f1,2)"
-log "kind network: $KIND_CIDR  (base: $BASE)"
+# Pool must sit INSIDE the kind Docker /24 or /16, or MetalLB hands out IPs the
+# other cluster's nodes can't route to (cross-cluster HBONE fails). Docker may
+# assign the kind net a /24 (e.g. 192.168.97.0/24) — so take the first THREE
+# octets of the actual subnet, not two + a hardcoded third. Both cluster pools
+# share this /24 so the east-west LB IPs land on one L2 segment.
+BASE="$(echo "$KIND_CIDR" | cut -d. -f1,2,3)"
+log "kind network: $KIND_CIDR  (pool base: $BASE)"
 
 for CTX in "$CLUSTER1" "$CLUSTER2"; do
   kubectl --context "$CTX" apply -f \
@@ -327,7 +332,7 @@ apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata: { name: kind-pool, namespace: metallb-system }
 spec:
-  addresses: ["${BASE}.255.100-${BASE}.255.110"]
+  addresses: ["${BASE}.100-${BASE}.110"]
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -339,7 +344,7 @@ apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata: { name: kind-pool, namespace: metallb-system }
 spec:
-  addresses: ["${BASE}.255.120-${BASE}.255.130"]
+  addresses: ["${BASE}.120-${BASE}.130"]
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -589,10 +594,12 @@ YAML
   log_ok "[${CTX#kind-}] istiod alias Service applied"
 done
 
-# Wait for rollouts after env patches
+# Wait for rollouts after env patches. The env patch restarts istiod + ztunnel;
+# on a first run (cold image cache, multiple kind clusters sharing the host)
+# that can take a few minutes, so give it 5m rather than a tight 2m.
 for CTX in "$CLUSTER1" "$CLUSTER2"; do
-  kubectl --context "$CTX" -n istio-system rollout status deployment/istiod-gloo --timeout=120s >/dev/null
-  kubectl --context "$CTX" -n istio-system rollout status daemonset/ztunnel --timeout=120s >/dev/null
+  kubectl --context "$CTX" -n istio-system rollout status deployment/istiod-gloo --timeout=300s >/dev/null
+  kubectl --context "$CTX" -n istio-system rollout status daemonset/ztunnel --timeout=300s >/dev/null
 done
 log_ok "istiod-gloo + ztunnel rollout complete on both clusters"
 
@@ -858,8 +865,10 @@ else
     --from-file=realm-solo.json="$KEYCLOAK_REALM_JSON" \
     --dry-run=client -o yaml | kubectl --context "$CLUSTER1" apply -f - >/dev/null
   kubectl --context "$CLUSTER1" apply -f "$KEYCLOAK_MANIFEST" >/dev/null
+  # quay.io/keycloak/keycloak is a large image; a cold first pull can take
+  # several minutes, so allow 10m before treating the rollout as stuck.
   kubectl --context "$CLUSTER1" -n "$KEYCLOAK_NS" \
-    rollout status statefulset/keycloak --timeout 5m >/dev/null
+    rollout status statefulset/keycloak --timeout 10m >/dev/null
   log_ok "[${CLUSTER1#kind-}] Keycloak installed (realm: solo, ns: $KEYCLOAK_NS)"
 fi
 
@@ -906,12 +915,22 @@ for CTX in "$CLUSTER1" "$CLUSTER2"; do
   fi
 done
 
-# 3) Multicluster peering verified
-if istioctl --context "$CLUSTER1" multicluster check 2>&1 \
-     | grep -qE 'Peers Check.*all clusters connected'; then
+# 3) Multicluster peering verified. istiod needs a few seconds to push the
+#    remote endpoints after the peer references land, so retry rather than
+#    fail on the first (pre-convergence) check.
+PEERING_OK=no
+for _ in 1 2 3 4 5 6; do
+  if istioctl --context "$CLUSTER1" multicluster check 2>&1 \
+       | grep -qE 'Peers Check.*all clusters connected'; then
+    PEERING_OK=yes
+    break
+  fi
+  sleep 10
+done
+if [[ "$PEERING_OK" == "yes" ]]; then
   log_ok "[${CLUSTER1#kind-}] multicluster peering verified — both clusters connected"
 else
-  log "[${CLUSTER1#kind-}] multicluster check did not confirm peering"
+  log "[${CLUSTER1#kind-}] multicluster check did not confirm peering after 60s"
   INFRA_OK=no
 fi
 
