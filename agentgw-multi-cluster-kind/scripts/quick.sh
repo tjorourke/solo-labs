@@ -1026,13 +1026,28 @@ EOF
       log "telemetry-gateway LB IP not assigned — Gloo UI install incomplete"
     else
       log_ok "telemetry-gateway: $TG_IP:4317"
-      # NOTE: registering ${CLUSTER2#kind-} via `meshctl cluster register` fails today
-      # because gloo-platform-crds and enterprise-agentgateway-crds both
-      # ship the same CRDs (e.g. AuthConfig). Helm refuses to import a CRD
-      # owned by another release. Workarounds (patch annotations OR install
-      # gloo-platform-crds with installEnterpriseCrds=false on ${CLUSTER2#kind-})
-      # exist but are intentionally deferred. UI on ${CLUSTER1#kind-} only for now.
-      log "[${CLUSTER2#kind-}] cross-cluster UI register skipped (CRD ownership collision)"
+      # Register the peer cluster so the UI service graph spans both clusters.
+      # gloo-platform-crds and enterprise-agentgateway-crds both ship the
+      # extauth/ratelimit CRDs, so on the peer (where AGW CRDs are already
+      # installed) Helm refuses to import a CRD owned by the agentgateway-crds
+      # release. Re-annotate just those two shared CRDs to the gloo-platform-crds
+      # release so meshctl's CRD install can adopt them, then register.
+      for CRD in authconfigs.extauth.solo.io ratelimitconfigs.ratelimit.solo.io; do
+        kubectl --context "$CLUSTER2" annotate crd "$CRD" \
+          meta.helm.sh/release-name=gloo-platform-crds \
+          meta.helm.sh/release-namespace=gloo-mesh --overwrite >/dev/null 2>&1 || true
+        kubectl --context "$CLUSTER2" label crd "$CRD" \
+          app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+      done
+      if meshctl cluster register "${CLUSTER2#kind-}" \
+           --kubecontext "$CLUSTER1" \
+           --profiles gloo-mesh-agent \
+           --remote-context "$CLUSTER2" \
+           --telemetry-server-address "$TG_IP:4317" >/dev/null 2>&1; then
+        log_ok "[${CLUSTER2#kind-}] registered as workload cluster — UI graph spans both"
+      else
+        log "[${CLUSTER2#kind-}] cross-cluster UI register failed — UI on ${CLUSTER1#kind-} only"
+      fi
       GLOO_UI_INSTALLED="yes"
     fi
   fi
