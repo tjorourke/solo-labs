@@ -1,0 +1,18 @@
+# North-south gateway for inference traffic. gatewayClassName is injected at
+# apply time (${GATEWAY_CLASS}) so the same file serves both editions:
+#   Enterprise -> enterprise-agentgateway
+#   OSS        -> agentgateway
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: inference-gateway
+  namespace: inference
+spec:
+  gatewayClassName: ${GATEWAY_CLASS}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same

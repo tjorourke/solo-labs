@@ -1,0 +1,101 @@
+# The self-hosted model pool: two llm-d inference simulator replicas standing in
+# for vLLM (no GPU needed). Both carry app=vllm-sim so the InferencePool selects
+# them. Each mounts a config that pins its Prometheus gauges — the same
+# vllm:gpu_cache_usage_perc and vllm:num_requests_waiting a real vLLM exposes —
+# so the Endpoint Picker's routing decision is deterministic and demoable:
+#   pool-a starts COLD (kv-cache 0.10, empty queue)
+#   pool-b starts HOT  (kv-cache 0.90, deep queue)
+# Flip the values with ./demo-scripts/set-kv.sh to move traffic on cue.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sim-pool-a
+  namespace: inference
+data:
+  config.yaml: |
+    model: base-model
+    port: 8000
+    fake-metrics:
+      kv-cache-usage: 0.10
+      waiting-requests: 0
+      running-requests: 1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sim-pool-b
+  namespace: inference
+data:
+  config.yaml: |
+    model: base-model
+    port: 8000
+    fake-metrics:
+      kv-cache-usage: 0.90
+      waiting-requests: 8
+      running-requests: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-pool-a
+  namespace: inference
+  labels: { app: vllm-sim, replica: pool-a }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vllm-sim, replica: pool-a }
+  template:
+    metadata:
+      labels: { app: vllm-sim, replica: pool-a }
+    spec:
+      containers:
+        - name: vllm-sim
+          image: ghcr.io/llm-d/llm-d-inference-sim:v0.5.0
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/sim/config.yaml"]
+          ports:
+            - { containerPort: 8000, name: http, protocol: TCP }
+          volumeMounts:
+            - { name: cfg, mountPath: /etc/sim }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: "1", memory: 512Mi }
+      volumes:
+        - name: cfg
+          configMap: { name: sim-pool-a }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-pool-b
+  namespace: inference
+  labels: { app: vllm-sim, replica: pool-b }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vllm-sim, replica: pool-b }
+  template:
+    metadata:
+      labels: { app: vllm-sim, replica: pool-b }
+    spec:
+      containers:
+        - name: vllm-sim
+          image: ghcr.io/llm-d/llm-d-inference-sim:v0.5.0
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/sim/config.yaml"]
+          ports:
+            - { containerPort: 8000, name: http, protocol: TCP }
+          volumeMounts:
+            - { name: cfg, mountPath: /etc/sim }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: "1", memory: 512Mi }
+      volumes:
+        - name: cfg
+          configMap: { name: sim-pool-b }

@@ -1,0 +1,27 @@
+# InferenceObjective attaches a serving priority to requests against the pool.
+# Higher priority is dispatched first when the pool is under contention (the GIE
+# flow-control / scheduling layer drains higher-priority work before lower).
+# Two tiers here: interactive production traffic vs sheddable batch work.
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceObjective
+metadata:
+  name: interactive
+  namespace: inference
+spec:
+  priority: 10
+  poolRef:
+    group: inference.networking.k8s.io
+    kind: InferencePool
+    name: vllm-sim
+---
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceObjective
+metadata:
+  name: batch
+  namespace: inference
+spec:
+  priority: 0
+  poolRef:
+    group: inference.networking.k8s.io
+    kind: InferencePool
+    name: vllm-sim

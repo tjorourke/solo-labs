@@ -1,0 +1,25 @@
+# Route every path to the InferencePool. The backendRef is not a Service — it is
+# the InferencePool (group inference.networking.k8s.io). agentgateway hands the
+# endpoint choice to the GIE Endpoint Picker, which scores replicas on live
+# KV-cache usage and queue depth. request timeout is generous for slow decode.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-route
+  namespace: inference
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: inference-gateway
+  rules:
+    - backendRefs:
+        - group: inference.networking.k8s.io
+          kind: InferencePool
+          name: vllm-sim
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: 300s
