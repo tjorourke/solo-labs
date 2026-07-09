@@ -1082,7 +1082,6 @@ echo "  ⚠ One-time notebook patch (§8 cell 53) — Keycloak token URL differs
 echo "      -    \"https://\$AUTH0_DOMAIN/oauth/token\""
 echo "      +    \"http://\$AUTH0_DOMAIN\${AUTH0_TOKEN_PATH:-/oauth/token}\""
 echo "    (init-demo.sh sets AUTH0_TOKEN_PATH to /realms/solo/protocol/openid-connect/token.)"
-echo "    Full notebook workflow: see README-demo-notebook.md"
 echo ""
 if [[ "$GLOO_UI_INSTALLED" == "yes" ]]; then
   echo "  Launch Gloo UI:"
