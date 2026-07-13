@@ -50,29 +50,26 @@ lab runs on the Solo images.
 
 ## Run it
 
-One script sets up the infrastructure; everything after that is plain YAML you
-apply and read, so you can talk through each change.
+One script sets up the infrastructure; everything after that is `kubectl apply`
+of the manifests in `yaml/` plus a few labels, so you can read and talk through
+each change. The full step-by-step (with what to expect at each step) is in the
+lab guide — the numbered **STEP** blocks under "Run the lab, step by step". In
+brief:
 
 ```bash
 export SECRETS_FILE=/path/to/secrets-envs.sh   # exports SOLO_ISTIO_LICENSE_KEY
 
-# the only script: kind + Gateway API CRDs + Gloo Operator + Solo Istio
-# (sidecar mode) + the Istio ingress gateway.
-./scripts/setup-cluster.sh
+./scripts/setup-cluster.sh                      # STEP 1: kind + Solo Istio (sidecar) + ingress
+kubectl apply -f yaml/10-apps-sidecar/          # STEP 2: petstore app + ingress route
+kubectl apply -f yaml/20-policies-sidecar/      # STEP 3: mTLS + DR/VS canary + L4 + L7 rules
+kubectl apply -f yaml/00-mesh/smc-ambient.yaml  # STEP 5: turn the mesh ambient (adds ztunnel)
+# STEP 6: migrate the L4 namespace, STEP 7: the L7 namespace (waypoint first),
+# STEP 8: route the mixed fleet, STEP 9: HTTPRoute, STEP 10: rollback — see the guide.
+
+kind delete cluster --name ambient-migration    # STEP 11: teardown
 ```
 
-Then open `demo.ipynb` (a Bash-kernel notebook) and step through it: deploy the
-app, flip to ambient, migrate each namespace, prove the mixed fleet, move the
-canary to HTTPRoute, and roll back. Every step is a `kubectl apply -f - <<'EOF'`
-you can read; the `yaml/` directory holds the same manifests as files if you'd
-rather `kubectl apply -f` them. An optional appendix drives the `gloo ambient`
-CLI (`estimate` and `migrate`).
-
-Tear down when done:
-
-```bash
-kind delete cluster --name ambient-migration
-```
+An optional appendix drives the `gloo ambient` CLI (`estimate` and `migrate`).
 
 ## What "zero downtime" means here
 
