@@ -50,24 +50,29 @@ lab runs on the Solo images.
 
 ## Run it
 
-```bash
-./scripts/01-cluster.sh      # kind + Gloo Operator + Solo Istio (sidecar mode)
-./scripts/02-apps.sh         # petstore app + ingress + sidecar-era policies
-```
-
-Then walk the migration in `demo.ipynb`, or drive it with the step scripts:
+One script sets up the infrastructure; everything after that is plain YAML you
+apply and read, so you can talk through each change.
 
 ```bash
-./scripts/03-flip-ambient.sh      # dataplaneMode: Ambient — adds ztunnel, zero downtime
-./scripts/04-migrate-l4.sh        # enrol petstore-data (no waypoint)
-./scripts/05-migrate-l7.sh        # waypoint + targetRefs, enrol petstore
-./scripts/06-solo-interop.sh      # sidecar/ingress → waypoint (the Solo capability)
-./scripts/07-httproute.sh         # DR/VS subsets → HTTPRoute
-./scripts/rollback.sh petstore    # single-label rollback of a namespace
+export SECRETS_FILE=/path/to/secrets-envs.sh   # exports SOLO_ISTIO_LICENSE_KEY
+
+# the only script: kind + Gateway API CRDs + Gloo Operator + Solo Istio
+# (sidecar mode) + the Istio ingress gateway.
+./scripts/setup-cluster.sh
 ```
 
-`./scripts/health-check.sh` prints the state of the mesh and the app at any
-point. `./demo-scripts/reset.sh` tears the cluster down.
+Then open `demo.ipynb` (a Bash-kernel notebook) and step through it: deploy the
+app, flip to ambient, migrate each namespace, prove the mixed fleet, move the
+canary to HTTPRoute, and roll back. Every step is a `kubectl apply -f - <<'EOF'`
+you can read; the `yaml/` directory holds the same manifests as files if you'd
+rather `kubectl apply -f` them. An optional appendix drives the `gloo ambient`
+CLI (`estimate` and `migrate`).
+
+Tear down when done:
+
+```bash
+kind delete cluster --name ambient-migration
+```
 
 ## What "zero downtime" means here
 
