@@ -3,7 +3,7 @@
 A hands-on, namespace-by-namespace migration of a running petstore app from
 Istio **sidecar** mode to **ambient**, on the Solo distribution of Istio,
 installed and driven by the Gloo Operator. One kind cluster. Zero downtime the
-whole way, proven with a load generator that never stops, and a clean rollback
+whole way, checked with a load generator that never stops, and a clean rollback
 at the end.
 
 It covers, in order:
