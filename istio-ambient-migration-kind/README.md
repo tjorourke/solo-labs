@@ -50,26 +50,21 @@ lab runs on the Solo images.
 
 ## Run it
 
-One script sets up the infrastructure; everything after that is `kubectl apply`
-of the manifests in `yaml/` plus a few labels, so you can read and talk through
-each change. The full step-by-step (with what to expect at each step) is in the
-lab guide — the numbered **STEP** blocks under "Run the lab, step by step". In
-brief:
+The lab is run **step by step** from the guide (`index.html`): the numbered
+**STEP** blocks are the exact commands and raw YAML to copy-paste, top to bottom
+— kind + the Gloo Operator + Solo Istio (sidecar), deploy the petstore app, turn
+the mesh ambient, migrate the L4 then the L7 namespace behind a waypoint, route
+the mixed fleet, move the canary to HTTPRoute, roll back, and tear down. Every
+Istio object is applied inline with `kubectl apply -f - <<'EOF'`, so you can see
+exactly what goes into the cluster; there is no hidden script.
 
-```bash
-export SECRETS_FILE=/path/to/secrets-envs.sh   # exports SOLO_ISTIO_LICENSE_KEY
+The same manifests live in `yaml/` for reference (and the mirror). Prerequisites:
+Docker, `kind`, `kubectl`, `helm`, `gcloud` authenticated (Solo images), and
+`export SOLO_ISTIO_LICENSE_KEY=...`. An optional appendix drives the
+`gloo ambient` CLI (`estimate` and `migrate`).
 
-./scripts/setup-cluster.sh                      # STEP 1: kind + Solo Istio (sidecar) + ingress
-kubectl apply -f yaml/10-apps-sidecar/          # STEP 2: petstore app + ingress route
-kubectl apply -f yaml/20-policies-sidecar/      # STEP 3: mTLS + DR/VS canary + L4 + L7 rules
-kubectl apply -f yaml/00-mesh/smc-ambient.yaml  # STEP 5: turn the mesh ambient (adds ztunnel)
-# STEP 6: migrate the L4 namespace, STEP 7: the L7 namespace (waypoint first),
-# STEP 8: route the mixed fleet, STEP 9: HTTPRoute, STEP 10: rollback — see the guide.
-
-kind delete cluster --name ambient-migration    # STEP 11: teardown
-```
-
-An optional appendix drives the `gloo ambient` CLI (`estimate` and `migrate`).
+> `scripts/setup-cluster.sh` bundles STEP 1–4 for the automated end-to-end
+> runner; the guide unrolls those same commands so a reader can follow them.
 
 ## What "zero downtime" means here
 
