@@ -68,18 +68,10 @@ spec:
       serviceAccountName: catalog            # allowed principal for Redis L4 authz
       containers:
         - name: client
+          # single-line command (no YAML block scalar) so the manifest is safe to
+          # copy-paste into a terminal; redis-cli prints PONG (allowed) or an error.
           image: redis:7-alpine
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              while true; do
-                if redis-cli -h redis.petstore-data ping >/dev/null 2>&1; then
-                  echo "$(date +%T) redis ping: PONG (allowed)"
-                else
-                  echo "$(date +%T) redis ping: FAILED"
-                fi
-                sleep 5
-              done
+          command: ["/bin/sh", "-c", "while true; do redis-cli -h redis.petstore-data ping; sleep 5; done"]
           resources:
             requests: { cpu: 10m, memory: 16Mi }
             limits: { memory: 64Mi }
