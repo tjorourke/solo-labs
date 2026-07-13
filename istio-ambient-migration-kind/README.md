@@ -1,4 +1,4 @@
-# Sidecar → ambient migration on Solo Istio (kind)
+# Sidecar to Ambient Upgrade
 
 A hands-on, namespace-by-namespace migration of a running petstore app from
 Istio **sidecar** mode to **ambient**, on the Solo distribution of Istio,
