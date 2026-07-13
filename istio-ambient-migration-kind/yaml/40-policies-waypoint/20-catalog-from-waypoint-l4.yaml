@@ -1,0 +1,32 @@
+# OPTIONAL HARDENING (applied last, not part of the zero-downtime core path).
+# An L4 ALLOW on the catalog PODS (selector-based, evaluated by ztunnel) that
+# only lets the waypoint's identity reach them. Because it is an ALLOW policy on
+# the workload, it also closes direct pod access — every caller is forced through
+# the waypoint, so the L7 rule cannot be bypassed by addressing a pod IP (tested:
+# a direct pod-IP curl returns 000/blocked).
+#
+# ORDERING TRAP (tested live): this lockdown blocks the Istio ingress gateway
+# (503) because the gateway reaches pods directly. Set istio.io/ingress-use-waypoint
+# on the catalog Service FIRST (yaml/60) so the ingress routes through the
+# waypoint (whose SA is allowed), THEN apply this. Do it the other way and
+# north-south traffic breaks.
+#
+# The waypoint runs under the service account named after the Gateway (waypoint).
+# Confirm the exact principal with:
+#   kubectl -n petstore get pod -l gateway.networking.k8s.io/gateway-name=waypoint \
+#     -o jsonpath='{.items[0].spec.serviceAccountName}'
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog-from-waypoint
+  namespace: petstore
+spec:
+  selector:
+    matchLabels:
+      app: catalog
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/petstore/sa/waypoint"

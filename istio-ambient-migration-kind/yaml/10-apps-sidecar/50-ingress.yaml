@@ -1,0 +1,39 @@
+# North-south ingress via the classic Istio ingress gateway API: an Istio
+# Gateway + a VirtualService, the exact pattern the migration must not break.
+# The gateway Deployment itself is installed by the lab script (the istio
+# `gateway` Helm chart) into the istio-ingress namespace and carries the label
+# istio: ingressgateway, which this Gateway selects.
+#
+# External traffic: curl -H 'Host: petstore.local' http://localhost:8080/
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: petstore-gateway
+  namespace: istio-ingress
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "petstore.local"
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: petstore-ingress
+  namespace: istio-ingress
+spec:
+  hosts:
+    - "petstore.local"
+  gateways:
+    - petstore-gateway
+  http:
+    - route:
+        - destination:
+            host: catalog.petstore.svc.cluster.local
+            port:
+              number: 80

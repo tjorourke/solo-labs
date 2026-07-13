@@ -1,0 +1,13 @@
+# Mesh-wide STRICT mTLS. In sidecar mode each sidecar enforces it; in ambient
+# ztunnel enforces the same thing at L4 with no waypoint. STRICT and PERMISSIVE
+# both carry over cleanly to ambient — only mode: DISABLE has no ambient
+# equivalent (HBONE is always mTLS), so audit for DISABLE carve-outs before
+# enrolling a namespace.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system      # root namespace → applies mesh-wide
+spec:
+  mtls:
+    mode: STRICT

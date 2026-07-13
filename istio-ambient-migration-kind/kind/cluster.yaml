@@ -1,0 +1,23 @@
+# kind cluster for the sidecar → ambient migration lab.
+# One control-plane + two workers so ztunnel (a per-node DaemonSet) has more
+# than one node to schedule on, which makes the "one ztunnel per node replaces
+# the per-pod sidecar" story real rather than a single-node degenerate case.
+#
+# The control-plane maps host :18080/:18443 onto the node so the Istio ingress
+# gateway (NodePort 30080/30443) is reachable from the laptop without a
+# LoadBalancer: curl -H 'Host: petstore.local' http://localhost:18080/ .
+# (18080/18443 avoid the common 8080/8443 clashes with other local clusters.)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ambient-migration
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 18080
+        protocol: TCP
+      - containerPort: 30443
+        hostPort: 18443
+        protocol: TCP
+  - role: worker
+  - role: worker

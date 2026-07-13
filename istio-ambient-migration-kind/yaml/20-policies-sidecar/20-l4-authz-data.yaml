@@ -1,0 +1,22 @@
+# L4 AuthorizationPolicy on Redis — PURELY L4. It matches on the caller's mTLS
+# identity (principal) and nothing else: no methods, no paths, no headers. This
+# is exactly what ztunnel enforces with no waypoint, so it stays selector-based
+# and does not change when petstore-data moves to ambient.
+#
+# Only the catalog identity may open the Redis port. Any other principal is
+# denied at L4 (connection reset), which we demonstrate from petstore-legacy.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: redis-allow-catalog
+  namespace: petstore-data
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/petstore/sa/catalog"

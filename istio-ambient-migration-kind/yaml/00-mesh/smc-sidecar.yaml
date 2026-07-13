@@ -1,0 +1,20 @@
+# ServiceMeshController — the single declarative CR the Gloo Operator reconciles
+# into the whole Solo Istio control + data plane (istiod, and in sidecar mode the
+# injection webhook). This is the lifecycle model that retires the end-of-life
+# upstream istioctl/operator install: one object, GitOps-friendly, upgrade by
+# editing .spec.version.
+#
+# The mesh STARTS in sidecar mode. distribution: FIPS would give BoringCrypto
+# images with a single field change; Standard is fine for the lab.
+apiVersion: operator.gloo.solo.io/v1
+kind: ServiceMeshController
+metadata:
+  name: managed-istio
+  namespace: gloo-system
+spec:
+  # Istio patch version WITHOUT the -solo suffix — the operator appends it for
+  # distribution: Standard. 1.29.3 → pulls 1.29.3-solo images.
+  version: "1.29.3"
+  dataplaneMode: Sidecar
+  distribution: Standard
+  scalingProfile: Demo

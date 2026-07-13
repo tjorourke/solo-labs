@@ -1,0 +1,36 @@
+# Step 1 of the DR/VS → HTTPRoute modernization: give each version its own real
+# Service. The original catalog Service stays exactly as it is (it still selects
+# all catalog pods and is the hostname every caller uses), so nothing on the
+# client side changes. These per-version Services are what the HTTPRoute splits
+# across, replacing the DestinationRule subsets.
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-v1
+  namespace: petstore
+  labels:
+    app: catalog
+spec:
+  selector:
+    app: catalog
+    version: v1
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-v2
+  namespace: petstore
+  labels:
+    app: catalog
+spec:
+  selector:
+    app: catalog
+    version: v2
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5678

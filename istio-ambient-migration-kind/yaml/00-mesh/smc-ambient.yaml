@@ -1,0 +1,18 @@
+# The SAME ServiceMeshController, flipped to ambient. Re-applying this is the
+# "turn on ambient in the existing mesh" step: the operator adds the ambient
+# node components (istio-cni + ztunnel DaemonSets) and switches istiod into
+# ambient mode. Nothing is enrolled yet, so running sidecar workloads keep
+# running untouched — the flip itself is zero-downtime. Namespaces move over one
+# at a time afterwards.
+#
+# (dataplaneMode is the only changed field vs smc-sidecar.yaml.)
+apiVersion: operator.gloo.solo.io/v1
+kind: ServiceMeshController
+metadata:
+  name: managed-istio
+  namespace: gloo-system
+spec:
+  version: "1.29.3"
+  dataplaneMode: Ambient
+  distribution: Standard
+  scalingProfile: Demo

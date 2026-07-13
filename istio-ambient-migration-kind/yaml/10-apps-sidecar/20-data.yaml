@@ -1,0 +1,85 @@
+# The data tier — the L4-ONLY workload in the petstore-data namespace.
+# A Redis instance reached over plain TCP. There is no HTTP here: no routing, no
+# paths, no methods. All this namespace needs from the mesh is mTLS and an
+# identity-based allow rule on the TCP port — both of which ztunnel enforces at
+# L4 with NO waypoint. That is why petstore-data migrates to ambient without a
+# waypoint at all.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: redis
+  namespace: petstore-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: petstore-data
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: tcp-redis       # tcp-* port name → Istio treats it as L4
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: petstore-data
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      serviceAccountName: redis
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+# An allowed data client, running in petstore under the catalog identity. The L4
+# AuthorizationPolicy on Redis lets this principal in. It pings Redis in a loop
+# so `kubectl logs` shows a live PONG stream that survives the migration.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-client
+  namespace: petstore
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: data-client }
+  template:
+    metadata:
+      labels: { app: data-client }
+    spec:
+      serviceAccountName: catalog            # allowed principal for Redis L4 authz
+      containers:
+        - name: client
+          image: redis:7-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                if redis-cli -h redis.petstore-data ping >/dev/null 2>&1; then
+                  echo "$(date +%T) redis ping: PONG (allowed)"
+                else
+                  echo "$(date +%T) redis ping: FAILED"
+                fi
+                sleep 5
+              done
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

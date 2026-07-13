@@ -1,0 +1,22 @@
+# The waypoint for the petstore namespace — a Gateway-API Gateway with the
+# istio-waypoint class. istiod provisions an Envoy pod for it. This is the L7
+# proxy that runs everything the catalog sidecar used to do: VirtualService
+# routing/retries/timeout, the HTTP AuthorizationPolicy, and (later) the
+# HTTPRoute. It MUST exist before petstore is enrolled, because petstore has an
+# L7 policy and ztunnel would otherwise fail-safe and deny catalog traffic.
+#
+# istio.io/waypoint-for: service → handles service-addressed traffic (the common
+# case). Values are service | workload | all | none.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: petstore
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE

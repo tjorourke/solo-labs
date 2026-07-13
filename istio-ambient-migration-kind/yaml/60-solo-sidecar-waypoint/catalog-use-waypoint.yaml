@@ -1,0 +1,30 @@
+# The Solo-distribution capability that makes a MIXED sidecar/ambient fleet
+# safe. Two labels on the catalog Service:
+#
+#   istio.io/use-waypoint: waypoint          bind the Service to its waypoint.
+#   istio.io/ingress-use-waypoint: "true"    let the Istio ingress gateway route
+#                                            through that waypoint too.
+#
+# On community Istio, sidecar proxies and ingress gateways do NOT route through
+# waypoints, so a waypoint's L7 policy is silently unenforced for any caller that
+# still has a sidecar — dangerous during a mixed-fleet migration. On the Solo
+# distribution, when a sidecar (or the ingress gateway) sees that its destination
+# uses a waypoint, it disables its own client-side L7 and forwards to the
+# waypoint over HBONE, so the waypoint's catalog-get-only rule is enforced for
+# the still-sidecar checkout client and for north-south ingress traffic alike.
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: petstore
+  labels:
+    app: catalog
+    istio.io/use-waypoint: waypoint
+    istio.io/ingress-use-waypoint: "true"
+spec:
+  selector:
+    app: catalog
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5678

@@ -1,0 +1,24 @@
+# L7 AuthorizationPolicy on catalog — this one is L7: it matches on the HTTP
+# METHOD. In sidecar mode it is enforced in catalog's own sidecar and targets
+# the pods with a selector. That is why, when catalog moves to ambient, this
+# namespace needs a WAYPOINT before enrolment: ztunnel is L4 and cannot evaluate
+# an HTTP method rule. If you enrol with an L7 selector policy and no waypoint,
+# ztunnel fails safe and denies all traffic to the workload.
+#
+# Rule: allow GET (and HEAD) on catalog; anything else (a DELETE, a POST) is
+# denied 403 by the L7 proxy. We convert this to targetRefs in
+# yaml/40-policies-waypoint when the waypoint takes over.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog-get-only
+  namespace: petstore
+spec:
+  selector:
+    matchLabels:
+      app: catalog
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            methods: ["GET", "HEAD"]
