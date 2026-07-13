@@ -10,5 +10,6 @@ echo "east = $CLUSTER1   west = $CLUSTER2"
 if istioctl --context "$CLUSTER1" multicluster check 2>&1 | grep -q "Peers Check: all clusters connected"; then
   echo "✓ clusters peered over HBONE"
 else
-  echo "✗ clusters not peered — run the standup (scripts/quick.sh) first" >&2
+  echo "✗ clusters not peered — heal it with ./demo-scripts/wake.sh" >&2
+  echo "  (usually stale certs after the laptop slept; full rebuild = scripts/quick.sh)" >&2
 fi
