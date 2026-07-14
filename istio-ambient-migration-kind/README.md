@@ -66,6 +66,26 @@ Docker, `kind`, `kubectl`, `helm`, `gcloud` authenticated (Solo images), and
 > `scripts/setup-cluster.sh` bundles STEP 1–4 for the automated end-to-end
 > runner; the guide unrolls those same commands so a reader can follow them.
 
+## See it in the UIs
+
+Each visual step (STEP 5–14) carries **Gloo UI** and **Kiali** tabs alongside
+Action and Verify, showing what the service graph looks like at that point.
+
+`scripts/setup-cluster.sh` installs both after the mesh is up (via
+`scripts/observability.sh`; set `WITH_UI=0` to skip):
+
+- **Gloo UI** — Solo's own dashboard. This is the Gloo Platform management plane
+  (mgmt server + agent + Gloo UI) layered onto the same kind cluster. Needs
+  `GLOO_PLATFORM_LICENSE_KEY`; open with `meshctl dashboard`, then Observability →
+  Graph. Without the licence the Gloo UI is skipped and only Kiali installs.
+- **Kiali** — pointed at the Gloo Platform Prometheus. On the Solo distribution
+  ztunnel emits L7 metrics with no waypoint, so Kiali shows an HTTP graph even in
+  the L4-only `petstore-data` namespace. Open with
+  `kubectl -n istio-system port-forward svc/kiali 20001`.
+
+Screenshots live in `images/` as `step-<NN>-gloo.png` / `step-<NN>-kiali.png`
+(see `images/README.md`); a step's tab shows a placeholder until its PNG exists.
+
 ## What "zero downtime" means here
 
 `fortio` in the legacy namespace drives `catalog` continuously. At every cut —

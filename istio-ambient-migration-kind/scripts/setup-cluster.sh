@@ -105,6 +105,18 @@ helm --kube-context "$CTX" upgrade --install istio-ingressgateway "$GATEWAY_CHAR
   --wait --timeout 3m >/dev/null
 ok "ingress gateway installed (reachable on http://localhost:18080)"
 
+# The two UIs the guide shows in its per-step tabs (Gloo UI + Kiali). Non-fatal:
+# if the observability layer fails, the mesh migration lab still runs — you just
+# won't have the graphs. Set WITH_UI=0 to skip it entirely.
+if [[ "${WITH_UI:-1}" != "0" ]]; then
+  step "Installing the observability UIs (Gloo UI + Kiali)"
+  if bash "$SCRIPT_DIR/observability.sh"; then
+    ok "observability UIs installed"
+  else
+    warn "observability UIs did not fully install — the migration lab is unaffected; re-run scripts/observability.sh to retry"
+  fi
+fi
+
 echo
 ok "Cluster ready. Solo Istio $ISTIO_VERSION in SIDECAR mode; ingress gateway up."
 log "Now follow demo.ipynb (or the article): deploy the app and walk the migration as YAML."
