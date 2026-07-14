@@ -63,8 +63,6 @@ licensing:
 glooMgmtServer:
   enabled: true
   createGlobalWorkspace: true
-  ports:
-    healthcheck: 8091
 glooUi:
   enabled: true
   serviceType: ClusterIP
@@ -117,16 +115,17 @@ install_kiali() {
   local ver_args=()
   [[ -n "$KIALI_VERSION" ]] && ver_args=(--version "$KIALI_VERSION")
 
-  # Prometheus: reuse the Gloo Platform one if the management plane is up,
-  # otherwise fall back to the conventional in-mesh prometheus service name.
-  local prom_url="http://prometheus.${GLOO_MESH_NS}:9090"
-  if ! kc -n "$GLOO_MESH_NS" get svc prometheus >/dev/null 2>&1; then
+  # Prometheus: reuse the Gloo Platform one if the management plane is up. Its
+  # service is 'prometheus-server' on port 80 (the prometheus helm subchart), in
+  # the gloo-mesh namespace.
+  local prom_url="http://prometheus-server.${GLOO_MESH_NS}:80"
+  if ! kc -n "$GLOO_MESH_NS" get svc prometheus-server >/dev/null 2>&1; then
     prom_url="http://prometheus.${ISTIO_SYSTEM_NS}:9090"
     warn "Gloo Platform Prometheus not found — pointing Kiali at $prom_url (install a Prometheus that scrapes istio if this is empty)."
   fi
 
   helm --kube-context "$CTX" upgrade --install kiali-server kiali/kiali-server \
-    --namespace "$ISTIO_SYSTEM_NS" "${ver_args[@]}" \
+    --namespace "$ISTIO_SYSTEM_NS" ${ver_args[@]+"${ver_args[@]}"} \
     --set auth.strategy=anonymous \
     --set deployment.ingress.enabled=false \
     --set "external_services.prometheus.url=${prom_url}" \

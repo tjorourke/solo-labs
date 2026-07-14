@@ -83,6 +83,9 @@ Action and Verify, showing what the service graph looks like at that point.
   the L4-only `petstore-data` namespace. Open with
   `kubectl -n istio-system port-forward svc/kiali 20001`.
 
+`scripts/open-consoles.sh` port-forwards both UIs and opens them in your browser
+(Gloo UI `:8090`, Kiali `:20001`) — run it once the cluster is up.
+
 Screenshots live in `images/` as `step-<NN>-gloo.png` / `step-<NN>-kiali.png`
 (see `images/README.md`); a step's tab shows a placeholder until its PNG exists.
 
