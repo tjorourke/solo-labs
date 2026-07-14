@@ -106,8 +106,58 @@ EOF
   return 0
 }
 
-# ── 2. Kiali (points at the Gloo Platform Prometheus) ───────────────────────────
+# ── 2. Kiali + its own istio-scoped Prometheus ──────────────────────────────────
+# Kiali needs a Prometheus that scrapes the istio proxies the standard way — the
+# Gloo Platform Prometheus does NOT serve Kiali's graph queries. Two extra fixes
+# are needed for Kiali's traffic graph to populate on the Solo ambient mesh:
+#   1. istiod CLUSTER_ID must equal the metric `cluster` label — set via the
+#      ServiceMeshController `spec.cluster` (see yaml/00-mesh/smc-*.yaml). Kiali
+#      reads it as its home cluster; a mismatch filters out every metric.
+#   2. Solo ambient telemetry emits `destination_service` (FQDN) but not the
+#      `destination_service_name` / `destination_service_namespace` labels Kiali
+#      groups on. We synthesise them from the FQDN with metric_relabel_configs.
+ISTIO_PROM_RELEASE="${ISTIO_PROM_RELEASE:-1.26}"
+
+install_istio_prometheus() {
+  step "Installing an istio-scoped Prometheus for Kiali in $ISTIO_SYSTEM_NS"
+  local y; y="$(mktemp)"
+  curl -fsSL "https://raw.githubusercontent.com/istio/istio/release-${ISTIO_PROM_RELEASE}/samples/addons/prometheus.yaml" -o "$y" \
+    || die "could not download the istio prometheus addon"
+  kc apply -f "$y" >/dev/null
+  rm -f "$y"
+
+  # Synthesise destination_service_name / destination_service_namespace from the
+  # destination_service FQDN on the pod-scraping jobs, so Kiali can build nodes.
+  local cfg new; cfg="$(mktemp)"; new="$(mktemp)"
+  kc -n "$ISTIO_SYSTEM_NS" get cm prometheus -o jsonpath='{.data.prometheus\.yml}' > "$cfg"
+  python3 - "$cfg" "$new" <<'PY'
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1]))
+mrc = [
+  {'source_labels': ['destination_service'], 'regex': r'([^.]+)\..*',
+   'target_label': 'destination_service_name', 'replacement': '$1'},
+  {'source_labels': ['destination_service'], 'regex': r'[^.]+\.([^.]+)\..*',
+   'target_label': 'destination_service_namespace', 'replacement': '$1'},
+]
+for job in cfg.get('scrape_configs', []):
+    if job.get('job_name') in ('kubernetes-pods', 'kubernetes-pods-slow'):
+        job.setdefault('metric_relabel_configs', [])
+        have = [m.get('target_label') for m in job['metric_relabel_configs']]
+        for m in mrc:
+            if m['target_label'] not in have:
+                job['metric_relabel_configs'].append(m)
+yaml.safe_dump(cfg, open(sys.argv[2], 'w'), default_flow_style=False, sort_keys=False)
+PY
+  kc -n "$ISTIO_SYSTEM_NS" create cm prometheus --from-file=prometheus.yml="$new" \
+    --dry-run=client -o yaml | kc apply -f - >/dev/null
+  rm -f "$cfg" "$new"
+  kc -n "$ISTIO_SYSTEM_NS" rollout restart deploy/prometheus >/dev/null
+  kc -n "$ISTIO_SYSTEM_NS" rollout status deploy/prometheus --timeout=120s >/dev/null
+  ok "istio Prometheus ready (with Kiali service-label relabel)"
+}
+
 install_kiali() {
+  install_istio_prometheus
   step "Installing Kiali in $ISTIO_SYSTEM_NS"
   helm repo add kiali https://kiali.org/helm-charts >/dev/null 2>&1 || true
   helm repo update kiali >/dev/null
@@ -115,20 +165,11 @@ install_kiali() {
   local ver_args=()
   [[ -n "$KIALI_VERSION" ]] && ver_args=(--version "$KIALI_VERSION")
 
-  # Prometheus: reuse the Gloo Platform one if the management plane is up. Its
-  # service is 'prometheus-server' on port 80 (the prometheus helm subchart), in
-  # the gloo-mesh namespace.
-  local prom_url="http://prometheus-server.${GLOO_MESH_NS}:80"
-  if ! kc -n "$GLOO_MESH_NS" get svc prometheus-server >/dev/null 2>&1; then
-    prom_url="http://prometheus.${ISTIO_SYSTEM_NS}:9090"
-    warn "Gloo Platform Prometheus not found — pointing Kiali at $prom_url (install a Prometheus that scrapes istio if this is empty)."
-  fi
-
   helm --kube-context "$CTX" upgrade --install kiali-server kiali/kiali-server \
     --namespace "$ISTIO_SYSTEM_NS" ${ver_args[@]+"${ver_args[@]}"} \
     --set auth.strategy=anonymous \
     --set deployment.ingress.enabled=false \
-    --set "external_services.prometheus.url=${prom_url}" \
+    --set "external_services.prometheus.url=http://prometheus.${ISTIO_SYSTEM_NS}:9090" \
     --set external_services.istio.root_namespace="$ISTIO_SYSTEM_NS" \
     --wait --timeout 5m >/dev/null
 

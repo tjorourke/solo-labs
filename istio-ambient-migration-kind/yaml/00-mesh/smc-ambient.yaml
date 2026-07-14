@@ -16,3 +16,4 @@ spec:
   dataplaneMode: Ambient
   distribution: Standard
   scalingProfile: Demo
+  cluster: ambient-migration   # keep CLUSTER_ID aligned with telemetry (Kiali home cluster)

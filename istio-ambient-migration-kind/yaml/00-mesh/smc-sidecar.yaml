@@ -18,3 +18,7 @@ spec:
   dataplaneMode: Sidecar
   distribution: Standard
   scalingProfile: Demo
+  # Name the cluster so istiod's CLUSTER_ID matches the telemetry's cluster
+  # label. Kiali reads this as its home cluster; without it Kiali filters out
+  # every metric (cluster="ambient-migration") and its traffic graph is empty.
+  cluster: ambient-migration
