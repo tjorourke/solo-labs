@@ -1,0 +1,43 @@
+# The record-tools MCP server (our image) + a RemoteMCPServer so kagent can reach
+# it. record_diagnosis is the tool whose input schema IS the Diagnosis contract.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: record-tools
+  namespace: kagent
+  labels: { app: record-tools }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: record-tools } }
+  template:
+    metadata:
+      labels: { app: record-tools }
+    spec:
+      containers:
+        - name: record-tools
+          image: record-tools:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: record-tools
+  namespace: kagent
+  labels: { app: record-tools }
+spec:
+  selector: { app: record-tools }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080, protocol: TCP }
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: record-tools
+  namespace: kagent
+spec:
+  description: Holds the Diagnosis contract as the record_diagnosis tool.
+  url: http://record-tools.kagent.svc.cluster.local:8080/mcp
+  protocol: STREAMABLE_HTTP
+  timeout: 30s

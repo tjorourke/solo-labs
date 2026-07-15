@@ -1,0 +1,28 @@
+# DBA specialist, BYO enforcement. Same Diagnosis shape, but enforced in code by
+# the ADK LlmAgent's pydantic output_schema (see images/dba-adk). No tools — ADK
+# disallows tools alongside output_schema — so it maps the evidence it is handed
+# straight to the typed verdict. kagent invokes it over A2A like any other agent.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-agent-byo
+  namespace: kagent
+spec:
+  type: BYO
+  description: >-
+    Database SRE specialist (BYO Google ADK). Returns a strict Diagnosis enforced
+    by a pydantic output_schema.
+  byo:
+    deployment:
+      image: dba-adk:dev
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: dba-anthropic
+              key: ANTHROPIC_API_KEY
+        - name: DBA_MODEL
+          value: anthropic/claude-sonnet-4-5-20250929
+      # KAGENT_URL / KAGENT_NAMESPACE / KAGENT_NAME are injected by the kagent
+      # controller for BYO agents, so they are not set here.

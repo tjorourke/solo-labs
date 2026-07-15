@@ -1,0 +1,21 @@
+{
+  "name": "dba-agent-byo",
+  "description": "Database SRE specialist (BYO ADK). Returns a strict Diagnosis.",
+  "url": "localhost:8080",
+  "version": "0.1.0",
+  "capabilities": {
+    "streaming": true
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text", "data"],
+  "skills": [
+    {
+      "id": "diagnose-db",
+      "name": "Diagnose a database incident",
+      "description": "Map incident evidence to a strict Diagnosis (root_cause, severity, fix, runbook_url)",
+      "tags": ["database", "postgres", "sre"],
+      "inputModes": ["text"],
+      "outputModes": ["text", "data"]
+    }
+  ]
+}

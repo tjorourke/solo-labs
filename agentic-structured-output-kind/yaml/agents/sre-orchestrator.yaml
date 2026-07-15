@@ -1,0 +1,49 @@
+# The on-call SRE orchestrator. It has the Kubernetes read tools, so it does the
+# investigating: it reads the failing database pod's status, logs and events. Then
+# it DELEGATES to a DBA specialist over A2A (tools[].type: Agent), handing over the
+# evidence, and folds the returned Diagnosis into its incident summary. It can
+# reach either DBA — both return the same contract, so swapping the specialist
+# does not change what the orchestrator consumes.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-orchestrator
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    On-call SRE orchestrator. Investigates cluster incidents and delegates
+    database diagnosis to a DBA specialist over A2A.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are the on-call SRE. Triage the incident by inspecting Kubernetes
+      resources, events and pod logs. When the problem is database-related,
+      collect the evidence (the failing pod's status, its recent logs, and
+      related events) and DELEGATE the diagnosis to a DBA specialist, passing that
+      evidence in your message to it.
+
+      If the user names a specialist (the declarative DBA or the ADK DBA), use
+      that one; otherwise use dba-agent-declarative. Both specialists reply with
+      the same structured Diagnosis: root_cause, severity, fix, runbook_url. Read
+      those fields and produce a short incident summary. State the severity
+      plainly, and if it is high or critical, say the on-call should be paged.
+      Note that the diagnosis came from the DBA specialist.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - k8s_get_resources
+            - k8s_get_events
+            - k8s_describe_resource
+            - k8s_get_pod_logs
+      # A2A delegation: both DBA specialists, referenced as tools.
+      - type: Agent
+        agent:
+          name: dba-agent-declarative
+      - type: Agent
+        agent:
+          name: dba-agent-byo

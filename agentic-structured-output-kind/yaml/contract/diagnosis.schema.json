@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mastertheagent.com/contracts/diagnosis.schema.json",
+  "title": "Diagnosis",
+  "description": "The agentic contract the DBA specialist returns to the SRE orchestrator across the A2A hop. One shape, enforced two ways: as the record_diagnosis MCP tool inputSchema on the declarative DBA, and as the pydantic output_schema on the BYO ADK DBA.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["root_cause", "severity", "fix", "runbook_url"],
+  "properties": {
+    "root_cause": {
+      "type": "string",
+      "description": "What is actually broken, in one or two sentences.",
+      "maxLength": 500
+    },
+    "severity": {
+      "type": "string",
+      "description": "How bad it is.",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "fix": {
+      "type": "string",
+      "description": "The exact remediation the on-call should apply.",
+      "maxLength": 500
+    },
+    "runbook_url": {
+      "type": "string",
+      "description": "Link to the matching runbook. Empty string if none applies.",
+      "maxLength": 280
+    }
+  }
+}

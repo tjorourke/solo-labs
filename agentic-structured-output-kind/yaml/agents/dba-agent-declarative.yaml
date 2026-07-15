@@ -1,0 +1,46 @@
+# DBA specialist, declarative enforcement. It has ONE tool: record_diagnosis,
+# whose input schema is the Diagnosis contract. The system message forbids free
+# text, so the model's only move is to call the tool with the four typed fields —
+# that tool call becomes the agent's answer across the A2A hop.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-agent-declarative
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    Database SRE specialist (declarative). Given incident evidence, returns a
+    strict Diagnosis by calling record_diagnosis.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a database reliability specialist. You are handed evidence about a
+      failing database workload (pod status, logs, events). Work out the root
+      cause and record it.
+
+      Do NOT answer in prose or free text. Respond ONLY by calling the
+      record_diagnosis tool with the structured fields. If a field is unknown,
+      still call the tool: use a short best-effort string and pick the closest
+      severity rather than inventing detail. Never reply without calling
+      record_diagnosis.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: record-tools
+          toolNames:
+            - record_diagnosis
+    # Advertised on the agent's A2A card (/.well-known/agent.json). outputModes
+    # includes `data` — it advertises it can return structured data, not just text.
+    a2aConfig:
+      skills:
+        - id: diagnose-db
+          name: Diagnose a database incident
+          description: Map incident evidence to a strict Diagnosis (root_cause, severity, fix, runbook_url)
+          inputModes: [text]
+          outputModes: [text, data]
+          tags: [database, postgres, sre]
+          examples:
+            - "orders-db is crashlooping, here are the logs — what is the fix?"

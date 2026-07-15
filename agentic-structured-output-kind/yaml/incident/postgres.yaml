@@ -1,0 +1,68 @@
+# The planted incident: the "orders" Postgres database will not start.
+#
+# Broken on purpose — the container has no POSTGRES_PASSWORD and password auth is
+# not disabled, so the postgres entrypoint refuses to initialise and the pod
+# CrashLoopBackOffs with a clear, diagnosable log line:
+#
+#   Error: Database is uninitialized and superuser password is not specified.
+#          You must specify POSTGRES_PASSWORD ... or POSTGRES_HOST_AUTH_METHOD=trust
+#
+# The DBA specialist agent reads the pod logs, identifies this, and recommends
+# the fix. This is a real Postgres failure mode, diagnosable purely from
+# Kubernetes state (no DB client needed).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orders
+  labels:
+    purpose: contract-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-db
+  namespace: orders
+  labels:
+    app: orders-db
+  annotations:
+    incident/summary: "orders Postgres will not start after a deploy"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-db
+  template:
+    metadata:
+      labels:
+        app: orders-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          # BROKEN ON PURPOSE: no POSTGRES_PASSWORD and no trust auth method.
+          env:
+            - name: POSTGRES_DB
+              value: orders
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-db
+  namespace: orders
+  labels:
+    app: orders-db
+spec:
+  selector:
+    app: orders-db
+  ports:
+    - port: 5432
+      targetPort: 5432
