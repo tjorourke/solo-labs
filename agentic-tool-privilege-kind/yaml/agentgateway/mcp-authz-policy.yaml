@@ -24,7 +24,10 @@ spec:
         action: Allow
         policy:
           matchExpressions:
-            # operators can call every tool (no tool-name restriction)
-            - 'jwt.groups.exists(g, g == "db-operator")'
+            # operators can call every tool (no tool-name restriction).
+            # `"x" in jwt.groups` is the idiomatic membership test (cheaper and
+            # clearer than jwt.groups.exists(g, g == "x")); the has() guard avoids
+            # a CEL error if a token arrives without a groups claim.
+            - 'has(jwt.groups) && "db-operator" in jwt.groups'
             # readers get the read-only tools only
-            - 'jwt.groups.exists(g, g == "db-reader") && mcp.tool.name in ["db_status","list_tables","db_query"]'
+            - 'has(jwt.groups) && "db-reader" in jwt.groups && mcp.tool.name in ["db_status","list_tables","db_query"]'
