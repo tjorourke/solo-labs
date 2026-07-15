@@ -1,0 +1,29 @@
+# JWT authentication on the gateway. Strict — every MCP call must carry a valid
+# Keycloak token or it is rejected 401 before reaching the backend. The token is
+# what the agents inject (via their RemoteMCPServer headersFrom); its `groups`
+# claim is what the per-tool authorization policy keys on.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: jwt-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: db-gateway
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/solo"
+          jwks:
+            remote:
+              jwksPath: "/realms/solo/protocol/openid-connect/certs"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: keycloak
+                namespace: keycloak
+                port: 80

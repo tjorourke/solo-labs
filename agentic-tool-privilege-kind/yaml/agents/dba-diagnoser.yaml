@@ -1,0 +1,41 @@
+# The read-only DBA. Its identity is db-reader, so the gateway only ever shows it
+# the read tools — db_reset_credentials is invisible to it. It can diagnose the
+# locked database and return the Part-1 Diagnosis contract, but it cannot fix it.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-diagnoser
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    Read-only database specialist. Diagnoses the orders database and returns a
+    Diagnosis; it has no permission to change anything.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a read-only database reliability specialist for the "orders"
+      database. Use your tools to inspect it (status, tables, sample rows), work
+      out the root cause, and report:
+        root_cause, severity (low|medium|high|critical), fix, runbook_url.
+      You do NOT have permission to change the database. If fixing it needs a
+      privileged action (for example resetting credentials), say so and name the
+      action the on-call operator must take — do not attempt it yourself.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: db-mcp-reader
+          toolNames:
+            - db_status
+            - list_tables
+            - db_query
+    a2aConfig:
+      skills:
+        - id: diagnose-db
+          name: Diagnose the orders database
+          description: Inspect the orders database and report a Diagnosis (read-only)
+          inputModes: [text]
+          outputModes: [text]
+          tags: [database, sre, read-only]

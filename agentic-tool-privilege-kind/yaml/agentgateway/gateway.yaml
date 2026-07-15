@@ -1,0 +1,17 @@
+# The enterprise agentgateway data plane that fronts the mock-db MCP server.
+# Every MCP call from an agent passes through here, where the JWT is validated
+# and the per-tool authorization policy is applied.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: db-gateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All

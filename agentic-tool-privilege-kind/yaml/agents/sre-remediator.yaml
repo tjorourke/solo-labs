@@ -1,0 +1,40 @@
+# The privileged remediator. Its identity is db-operator, so the gateway also
+# exposes db_reset_credentials to it. Given the same locked database, it can
+# actually unlock it — the thing the read-only diagnoser cannot do.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-remediator
+  namespace: kagent
+spec:
+  type: Declarative
+  description: >-
+    Privileged on-call operator. Can reset the orders database credentials to
+    unlock it.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are the privileged on-call operator for the "orders" database. Inspect
+      it, and if it is locked because the superuser password is not set, FIX it by
+      calling db_reset_credentials with a strong password (at least 12
+      characters). Then confirm the database is healthy again and summarise what
+      you did.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: db-mcp-operator
+          toolNames:
+            - db_status
+            - list_tables
+            - db_query
+            - db_reset_credentials
+    a2aConfig:
+      skills:
+        - id: remediate-db
+          name: Remediate the orders database
+          description: Unlock the orders database by resetting its credentials (privileged)
+          inputModes: [text]
+          outputModes: [text]
+          tags: [database, sre, privileged]

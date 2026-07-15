@@ -1,0 +1,30 @@
+# Per-tool authorization. Attaches to the AgentgatewayBackend (not the Gateway)
+# so each rule is evaluated with the MCP tool name in scope. matchExpressions are
+# OR-ed; a tool is visible to a caller iff at least one expression is true. Tools
+# that match nothing are filtered out of tools/list and refused on tools/call
+# with a JSON-RPC "unauthorized tool call".
+#
+# The caller's identity is its Keycloak `groups` claim (injected by the agent's
+# RemoteMCPServer):
+#   db-operator (sre-remediator) -> every tool, including db_reset_credentials
+#   db-reader   (dba-diagnoser)  -> read-only: db_status, list_tables, db_query
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: mcp-tool-authz
+  namespace: mock-db
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: mock-db-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # operators can call every tool (no tool-name restriction)
+            - 'jwt.groups.exists(g, g == "db-operator")'
+            # readers get the read-only tools only
+            - 'jwt.groups.exists(g, g == "db-reader") && mcp.tool.name in ["db_status","list_tables","db_query"]'

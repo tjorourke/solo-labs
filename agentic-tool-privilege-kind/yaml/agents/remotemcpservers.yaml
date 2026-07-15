@@ -1,0 +1,41 @@
+# Two RemoteMCPServers pointing at the SAME gateway MCP endpoint, but each
+# injecting a DIFFERENT identity's Keycloak token via headersFrom. That token's
+# `groups` claim is what the gateway authorizes on, so the two servers discover
+# different tool sets:
+#   db-mcp-reader   (db-reader token)   -> db_status, list_tables, db_query
+#   db-mcp-operator (db-operator token) -> the above + db_reset_credentials
+# The `authorization` Secret value is the full "Bearer <token>" string, minted
+# from Keycloak by scripts/05-mcp-and-gateway.sh.
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: db-mcp-reader
+  namespace: kagent
+spec:
+  description: Mock orders database, reached with a read-only (db-reader) identity.
+  url: http://db-gateway.agentgateway-system.svc.cluster.local:80/mcp
+  protocol: STREAMABLE_HTTP
+  timeout: 30s
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: agent-token-reader
+        key: authorization
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: db-mcp-operator
+  namespace: kagent
+spec:
+  description: Mock orders database, reached with a privileged (db-operator) identity.
+  url: http://db-gateway.agentgateway-system.svc.cluster.local:80/mcp
+  protocol: STREAMABLE_HTTP
+  timeout: 30s
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: agent-token-operator
+        key: authorization
