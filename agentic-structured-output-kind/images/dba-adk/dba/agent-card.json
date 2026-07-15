@@ -1,7 +1,7 @@
 {
   "name": "dba-agent-byo",
   "description": "Database SRE specialist (BYO ADK). Returns a strict Diagnosis.",
-  "url": "localhost:8080",
+  "url": "http://dba-agent-byo.kagent:8080",
   "version": "0.1.0",
   "capabilities": {
     "streaming": true
