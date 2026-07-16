@@ -1,87 +1,13 @@
-# The two audit scripts, mounted into the collector DaemonSet and the
-# aggregator CronJob. Shell + jq only — the point is that everything needed
-# for the audit is already in ztunnel's access logs and the Kubernetes API;
-# no extra telemetry pipeline is required to get the first version working.
+# The aggregator script, mounted into the CronJob. (The collector is its own
+# image — collector/collector.py — because it holds a streaming connection
+# and in-memory state; the aggregator stays shell + jq because it is a
+# stateless one-shot roll-up.)
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: port-audit-scripts
   namespace: port-audit-system
 data:
-  collector.sh: |
-    #!/bin/sh
-    # collector.sh — runs once per node (DaemonSet). Tails the LOCAL ztunnel's
-    # JSON access logs and merge-patches this node's key in the shared
-    # port-audit-report ConfigMap.
-    #
-    # Each ztunnel only sees connections for pods on its own node, so per-node
-    # keys never contend: a JSON merge patch that touches only your own key
-    # cannot clobber another node's. Only INBOUND entries are recorded, so a
-    # node's key means "ports that received traffic on pods living on this
-    # node" and a connection is never double-counted from its client side.
-    set -eu
-    NODE="${NODE_NAME:?NODE_NAME must come from the downward API}"
-    NS_APP="${NS_APP:-port-audit}"
-    NS_AUDIT="${NS_AUDIT:-port-audit-system}"
-    CM="${REPORT_CM:-port-audit-report}"
-    INTERVAL="${INTERVAL:-30}"
-    STATE=/tmp/state.json
-
-    say() { echo "$(date -u +%H:%M:%S) $*"; }
-
-    # Seed state from our own ConfigMap key so a collector restart keeps the
-    # history it already reported.
-    kubectl -n "$NS_AUDIT" get configmap "$CM" -o json 2>/dev/null \
-      | jq -r --arg k "$NODE" '.data[$k] // empty' > "$STATE" || true
-    [ -s "$STATE" ] || echo '{"node":"'"$NODE"'","services":{},"pods":{},"denied":{}}' > "$STATE"
-
-    while true; do
-      ZT=$(kubectl -n istio-system get pods -l app=ztunnel \
-            --field-selector "spec.nodeName=$NODE,status.phase=Running" \
-            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-      if [ -z "$ZT" ]; then say "no running ztunnel on $NODE yet"; sleep "$INTERVAL"; continue; fi
-
-      # Window is 2x the loop interval; the overlap is deliberate. Everything
-      # is unioned into sets, so seeing a line twice is harmless and a slow
-      # loop iteration cannot open a gap.
-      kubectl -n istio-system logs "$ZT" --since="$((INTERVAL * 2))s" 2>/dev/null \
-        | jq -cR --arg ns "$NS_APP" '
-            fromjson? // empty
-            | select((.scope // "") == "access")
-            | select(.direction == "inbound")
-            | select(.["dst.namespace"] == $ns)
-            | select(.["src.identity"] != null)      # mesh traffic only: skips kubelet probes
-            | { service:  (.["dst.service"] // "unattributed"),
-                workload: (.["dst.workload"] // "unattributed"),
-                port:     ((.["dst.hbone_addr"] // .["dst.addr"] // ":0") | split(":") | last | (tonumber? // 0)),
-                denied:   ((.error // "") | test("policy rejection")),
-                failed:   ((.error // "") != "") }
-          ' \
-        | jq -s --slurpfile state "$STATE" '
-            reduce .[] as $c ($state[0];
-              if $c.denied then
-                .denied[$c.service] = ((.denied[$c.service] // []) + [$c.port] | unique)
-              elif $c.failed then
-                # errored but not policy-denied (e.g. Connection refused when
-                # nothing listens on an exposed port): NOT used, NOT denied —
-                # it correctly stays in the unused column of the report.
-                .
-              else
-                .services[$c.service] = ((.services[$c.service] // []) + [$c.port] | unique)
-                | .pods[$c.workload]  = ((.pods[$c.workload]  // []) + [$c.port] | unique)
-              end)
-            | .updated = (now | todate)
-          ' > "$STATE.new" && mv "$STATE.new" "$STATE"
-
-      # Merge-patch ONLY this node's key, with our JSON doc as the (escaped)
-      # string value ConfigMap data expects.
-      kubectl -n "$NS_AUDIT" patch configmap "$CM" --type=merge \
-        -p "$(jq -n --arg k "$NODE" --arg v "$(jq -c . "$STATE")" '{data: {($k): $v}}')" >/dev/null \
-        && say "patched $CM key=$NODE ($(jq -c '[.services[]] | add // [] | length' "$STATE") service ports observed)" \
-        || say "patch failed, will retry next interval"
-      sleep "$INTERVAL"
-    done
-
   aggregate.sh: |
     #!/bin/sh
     # aggregate.sh — runs as a CronJob. Merges every node's observations, reads

@@ -1,7 +1,8 @@
-# The per-node collector. One pod per worker; each pod reads ONLY its own
-# node's ztunnel (matched by spec.nodeName) and merge-patches ONLY its own key
-# in the report ConfigMap. See scripts-configmap.yaml for the write-conflict
-# reasoning.
+# The per-node collector. One pod per worker; each pod STREAMS its own
+# node's ztunnel access logs (one follow=true log connection, matched by
+# spec.nodeName) and merge-patches ONLY its own key in the report ConfigMap —
+# on change, debounced, with a heartbeat so the key's `updated` stamp stays
+# live. See collector/collector.py; build with scripts/build-collector.sh.
 #
 # No toleration for the control-plane taint: app pods cannot land there, so
 # its ztunnel has nothing to report for the app namespace.
@@ -24,8 +25,10 @@ spec:
       serviceAccountName: port-audit-collector
       containers:
         - name: collector
-          image: alpine/k8s:1.33.4
-          command: ["/bin/sh", "/scripts/collector.sh"]
+          # Built locally by scripts/build-collector.sh and kind-loaded;
+          # IfNotPresent so the node uses the loaded image and never pulls.
+          image: port-audit-collector:v1
+          imagePullPolicy: IfNotPresent
           env:
             - name: NODE_NAME
               valueFrom:
@@ -37,19 +40,11 @@ spec:
               value: port-audit-system
             - name: REPORT_CM
               value: port-audit-report
-            - name: INTERVAL
-              value: "30"
-          volumeMounts:
-            - name: scripts
-              mountPath: /scripts
-              readOnly: true
+            - name: HEARTBEAT_SECONDS
+              value: "60"
           resources:
             requests:
               cpu: 10m
               memory: 32Mi
             limits:
               memory: 128Mi
-      volumes:
-        - name: scripts
-          configMap:
-            name: port-audit-scripts

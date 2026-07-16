@@ -16,11 +16,14 @@ nothing beyond what ztunnel already emits:
   ztunnel and logged.
 - **ztunnel access logs switched to JSON** (`LOG_FORMAT=json`) so they parse
   with jq instead of regex.
-- A **collector DaemonSet**: one pod per node tails its LOCAL ztunnel's access
-  logs (each ztunnel only sees its own node's pods) and merge-patches its OWN
-  key in one central ConfigMap. Merge patches on distinct keys are
+- A **collector DaemonSet** (Python, own Docker image, stdlib only): one pod
+  per node STREAMS its LOCAL ztunnel's access logs over a single
+  `follow=true` log connection (each ztunnel only sees its own node's pods)
+  and merge-patches its OWN key in one central ConfigMap — on change,
+  debounced, with a 60s heartbeat. Merge patches on distinct keys are
   conflict-free, so many nodes write the same ConfigMap concurrently with no
-  resourceVersion/409 retry dance.
+  resourceVersion/409 retry dance. A new port shows up in the node key about
+  a second after the connection completes.
 - An **aggregator CronJob**: merges the node keys, reads the configured
   surface (Service ports + AuthorizationPolicy ports) and writes `report.json`
   with, per service: `configured_service_ports`, `authz_allowed_ports`,
@@ -46,25 +49,48 @@ matches nothing, which turns the ALLOW policy into a deny-all for svc-b. The
 ztunnel access log's `src.identity` field is the quickest way to see the real
 trust domain.
 
+## Prerequisites
+
+- docker, kind, kubectl, helm, jq, make
+- gcloud, authenticated (`gcloud auth login`) — the Solo Istio images are
+  pulled from `us-docker.pkg.dev/soloio-img/istio` on the host and loaded
+  into kind
+- a Solo Istio license: export `SOLO_ISTIO_LICENSE_KEY`, or point
+  `SECRETS_FILE` at a sourceable file that exports it
+
 ## Run it
 
+The whole thing, standup to a 5-minute soak to asserted report, in one go:
+
 ```bash
-export SECRETS_FILE=~/path/to/secrets.sh   # exports SOLO_ISTIO_LICENSE_KEY
+make e2e SECRETS_FILE=~/path/to/secrets.sh
+```
+
+Or step by step:
+
+```bash
+export SECRETS_FILE=~/path/to/secrets.sh
+make setup       # kind + Gloo Operator + ambient mesh + ztunnel JSON logs
+make deploy      # collector image (docker build + kind load) + apps + policy + audit stack
+make probe       # hit svc-b:7070 — exposed by the Service, denied by ztunnel
+make report      # read report.json: used / unused / allowed-never-used / denied
+make remediate   # apply the tightened policy the report justifies
+make clean       # delete the kind cluster
+```
+
+The same steps as plain commands, if you want to see every move:
+
+```bash
 ./scripts/setup-cluster.sh                 # kind + operator + ambient mesh + JSON logs
+./scripts/build-collector.sh               # docker build collector.py + kind load
 
 kubectl --context kind-port-audit apply -f yaml/10-app/
 kubectl --context kind-port-audit apply -f yaml/20-policy/
 kubectl --context kind-port-audit apply -f yaml/30-audit/
 
-# after ~90s (collectors patch every 30s, aggregator runs every 60s):
+# a used port appears in its node key within ~2s; report.json rebuilds every 60s:
 kubectl --context kind-port-audit -n port-audit-system get cm port-audit-report \
   -o jsonpath='{.data.report\.json}' | jq .
-```
-
-Or the whole thing, standup to assertions, in one go:
-
-```bash
-SECRETS_FILE=~/path/to/secrets.sh ./scripts/e2e.sh
 ```
 
 ## The port story on svc-b
@@ -91,12 +117,15 @@ real observation window, not a single lucky request.
 
 ```
 kind/cluster.yaml            1 control-plane + 2 workers (per-node story needs 2)
+collector/                   collector.py + Dockerfile (the streaming collector image)
 scripts/setup-cluster.sh     kind + Gloo Operator + SMC(Ambient) + LOG_FORMAT=json
-scripts/e2e.sh               full run + report assertions
+scripts/build-collector.sh   docker build + kind load for the collector image
+scripts/e2e.sh               full run + 5-minute soak + report assertions
 yaml/00-mesh/                ServiceMeshController
-yaml/10-app/                 svc-a (client), svc-b (five listeners, spread across workers)
+yaml/10-app/                 svc-a (client), svc-b (eleven listeners, spread across workers)
 yaml/20-policy/              the L4 AuthorizationPolicy (over-provisioned on purpose)
 yaml/30-audit/               report ConfigMap, RBAC, collector DaemonSet, aggregator CronJob
+yaml/40-remediate/           the tightened policy the report justifies
 ```
 
 ## Teardown

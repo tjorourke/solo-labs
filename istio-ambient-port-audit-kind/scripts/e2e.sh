@@ -20,14 +20,15 @@ require jq
 step "1/6 Cluster + mesh"
 bash "$SCRIPT_DIR/setup-cluster.sh"
 
-step "2/6 Pre-loading app images into kind"
+step "2/6 Building the collector image + pre-loading app images"
+bash "$SCRIPT_DIR/build-collector.sh"
 for img in python:3.12-alpine curlimages/curl:8.14.1 alpine/k8s:1.33.4; do
   docker image inspect "$img" >/dev/null 2>&1 || docker pull --quiet "$img" >/dev/null
   tar="$(mktemp)"; docker save --platform "$KIND_PLATFORM" "$img" -o "$tar"
   kind load image-archive "$tar" --name "$CLUSTER_NAME" >/dev/null; rm -f "$tar"
   log "loaded $img"
 done
-ok "app images loaded"
+ok "collector image built; app images loaded"
 
 step "3/6 App + policy + audit stack"
 kapply "$LAB_ROOT/yaml/10-app/"
