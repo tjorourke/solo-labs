@@ -13,7 +13,7 @@
 #   make clean                     # delete the kind cluster
 CTX ?= kind-port-audit
 
-.PHONY: setup build deploy probe report remediate e2e clean
+.PHONY: setup build deploy probe report remediate e2e clean kagent-setup kagent-ui kagent-report
 
 setup:
 	./scripts/setup-cluster.sh
@@ -40,6 +40,19 @@ remediate:
 
 e2e:
 	./scripts/e2e.sh
+
+# ── Bonus: kagent publishes the report to GitHub ──────────────────────────────
+# Needs ANTHROPIC_API_KEY + GITHUB_PAT (Contents:read+write on the target repo),
+# exported or in SECRETS_FILE.
+kagent-setup:
+	./scripts/setup-kagent.sh
+
+kagent-ui:
+	./scripts/kagent-ui.sh
+
+# make kagent-report REPO=owner/repo [FILE=port-audit-report.md] [BRANCH=main]
+kagent-report:
+	./scripts/report-to-github.sh $(REPO) $(FILE) $(BRANCH)
 
 clean:
 	kind delete cluster --name port-audit

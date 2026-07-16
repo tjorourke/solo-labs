@@ -1,0 +1,26 @@
+# The model the reporter agent runs on. It reads report.json (a JSON blob),
+# renders it to markdown, diffs that against what is already in the repo, and
+# only commits when the two differ — enough reasoning that we give it a capable
+# model rather than the chart default.
+#
+# apiKeySecret points at the kagent-anthropic Secret the chart's providers block
+# created and owns (we do not recreate it).
+#
+# Model note: kagent 0.9.4 pins google-adk 2.4.0, whose native Anthropic parser
+# (anthropic_llm.content_block_to_part) raises NotImplementedError("Not
+# supported yet.") on the reasoning/thinking content block that claude-sonnet-5
+# returns. claude-sonnet-4-5 is the proven pairing on this ADK and is more than
+# capable for read/render/diff. Move to sonnet-5 once kagent ships a newer ADK.
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: port-audit-reporter-model
+  namespace: kagent
+spec:
+  provider: Anthropic
+  model: claude-sonnet-4-5-20250929
+  apiKeySecret: kagent-anthropic
+  apiKeySecretKey: ANTHROPIC_API_KEY
+  anthropic:
+    maxTokens: 8192
+    temperature: "0"

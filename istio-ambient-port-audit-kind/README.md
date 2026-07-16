@@ -126,7 +126,61 @@ yaml/10-app/                 svc-a (client), svc-b (eleven listeners, spread acr
 yaml/20-policy/              the L4 AuthorizationPolicy (over-provisioned on purpose)
 yaml/30-audit/               report ConfigMap, RBAC, collector DaemonSet, aggregator CronJob
 yaml/40-remediate/           the tightened policy the report justifies
+yaml/50-agent/               (bonus) kagent reporter: ModelConfig, GitHub RemoteMCPServer, Agent
+scripts/setup-kagent.sh      (bonus) install kagent + deploy the reporter agent
+scripts/report-to-github.sh  (bonus) headless invoke; scripts/kagent-ui.sh opens the dashboard
 ```
+
+## Bonus: kagent publishes the report to GitHub
+
+The report is a ConfigMap. That is machine-readable but nobody watches a
+ConfigMap. This optional add-on puts a **kagent agent** in front of it: it reads
+`report.json`, renders it to markdown, and commits it to a GitHub repo, but only
+when the report has actually changed. No report generator, no CI job, no git
+plumbing, just a declarative agent with two tools.
+
+```
+report.json ConfigMap ──k8s_get_resources──► port-audit-reporter (kagent) ──create_or_update_file──► GitHub repo
+                                              renders markdown, commits only on a diff
+```
+
+How it hangs together:
+
+- **OSS kagent** on the same cluster (`scripts/setup-kagent.sh`): CRDs +
+  controller + the built-in `kagent-tool-server` (the Kubernetes read tools) +
+  the dashboard.
+- **The GitHub MCP server is the auth answer.** We use GitHub's *hosted* MCP
+  server at `https://api.githubcopilot.com/mcp/` (the local `github-mcp-server`
+  binary only speaks stdio; kagent reaches MCP over HTTP). A **Personal Access
+  Token** with `Contents: read+write` on the target repo is injected as the
+  `Authorization: Bearer` header via `RemoteMCPServer.headersFrom`, sourced from
+  the `github-mcp-pat` Secret. The token is created from `GITHUB_PAT` at setup
+  time, never committed.
+- **The `port-audit-reporter` agent** (`type: Declarative`) has two tool sets:
+  `k8s_get_resources` (read the ConfigMap) and the GitHub MCP's
+  `get_file_contents` + `create_or_update_file` (read the current file, write the
+  new one). The whole behaviour is its system message: render `report.json` to
+  markdown, `get_file_contents`, and commit only if the rendered markdown differs
+  from what is already in the repo.
+
+Run it:
+
+```bash
+export ANTHROPIC_API_KEY=...          # the model the agent runs on
+export GITHUB_PAT=...                  # PAT, Contents:read+write on the repo
+make kagent-setup                     # install kagent + deploy the reporter agent
+
+# Prompt it in the dashboard:
+make kagent-ui                        # http://localhost:8080, pick port-audit-reporter
+#   "Publish the port audit to <owner>/<repo> at port-audit-report.md on main"
+
+# or headless:
+make kagent-report REPO=<owner>/<repo>
+```
+
+The agent reports whether it committed or skipped, with the commit URL. Run it a
+second time with no traffic change and it says "No change" and commits nothing,
+run `make probe` (or send new traffic) first and it commits the refreshed report.
 
 ## Teardown
 

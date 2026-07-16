@@ -1,0 +1,32 @@
+# The GitHub MCP server, as a tool the agent can call.
+#
+# We use GitHub's HOSTED MCP server (https://api.githubcopilot.com/mcp/) rather
+# than running github-mcp-server in-cluster: the local binary only speaks stdio,
+# and kagent reaches MCP tools over HTTP. The hosted server speaks streamable
+# HTTP and authenticates with a Personal Access Token.
+#
+# THE AUTH ANSWER: the PAT is injected as the Authorization header via
+# headersFrom, sourced from the github-mcp-pat Secret. That Secret is created at
+# setup time from the GITHUB_PAT env var (a token is dynamic, so it is never
+# committed as YAML). The value is the full "Bearer <pat>" string. The PAT needs
+# Contents: read+write on the target repo.
+#
+# toolNames restricts what the agent sees to exactly the two file operations it
+# needs — read the current report, write the new one. Everything else the GitHub
+# MCP server offers stays out of this agent's reach.
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: github-mcp
+  namespace: kagent
+spec:
+  description: GitHub, hosted MCP server. File read/write on the report repo, authed with a PAT.
+  url: https://api.githubcopilot.com/mcp/
+  protocol: STREAMABLE_HTTP
+  timeout: 30s
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: github-mcp-pat
+        key: authorization
