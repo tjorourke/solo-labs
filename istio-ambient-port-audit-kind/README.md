@@ -117,7 +117,7 @@ real observation window, not a single lucky request.
 
 ```
 kind/cluster.yaml            1 control-plane + 2 workers (per-node story needs 2)
-collector/                   collector.py + Dockerfile (the streaming collector image)
+collector/                   collector.py + aggregate.py + Dockerfile (one audit image)
 scripts/setup-cluster.sh     kind + Gloo Operator + SMC(Ambient) + LOG_FORMAT=json
 scripts/build-collector.sh   docker build + kind load for the collector image
 scripts/e2e.sh               full run + 5-minute soak + report assertions

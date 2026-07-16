@@ -22,7 +22,7 @@ bash "$SCRIPT_DIR/setup-cluster.sh"
 
 step "2/6 Building the collector image + pre-loading app images"
 bash "$SCRIPT_DIR/build-collector.sh"
-for img in python:3.12-alpine curlimages/curl:8.14.1 alpine/k8s:1.33.4; do
+for img in python:3.12-alpine curlimages/curl:8.14.1; do
   docker image inspect "$img" >/dev/null 2>&1 || docker pull --quiet "$img" >/dev/null
   tar="$(mktemp)"; docker save --platform "$KIND_PLATFORM" "$img" -o "$tar"
   kind load image-archive "$tar" --name "$CLUSTER_NAME" >/dev/null; rm -f "$tar"
