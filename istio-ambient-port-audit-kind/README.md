@@ -20,13 +20,16 @@ nothing beyond what ztunnel already emits:
   per node STREAMS its LOCAL ztunnel's access logs over a single
   `follow=true` log connection (each ztunnel only sees its own node's pods)
   and merge-patches its OWN key in one central ConfigMap — on change,
-  debounced, with a 60s heartbeat. Merge patches on distinct keys are
+  debounced, with a 60s heartbeat. The key value is **gzip+base64** (a whole
+  ConfigMap has one 1 MiB budget across all its keys, and port/pod sets
+  compress ~60x on a real fleet). Merge patches on distinct keys are
   conflict-free, so many nodes write the same ConfigMap concurrently with no
   resourceVersion/409 retry dance. A new port shows up in the node key about
   a second after the connection completes.
-- An **aggregator CronJob**: merges the node keys, reads the configured
-  surface (Service ports + AuthorizationPolicy ports) and writes `report.json`
-  with, per service: `configured_service_ports`, `authz_allowed_ports`,
+- An **aggregator CronJob**: unpacks + merges the node keys, reads the
+  configured surface (Service ports + AuthorizationPolicy ports) and writes
+  `report.json` (kept **plain** so humans, `jq` and the reporter agent can read
+  it) with, per service: `configured_service_ports`, `authz_allowed_ports`,
   `used_ports`, `unused_ports`, `authz_allowed_never_used`, `denied_attempts`.
 
 The end state is a machine-readable answer to three questions, per service and

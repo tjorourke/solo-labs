@@ -20,6 +20,8 @@ version:
 Entries without src.identity are dropped (kubelet probes are not usage).
 """
 
+import base64
+import gzip
 import json
 import os
 import socket
@@ -69,13 +71,34 @@ def find_ztunnel():
     return items[0]["metadata"]["name"] if items else None
 
 
+def pack(state):
+    """Serialise a node key as gzip+base64. One ConfigMap has a hard 1 MiB
+    budget shared across ALL its keys (the API server rejects the whole object
+    past 1,048,576 bytes), and port/pod sets compress heavily, so a compressed
+    key keeps a large fleet under the cap. base64 makes the gzip bytes a valid
+    UTF-8 string so it can live in `data` (not `binaryData`) and be merge-patched
+    per key like before. report.json stays plain JSON so the aggregator's output
+    is readable by humans and by the reporter agent."""
+    raw = json.dumps(state, sort_keys=True).encode()
+    return base64.b64encode(gzip.compress(raw)).decode()
+
+
+def unpack(value):
+    """Inverse of pack(); tolerates a pre-compression plain-JSON key so an
+    in-place upgrade does not have to reset the ConfigMap."""
+    try:
+        return json.loads(gzip.decompress(base64.b64decode(value)))
+    except (ValueError, OSError):
+        return json.loads(value)
+
+
 def seed_state():
     # A restart keeps the history this node already reported.
     try:
         with request("GET", f"/api/v1/namespaces/{NS_AUDIT}/configmaps/{CM}") as resp:
             data = json.load(resp).get("data") or {}
         if NODE in data:
-            return json.loads(data[NODE])
+            return unpack(data[NODE])
     except (urllib.error.URLError, ValueError) as exc:
         log(f"seed skipped: {exc}")
     return {"node": NODE, "services": {}, "pods": {}, "denied": {}}
@@ -84,9 +107,10 @@ def seed_state():
 def patch_state(state):
     # A JSON merge patch that touches ONLY this node's key: applied
     # server-side and atomically, so concurrent writers on other nodes can
-    # never be clobbered and no resourceVersion retry loop is needed.
+    # never be clobbered and no resourceVersion retry loop is needed. The value
+    # is gzip+base64 (see pack()) to stay inside the ConfigMap's 1 MiB budget.
     state["updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    body = json.dumps({"data": {NODE: json.dumps(state, sort_keys=True)}}).encode()
+    body = json.dumps({"data": {NODE: pack(state)}}).encode()
     with request("PATCH", f"/api/v1/namespaces/{NS_AUDIT}/configmaps/{CM}",
                  body=body, content_type="application/merge-patch+json") as resp:
         resp.read()

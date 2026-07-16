@@ -11,6 +11,8 @@ Same image and same stdlib-only style as collector.py; the two scripts are
 the whole audit.
 """
 
+import base64
+import gzip
 import json
 import os
 import ssl
@@ -36,6 +38,16 @@ def request(method, path, body=None, content_type="application/json"):
         req.add_header("Content-Type", content_type)
     with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:
         return json.load(resp)
+
+
+def unpack(value):
+    """Node keys are written gzip+base64 by the collector (to stay inside the
+    ConfigMap's 1 MiB budget); decode them here. Falls back to plain JSON so a
+    key written before compression still reads. report.json is never packed."""
+    try:
+        return json.loads(gzip.decompress(base64.b64decode(value)))
+    except (ValueError, OSError):
+        return json.loads(value)
 
 
 def union(maps):
@@ -67,7 +79,7 @@ def allowed_ports(policies, app):
 
 def main():
     cm = request("GET", f"/api/v1/namespaces/{NS_AUDIT}/configmaps/{CM}")
-    nodes = [json.loads(value) for key, value in (cm.get("data") or {}).items()
+    nodes = [unpack(value) for key, value in (cm.get("data") or {}).items()
              if key != "report.json"]
     services = request("GET", f"/api/v1/namespaces/{NS_APP}/services")["items"]
     policies = request(
