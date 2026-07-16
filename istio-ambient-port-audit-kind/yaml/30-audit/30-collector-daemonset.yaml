@@ -1,0 +1,55 @@
+# The per-node collector. One pod per worker; each pod reads ONLY its own
+# node's ztunnel (matched by spec.nodeName) and merge-patches ONLY its own key
+# in the report ConfigMap. See scripts-configmap.yaml for the write-conflict
+# reasoning.
+#
+# No toleration for the control-plane taint: app pods cannot land there, so
+# its ztunnel has nothing to report for the app namespace.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: port-audit-collector
+  namespace: port-audit-system
+  labels:
+    app: port-audit-collector
+spec:
+  selector:
+    matchLabels:
+      app: port-audit-collector
+  template:
+    metadata:
+      labels:
+        app: port-audit-collector
+    spec:
+      serviceAccountName: port-audit-collector
+      containers:
+        - name: collector
+          image: alpine/k8s:1.33.4
+          command: ["/bin/sh", "/scripts/collector.sh"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NS_APP
+              value: port-audit
+            - name: NS_AUDIT
+              value: port-audit-system
+            - name: REPORT_CM
+              value: port-audit-report
+            - name: INTERVAL
+              value: "30"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: scripts
+          configMap:
+            name: port-audit-scripts

@@ -1,0 +1,36 @@
+# The L4 AuthorizationPolicy. Everything in here is enforceable by ztunnel
+# directly — source identity (which ambient mTLS provides for free) and
+# destination ports. No waypoint needed.
+#
+# Two deliberate properties for the audit story:
+#   - It is OVER-PROVISIONED: it allows 8083, 8084, 9093 and 9094, which
+#     svc-a never calls. The report flags those as authz_allowed_never_used.
+#   - It does NOT allow 7070, even though the Service exposes it. The moment
+#     any ALLOW policy selects a workload, everything unmatched is denied, so
+#     a probe to 7070 is rejected by ztunnel and logged — the report counts it
+#     under denied_attempts.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-svc-a-to-svc-b
+  namespace: port-audit
+spec:
+  selector:
+    matchLabels:
+      app: svc-b
+  action: ALLOW
+  rules:
+    # The trust domain is NOT cluster.local here: the Gloo Operator sets
+    # trustDomain to the ServiceMeshController's .spec.cluster (port-audit in
+    # this lab), so identities are spiffe://port-audit/ns/... A principal
+    # written cluster.local/... matches nothing and, because an ALLOW policy
+    # now selects the workload, DENIES EVERYTHING — check src.identity in the
+    # ztunnel access logs when a policy behaves like that.
+    - from:
+        - source:
+            principals:
+              - port-audit/ns/port-audit/sa/svc-a
+      to:
+        - operation:
+            ports: ["8080", "8081", "8082", "8083", "8084",
+                    "9090", "9091", "9092", "9093", "9094"]

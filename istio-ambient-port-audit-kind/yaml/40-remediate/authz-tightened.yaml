@@ -1,0 +1,25 @@
+# The act-on-the-report step. The audit said 8083, 8084, 9093 and 9094 are
+# allowed but never used, so they come out of the policy. The allowed set now
+# equals the observed set. Anything that starts calling those ports later is
+# denied and lands in denied_attempts — which is exactly the alert you want,
+# because either it is a legitimate new consumer (re-add the port
+# deliberately) or it is something moving laterally (now it cannot).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-svc-a-to-svc-b
+  namespace: port-audit
+spec:
+  selector:
+    matchLabels:
+      app: svc-b
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              # trust domain = the SMC's .spec.cluster, not cluster.local
+              - port-audit/ns/port-audit/sa/svc-a
+      to:
+        - operation:
+            ports: ["8080", "8081", "8082", "9090", "9091", "9092"]

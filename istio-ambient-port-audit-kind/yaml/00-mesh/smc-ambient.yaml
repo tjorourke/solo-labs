@@ -1,0 +1,17 @@
+# ServiceMeshController — the single declarative CR the Gloo Operator
+# reconciles into the whole Solo Istio control + data plane. In ambient mode
+# that means istiod, the istio-cni node agent and the ztunnel DaemonSet.
+# One object, GitOps-friendly, upgrade by editing .spec.version.
+apiVersion: operator.gloo.solo.io/v1
+kind: ServiceMeshController
+metadata:
+  name: managed-istio
+  namespace: gloo-system
+spec:
+  # Istio patch version WITHOUT the -solo suffix — the operator appends it for
+  # distribution: Standard. 1.29.3 → pulls 1.29.3-solo images.
+  version: "1.29.3"
+  dataplaneMode: Ambient
+  distribution: Standard
+  scalingProfile: Demo
+  cluster: port-audit

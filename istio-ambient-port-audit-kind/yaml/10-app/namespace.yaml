@@ -1,0 +1,9 @@
+# The app namespace, enrolled in ambient with one label. From this point every
+# pod in it gets mTLS identity and L4 policy enforcement from its node's
+# ztunnel — no sidecars, no restarts.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: port-audit
+  labels:
+    istio.io/dataplane-mode: ambient

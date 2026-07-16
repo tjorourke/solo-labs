@@ -1,0 +1,15 @@
+# kind cluster for the ambient port-audit lab.
+# One control-plane + two workers. The two workers matter: ztunnel is a per-node
+# DaemonSet and each ztunnel only sees connections for pods on its own node, so
+# the per-node collector -> one-ConfigMap-key-per-node design needs at least two
+# nodes to demonstrate anything. svc-b's replicas are spread across both workers.
+#
+# No host port mappings: all the traffic in this lab is in-cluster (svc-a to
+# svc-b over ztunnel), there is no ingress.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: port-audit
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker

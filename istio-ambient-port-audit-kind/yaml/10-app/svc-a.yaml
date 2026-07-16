@@ -1,0 +1,42 @@
+# svc-a — the client. Calls svc-b on SIX ports every two seconds (8080, 8081,
+# 8082, 9090, 9091, 9092) and NOTHING else. The gap between what svc-a
+# actually uses and what svc-b exposes + what the policy allows is what the
+# audit report surfaces: four allowed ports that never see a byte.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: svc-a
+  namespace: port-audit
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-a
+  namespace: port-audit
+  labels:
+    app: svc-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: svc-a
+  template:
+    metadata:
+      labels:
+        app: svc-a
+    spec:
+      serviceAccountName: svc-a
+      containers:
+        - name: client
+          image: curlimages/curl:8.14.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                ok=""
+                for p in 8080 8081 8082 9090 9091 9092; do
+                  curl -s --max-time 3 "http://svc-b:$p/" >/dev/null && ok="$ok $p"
+                done
+                echo "$(date -u +%H:%M:%S) ok:$ok"
+                sleep 2
+              done

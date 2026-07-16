@@ -1,0 +1,103 @@
+# Least-privilege RBAC for the two audit components.
+#
+# collector  — read ztunnel pod names + logs in istio-system; patch only the
+#              report ConfigMap in port-audit-system.
+# aggregator — read Services + AuthorizationPolicies in the app namespace
+#              (the "configured" side of the diff); patch the same ConfigMap.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: port-audit-collector
+  namespace: port-audit-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: port-audit-aggregator
+  namespace: port-audit-system
+---
+# Collector: ztunnel pods + their logs, istio-system only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: port-audit-read-ztunnel-logs
+  namespace: istio-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: port-audit-read-ztunnel-logs
+  namespace: istio-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: port-audit-read-ztunnel-logs
+subjects:
+  - kind: ServiceAccount
+    name: port-audit-collector
+    namespace: port-audit-system
+---
+# Both components: get/patch exactly one ConfigMap, nothing else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: port-audit-write-report
+  namespace: port-audit-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["port-audit-report"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: port-audit-write-report
+  namespace: port-audit-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: port-audit-write-report
+subjects:
+  - kind: ServiceAccount
+    name: port-audit-collector
+    namespace: port-audit-system
+  - kind: ServiceAccount
+    name: port-audit-aggregator
+    namespace: port-audit-system
+---
+# Aggregator: the configured surface — Services and AuthorizationPolicies in
+# the app namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: port-audit-read-configured
+  namespace: port-audit
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: port-audit-read-configured
+  namespace: port-audit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: port-audit-read-configured
+subjects:
+  - kind: ServiceAccount
+    name: port-audit-aggregator
+    namespace: port-audit-system

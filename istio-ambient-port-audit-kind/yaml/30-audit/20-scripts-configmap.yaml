@@ -1,0 +1,139 @@
+# The two audit scripts, mounted into the collector DaemonSet and the
+# aggregator CronJob. Shell + jq only — the point is that everything needed
+# for the audit is already in ztunnel's access logs and the Kubernetes API;
+# no extra telemetry pipeline is required to get the first version working.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: port-audit-scripts
+  namespace: port-audit-system
+data:
+  collector.sh: |
+    #!/bin/sh
+    # collector.sh — runs once per node (DaemonSet). Tails the LOCAL ztunnel's
+    # JSON access logs and merge-patches this node's key in the shared
+    # port-audit-report ConfigMap.
+    #
+    # Each ztunnel only sees connections for pods on its own node, so per-node
+    # keys never contend: a JSON merge patch that touches only your own key
+    # cannot clobber another node's. Only INBOUND entries are recorded, so a
+    # node's key means "ports that received traffic on pods living on this
+    # node" and a connection is never double-counted from its client side.
+    set -eu
+    NODE="${NODE_NAME:?NODE_NAME must come from the downward API}"
+    NS_APP="${NS_APP:-port-audit}"
+    NS_AUDIT="${NS_AUDIT:-port-audit-system}"
+    CM="${REPORT_CM:-port-audit-report}"
+    INTERVAL="${INTERVAL:-30}"
+    STATE=/tmp/state.json
+
+    say() { echo "$(date -u +%H:%M:%S) $*"; }
+
+    # Seed state from our own ConfigMap key so a collector restart keeps the
+    # history it already reported.
+    kubectl -n "$NS_AUDIT" get configmap "$CM" -o json 2>/dev/null \
+      | jq -r --arg k "$NODE" '.data[$k] // empty' > "$STATE" || true
+    [ -s "$STATE" ] || echo '{"node":"'"$NODE"'","services":{},"pods":{},"denied":{}}' > "$STATE"
+
+    while true; do
+      ZT=$(kubectl -n istio-system get pods -l app=ztunnel \
+            --field-selector "spec.nodeName=$NODE,status.phase=Running" \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+      if [ -z "$ZT" ]; then say "no running ztunnel on $NODE yet"; sleep "$INTERVAL"; continue; fi
+
+      # Window is 2x the loop interval; the overlap is deliberate. Everything
+      # is unioned into sets, so seeing a line twice is harmless and a slow
+      # loop iteration cannot open a gap.
+      kubectl -n istio-system logs "$ZT" --since="$((INTERVAL * 2))s" 2>/dev/null \
+        | jq -cR --arg ns "$NS_APP" '
+            fromjson? // empty
+            | select((.scope // "") == "access")
+            | select(.direction == "inbound")
+            | select(.["dst.namespace"] == $ns)
+            | select(.["src.identity"] != null)      # mesh traffic only: skips kubelet probes
+            | { service:  (.["dst.service"] // "unattributed"),
+                workload: (.["dst.workload"] // "unattributed"),
+                port:     ((.["dst.hbone_addr"] // .["dst.addr"] // ":0") | split(":") | last | (tonumber? // 0)),
+                denied:   ((.error // "") | test("policy rejection")),
+                failed:   ((.error // "") != "") }
+          ' \
+        | jq -s --slurpfile state "$STATE" '
+            reduce .[] as $c ($state[0];
+              if $c.denied then
+                .denied[$c.service] = ((.denied[$c.service] // []) + [$c.port] | unique)
+              elif $c.failed then
+                # errored but not policy-denied (e.g. Connection refused when
+                # nothing listens on an exposed port): NOT used, NOT denied —
+                # it correctly stays in the unused column of the report.
+                .
+              else
+                .services[$c.service] = ((.services[$c.service] // []) + [$c.port] | unique)
+                | .pods[$c.workload]  = ((.pods[$c.workload]  // []) + [$c.port] | unique)
+              end)
+            | .updated = (now | todate)
+          ' > "$STATE.new" && mv "$STATE.new" "$STATE"
+
+      # Merge-patch ONLY this node's key, with our JSON doc as the (escaped)
+      # string value ConfigMap data expects.
+      kubectl -n "$NS_AUDIT" patch configmap "$CM" --type=merge \
+        -p "$(jq -n --arg k "$NODE" --arg v "$(jq -c . "$STATE")" '{data: {($k): $v}}')" >/dev/null \
+        && say "patched $CM key=$NODE ($(jq -c '[.services[]] | add // [] | length' "$STATE") service ports observed)" \
+        || say "patch failed, will retry next interval"
+      sleep "$INTERVAL"
+    done
+
+  aggregate.sh: |
+    #!/bin/sh
+    # aggregate.sh — runs as a CronJob. Merges every node's observations, reads
+    # the CONFIGURED surface (Service ports + AuthorizationPolicy allowed
+    # ports), and writes the diff to the report.json key of the same
+    # ConfigMap: per service, what is exposed, what is allowed, what is
+    # actually used, what is not, and what got denied.
+    set -eu
+    NS_APP="${NS_APP:-port-audit}"
+    NS_AUDIT="${NS_AUDIT:-port-audit-system}"
+    CM="${REPORT_CM:-port-audit-report}"
+
+    nodes=$(kubectl -n "$NS_AUDIT" get configmap "$CM" -o json \
+      | jq -c '[.data | to_entries[] | select(.key != "report.json") | (.value | fromjson? // empty)]')
+    svcs=$(kubectl -n "$NS_APP" get services -o json)
+    pols=$(kubectl -n "$NS_APP" get authorizationpolicies.security.istio.io -o json)
+
+    report=$(jq -nc --argjson nodes "$nodes" --argjson svcs "$svcs" --argjson pols "$pols" '
+      # Union a per-node map-of-arrays field across all nodes.
+      def union_map(f): reduce ($nodes[] | f | to_entries[]) as $e
+        ({}; .[$e.key] = ((.[$e.key] // []) + $e.value | unique));
+      (union_map(.services // {})) as $obs_svc |
+      (union_map(.pods     // {})) as $obs_pod |
+      (union_map(.denied   // {})) as $denied  |
+      { generated: (now | todate),
+        nodes_reporting: [$nodes[].node],
+        services: [ $svcs.items[]
+          | (.metadata.name) as $name
+          | (.spec.selector.app // "") as $app
+          | ("\(.metadata.name).\(.metadata.namespace).svc.cluster.local") as $fqdn
+          | ([.spec.ports[].port] | sort) as $conf
+          # Allowed ports = ports named by ALLOW AuthorizationPolicies whose
+          # selector matches this Service selector app label (good enough for
+          # app-labelled workloads, which is the convention here).
+          | ([ $pols.items[]
+               | select((.spec.action // "ALLOW") == "ALLOW")
+               | select((.spec.selector.matchLabels.app // "-") == $app)
+               | .spec.rules[]?.to[]?.operation.ports[]?
+               | tonumber ] | unique) as $authz
+          | ($obs_svc[$fqdn] // [] | sort) as $used
+          | { service: $name,
+              configured_service_ports: $conf,
+              authz_allowed_ports: $authz,
+              used_ports: $used,
+              unused_ports: ($conf - $used),
+              authz_allowed_never_used: ($authz - $used),
+              denied_attempts: ($denied[$fqdn] // []),
+              over_provisioned: ((($conf - $used) | length) > 0) } ],
+        pods: $obs_pod }
+    ')
+
+    kubectl -n "$NS_AUDIT" patch configmap "$CM" --type=merge \
+      -p "$(jq -n --arg v "$report" '{data: {"report.json": $v}}')" >/dev/null
+    echo "report.json updated:"
+    echo "$report" | jq .

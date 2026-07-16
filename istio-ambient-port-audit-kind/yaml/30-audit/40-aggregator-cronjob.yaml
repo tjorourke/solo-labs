@@ -1,0 +1,42 @@
+# The aggregator. Every minute it merges the per-node observations, reads the
+# configured surface (Service ports + AuthorizationPolicy allowed ports) and
+# writes the used/unused diff to the report.json key — the only key it owns.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: port-audit-aggregator
+  namespace: port-audit-system
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: port-audit-aggregator
+        spec:
+          serviceAccountName: port-audit-aggregator
+          restartPolicy: Never
+          containers:
+            - name: aggregator
+              image: alpine/k8s:1.33.4
+              command: ["/bin/sh", "/scripts/aggregate.sh"]
+              env:
+                - name: NS_APP
+                  value: port-audit
+                - name: NS_AUDIT
+                  value: port-audit-system
+                - name: REPORT_CM
+                  value: port-audit-report
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: port-audit-scripts

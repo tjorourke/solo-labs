@@ -1,0 +1,23 @@
+# The audit stack lives OUTSIDE the mesh: this namespace is deliberately not
+# labelled istio.io/dataplane-mode=ambient, so the collector and aggregator's
+# own API-server traffic never appears in the access logs they are reading.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: port-audit-system
+---
+# The central report ConfigMap. ONE ConfigMap, one data key PER NODE, plus a
+# report.json key the aggregator owns.
+#
+# Why this shape and not one ConfigMap per node: each collector only ever
+# JSON-merge-patches its OWN key ({"data":{"kind-worker":"..."}}), and a merge
+# patch on distinct keys is conflict-free — concurrent writers on different
+# nodes cannot clobber each other. Per-node ConfigMaps would work too, but
+# then every reader has to do the merge; this way the merge problem is solved
+# once, in the aggregator.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: port-audit-report
+  namespace: port-audit-system
+data: {}

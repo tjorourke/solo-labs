@@ -1,0 +1,148 @@
+# svc-b — the server, and the point of the whole lab. It listens on ELEVEN
+# ports and its Service exposes all eleven, which is exactly the kind of port
+# surface a monolith drags along when it gets split into microservices:
+#
+#   8080  http-api    used by svc-a           (should stay)
+#   8081  inventory   used by svc-a           (should stay)
+#   8082  orders      used by svc-a           (should stay)
+#   9090  metrics     used by svc-a           (should stay)
+#   9091  health      used by svc-a           (should stay)
+#   9092  events      used by svc-a           (should stay)
+#   8083  admin       never called by anyone  (over-provisioned)
+#   8084  debug       never called by anyone  (over-provisioned)
+#   9093  profiling   never called by anyone  (over-provisioned)
+#   9094  legacy-sync never called by anyone  (over-provisioned)
+#   7070  legacy      exposed but NOT in the AuthorizationPolicy — any attempt
+#                     is denied by ztunnel and shows up in the audit as a
+#                     denied_attempts entry
+#
+# Two replicas, forced onto different workers by a topology spread constraint,
+# so BOTH node collectors have inbound traffic to report — that is what makes
+# the one-ConfigMap-key-per-node design demonstrable.
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-b
+  namespace: port-audit
+  labels:
+    app: svc-b
+spec:
+  selector:
+    app: svc-b
+  ports:
+    - name: http-api
+      port: 8080
+      targetPort: 8080
+    - name: inventory
+      port: 8081
+      targetPort: 8081
+    - name: orders
+      port: 8082
+      targetPort: 8082
+    - name: admin
+      port: 8083
+      targetPort: 8083
+    - name: debug
+      port: 8084
+      targetPort: 8084
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+    - name: health
+      port: 9091
+      targetPort: 9091
+    - name: events
+      port: 9092
+      targetPort: 9092
+    - name: profiling
+      port: 9093
+      targetPort: 9093
+    - name: legacy-sync
+      port: 9094
+      targetPort: 9094
+    - name: legacy
+      port: 7070
+      targetPort: 7070
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-b
+  namespace: port-audit
+  labels:
+    app: svc-b
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: svc-b
+  template:
+    metadata:
+      labels:
+        app: svc-b
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: svc-b
+          # Without this, a rolling update deadlocks: the old ReplicaSet's
+          # pods count against the new pod's spread, the surge pod cannot
+          # schedule anywhere, and the Deployment sits "Available" forever on
+          # the old template. Scoping the skew per ReplicaSet fixes it.
+          matchLabelKeys:
+            - pod-template-hash
+      containers:
+        - name: server
+          image: python:3.12-alpine
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              # One process, five listeners. Answers every GET with a small
+              # JSON body naming the pod and the port that served it.
+              import http.server, socketserver, threading, json, os
+              socketserver.TCPServer.allow_reuse_address = True
+              class H(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = json.dumps({
+                          "pod": os.environ.get("POD_NAME", "unknown"),
+                          "port": self.server.server_address[1],
+                          "path": self.path,
+                      }).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              for port in (8080, 8081, 8082, 8083, 8084, 9090, 9091, 9092, 9093, 9094, 7070):
+                  srv = socketserver.ThreadingTCPServer(("0.0.0.0", port), H)
+                  threading.Thread(target=srv.serve_forever, daemon=True).start()
+                  print(f"listening on :{port}")
+              threading.Event().wait()
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - containerPort: 8080
+            - containerPort: 8081
+            - containerPort: 8082
+            - containerPort: 8083
+            - containerPort: 8084
+            - containerPort: 9090
+            - containerPort: 9091
+            - containerPort: 9092
+            - containerPort: 9093
+            - containerPort: 9094
+            - containerPort: 7070
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
