@@ -23,24 +23,30 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 
-RESP="$(curl -s -X POST "http://localhost:8083/api/a2a/kagent/port-audit-reporter/" \
-  -H 'Content-Type: application/json' --max-time 300 \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"message/send\",\"params\":{\"message\":{\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":$(printf '%s' "$PROMPT" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}],\"messageId\":\"report-$$\"}}}")"
-
-echo "" >&2
-printf '%s' "$RESP" | python3 -c '
+# kagent's ADK agent runtime serves A2A over message/stream (SSE), not
+# message/send — so we POST with Accept: text/event-stream and read the events.
+curl -sN -X POST "http://localhost:8083/api/a2a/kagent/port-audit-reporter/" \
+  -H 'Content-Type: application/json' -H 'Accept: text/event-stream' --max-time 300 \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"message/stream\",\"params\":{\"message\":{\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":$(printf '%s' "$PROMPT" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}],\"messageId\":\"report-$$\"}}}" \
+  | python3 -c '
 import sys, json
-try: d = json.load(sys.stdin)
-except Exception: print(sys.stdin.read()[:2000]); sys.exit()
-if "error" in d: print("A2A error:", json.dumps(d["error"])); sys.exit()
-seen=[]
-def w(o):
-    if isinstance(o,dict):
-        if o.get("kind")=="text" and isinstance(o.get("text"),str):
-            t=o["text"].strip()
-            if t and t not in seen: seen.append(t)
-        [w(v) for v in o.values()]
-    elif isinstance(o,list): [w(v) for v in o]
-w(d.get("result",d)); print("\n\n".join(seen) if seen else json.dumps(d)[:2000])
+state=None; texts=[]
+for line in sys.stdin:
+    if not line.startswith("data:"): continue
+    try: d = json.loads(line[5:].strip())
+    except Exception: continue
+    if "error" in d: print("A2A error:", json.dumps(d["error"])); sys.exit()
+    r = d.get("result", d); st = (r.get("status") or {})
+    if st.get("state"): state = st["state"]
+    def w(o):
+        if isinstance(o, dict):
+            if o.get("kind")=="text" and isinstance(o.get("text"), str):
+                t=o["text"].strip()
+                if t and (not texts or texts[-1]!=t): texts.append(t)
+            [w(v) for v in o.values()]
+        elif isinstance(o, list): [w(v) for v in o]
+    w(r)
+print(texts[-1] if texts else "(no text returned)")
+print("\n[final state: %s]" % state, file=sys.stderr)
 '
 echo "" >&2
