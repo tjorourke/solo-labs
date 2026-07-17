@@ -138,9 +138,8 @@ scripts/report-to-github.sh  (bonus) headless invoke; scripts/kagent-ui.sh opens
 
 ## Bonus: kagent publishes the report to GitHub
 
-The report is structured data in a ConfigMap: perfect for a script, no fun for a
-person. So, to show off what Solo's agentic stack can do, this lab optionally
-deploys a **declarative AI agent on kagent**. The agent calls a `RemoteMCPServer`
+Just for fun, and to show off what Solo's agentic stack can do, this lab
+optionally deploys a **declarative AI agent on kagent**. The agent calls a `RemoteMCPServer`
 wired to GitHub's MCP server, reads `report.json`, and turns that structured data
 into clean, human-readable markdown committed straight to a GitHub repo, only
 when the findings have actually changed. No report generator, no CI job, no git
