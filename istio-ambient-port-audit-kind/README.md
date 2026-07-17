@@ -1,10 +1,12 @@
 # Ambient port audit: which ports are open, which are used, which should go
 
-A monolith gets split into microservices and every service drags its old port
-surface with it: the admin port nobody calls any more, the debug port that was
-handy in staging, the legacy port a retired client used. The mesh encrypts all
-of it and the AuthorizationPolicy allows most of it, but nobody can say which
-ports are actually earning their place.
+A compliance audit asks a blunt question about least privilege: is every port a
+service is authorized to reach actually one it uses, and is anything else left
+open? Services accumulate ports over time (a listener for a new feature, a debug
+port from staging, a port some retired integration used), each one widens the
+AuthorizationPolicy in front of the service, and the policy almost never gets
+tightened back. The mesh encrypts all of it and the AuthorizationPolicy allows
+most of it, but nobody can say which ports are actually earning their place.
 
 This lab builds the audit that answers it, on Solo Istio in ambient mode, with
 nothing beyond what ztunnel already emits:
