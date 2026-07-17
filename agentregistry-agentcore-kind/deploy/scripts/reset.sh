@@ -8,7 +8,8 @@
 # + MCP-server deployments across ALL runtimes (kagent objects + waypoints +
 # AccessPolicies they spawn), the deployed AgentCore agent runtime instance, the
 # deployed Google bits (the Vertex AI reasoning engine + the Cloud Run MCP), and
-# the §9 OpenAPI→MCP petstore objects (ConfigMap + backend + HTTPRoute).
+# the §9-11 OpenAPI→MCP petstore objects (ConfigMap + the Standard/Search/Code
+# backends + their HTTPRoutes).
 # KEEPS (platform, from setup.sh): kind cluster + Keycloak + kagent + Enterprise UI
 # + arctl daemon; the published catalog (MCP servers + skills); ALL connected
 # runtimes (kind-kagent, aws-agentcore, gcp-vertex); the AWS platform wiring (the
@@ -168,15 +169,20 @@ if kubectl --context "$CTX" get ns kagent >/dev/null 2>&1; then
   ok "kagent agents/mcpservers cleared"
 fi
 
-# ── 4b. §9 OpenAPI→MCP petstore objects (agentgateway-system) ────────────────
-# The notebook's §9 turns the public Swagger Petstore into MCP tools: a ConfigMap
-# holding the fetched OpenAPI spec, an EnterpriseAgentgatewayBackend, and its
-# HTTPRoute. Remove all three (slash form so each type/name pairs correctly).
+# ── 4b. §9–11 OpenAPI→MCP petstore objects (agentgateway-system) ─────────────
+# §9 turns the public Swagger Petstore into MCP tools (ConfigMap holding the
+# fetched OpenAPI spec + an EnterpriseAgentgatewayBackend + HTTPRoute). §10
+# (Search / progressive disclosure) and §11 (Code mode) add two more backends and
+# routes over the SAME ConfigMap. Remove them all (slash form so each type/name
+# pairs correctly).
 if kubectl --context "$CTX" get ns agentgateway-system >/dev/null 2>&1; then
-  step "Removing the §9 OpenAPI→MCP petstore objects"
+  step "Removing the §9–11 OpenAPI→MCP petstore objects"
   kc -n agentgateway-system delete \
-    enterpriseagentgatewaybackend/petstore-api httproute/petstore-mcp configmap/petstore-openapi \
-    --ignore-not-found >/dev/null 2>&1 && ok "petstore backend + route + configmap cleared" || true
+    enterpriseagentgatewaybackend/petstore-api httproute/petstore-mcp \
+    enterpriseagentgatewaybackend/petstore-search httproute/petstore-search-mcp \
+    enterpriseagentgatewaybackend/petstore-codemode httproute/petstore-code-mcp \
+    configmap/petstore-openapi \
+    --ignore-not-found >/dev/null 2>&1 && ok "petstore backends + routes + configmap cleared" || true
 fi
 
 # ── 5. local scaffold + scratch ──────────────────────────────────────────────
