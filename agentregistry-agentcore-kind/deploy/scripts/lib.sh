@@ -255,13 +255,29 @@ keycloak_client_secret() {
 # Needs the issuer (keycloak.localtest.me) reachable from the host, i.e. the
 # agentgateway ingress must be up first.
 arctl_login() {
-  OIDC_ISSUER="$KEYCLOAK_ISSUER" OIDC_CLIENT_ID="$AR_CLI_CLIENT" \
-  arctl user login \
-    --oidc-flow password-credentials \
-    --oidc-issuer-url "$KEYCLOAK_ISSUER" \
-    --oidc-client-id "$AR_CLI_CLIENT" \
-    --oidc-username "$AS_USER" --oidc-password "$AS_PASSWORD" >/dev/null 2>&1 \
-  || warn "arctl user login failed — is the gateway up so ${KEYCLOAK_ISSUER} resolves?"
+  # The issuer (keycloak.localtest.me) is served by the agentgateway ingress, which
+  # reports the Gateway Programmed a beat before the route actually serves traffic.
+  # setup.sh calls this straight after 06-gateway.sh, so a single-shot login loses
+  # that race and 04b then dies with "API client not initialized". Wait for the OIDC
+  # discovery doc to answer (up to ~90s), then retry the login a few times — the
+  # gateway can serve the issuer a moment before the ar-backend is ready to mint.
+  local _n
+  for _n in $(seq 1 90); do
+    curl -sf -m2 -o /dev/null "${KEYCLOAK_ISSUER}/.well-known/openid-configuration" && break
+    sleep 1
+  done
+  for _n in 1 2 3 4 5; do
+    OIDC_ISSUER="$KEYCLOAK_ISSUER" OIDC_CLIENT_ID="$AR_CLI_CLIENT" \
+    arctl user login \
+      --oidc-flow password-credentials \
+      --oidc-issuer-url "$KEYCLOAK_ISSUER" \
+      --oidc-client-id "$AR_CLI_CLIENT" \
+      --oidc-username "$AS_USER" --oidc-password "$AS_PASSWORD" >/dev/null 2>&1 \
+    && return 0
+    sleep 3
+  done
+  warn "arctl user login failed after retries — is the gateway up so ${KEYCLOAK_ISSUER} resolves?"
+  return 1
 }
 
 # arctl_token — echo a raw bearer for the registry (admin-user, aud ar-backend).

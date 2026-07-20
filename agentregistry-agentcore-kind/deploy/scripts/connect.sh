@@ -59,12 +59,22 @@ _SD="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # steps that need ARCTL_API_TOKEN re-mint it themselves.
 unset ARCTL_API_TOKEN
 
-OIDC_ISSUER="$KEYCLOAK_ISSUER" OIDC_CLIENT_ID="$AR_CLI_CLIENT" \
-arctl user login \
-  --oidc-flow password-credentials \
-  --oidc-issuer-url "$KEYCLOAK_ISSUER" \
-  --oidc-client-id "$AR_CLI_CLIENT" \
-  --oidc-username "$AS_USER" --oidc-password "$AS_PASSWORD" >/dev/null 2>&1 \
-  && _login=ok || _login="FAILED (is the gateway up so ${KEYCLOAK_ISSUER} resolves?)"
+# Wait for the gateway to actually serve the issuer (it can report Programmed a beat
+# before the route serves), then retry the login — the same race setup.sh hits.
+for _n in $(seq 1 90); do
+  curl -sf -m2 -o /dev/null "${KEYCLOAK_ISSUER}/.well-known/openid-configuration" && break
+  sleep 1
+done
+_login="FAILED (is the gateway up so ${KEYCLOAK_ISSUER} resolves?)"
+for _n in 1 2 3 4 5; do
+  OIDC_ISSUER="$KEYCLOAK_ISSUER" OIDC_CLIENT_ID="$AR_CLI_CLIENT" \
+  arctl user login \
+    --oidc-flow password-credentials \
+    --oidc-issuer-url "$KEYCLOAK_ISSUER" \
+    --oidc-client-id "$AR_CLI_CLIENT" \
+    --oidc-username "$AS_USER" --oidc-password "$AS_PASSWORD" >/dev/null 2>&1 \
+    && { _login=ok; break; }
+  sleep 3
+done
 echo "arctl $(arctl version 2>/dev/null | awk '/arctl version/{print $3}') · login $_login · registry ${ARCTL_API_BASE_URL} · cluster kind-${CLUSTER_NAME}"
 arctl get runtimes 2>/dev/null
