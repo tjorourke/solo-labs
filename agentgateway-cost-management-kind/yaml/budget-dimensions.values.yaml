@@ -1,0 +1,49 @@
+# Custom budget dimensions for the Cost Management demo.
+#
+# The enterprise-agentgateway chart renders `budgetDimensions.config` into a
+# ConfigMap the controller reads and mounts into the proxy pods. The gateway
+# resolves each entry's CEL expression per request and tags the priced span with
+# the result, so the Cost Management "Dimensions" tab can break spend down by it.
+#
+# Helm replaces list values wholesale, so this file re-states the chart defaults
+# (group, user, virtualKey) and then adds the four custom dimensions.
+#
+# CEL context: a virtual key's metadata fields are hoisted onto the `apiKey`
+# object (the CEL schema declares apiKey with additionalProperties:true), so a
+# metadata field `costCenter` is read as `apiKey.costCenter` — NOT
+# `apiKey.metadata.costCenter`. `id` and `name` live inside the key metadata too,
+# so `apiKey.id` resolves to the key's `metadata.id`. A referenced field that is
+# absent makes the expression yield the "<missing>" sentinel, so every virtual
+# key in yaml/virtual-keys.csv carries every field.
+#
+# Applied at install time:
+#   helm upgrade --install enterprise-agentgateway ... -f yaml/budget-dimensions.values.yaml
+budgetDimensions:
+  enabled: true
+  config:
+    # Drill-down dimensions (group rolls into user).
+    hierarchy:
+    - id: group
+      expression: 'coalesce(jwt.group, apiKey.group)'
+      displayName: Group
+    - id: user
+      expression: 'coalesce(apiKey.user, apiKey.name, apiKey.owner, jwt.sub, jwt.email, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn)'
+      displayName: User
+    # Flat, independent tags — each gets its own view in the Dimensions tab.
+    attributes:
+    - id: virtualKey
+      expression: apiKey.id
+      displayName: Virtual Key
+    # ── custom dimensions (the show-off) ────────────────────────────────────
+    - id: costCenter
+      expression: 'coalesce(apiKey.costCenter, jwt.cost_center)'
+      displayName: Cost Center
+    - id: environment
+      expression: 'coalesce(apiKey.environment, jwt.environment)'
+      displayName: Environment
+    - id: project
+      expression: 'coalesce(apiKey.project, jwt.project)'
+      displayName: Project
+    - id: application
+      expression: 'coalesce(apiKey.application, jwt.application)'
+      displayName: Application

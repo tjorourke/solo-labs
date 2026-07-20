@@ -39,6 +39,7 @@ WITH
   ['cc-research','cc-mlplat','cc-eng','cc-product']  AS ccs,
   ['prod','staging','dev']                           AS envs,
   ['atlas','orion','nova','helix']                   AS projects,
+  ['support-bot','code-assist','data-pipeline','chatops','search-api','doc-gen','analytics','recommender'] AS apps,
   ['alice','bob','carol','dave','erin','frank','grace','heidi'] AS users,
   number AS n,
   mw[(rand(n*7)%20)+1]                     AS mi,          -- 1-based model index
@@ -74,6 +75,7 @@ SELECT
     'costCenter',  ccs[gi],
     'environment', envs[(rand(n*17)%3)+1],
     'project',     projects[(rand(n*19)%4)+1],
+    'application', apps[(rand(n*31)%8)+1],
     'user',        users[(rand(n*23)%8)+1],
     'virtualKey',  concat('vk-', groups[gi], '-', toString((rand(n*29)%5)+1))
   )                                           AS CustomDimensions,
