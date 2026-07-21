@@ -5,7 +5,7 @@
 #   - DENIES  analytics  -> petstore   (different identity, not named)
 #   - DENIES  checkout   -> petstore   (not named yet; added in 20-…)
 #
-# Trust domain is the SMC .spec.cluster (cert-identity), NOT cluster.local. A
+# Trust domain is cert-identity (set via meshConfig.trustDomain), NOT cluster.local. A
 # principal written cluster.local/... matches nothing and, because an ALLOW
 # policy now selects petstore, would DENY EVERYTHING — check src.identity in
 # the ztunnel access logs if a policy ever behaves that way.

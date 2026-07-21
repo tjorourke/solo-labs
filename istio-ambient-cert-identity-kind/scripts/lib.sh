@@ -2,15 +2,15 @@
 # lib.sh — shared helpers for istio-ambient-cert-identity-kind.
 #
 # One kind cluster running the Solo distribution of Istio in AMBIENT mode,
-# installed by the Gloo Operator. The lab is about workload identity at L4:
+# installed from the Helm charts (no operator). The lab is about workload identity at L4:
 # every workload gets a SPIFFE SVID from its ServiceAccount, ztunnel enforces
 # L4 AuthorizationPolicy on that identity with no waypoint, and we show the
 # one thing SA-scoped identity cannot do — tell two pods that share a
 # ServiceAccount apart — which is what the Solo 1.30 workload-claims feature
 # (shown as reference) closes.
 #
-# Edition: ENTERPRISE. The mesh is installed and lifecycle-managed by the Gloo
-# Operator (ServiceMeshController) on the Solo Istio images. Needs
+# Edition: ENTERPRISE. The mesh is installed straight from the Solo distribution
+# Helm charts (base, istiod, cni, ztunnel) on the Solo Istio images. Needs
 # SOLO_ISTIO_LICENSE_KEY and gcloud auth to pull the images from
 # us-docker.pkg.dev/soloio-img/istio.
 
@@ -21,7 +21,6 @@ set -Eeuo pipefail
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
 : "${SOLO_ISTIO_VERSION:=1.29.3-solo}"
-: "${GLOO_OPERATOR_VERSION:=0.5.2}"
 : "${GATEWAY_API_VERSION:=v1.5.1}"
 
 # ── logging ───────────────────────────────────────────────────────────────────
@@ -48,21 +47,28 @@ step() { printf '\n' >&2; { __step "══> $*"; printf '\n'; } >&2; }
 require() { command -v "$1" >/dev/null 2>&1 || die "$1 not found — install it first"; }
 
 # ── cluster + namespace constants ─────────────────────────────────────────────
-# CLUSTER_NAME doubles as the mesh trust domain: the Gloo Operator sets
-# trustDomain to the ServiceMeshController's .spec.cluster, so SPIFFE
-# identities are spiffe://cert-identity/ns/<ns>/sa/<sa>, NOT cluster.local.
+# CLUSTER_NAME doubles as the mesh trust domain (set via meshConfig.trustDomain
+# in the istiod chart), so SPIFFE identities are
+# spiffe://cert-identity/ns/<ns>/sa/<sa>, NOT cluster.local.
 export CLUSTER_NAME="${CLUSTER_NAME:-cert-identity}"
 export CTX="kind-${CLUSTER_NAME}"
 export NS_APP="${NS_APP:-petshop}"
 
-# ── Gloo Operator + Solo Istio ────────────────────────────────────────────────
-export GLOO_SYSTEM_NS="${GLOO_SYSTEM_NS:-gloo-system}"
+# ── Solo Istio via Helm charts (no Gloo Operator) ─────────────────────────────
+# We install the four Solo-distribution charts directly (base, istiod, cni,
+# ztunnel). Unlike the operator's ServiceMeshController, this exposes every
+# istiod / cni / ztunnel value up front — license, trust domain, JSON logs and
+# so on are Helm values, not post-hoc kubectl patches.
 export ISTIO_SYSTEM_NS="${ISTIO_SYSTEM_NS:-istio-system}"
-export OPERATOR_CHART="${OPERATOR_CHART:-oci://us-docker.pkg.dev/solo-public/gloo-operator-helm/gloo-operator}"
-# The operator auto-appends "-solo" when distribution=Standard, so the SMC
-# .spec.version takes the version WITHOUT the -solo suffix.
-export ISTIO_VERSION="${ISTIO_VERSION:-${SOLO_ISTIO_VERSION%-solo}}"
+# Image hub + tag. The image tag has NO -solo suffix (e.g. pilot:1.29.3).
 export ISTIO_REGISTRY="${ISTIO_REGISTRY:-us-docker.pkg.dev/soloio-img/istio}"
+export ISTIO_VERSION="${ISTIO_VERSION:-${SOLO_ISTIO_VERSION%-solo}}"
+# Helm charts for the Solo distribution. The chart version KEEPS the -solo
+# suffix (e.g. 1.29.3-solo), while the image tag above does not.
+export ISTIO_HELM_REPO="${ISTIO_HELM_REPO:-oci://us-docker.pkg.dev/soloio-img/istio-helm}"
+export ISTIO_HELM_VERSION="${ISTIO_HELM_VERSION:-${SOLO_ISTIO_VERSION}}"
+# Mesh trust domain (identities become spiffe://$TRUST_DOMAIN/ns/<ns>/sa/<sa>).
+export TRUST_DOMAIN="${TRUST_DOMAIN:-${CLUSTER_NAME}}"
 
 case "$(uname -m)" in
   arm64|aarch64) export KIND_PLATFORM="${KIND_PLATFORM:-linux/arm64}" ;;

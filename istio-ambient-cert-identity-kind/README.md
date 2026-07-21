@@ -4,8 +4,8 @@
 
 An ambient-only kind lab (Solo Enterprise for Istio, ambient mode) that walks a petshop app through the whole ambient security model: SPIFFE identity, L4 authorization in ztunnel, identity-aware access logs, an opt-in waypoint, a Keycloak IdP, claim-based L7 JWT authorization, and the Solo Enterprise differences — ending on the 1.30 workload-claims preview.
 
-- **Edition:** Enterprise (Gloo Operator + Solo Istio images).
-- **Validated live on:** Solo Istio `1.29.3-solo`, Gloo Operator `0.5.2`, Gateway API `v1.5.1`.
+- **Edition:** Enterprise (Solo Istio Helm charts + Solo images).
+- **Validated live on:** Solo Istio `1.29.3-solo` (Helm charts `1.29.3-solo`), Gateway API `v1.5.1`.
 - **Reference only (not run here):** the 1.30 workload-claims + CEL step in `yaml/30-reference/`.
 
 **Two ways to run it:**
@@ -31,7 +31,7 @@ Trust domain is the cluster name, so identities are `spiffe://cert-identity/ns/p
 ## Quick run
 
 ```bash
-make setup SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh   # kind + Gloo Operator + Solo ambient + JSON logs
+make setup SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh   # kind + Solo ambient via Helm + JSON logs
 make deploy                                                   # petshop
 
 # ── L4: identity ──────────────────────────────────────────────
@@ -65,6 +65,6 @@ make clean               # delete the kind cluster
 
 ## Notes
 
-- **Trust domain is the SMC `.spec.cluster`**, not `cluster.local`. A `cluster.local/...` principal matches nothing; because an ALLOW policy then selects the workload, it would deny everything — read `src.identity` in the access log if a policy behaves that way.
+- **Trust domain is set to `cert-identity` via `meshConfig.trustDomain`** (a Helm value), not `cluster.local`. A `cluster.local/...` principal matches nothing; because an ALLOW policy then selects the workload, it would deny everything — read `src.identity` in the access log if a policy behaves that way.
 - **Dry-run / AUDIT are effectively no-ops at L4** on this line — use real ALLOW/DENY and read the access logs.
 - All service-to-service traffic is in-cluster over ztunnel/waypoint; there is no ingress.

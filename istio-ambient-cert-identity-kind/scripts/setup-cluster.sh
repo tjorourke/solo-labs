@@ -1,20 +1,16 @@
 #!/usr/bin/env bash
-# setup-cluster.sh — stands up the infrastructure that is too fiddly to
-# copy-paste (kind, image loading, Helm, the operator) and leaves the mesh in
-# AMBIENT mode with ztunnel writing JSON access logs. Everything after this —
-# the workloads and the policies — is plain YAML you apply yourself from the
-# README, so you can read and talk through every change.
+# setup-cluster.sh — stands up kind + Solo Istio in AMBIENT mode using the
+# Helm charts directly (NO Gloo Operator). Everything the operator would hide —
+# the licence, the trust domain, JSON access logs — is a plain Helm value here,
+# set up front, so there are no post-hoc kubectl patches. Everything after this
+# (the app and the policies) is plain YAML you apply yourself from the README.
 #
 # What it does:
 #   1. kind cluster (1 control-plane + 1 worker)
-#   2. Gateway API CRDs (+ remove the safe-upgrades policy so the operator can
-#      manage its own bundled CRDs)
+#   2. Gateway API CRDs
 #   3. Pre-pull the Solo Istio images on the host and kind-load them
-#   4. Gloo Operator (Helm) + solo-istio-license Secret
-#   5. ServiceMeshController, dataplaneMode: Ambient → istiod + istio-cni + ztunnel
-#   6. Wire SOLO_LICENSE_KEY onto istiod
-#   7. LOG_FORMAT=json on the ztunnel DaemonSet, so the access logs are
-#      structured JSON with src.identity / dst.identity fields
+#   4. Helm: base, then istiod (profile ambient, licence, trustDomain, JSON logs),
+#      then cni, then ztunnel (profile ambient, JSON logs, L7 telemetry)
 # Idempotent. Needs docker, kind, kubectl, helm, gcloud (authenticated) and
 # SOLO_ISTIO_LICENSE_KEY (export it, or point SECRETS_FILE at a file that does).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,11 +33,7 @@ kc wait --for=condition=Ready nodes --all --timeout=120s >/dev/null
 step "Installing Gateway API CRDs $GATEWAY_API_VERSION"
 kc apply --server-side -f \
   "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml" >/dev/null
-# Gateway API >= v1.5.0 ships a safe-upgrades ValidatingAdmissionPolicy that
-# blocks the Gloo Operator from reconciling its own bundled Gateway API CRDs.
-kc delete validatingadmissionpolicybinding safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
-kc delete validatingadmissionpolicy        safe-upgrades.gateway.networking.k8s.io --ignore-not-found >/dev/null 2>&1 || true
-ok "Gateway API CRDs installed (safe-upgrades policy removed for the operator)"
+ok "Gateway API CRDs installed"
 
 step "Pre-pulling Solo Istio images ($ISTIO_VERSION) and loading into kind"
 __tar_tmp="$(mktemp -d)"; trap 'rm -rf "$__tar_tmp"' EXIT
@@ -55,58 +47,70 @@ while read -r img; do
 done < <(solo_istio_images)
 ok "Solo Istio images loaded"
 
-step "Installing Gloo Operator $GLOO_OPERATOR_VERSION"
-helm --kube-context "$CTX" upgrade --install gloo-operator "$OPERATOR_CHART" \
-  --namespace "$GLOO_SYSTEM_NS" --create-namespace --version "$GLOO_OPERATOR_VERSION" \
-  --wait --timeout 5m >/dev/null
-ok "Gloo Operator ready"
+HREPO="$ISTIO_HELM_REPO"; HVER="$ISTIO_HELM_VERSION"
 
-step "Creating solo-istio-license Secret in $ISTIO_SYSTEM_NS"
-kc create namespace "$ISTIO_SYSTEM_NS" >/dev/null 2>&1 || true
-kc -n "$ISTIO_SYSTEM_NS" create secret generic solo-istio-license \
-  --from-literal=license="${SOLO_ISTIO_LICENSE_KEY}" \
-  --dry-run=client -o yaml | kc apply -f - >/dev/null
-ok "license Secret created"
+step "Helm: istio-base (CRDs + cluster roles)"
+helm --kube-context "$CTX" upgrade -i istio-base "$HREPO/base" \
+  -n "$ISTIO_SYSTEM_NS" --create-namespace --version "$HVER" \
+  --set defaultRevision=default --wait >/dev/null
+ok "istio-base installed"
 
-step "Applying ServiceMeshController (dataplaneMode: Ambient)"
-kapply "$LAB_ROOT/yaml/00-mesh/smc-ambient.yaml"
-end=$(( $(date +%s) + 300 ))
-until kc -n "$ISTIO_SYSTEM_NS" get deploy 2>/dev/null | grep -q istiod; do
-  [[ $(date +%s) -ge $end ]] && die "istiod not created within 5m"
-  sleep 5
-done
-ISTIOD="$(kc -n "$ISTIO_SYSTEM_NS" get deploy -o name | grep istiod | head -1 | cut -d/ -f2)"
-if ! kc -n "$ISTIO_SYSTEM_NS" get deploy "$ISTIOD" \
-     -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' | grep -q SOLO_LICENSE_KEY; then
-  kc -n "$ISTIO_SYSTEM_NS" patch deployment "$ISTIOD" --type=json -p='[
-    {"op":"add","path":"/spec/template/spec/containers/0/env/-",
-     "value":{"name":"SOLO_LICENSE_KEY","valueFrom":{"secretKeyRef":{"name":"solo-istio-license","key":"license"}}}}
-  ]' >/dev/null
-fi
-kc -n "$ISTIO_SYSTEM_NS" rollout status deploy "$ISTIOD" --timeout=180s >/dev/null
-ok "istiod ready (ambient mode), SOLO_LICENSE_KEY wired"
+step "Helm: istiod (profile ambient) — licence, trust domain, JSON logs as VALUES"
+# Everything the operator hid is set here directly. No kubectl patch afterwards.
+helm --kube-context "$CTX" upgrade -i istiod "$HREPO/istiod" \
+  -n "$ISTIO_SYSTEM_NS" --version "$HVER" --wait -f - >/dev/null <<EOF
+profile: ambient
+global:
+  hub: ${ISTIO_REGISTRY}
+  tag: ${ISTIO_VERSION}
+istio_cni:
+  enabled: true
+license:
+  value: ${SOLO_ISTIO_LICENSE_KEY}
+env:
+  # custom (non cluster.local) trust domain -> skip peer trust-domain validation
+  PILOT_SKIP_VALIDATE_TRUST_DOMAIN: "true"
+meshConfig:
+  accessLogFile: /dev/stdout
+  # the mesh trust domain: identities become spiffe://${TRUST_DOMAIN}/ns/<ns>/sa/<sa>
+  trustDomain: ${TRUST_DOMAIN}
+EOF
+kc -n "$ISTIO_SYSTEM_NS" rollout status deploy/istiod --timeout=180s >/dev/null
+ok "istiod ready (ambient), licence + trustDomain '${TRUST_DOMAIN}' set as Helm values"
 
-step "Waiting for the ambient node components (istio-cni + ztunnel)"
-end=$(( $(date +%s) + 300 ))
-until kc -n "$ISTIO_SYSTEM_NS" get daemonset ztunnel >/dev/null 2>&1; do
-  [[ $(date +%s) -ge $end ]] && die "ztunnel DaemonSet not created within 5m"
-  sleep 5
-done
+step "Helm: istio-cni (node traffic capture)"
+helm --kube-context "$CTX" upgrade -i istio-cni "$HREPO/cni" \
+  -n "$ISTIO_SYSTEM_NS" --version "$HVER" --wait -f - >/dev/null <<EOF
+profile: ambient
+global:
+  hub: ${ISTIO_REGISTRY}
+  tag: ${ISTIO_VERSION}
+ambient:
+  dnsCapture: true
+excludeNamespaces:
+  - istio-system
+  - kube-system
+EOF
+ok "istio-cni installed"
+
+step "Helm: ztunnel (per-node L4 proxy) — JSON access logs + L7 telemetry as VALUES"
+helm --kube-context "$CTX" upgrade -i ztunnel "$HREPO/ztunnel" \
+  -n "$ISTIO_SYSTEM_NS" --version "$HVER" --wait -f - >/dev/null <<EOF
+profile: ambient
+hub: ${ISTIO_REGISTRY}
+tag: ${ISTIO_VERSION}
+namespace: ${ISTIO_SYSTEM_NS}
+istioNamespace: ${ISTIO_SYSTEM_NS}
+env:
+  # structured access logs with src.identity/dst.identity (no post-hoc patch)
+  LOG_FORMAT: json
+  # Solo L7 telemetry from ztunnel (HTTP metrics/logs) without a waypoint
+  L7_ENABLED: "true"
+EOF
 kc -n "$ISTIO_SYSTEM_NS" rollout status daemonset/ztunnel --timeout=180s >/dev/null
 kc -n "$ISTIO_SYSTEM_NS" rollout status daemonset/istio-cni-node --timeout=180s >/dev/null
-ok "istio-cni + ztunnel running on every node"
-
-step "Switching ztunnel access logs to JSON (LOG_FORMAT=json)"
-if ! kc -n "$ISTIO_SYSTEM_NS" get daemonset ztunnel \
-     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LOG_FORMAT")].value}' | grep -q json; then
-  kc -n "$ISTIO_SYSTEM_NS" patch daemonset ztunnel --type=json -p='[
-    {"op":"add","path":"/spec/template/spec/containers/0/env/-",
-     "value":{"name":"LOG_FORMAT","value":"json"}}
-  ]' >/dev/null
-fi
-kc -n "$ISTIO_SYSTEM_NS" rollout status daemonset/ztunnel --timeout=180s >/dev/null
-ok "ztunnel emitting JSON access logs"
+ok "ztunnel + istio-cni running on every node, JSON access logs on"
 
 echo
-ok "Cluster ready. Solo Istio $ISTIO_VERSION in AMBIENT mode, trust domain '$CLUSTER_NAME', JSON access logs on."
+ok "Cluster ready. Solo Istio $ISTIO_VERSION (Helm, no operator) in AMBIENT mode, trust domain '${TRUST_DOMAIN}'."
 log "Now follow the README: deploy the workloads, inspect the SVID, then apply the policies."

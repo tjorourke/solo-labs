@@ -4,7 +4,7 @@
 #
 # Quick path (this Makefile). The guided, show-every-command path is demo.ipynb.
 #
-#   make setup   SECRETS_FILE=~/path/to/secrets.sh   # kind + Gloo Operator + ambient
+#   make setup   SECRETS_FILE=~/path/to/secrets.sh   # kind + Solo ambient via Helm
 #   make deploy                                       # petshop: petstore + storefront + analytics + checkout(blue/green)
 #   make svid                                         # each workload's SVID identity (shared SA = one cert)
 #   make allow-storefront                             # L4 ALLOW storefront -> analytics/checkout denied
