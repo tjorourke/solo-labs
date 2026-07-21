@@ -11,20 +11,22 @@
 #   make allow-storefront                             # L4 ALLOW storefront -> analytics/checkout denied
 #   make allow-checkout                               # add sa/checkout -> BOTH checkout pods allowed (the gap)
 #   make logs                                         # ztunnel identity-aware L4 access logs
+#   make l4-surface                                   # warehouse + ALLOW both namespaces (watch it appear in the Graph)
+#   make l4-narrow                                    # narrow the when to petshop (warehouse blocked) + DENY beats ALLOW (analytics)
+#   make claims-enable                                # flip ENABLE_WORKLOAD_CLAIMS on ztunnel (per-pod certs) — pure L4
+#   make claims                                       # annotate blue=gold green=silver + CEL claim policy: blue 200, green denied
 #   make waypoint                                     # AGENTGATEWAY as the L7 waypoint (installs enterprise-agentgateway; resets L4 policies)
 #   make idp                                          # Keycloak IdP (users alice/user, bob/admin)
-#   make jwt                                          # RequestAuthentication + claim-based L7 AuthorizationPolicy
-#   make jwt-test                                     # matrix: no-token / alice / bob against GET and DELETE
+#   make jwt                                          # Strict jwtAuthentication + CEL authorization at the waypoint
+#   make jwt-test                                     # matrix: no-token 401 / alice / bob against GET and DELETE
 #   make l7-routing                                   # petstore-v2 + HTTPRoute on the waypoint: 90/10 canary + x-beta header shift
 #   make ratelimit                                    # rate limit BY WORKLOAD IDENTITY (storefront 429s; checkout untouched, same token)
-#   make claims-enable                                # flip ENABLE_WORKLOAD_CLAIMS on ztunnel (per-pod certs; resets the L7 story)
-#   make claims                                       # annotate blue=gold green=silver + CEL claim policy: blue 200, green denied
 #   make clean                                        # delete the kind cluster
 CTX ?= kind-cert-identity
 NS  ?= petshop
 KC  := http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 
-.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface l4-allow-warehouse logs waypoint idp jwt jwt-test l7-routing ratelimit claims-enable claims clean
+.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface l4-narrow logs waypoint idp jwt jwt-test l7-routing ratelimit claims-enable claims clean
 
 setup:
 	./scripts/setup-cluster.sh
@@ -53,18 +55,18 @@ allow-checkout:
 	@echo "storefront + BOTH checkout pods -> 200 ; analytics still denied. blue and green share sa/checkout — make claims-enable closes that."
 
 # a 2nd-namespace caller + a when(source.namespace) ALLOW + a DENY override
+# the allow-first arc: warehouse allowed (appears in the Graph) -> narrowed out
+# (fail-closed, edge goes quiet) -> DENY beats ALLOW on analytics (named in the log)
 l4-surface:
 	kubectl --context $(CTX) apply -f yaml/25-l4-surface/00-warehouse.yaml
 	kubectl --context $(CTX) -n warehouse rollout status deploy/warehouse-svc --timeout=90s
-	kubectl --context $(CTX) apply -f yaml/25-l4-surface/10-allow-petshop-namespace.yaml
-	kubectl --context $(CTX) apply -f yaml/25-l4-surface/20-deny-analytics.yaml
-	@echo "when(source.namespace): cross-ns warehouse-svc denied. DENY: analytics denied even though it's in petshop (DENY > ALLOW)."
+	kubectl --context $(CTX) apply -f yaml/25-l4-surface/10-allow-petshop-and-warehouse.yaml
+	@echo "storefront + warehouse-svc -> 200. Watch warehouse appear in the Graph (~30s, small window). Then: make l4-narrow"
 
-# close the loop: widen the when-clause to admit warehouse — it flips to 200 and
-# the warehouse namespace appears in the Gloo UI Graph (it now completes requests)
-l4-allow-warehouse:
-	kubectl --context $(CTX) apply -f yaml/25-l4-surface/30-allow-petshop-and-warehouse.yaml
-	@echo "warehouse-svc -> 200 ; analytics still denied (DENY > ALLOW). Watch the warehouse namespace appear in the Graph (~30s)."
+l4-narrow:
+	kubectl --context $(CTX) apply -f yaml/25-l4-surface/20-allow-petshop-only.yaml
+	kubectl --context $(CTX) apply -f yaml/25-l4-surface/30-deny-analytics.yaml
+	@echo "warehouse-svc -> denied (fail-closed) ; analytics -> denied (DENY > ALLOW, named in the ztunnel log). Watch: make logs"
 
 logs:
 	./scripts/logs.sh
@@ -120,8 +122,10 @@ claims:
 	kubectl --context $(CTX) -n $(NS) patch deploy checkout-blue  -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"gold"}}}}}'
 	kubectl --context $(CTX) -n $(NS) patch deploy checkout-green -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"silver"}}}}}'
 	kubectl --context $(CTX) -n $(NS) rollout status deploy/checkout-blue deploy/checkout-green --timeout=120s
+	kubectl --context $(CTX) -n $(NS) delete authorizationpolicy allow-checkout --ignore-not-found
 	kubectl --context $(CTX) apply -f yaml/60-claims/10-allow-gold-checkout.yaml
 	@echo "checkout-blue (gold) -> 200 ; checkout-green (silver) -> denied by ztunnel, same sa/checkout. Watch: make logs"
 
 clean:
+	-pkill -f 'kubectl --context $(CTX).*port-forward' 2>/dev/null || true
 	kind delete cluster --name cert-identity

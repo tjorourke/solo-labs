@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # e2e.sh — the whole lab, automated, with assertions. Stands up the mesh,
 # deploys the petshop, proves L4 identity authz (allow/deny + the shared-SA
-# gap), the L7 JWT authz matrix at a waypoint with Keycloak, then flips
-# ENABLE_WORKLOAD_CLAIMS on ztunnel so workload claims close the shared-SA gap
-# at L4. Exits non-zero on any failed assertion.
+# gap, then workload claims closing it — all pure L4), then the agentgateway
+# waypoint: JWT matrix with Keycloak, canary routing, rate limit by workload
+# identity. Exits non-zero on any failed assertion.
 #
 #   ./scripts/e2e.sh SECRETS_FILE=... (or export SOLO_ISTIO_LICENSE_KEY)
 # Needs docker, kind, kubectl, helm, istioctl, gcloud (authenticated).
@@ -44,26 +44,52 @@ assert "checkout-blue allowed"  "$(code_of checkout-blue)"  "200"
 assert "checkout-green allowed" "$(code_of checkout-green)" "200"
 [[ "$(code_of analytics)" == "000000" ]] && ok "analytics still denied" || { warn "analytics leaked: $(code_of analytics)"; FAILS=$((FAILS+1)); }
 
-step "6/9 · More of the L4 match surface: namespace (when) + DENY precedence"
+step "6/9 · L4 match surface: allow-first arc (when source.namespace) + DENY precedence"
 wh_code() { kc -n warehouse logs deploy/warehouse-svc --tail=1 2>/dev/null | grep -oE '[0-9]{3,6}$'; }
 kapply "$LAB_ROOT/yaml/25-l4-surface/00-warehouse.yaml"
 kc -n warehouse rollout status deploy/warehouse-svc --timeout=90s >/dev/null
-# namespace ALLOW via a CEL when-clause on source.namespace: cross-ns warehouse-svc is denied
-kapply "$LAB_ROOT/yaml/25-l4-surface/10-allow-petshop-namespace.yaml"; sleep 14
+# allow-first: ONE when-clause admits petshop AND warehouse (warehouse appears in the Graph)
+kapply "$LAB_ROOT/yaml/25-l4-surface/10-allow-petshop-and-warehouse.yaml"; sleep 14
 assert "petshop caller allowed (when source.namespace)" "$(code_of storefront)" "200"
-assert "cross-ns warehouse denied" "$(wh_code)" "000000"
+assert "cross-ns warehouse allowed (in the when list)" "$(wh_code)" "200"
+# narrow the when back to petshop: warehouse fails closed (its Graph edge goes quiet)
+kapply "$LAB_ROOT/yaml/25-l4-surface/20-allow-petshop-only.yaml"; sleep 14
+assert "warehouse blocked after narrowing" "$(wh_code)" "000000"
+assert "storefront still allowed"          "$(code_of storefront)" "200"
 # DENY precedence: analytics blocked even under the namespace ALLOW
-kapply "$LAB_ROOT/yaml/25-l4-surface/20-deny-analytics.yaml"; sleep 14
+kapply "$LAB_ROOT/yaml/25-l4-surface/30-deny-analytics.yaml"; sleep 14
 assert "DENY beats ALLOW (analytics)" "$(code_of analytics)" "000000"
 assert "storefront still allowed"     "$(code_of storefront)" "200"
-# close the loop: widen the namespace ALLOW to admit warehouse (DENY still wins)
-kapply "$LAB_ROOT/yaml/25-l4-surface/30-allow-petshop-and-warehouse.yaml"; sleep 14
-assert "warehouse allowed in (widened when)" "$(wh_code)" "200"
-assert "analytics still denied (DENY > ALLOW)" "$(code_of analytics)" "000000"
 kc -n "$NS_APP" delete authorizationpolicy l4-allow-petshop-namespace l4-deny-analytics --ignore-not-found >/dev/null
 
-step "7/9 · agentgateway waypoint + Keycloak IdP"
-kc -n "$NS_APP" delete authorizationpolicy allow-storefront allow-checkout --ignore-not-found >/dev/null
+step "7/9 · Workload claims (ENABLE_WORKLOAD_CLAIMS) close the shared-SA gap — pure L4"
+"$SCRIPT_DIR/claims-enable.sh"
+kc -n "$NS_APP" patch deploy checkout-blue  -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"gold"}}}}}' >/dev/null
+kc -n "$NS_APP" patch deploy checkout-green -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"silver"}}}}}' >/dev/null
+kc -n "$NS_APP" rollout status deploy/checkout-blue deploy/checkout-green --timeout=120s >/dev/null
+# swap the SA-wide checkout ALLOW (step 5) for the claims-scoped one — while it
+# stands it admits both pods regardless of claims
+kc -n "$NS_APP" delete authorizationpolicy allow-checkout --ignore-not-found >/dev/null
+kapply "$LAB_ROOT/yaml/60-claims/10-allow-gold-checkout.yaml"
+# fresh per-pod certs + the new policy take ~20-30s to converge after the
+# rollout (green can also ride a connection from the brief no-policy window) —
+# poll BOTH terminal states (bounded) instead of a fixed sleep
+for _ in $(seq 1 24); do
+  [[ "$(code_of checkout-blue)" == "200" && "$(code_of checkout-green)" == "000000" ]] && break
+  sleep 5
+done
+# the claim is IN the cert: decode the otherName SAN on blue's per-pod cert
+NODE="$(kc -n "$NS_APP" get pods -l app=checkout -o jsonpath='{.items[0].spec.nodeName}')"
+ZT="$(kc -n "$ISTIO_SYSTEM_NS" get pods -l app=ztunnel --field-selector "spec.nodeName=${NODE}" -o jsonpath='{.items[0].metadata.name}')"
+TIER="$(ic ztunnel-config certificates "$ZT.$ISTIO_SYSTEM_NS" -o json 2>/dev/null \
+  | jq -r '.[] | select(.identity | contains("checkout-blue")) | .certChain[0].pem' | base64 -d \
+  | openssl x509 -noout -text | grep -o '65865\.1\.1:.*' | cut -d: -f2 \
+  | python3 -c 'import sys,base64,json; p=sys.stdin.read().strip(); print(json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4)))["solo.io"]["security-claims"]["tier"])')"
+assert "checkout-blue cert claim tier" "$TIER" "gold"
+assert "checkout-blue (gold) allowed" "$(code_of checkout-blue)" "200"
+[[ "$(code_of checkout-green)" == "000000" ]] && ok "checkout-green (silver) denied" || { warn "checkout-green not denied: $(code_of checkout-green)"; FAILS=$((FAILS+1)); }
+step "8/9 · agentgateway waypoint + Keycloak IdP"
+kc -n "$NS_APP" delete authorizationpolicy allow-storefront allow-checkout allow-gold-checkout --ignore-not-found >/dev/null
 "$SCRIPT_DIR/agw-install.sh"
 kapply "$LAB_ROOT/yaml/50-l7/10-waypoint.yaml"
 kc label namespace "$NS_APP" istio.io/use-waypoint=petshop-waypoint --overwrite >/dev/null
@@ -72,7 +98,7 @@ kc -n "$NS_APP" rollout status deploy/petshop-waypoint --timeout=150s >/dev/null
 kc -n keycloak rollout status deploy/keycloak --timeout=240s >/dev/null   # applied early in step 2
 ok "agentgateway waypoint + keycloak ready"
 
-step "8/9 · L7 JWT authz matrix"
+step "9/9 · L7 at the waypoint: JWT matrix, routing, rate limit"
 kapply "$LAB_ROOT/yaml/50-l7/20-jwt.yaml"; sleep 12
 KCURL=http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 tok() { kc -n "$NS_APP" exec deploy/storefront -- sh -c "curl -s -m10 -d grant_type=password -d client_id=petshop -d username=$1 -d password=$1 -d scope=openid $KCURL" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'; }
@@ -103,29 +129,6 @@ SF_CODES="$(call "for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w '%{http_c
 BL_CODES="$(kc -n "$NS_APP" exec deploy/checkout-blue -- sh -c "for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w '%{http_code} ' -m5 -H 'Authorization: Bearer $ALICE' http://petstore:8080/pets; done")"
 [[ "$BL_CODES" == "200 200 200 200 200 200 200 200 " ]] && ok "checkout-blue unlimited (same token): $BL_CODES" || { warn "checkout-blue affected: $BL_CODES"; FAILS=$((FAILS+1)); }
 
-step "9/9 · Workload claims (ENABLE_WORKLOAD_CLAIMS) close the shared-SA gap"
-"$SCRIPT_DIR/claims-enable.sh"
-kc -n "$NS_APP" patch deploy checkout-blue  -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"gold"}}}}}' >/dev/null
-kc -n "$NS_APP" patch deploy checkout-green -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"silver"}}}}}' >/dev/null
-kc -n "$NS_APP" rollout status deploy/checkout-blue deploy/checkout-green --timeout=120s >/dev/null
-kapply "$LAB_ROOT/yaml/60-claims/10-allow-gold-checkout.yaml"
-# fresh per-pod certs + the new policy take ~20-30s to converge after the
-# rollout (green can also ride a connection from the brief no-policy window) —
-# poll BOTH terminal states (bounded) instead of a fixed sleep
-for _ in $(seq 1 24); do
-  [[ "$(code_of checkout-blue)" == "200" && "$(code_of checkout-green)" == "000000" ]] && break
-  sleep 5
-done
-# the claim is IN the cert: decode the otherName SAN on blue's per-pod cert
-NODE="$(kc -n "$NS_APP" get pods -l app=checkout -o jsonpath='{.items[0].spec.nodeName}')"
-ZT="$(kc -n "$ISTIO_SYSTEM_NS" get pods -l app=ztunnel --field-selector "spec.nodeName=${NODE}" -o jsonpath='{.items[0].metadata.name}')"
-TIER="$(ic ztunnel-config certificates "$ZT.$ISTIO_SYSTEM_NS" -o json 2>/dev/null \
-  | jq -r '.[] | select(.identity | contains("checkout-blue")) | .certChain[0].pem' | base64 -d \
-  | openssl x509 -noout -text | grep -o '65865\.1\.1:.*' | cut -d: -f2 \
-  | python3 -c 'import sys,base64,json; p=sys.stdin.read().strip(); print(json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4)))["solo.io"]["security-claims"]["tier"])')"
-assert "checkout-blue cert claim tier" "$TIER" "gold"
-assert "checkout-blue (gold) allowed" "$(code_of checkout-blue)" "200"
-[[ "$(code_of checkout-green)" == "000000" ]] && ok "checkout-green (silver) denied" || { warn "checkout-green not denied: $(code_of checkout-green)"; FAILS=$((FAILS+1)); }
 
 echo
 if [[ $FAILS -eq 0 ]]; then ok "E2E PASSED — all assertions green"; else die "E2E FAILED — $FAILS assertion(s) failed"; fi

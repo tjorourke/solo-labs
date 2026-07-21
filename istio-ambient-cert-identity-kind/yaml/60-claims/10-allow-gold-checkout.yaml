@@ -5,13 +5,15 @@
 # sa/checkout, but each POD now carries its own cert with its own claims, so
 # ztunnel can tell them apart — still L4, still no waypoint.
 #
-# Prerequisites (make claims-enable / demo.ipynb §13):
+# Prerequisites (make claims-enable / demo.ipynb §9):
 #   1. ENABLE_WORKLOAD_CLAIMS=true on ztunnel (per-pod certs, claims enforced).
 #      Needs the Solo 1.30-line images — this lab runs 1.30.3-solo throughout
 #      (the plain 1.30.3 tag is the upstream build without the Solo additions).
 #   2. The pods annotated: solo.io.security-claims/tier: gold | silver.
 #      istiod embeds the claim in the pod's cert at issuance, alongside the
 #      auto claims istio.io.workload.name / .namespace / .pod.
+#   3. The SA-wide allow-checkout policy DELETED — while it stands it admits
+#      both pods regardless of claims (make claims does this swap).
 #
 # Fail-closed: a missing claim key means the when-clause does not match, so an
 # ALLOW rule that references it simply never fires. Grant with ALLOW on

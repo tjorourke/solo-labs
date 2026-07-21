@@ -40,7 +40,12 @@ make svid                # each workload's SVID; checkout-blue/green share ONE c
 make allow-storefront    # storefront 200 ; analytics/checkout denied, by identity
 make logs                # ztunnel access logs: src.identity + ALLOW/DENY   (Ctrl-C to stop)
 make allow-checkout      # add sa/checkout -> BOTH checkout pods 200 (the gap)
-make l4-surface          # 2nd-namespace caller + when(source.namespace) ALLOW + DENY precedence
+make l4-surface          # warehouse + when(source.namespace) ALLOWs BOTH namespaces (watch it appear in the Graph)
+make l4-narrow           # narrow the when to petshop (warehouse blocked, edge goes quiet) + DENY beats ALLOW
+
+# ── Close the gap: workload claims (still pure L4) ────────────
+make claims-enable       # flip ENABLE_WORKLOAD_CLAIMS on ztunnel (per-pod certs)
+make claims              # annotate blue=gold green=silver + CEL claim policy: blue 200, green denied
 
 # ── L7: agentgateway as the waypoint ──────────────────────────
 make waypoint            # installs enterprise agentgateway + the waypoint for petshop (resets the L4 policies)
@@ -50,10 +55,6 @@ make jwt-test            # no-token 401 / alice GET 200 / alice DELETE 403 / bob
 make l7-routing          # petstore-v2 + HTTPRoute: 90/10 canary + x-beta header shift
 make ratelimit           # 5 req/min for the storefront IDENTITY; checkout with the same token untouched
 
-# ── Close the gap: workload claims ────────────────────────────
-make claims-enable       # flip ENABLE_WORKLOAD_CLAIMS on ztunnel (per-pod certs; resets the L7 story)
-make claims              # annotate blue=gold green=silver + CEL claim policy: blue 200, green denied
-
 make clean               # delete the kind cluster
 ```
 
@@ -62,15 +63,15 @@ make clean               # delete the kind cluster
 1. **Identity = certificate.** `svid` shows one SVID per workload; the shared `sa/checkout` cert is the gap.
 2. **Authorize on identity at L4.** ztunnel fails closed: name `storefront` and everything else is denied, no app or waypoint change. `src.identity` in the access log is the evidence.
 3. **The SA-scoped ceiling.** `allow-checkout` lets both checkout pods in; you cannot separate them at L4.
-3b. **The full L4 match surface.** `l4-surface` shows ztunnel deciding on source **namespace** via a CEL `when` clause (cross-namespace `warehouse-svc` denied) and **DENY beating ALLOW** (analytics blocked even under the namespace ALLOW) — all at L4, no waypoint.
+3b. **The full L4 match surface, as an allow-first arc.** `l4-surface` admits `petshop` **and** `warehouse` with one `when` clause (watch warehouse appear in the Graph), then `l4-narrow` removes it (fail-closed, the edge goes quiet) and shows **DENY beating ALLOW** (analytics, named in the ztunnel log) — all at L4, no waypoint.
+3c. **Workload claims close the gap — still L4.** Flip `ENABLE_WORKLOAD_CLAIMS` on ztunnel and each POD gets its own cert with signed claims; a CEL `when` over `source.claims[...]` separates `checkout-blue` from `checkout-green`. No waypoint needed.
 4. **L7 needs a waypoint — and the waypoint is agentgateway.** Strict `jwtAuthentication` against Keycloak's JWKS (no token → 401), then CEL `authorization` over the claims (`"admin" in jwt.realm_access.roles`) — `GET` for any valid token, `DELETE` for admins only. The same waypoint routes (90/10 canary + header shift via `HTTPRoute`).
 4b. **Rate limit by workload identity.** `rateLimit.conditional` keyed on `source.identity.serviceAccount` — the SPIFFE identity ztunnel proved at L4 — throttles `storefront` to 5 req/min while `checkout` with the same user token is untouched.
 5. **Solo Enterprise extras.** ztunnel emits L7 telemetry (`method`/`path`/`response_code`) with **no waypoint** — see `istioctl ztunnel-config all <ztunnel> -o json | jq .config.l7Config`.
-6. **Workload claims close the gap.** Flip `ENABLE_WORKLOAD_CLAIMS` on ztunnel and each POD gets its own cert with signed claims; a CEL `when` over `source.claims[...]` separates `checkout-blue` from `checkout-green` at L4.
 
 ## Closing the gap — workload claims
 
-`make claims-enable` flips `ENABLE_WORKLOAD_CLAIMS=true` on ztunnel — one Helm value, and ztunnel starts requesting per-POD certs (the flag stays off for the rest of the lab on purpose: the shared-SA gap is the story this step closes). `make claims` then annotates the pods (`solo.io.security-claims/tier: gold | silver` — istiod embeds the claim in each pod's mTLS cert at issuance) and applies `yaml/60-claims/10-allow-gold-checkout.yaml`, a CEL `when` over `source.claims[...]`. Result: `checkout-blue` 200, `checkout-green` denied, even though they share `sa/checkout` — still at L4, still no waypoint. (Distinct from the §9 JWT CEL, which is over the user's request token at the waypoint.) `demo.ipynb` §13 also opens the cert with openssl to show the signed `tier: gold` claim riding next to the SPIFFE URI SAN.
+`make claims-enable` flips `ENABLE_WORKLOAD_CLAIMS=true` on ztunnel — one Helm value, and ztunnel starts requesting per-POD certs (the flag stays off for the earlier sections on purpose: the shared-SA gap is the story this step closes). It runs **before** the waypoint — workload claims is pure L4. `make claims` then annotates the pods (`solo.io.security-claims/tier: gold | silver` — istiod embeds the claim in each pod's mTLS cert at issuance) and applies `yaml/60-claims/10-allow-gold-checkout.yaml`, a CEL `when` over `source.claims[...]`. Result: `checkout-blue` 200, `checkout-green` denied, even though they share `sa/checkout` — still at L4, still no waypoint. (Distinct from the JWT CEL at the waypoint, which is over the user's request token at L7.) `demo.ipynb` §13 also opens the cert with openssl to show the signed `tier: gold` claim riding next to the SPIFFE URI SAN.
 
 ## Notes
 

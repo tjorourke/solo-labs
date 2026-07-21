@@ -1,0 +1,15 @@
+# Now block warehouse — same policy, one value removed. warehouse-svc fails
+# closed (an ALLOW selects petstore and no rule matches it any more); ztunnel's
+# access log reads "allow policies exist, but none allowed". In the Graph the
+# warehouse edge stops serving and ages out of the (small) time window.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: l4-allow-petshop-namespace
+  namespace: petshop
+spec:
+  selector: { matchLabels: { app: petstore } }
+  action: ALLOW
+  rules:
+    - to: [{ operation: { ports: ["8080"] } }]
+      when: [{ key: source.namespace, values: ["petshop"] }]

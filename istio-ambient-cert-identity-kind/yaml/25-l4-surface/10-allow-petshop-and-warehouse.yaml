@@ -1,7 +1,7 @@
-# Close the loop: widen the namespace ALLOW to admit warehouse too. One value
-# in the when-clause — warehouse-svc flips from denied to 200, and (because it
-# now completes requests) the warehouse namespace appears in the Gloo UI Graph
-# within ~30s. The DENY on analytics still wins (DENY > ALLOW).
+# The when-clause beat, allow-first: one ALLOW on petstore admits callers from
+# TWO namespaces — petshop and warehouse. The cross-namespace caller completes
+# requests, so the warehouse namespace draws itself in the Gloo UI Graph
+# (~30s: 15s collector scrape + 15s UI refresh; use a small graph window).
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
