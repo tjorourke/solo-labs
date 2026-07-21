@@ -1,0 +1,14 @@
+# kind cluster for the ambient cert-identity lab.
+# One control-plane + one worker. A single node is enough for this lab: the
+# whole story is service-to-service over ztunnel inside one namespace, and
+# ztunnel runs on every node as a DaemonSet. The worker just keeps app pods
+# off the control-plane, closer to a real cluster.
+#
+# No host port mappings: all traffic is in-cluster (clients to backend over
+# ztunnel), there is no ingress.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cert-identity
+nodes:
+  - role: control-plane
+  - role: worker

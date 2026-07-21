@@ -1,0 +1,10 @@
+# The petshop namespace, enrolled in ambient with one label. From here every
+# pod gets an mTLS SPIFFE identity and L4 policy enforcement from its node's
+# ztunnel — no sidecars, no restarts. (00- prefix so `kubectl apply -f` creates
+# the namespace before the workloads that live in it.)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petshop
+  labels:
+    istio.io/dataplane-mode: ambient

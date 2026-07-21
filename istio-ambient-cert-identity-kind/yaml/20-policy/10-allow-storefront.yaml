@@ -1,0 +1,28 @@
+# L4 AuthorizationPolicy — enforced by ztunnel directly on source identity and
+# destination port. No waypoint. It selects petstore and ALLOWs only the
+# storefront identity, so this one policy simultaneously:
+#   - ALLOWs  storefront -> petstore
+#   - DENIES  analytics  -> petstore   (different identity, not named)
+#   - DENIES  checkout   -> petstore   (not named yet; added in 20-…)
+#
+# Trust domain is the SMC .spec.cluster (cert-identity), NOT cluster.local. A
+# principal written cluster.local/... matches nothing and, because an ALLOW
+# policy now selects petstore, would DENY EVERYTHING — check src.identity in
+# the ztunnel access logs if a policy ever behaves that way.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-storefront
+  namespace: petshop
+spec:
+  selector:
+    matchLabels: { app: petstore }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cert-identity/ns/petshop/sa/storefront
+      to:
+        - operation:
+            ports: ["8080"]

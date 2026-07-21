@@ -1,0 +1,20 @@
+# The waypoint — opt-in L7 for the petstore service. This is a standalone Envoy
+# (GatewayClass istio-waypoint, HBONE :15008) that client traffic to petstore is
+# routed through once the Service is labelled istio.io/use-waypoint. L7 concerns
+# — JWT validation, method/path rules, request.auth.claims — live here, not in
+# ztunnel. A namespace that only needs L4 never deploys one.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: petstore-waypoint
+  namespace: petshop
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+# Enroll the petstore Service to use it (shown as a command in the notebook):
+#   kubectl label service petstore -n petshop istio.io/use-waypoint=petstore-waypoint

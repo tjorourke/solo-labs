@@ -1,0 +1,28 @@
+# A second ALLOW policy for petstore. AuthorizationPolicies are additive: the
+# allowed set becomes the UNION of every ALLOW that selects the workload, so
+# with this applied petstore accepts storefront AND checkout (analytics is
+# still denied — no policy names it).
+#
+# The point of this step is the gap: it names sa/checkout, and BOTH
+# checkout-blue and checkout-green run under that one ServiceAccount, so BOTH
+# are allowed and there is no L4 rule that could let one in and keep the other
+# out — ztunnel sees a single identity for the two pods. That is the SA-scoped
+# ceiling, and the motivation for the 1.30 workload-claims step in
+# yaml/30-reference/.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-checkout
+  namespace: petshop
+spec:
+  selector:
+    matchLabels: { app: petstore }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cert-identity/ns/petshop/sa/checkout
+      to:
+        - operation:
+            ports: ["8080"]

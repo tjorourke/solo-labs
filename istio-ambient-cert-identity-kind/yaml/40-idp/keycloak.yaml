@@ -1,0 +1,101 @@
+# Keycloak — the IdP that issues the JWTs the waypoint validates at L7.
+# Runs in its OWN namespace, NOT ambient-enrolled, so it is reachable as an
+# ordinary ClusterIP and stays out of the mesh authz story. Dev mode with a
+# realm import: realm "petshop", one public client "petshop" (direct access
+# grants on), and two users — alice (role: user) and bob (roles: user, admin).
+# KC_HOSTNAME pins the token issuer to the in-cluster URL so it matches the
+# RequestAuthentication issuer and the waypoint can fetch JWKS from the same host.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: petshop-realm
+  namespace: keycloak
+data:
+  petshop-realm.json: |
+    {
+      "realm": "petshop",
+      "enabled": true,
+      "roles": { "realm": [ { "name": "user" }, { "name": "admin" } ] },
+      "clients": [
+        {
+          "clientId": "petshop",
+          "enabled": true,
+          "publicClient": true,
+          "directAccessGrantsEnabled": true,
+          "standardFlowEnabled": false,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"]
+        }
+      ],
+      "users": [
+        {
+          "username": "alice", "enabled": true,
+          "firstName": "Alice", "lastName": "Shopper",
+          "email": "alice@petshop.test", "emailVerified": true,
+          "requiredActions": [],
+          "credentials": [ { "type": "password", "value": "alice", "temporary": false } ],
+          "realmRoles": ["user"]
+        },
+        {
+          "username": "bob", "enabled": true,
+          "firstName": "Bob", "lastName": "Admin",
+          "email": "bob@petshop.test", "emailVerified": true,
+          "requiredActions": [],
+          "credentials": [ { "type": "password", "value": "bob", "temporary": false } ],
+          "realmRoles": ["user", "admin"]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels: { app: keycloak }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0
+          args: ["start-dev", "--import-realm"]
+          env:
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: "admin" }
+            - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: "admin" }
+            - { name: KC_HOSTNAME, value: "http://keycloak.keycloak.svc.cluster.local:8080" }
+            - { name: KC_HOSTNAME_STRICT, value: "false" }
+            - { name: KC_HTTP_ENABLED, value: "true" }
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+          ports:
+            - { containerPort: 8080, name: http }
+            - { containerPort: 9000, name: health }
+          volumeMounts:
+            - { name: realm, mountPath: /opt/keycloak/data/import, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /realms/petshop, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 40
+      volumes:
+        - name: realm
+          configMap: { name: petshop-realm }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels: { app: keycloak }
+spec:
+  selector: { app: keycloak }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }
