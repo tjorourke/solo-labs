@@ -122,7 +122,7 @@ claims:
 	kubectl --context $(CTX) -n $(NS) patch deploy checkout-blue  -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"gold"}}}}}'
 	kubectl --context $(CTX) -n $(NS) patch deploy checkout-green -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"silver"}}}}}'
 	kubectl --context $(CTX) -n $(NS) rollout status deploy/checkout-blue deploy/checkout-green --timeout=120s
-	kubectl --context $(CTX) -n $(NS) delete authorizationpolicy allow-checkout --ignore-not-found
+	kubectl --context $(CTX) -n $(NS) delete authorizationpolicy allow-checkout l4-allow-petshop-namespace l4-deny-analytics --ignore-not-found
 	kubectl --context $(CTX) apply -f yaml/60-claims/10-allow-gold-checkout.yaml
 	@echo "checkout-blue (gold) -> 200 ; checkout-green (silver) -> denied by ztunnel, same sa/checkout. Watch: make logs"
 

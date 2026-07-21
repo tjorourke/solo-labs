@@ -69,7 +69,7 @@ kc -n "$NS_APP" patch deploy checkout-green -p '{"spec":{"template":{"metadata":
 kc -n "$NS_APP" rollout status deploy/checkout-blue deploy/checkout-green --timeout=120s >/dev/null
 # swap the SA-wide checkout ALLOW (step 5) for the claims-scoped one — while it
 # stands it admits both pods regardless of claims
-kc -n "$NS_APP" delete authorizationpolicy allow-checkout --ignore-not-found >/dev/null
+kc -n "$NS_APP" delete authorizationpolicy allow-checkout l4-allow-petshop-namespace l4-deny-analytics --ignore-not-found >/dev/null
 kapply "$LAB_ROOT/yaml/60-claims/10-allow-gold-checkout.yaml"
 # fresh per-pod certs + the new policy take ~20-30s to converge after the
 # rollout (green can also ride a connection from the brief no-policy window) —
