@@ -20,21 +20,22 @@ require kubectl; require helm
 GLOO_PLATFORM_VERSION="${GLOO_PLATFORM_VERSION:-2.12.3}"   # pairs with Istio 1.29
 GLOO_MESH_NS="${GLOO_MESH_NS:-gloo-mesh}"
 GLOO_PLATFORM_CHARTS="${GLOO_PLATFORM_CHARTS:-https://storage.googleapis.com/gloo-platform/helm-charts}"
-GLOO_UI_URL="http://localhost:8090"
 GLOO_UI_PF_LOG="/tmp/cert-identity-gloo-ui-pf.log"
 
-# Backgrounded port-forward that does NOT hang the caller (nohup + disown), only
-# started if the port isn't already serving. Logs to $GLOO_UI_PF_LOG.
+# Backgrounded port-forward (nohup + disown, does NOT hang the caller) on a FREE
+# RANDOM local port — the Gloo UI listens on :8090 in-cluster, but 8090 is often
+# taken locally by other labs, so we bind a free ephemeral port and print the URL.
 forward() {
-  if curl -fs -o /dev/null -m 2 "$GLOO_UI_URL" 2>/dev/null; then
-    ok "Gloo UI already reachable at $GLOO_UI_URL"; return 0
-  fi
   # wait for the UI pod so the forward doesn't race a not-yet-ready deployment
   kc -n "$GLOO_MESH_NS" rollout status deploy/gloo-mesh-ui --timeout=180s >/dev/null 2>&1 || true
-  nohup kc -n "$GLOO_MESH_NS" port-forward svc/gloo-mesh-ui 8090:8090 >"$GLOO_UI_PF_LOG" 2>&1 &
+  pkill -f 'port-forward.*svc/gloo-mesh-ui' 2>/dev/null || true   # drop any prior forward
+  local port url
+  port="$(python3 -c 'import socket;s=socket.socket();s.bind(("",0));print(s.getsockname()[1]);s.close()')"
+  url="http://localhost:${port}"
+  nohup kc -n "$GLOO_MESH_NS" port-forward svc/gloo-mesh-ui "${port}:8090" >"$GLOO_UI_PF_LOG" 2>&1 &
   disown 2>/dev/null || true
   for _ in $(seq 1 30); do
-    curl -fs -o /dev/null -m 2 "$GLOO_UI_URL" 2>/dev/null && { ok "Gloo UI → $GLOO_UI_URL (port-forward detached, log $GLOO_UI_PF_LOG)"; return 0; }
+    curl -fs -o /dev/null -m 2 "$url" 2>/dev/null && { ok "Gloo UI → $url (detached, log $GLOO_UI_PF_LOG)"; return 0; }
     sleep 1
   done
   warn "port-forward started but $GLOO_UI_URL not answering yet — check $GLOO_UI_PF_LOG"

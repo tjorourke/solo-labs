@@ -22,7 +22,9 @@ step "1/8 · Stand up the mesh"
 step "2/8 · Deploy the petshop"
 kapply "$LAB_ROOT/yaml/10-app/"
 kc -n "$NS_APP" rollout status deploy/petstore deploy/storefront deploy/analytics deploy/checkout-blue deploy/checkout-green --timeout=180s >/dev/null
-ok "petshop deployed"
+# kick off Keycloak now so it is warm by the JWT step (no mid-run wait)
+kapply "$LAB_ROOT/yaml/40-idp/keycloak.yaml"
+ok "petshop deployed; Keycloak starting in the background"
 
 step "3/8 · Identity is the certificate"
 NODE="$(kc -n "$NS_APP" get pods -o jsonpath='{.items[0].spec.nodeName}')"
@@ -58,10 +60,9 @@ kc -n "$NS_APP" delete authorizationpolicy l4-allow-petshop-namespace l4-deny-an
 step "7/8 · Waypoint + Keycloak IdP"
 kc -n "$NS_APP" delete authorizationpolicy allow-storefront allow-checkout --ignore-not-found >/dev/null
 kapply "$LAB_ROOT/yaml/50-l7/10-waypoint.yaml"
-kc label service petstore -n "$NS_APP" istio.io/use-waypoint=petstore-waypoint --overwrite >/dev/null
+kc label namespace "$NS_APP" istio.io/use-waypoint=petstore-waypoint --overwrite >/dev/null
 kc -n "$NS_APP" rollout status deploy/petstore-waypoint --timeout=150s >/dev/null
-kapply "$LAB_ROOT/yaml/40-idp/keycloak.yaml"
-kc -n keycloak rollout status deploy/keycloak --timeout=240s >/dev/null
+kc -n keycloak rollout status deploy/keycloak --timeout=240s >/dev/null   # applied early in step 2
 ok "waypoint + keycloak ready"
 
 step "8/8 · L7 JWT authz matrix"

@@ -32,7 +32,7 @@ Trust domain is the cluster name, so identities are `spiffe://cert-identity/ns/p
 
 ```bash
 make setup SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh   # kind + Solo ambient via Helm + JSON logs
-make gloo-ui                                                  # (optional) Solo/Gloo UI mgmt plane + bg port-forward :8090
+make gloo-ui                                                  # (optional) Solo/Gloo UI mgmt plane + bg port-forward (free local port)
 make deploy                                                   # petshop (watch it appear in the UI)
 
 # ── L4: identity ──────────────────────────────────────────────
@@ -43,7 +43,7 @@ make allow-checkout      # add sa/checkout -> BOTH checkout pods 200 (the gap)
 make l4-surface          # 2nd-namespace caller + when(source.namespace) ALLOW + DENY precedence
 
 # ── L7: JWT at a waypoint ─────────────────────────────────────
-make waypoint            # opt-in L7 waypoint on petstore (resets the L4 policies)
+make waypoint            # opt-in L7 waypoint for the petshop namespace (resets the L4 policies)
 make idp                 # Keycloak IdP
 make jwt                 # RequestAuthentication + claim-based AuthorizationPolicy
 make jwt-test            # no-token 403 / alice GET 200 / alice DELETE 403 / bob DELETE 200

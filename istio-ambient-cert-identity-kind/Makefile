@@ -5,7 +5,7 @@
 # Quick path (this Makefile). The guided, show-every-command path is demo.ipynb.
 #
 #   make setup   SECRETS_FILE=~/path/to/secrets.sh   # kind + Solo ambient via Helm
-#   make gloo-ui SECRETS_FILE=...                     # Gloo UI (Solo mgmt plane) + bg port-forward :8090
+#   make gloo-ui SECRETS_FILE=...                     # Gloo UI (Solo mgmt plane) + bg port-forward on a free local port
 #   make deploy                                       # petshop: petstore + storefront + analytics + checkout(blue/green)
 #   make svid                                         # each workload's SVID identity (shared SA = one cert)
 #   make allow-storefront                             # L4 ALLOW storefront -> analytics/checkout denied
@@ -26,7 +26,7 @@ setup:
 	./scripts/setup-cluster.sh
 
 # Solo UI (Gloo Platform mgmt plane). Install BEFORE deploy to watch workloads
-# appear. Ends with a backgrounded port-forward on http://localhost:8090.
+# appear. Ends with a backgrounded port-forward on a free local port (prints the URL).
 gloo-ui:
 	./scripts/gloo-ui.sh
 
@@ -62,7 +62,7 @@ logs:
 waypoint:
 	kubectl --context $(CTX) -n $(NS) delete authorizationpolicy allow-storefront allow-checkout --ignore-not-found
 	kubectl --context $(CTX) apply -f yaml/50-l7/10-waypoint.yaml
-	kubectl --context $(CTX) label service petstore -n $(NS) istio.io/use-waypoint=petstore-waypoint --overwrite
+	kubectl --context $(CTX) label namespace $(NS) istio.io/use-waypoint=petstore-waypoint --overwrite
 	kubectl --context $(CTX) -n $(NS) rollout status deploy/petstore-waypoint --timeout=150s
 
 idp:
