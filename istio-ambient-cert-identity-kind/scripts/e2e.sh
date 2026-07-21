@@ -56,6 +56,10 @@ assert "cross-ns warehouse denied" "$(wh_code)" "000000"
 kapply "$LAB_ROOT/yaml/25-l4-surface/20-deny-analytics.yaml"; sleep 14
 assert "DENY beats ALLOW (analytics)" "$(code_of analytics)" "000000"
 assert "storefront still allowed"     "$(code_of storefront)" "200"
+# close the loop: widen the namespace ALLOW to admit warehouse (DENY still wins)
+kapply "$LAB_ROOT/yaml/25-l4-surface/30-allow-petshop-and-warehouse.yaml"; sleep 14
+assert "warehouse allowed in (widened when)" "$(wh_code)" "200"
+assert "analytics still denied (DENY > ALLOW)" "$(code_of analytics)" "000000"
 kc -n "$NS_APP" delete authorizationpolicy l4-allow-petshop-namespace l4-deny-analytics --ignore-not-found >/dev/null
 
 step "7/9 · Waypoint + Keycloak IdP"

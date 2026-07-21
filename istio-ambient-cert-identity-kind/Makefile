@@ -58,6 +58,12 @@ l4-surface:
 	kubectl --context $(CTX) apply -f yaml/25-l4-surface/20-deny-analytics.yaml
 	@echo "when(source.namespace): cross-ns warehouse-svc denied. DENY: analytics denied even though it's in petshop (DENY > ALLOW)."
 
+# close the loop: widen the when-clause to admit warehouse — it flips to 200 and
+# the warehouse namespace appears in the Gloo UI Graph (it now completes requests)
+l4-allow-warehouse:
+	kubectl --context $(CTX) apply -f yaml/25-l4-surface/30-allow-petshop-and-warehouse.yaml
+	@echo "warehouse-svc -> 200 ; analytics still denied (DENY > ALLOW). Watch the warehouse namespace appear in the Graph (~30s)."
+
 logs:
 	./scripts/logs.sh
 
