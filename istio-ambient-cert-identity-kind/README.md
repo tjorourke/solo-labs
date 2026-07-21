@@ -39,6 +39,7 @@ make svid                # each workload's SVID; checkout-blue/green share ONE c
 make allow-storefront    # storefront 200 ; analytics/checkout denied, by identity
 make logs                # ztunnel access logs: src.identity + ALLOW/DENY   (Ctrl-C to stop)
 make allow-checkout      # add sa/checkout -> BOTH checkout pods 200 (the gap)
+make l4-surface          # 2nd-namespace caller + when(source.namespace) ALLOW + DENY precedence
 
 # ── L7: JWT at a waypoint ─────────────────────────────────────
 make waypoint            # opt-in L7 waypoint on petstore (resets the L4 policies)
@@ -54,6 +55,7 @@ make clean               # delete the kind cluster
 1. **Identity = certificate.** `svid` shows one SVID per workload; the shared `sa/checkout` cert is the gap.
 2. **Authorize on identity at L4.** ztunnel fails closed: name `storefront` and everything else is denied, no app or waypoint change. `src.identity` in the access log is the evidence.
 3. **The SA-scoped ceiling.** `allow-checkout` lets both checkout pods in; you cannot separate them at L4.
+3b. **The full L4 match surface.** `l4-surface` shows ztunnel deciding on source **namespace** via a CEL `when` clause (cross-namespace `warehouse-svc` denied) and **DENY beating ALLOW** (analytics blocked even under the namespace ALLOW) — all at L4, no waypoint.
 4. **L7 needs a waypoint.** A request JWT is HTTP, so it is validated (`RequestAuthentication`) and authorized (`AuthorizationPolicy` with `request.auth.claims[realm_access][roles]`) at the waypoint — `GET` for any valid token, `DELETE` for admins only.
 5. **Solo Enterprise extras.** ztunnel emits L7 telemetry (`method`/`path`/`response_code`) with **no waypoint** — see `istioctl ztunnel-config all <ztunnel> -o json | jq .config.l7Config`.
 

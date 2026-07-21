@@ -1,0 +1,36 @@
+# warehouse-svc — a caller in a SECOND namespace, so we can show L4 decisions
+# that turn on where a caller comes from, not just who it is. It is ambient too
+# (its own identity spiffe://cert-identity/ns/warehouse/sa/warehouse-svc) and
+# calls petstore across namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: warehouse
+  labels:
+    istio.io/dataplane-mode: ambient
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: warehouse-svc, namespace: warehouse }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: warehouse-svc, namespace: warehouse, labels: { app: warehouse-svc } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: warehouse-svc } }
+  template:
+    metadata: { labels: { app: warehouse-svc } }
+    spec:
+      serviceAccountName: warehouse-svc
+      containers:
+        - name: client
+          image: curlimages/curl:8.14.1
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              while true; do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://petstore.petshop:8080/pets || echo 000)
+                echo "$(date -u +%H:%M:%S) warehouse-svc -> GET petstore.petshop/pets : $code"
+                sleep 2
+              done

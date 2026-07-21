@@ -16,32 +16,46 @@ assert() { # assert <label> <got> <want>
 }
 code_of() { kc -n "$NS_APP" logs "deploy/$1" --tail=1 2>/dev/null | grep -oE '[0-9]{3,6}$'; }
 
-step "1/7 · Stand up the mesh"
+step "1/8 · Stand up the mesh"
 "$SCRIPT_DIR/setup-cluster.sh"
 
-step "2/7 · Deploy the petshop"
+step "2/8 · Deploy the petshop"
 kapply "$LAB_ROOT/yaml/10-app/"
 kc -n "$NS_APP" rollout status deploy/petstore deploy/storefront deploy/analytics deploy/checkout-blue deploy/checkout-green --timeout=180s >/dev/null
 ok "petshop deployed"
 
-step "3/7 · Identity is the certificate"
+step "3/8 · Identity is the certificate"
 NODE="$(kc -n "$NS_APP" get pods -o jsonpath='{.items[0].spec.nodeName}')"
 ZT="$(kc -n "$ISTIO_SYSTEM_NS" get pods -l app=ztunnel --field-selector "spec.nodeName=${NODE}" -o jsonpath='{.items[0].metadata.name}')"
 CERTS="$(ic ztunnel-config certificate "$ZT.$ISTIO_SYSTEM_NS" 2>/dev/null | grep -c "ns/$NS_APP/sa/.*Leaf")"
 assert "distinct leaf SVIDs (petstore+storefront+analytics+checkout=4)" "$CERTS" "4"
 
-step "4/7 · L4 authz: allow storefront only"
+step "4/8 · L4 authz: allow storefront only"
 kapply "$LAB_ROOT/yaml/20-policy/10-allow-storefront.yaml"; sleep 14
 assert "storefront allowed" "$(code_of storefront)" "200"
 [[ "$(code_of analytics)" == "000000" ]] && ok "analytics denied: 000000" || { warn "analytics not denied: $(code_of analytics)"; FAILS=$((FAILS+1)); }
 
-step "5/7 · The shared-SA gap: allow sa/checkout"
+step "5/8 · The shared-SA gap: allow sa/checkout"
 kapply "$LAB_ROOT/yaml/20-policy/20-allow-checkout.yaml"; sleep 14
 assert "checkout-blue allowed"  "$(code_of checkout-blue)"  "200"
 assert "checkout-green allowed" "$(code_of checkout-green)" "200"
 [[ "$(code_of analytics)" == "000000" ]] && ok "analytics still denied" || { warn "analytics leaked: $(code_of analytics)"; FAILS=$((FAILS+1)); }
 
-step "6/7 · Waypoint + Keycloak IdP"
+step "6/8 · More of the L4 match surface: namespace (when) + DENY precedence"
+wh_code() { kc -n warehouse logs deploy/warehouse-svc --tail=1 2>/dev/null | grep -oE '[0-9]{3,6}$'; }
+kapply "$LAB_ROOT/yaml/25-l4-surface/00-warehouse.yaml"
+kc -n warehouse rollout status deploy/warehouse-svc --timeout=90s >/dev/null
+# namespace ALLOW via a CEL when-clause on source.namespace: cross-ns warehouse-svc is denied
+kapply "$LAB_ROOT/yaml/25-l4-surface/10-allow-petshop-namespace.yaml"; sleep 14
+assert "petshop caller allowed (when source.namespace)" "$(code_of storefront)" "200"
+assert "cross-ns warehouse denied" "$(wh_code)" "000000"
+# DENY precedence: analytics blocked even under the namespace ALLOW
+kapply "$LAB_ROOT/yaml/25-l4-surface/20-deny-analytics.yaml"; sleep 14
+assert "DENY beats ALLOW (analytics)" "$(code_of analytics)" "000000"
+assert "storefront still allowed"     "$(code_of storefront)" "200"
+kc -n "$NS_APP" delete authorizationpolicy l4-allow-petshop-namespace l4-deny-analytics --ignore-not-found >/dev/null
+
+step "7/8 · Waypoint + Keycloak IdP"
 kc -n "$NS_APP" delete authorizationpolicy allow-storefront allow-checkout --ignore-not-found >/dev/null
 kapply "$LAB_ROOT/yaml/50-l7/10-waypoint.yaml"
 kc label service petstore -n "$NS_APP" istio.io/use-waypoint=petstore-waypoint --overwrite >/dev/null
@@ -50,7 +64,7 @@ kapply "$LAB_ROOT/yaml/40-idp/keycloak.yaml"
 kc -n keycloak rollout status deploy/keycloak --timeout=240s >/dev/null
 ok "waypoint + keycloak ready"
 
-step "7/7 · L7 JWT authz matrix"
+step "8/8 · L7 JWT authz matrix"
 kapply "$LAB_ROOT/yaml/50-l7/20-jwt.yaml"; sleep 12
 KCURL=http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 tok() { kc -n "$NS_APP" exec deploy/storefront -- sh -c "curl -s -m10 -d grant_type=password -d client_id=petshop -d username=$1 -d password=$1 -d scope=openid $KCURL" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'; }

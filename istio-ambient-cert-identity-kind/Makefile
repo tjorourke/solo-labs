@@ -19,7 +19,7 @@ CTX ?= kind-cert-identity
 NS  ?= petshop
 KC  := http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 
-.PHONY: setup deploy svid allow-storefront allow-checkout logs waypoint idp jwt jwt-test clean
+.PHONY: setup deploy svid allow-storefront allow-checkout l4-surface logs waypoint idp jwt jwt-test clean
 
 setup:
 	./scripts/setup-cluster.sh
@@ -38,6 +38,14 @@ allow-storefront:
 allow-checkout:
 	kubectl --context $(CTX) apply -f yaml/20-policy/20-allow-checkout.yaml
 	@echo "storefront + BOTH checkout pods -> 200 ; analytics still denied. blue and green share sa/checkout (see yaml/30-reference)."
+
+# a 2nd-namespace caller + a when(source.namespace) ALLOW + a DENY override
+l4-surface:
+	kubectl --context $(CTX) apply -f yaml/25-l4-surface/00-warehouse.yaml
+	kubectl --context $(CTX) -n warehouse rollout status deploy/warehouse-svc --timeout=90s
+	kubectl --context $(CTX) apply -f yaml/25-l4-surface/10-allow-petshop-namespace.yaml
+	kubectl --context $(CTX) apply -f yaml/25-l4-surface/20-deny-analytics.yaml
+	@echo "when(source.namespace): cross-ns warehouse-svc denied. DENY: analytics denied even though it's in petshop (DENY > ALLOW)."
 
 logs:
 	./scripts/logs.sh

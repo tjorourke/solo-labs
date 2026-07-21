@@ -1,0 +1,22 @@
+# DENY beats ALLOW. ztunnel evaluates CUSTOM, then DENY, then ALLOW — so a DENY
+# rule overrides any ALLOW that would otherwise admit the caller. Here analytics
+# is in the petshop namespace (so the namespace ALLOW would let it in), but this
+# DENY on its identity blocks it anyway, at L4, no waypoint. storefront and
+# checkout are unaffected.
+#
+# Use this for hard carve-outs (quarantine an identity, block a known-bad SA)
+# without touching the broader ALLOW.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: l4-deny-analytics
+  namespace: petshop
+spec:
+  selector:
+    matchLabels: { app: petstore }
+  action: DENY
+  rules:
+    - from:
+        - source:
+            principals:
+              - cert-identity/ns/petshop/sa/analytics
