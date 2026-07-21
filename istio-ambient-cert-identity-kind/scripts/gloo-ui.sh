@@ -17,7 +17,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 require kubectl; require helm
 
-GLOO_PLATFORM_VERSION="${GLOO_PLATFORM_VERSION:-2.12.3}"   # pairs with Istio 1.29
+GLOO_PLATFORM_VERSION="${GLOO_PLATFORM_VERSION:-2.13.2}"   # pairs with Istio 1.30
 GLOO_MESH_NS="${GLOO_MESH_NS:-gloo-mesh}"
 GLOO_PLATFORM_CHARTS="${GLOO_PLATFORM_CHARTS:-https://storage.googleapis.com/gloo-platform/helm-charts}"
 GLOO_UI_PF_LOG="/tmp/cert-identity-gloo-ui-pf.log"
