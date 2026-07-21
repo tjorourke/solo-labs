@@ -26,13 +26,14 @@ Trust domain is the cluster name, so identities are `spiffe://cert-identity/ns/p
 
 ## Prerequisites
 
-`docker`, `kind`, `kubectl`, `helm`, `istioctl`, `jq`, an **authenticated `gcloud`** (Solo images pull from `us-docker.pkg.dev`), and `SOLO_ISTIO_LICENSE_KEY` (or `SECRETS_FILE`).
+`docker`, `kind`, `kubectl`, `helm`, `istioctl`, `jq`, an **authenticated `gcloud`** (Solo images pull from `us-docker.pkg.dev`), and `SOLO_ISTIO_LICENSE_KEY` (or `SECRETS_FILE`). For the optional Solo UI, also `GLOO_PLATFORM_LICENSE_KEY` (falls back to `SOLO_ISTIO_LICENSE_KEY`).
 
 ## Quick run
 
 ```bash
 make setup SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh   # kind + Solo ambient via Helm + JSON logs
-make deploy                                                   # petshop
+make gloo-ui                                                  # (optional) Solo/Gloo UI mgmt plane + bg port-forward :8090
+make deploy                                                   # petshop (watch it appear in the UI)
 
 # ── L4: identity ──────────────────────────────────────────────
 make svid                # each workload's SVID; checkout-blue/green share ONE cert

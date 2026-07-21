@@ -5,6 +5,7 @@
 # Quick path (this Makefile). The guided, show-every-command path is demo.ipynb.
 #
 #   make setup   SECRETS_FILE=~/path/to/secrets.sh   # kind + Solo ambient via Helm
+#   make gloo-ui SECRETS_FILE=...                     # Gloo UI (Solo mgmt plane) + bg port-forward :8090
 #   make deploy                                       # petshop: petstore + storefront + analytics + checkout(blue/green)
 #   make svid                                         # each workload's SVID identity (shared SA = one cert)
 #   make allow-storefront                             # L4 ALLOW storefront -> analytics/checkout denied
@@ -19,10 +20,18 @@ CTX ?= kind-cert-identity
 NS  ?= petshop
 KC  := http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 
-.PHONY: setup deploy svid allow-storefront allow-checkout l4-surface logs waypoint idp jwt jwt-test clean
+.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface logs waypoint idp jwt jwt-test clean
 
 setup:
 	./scripts/setup-cluster.sh
+
+# Solo UI (Gloo Platform mgmt plane). Install BEFORE deploy to watch workloads
+# appear. Ends with a backgrounded port-forward on http://localhost:8090.
+gloo-ui:
+	./scripts/gloo-ui.sh
+
+gloo-ui-forward:
+	./scripts/gloo-ui.sh forward
 
 deploy:
 	kubectl --context $(CTX) apply -f yaml/10-app/
