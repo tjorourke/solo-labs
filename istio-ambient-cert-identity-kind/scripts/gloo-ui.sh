@@ -26,19 +26,21 @@ GLOO_UI_PF_LOG="/tmp/cert-identity-gloo-ui-pf.log"
 # RANDOM local port — the Gloo UI listens on :8090 in-cluster, but 8090 is often
 # taken locally by other labs, so we bind a free ephemeral port and print the URL.
 forward() {
-  # wait for the UI pod so the forward doesn't race a not-yet-ready deployment
-  kc -n "$GLOO_MESH_NS" rollout status deploy/gloo-mesh-ui --timeout=180s >/dev/null 2>&1 || true
+  # wait for the UI deploy to exist and be ready, so the forward doesn't race it
+  for _ in $(seq 1 60); do kc -n "$GLOO_MESH_NS" get deploy gloo-mesh-ui >/dev/null 2>&1 && break; sleep 2; done
+  kc -n "$GLOO_MESH_NS" rollout status deploy/gloo-mesh-ui --timeout=300s >/dev/null 2>&1 || true
   pkill -f 'port-forward.*svc/gloo-mesh-ui' 2>/dev/null || true   # drop any prior forward
   local port url
   port="$(python3 -c 'import socket;s=socket.socket();s.bind(("",0));print(s.getsockname()[1]);s.close()')"
   url="http://localhost:${port}"
-  nohup kc -n "$GLOO_MESH_NS" port-forward svc/gloo-mesh-ui "${port}:8090" >"$GLOO_UI_PF_LOG" 2>&1 &
+  # NB: use kubectl directly — nohup can't exec the kc() shell function
+  nohup kubectl --context "$CTX" -n "$GLOO_MESH_NS" port-forward svc/gloo-mesh-ui "${port}:8090" >"$GLOO_UI_PF_LOG" 2>&1 &
   disown 2>/dev/null || true
   for _ in $(seq 1 30); do
     curl -fs -o /dev/null -m 2 "$url" 2>/dev/null && { ok "Gloo UI → $url (detached, log $GLOO_UI_PF_LOG)"; return 0; }
     sleep 1
   done
-  warn "port-forward started but $GLOO_UI_URL not answering yet — check $GLOO_UI_PF_LOG"
+  warn "port-forward started on $url but not answering yet — check $GLOO_UI_PF_LOG"
 }
 
 install() {
