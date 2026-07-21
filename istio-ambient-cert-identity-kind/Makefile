@@ -15,12 +15,14 @@
 #   make idp                                          # Keycloak IdP (users alice/user, bob/admin)
 #   make jwt                                          # RequestAuthentication + claim-based L7 AuthorizationPolicy
 #   make jwt-test                                     # matrix: no-token / alice / bob against GET and DELETE
+#   make claims-upgrade                               # in-place upgrade to 1.30.x-solo + ENABLE_WORKLOAD_CLAIMS (per-pod certs)
+#   make claims                                       # annotate blue=gold green=silver + CEL claim policy: blue 200, green denied
 #   make clean                                        # delete the kind cluster
 CTX ?= kind-cert-identity
 NS  ?= petshop
 KC  := http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 
-.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface logs waypoint idp jwt jwt-test clean
+.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface logs waypoint idp jwt jwt-test claims-upgrade claims clean
 
 setup:
 	./scripts/setup-cluster.sh
@@ -46,7 +48,7 @@ allow-storefront:
 
 allow-checkout:
 	kubectl --context $(CTX) apply -f yaml/20-policy/20-allow-checkout.yaml
-	@echo "storefront + BOTH checkout pods -> 200 ; analytics still denied. blue and green share sa/checkout (see yaml/30-reference)."
+	@echo "storefront + BOTH checkout pods -> 200 ; analytics still denied. blue and green share sa/checkout — make claims-upgrade closes that."
 
 # a 2nd-namespace caller + a when(source.namespace) ALLOW + a DENY override
 l4-surface:
@@ -82,6 +84,20 @@ jwt-test:
 	 echo "alice       GET  /pets     -> $$(c "curl -s -o /dev/null -w '%{http_code}' -m5 -H 'Authorization: Bearer $$ALICE' http://petstore:8080/pets")"; \
 	 echo "alice(user) DELETE /pets/1 -> $$(c "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $$ALICE' http://petstore:8080/pets/1")"; \
 	 echo "bob(admin)  DELETE /pets/1 -> $$(c "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $$BOB' http://petstore:8080/pets/1")"
+
+# §13: in-place upgrade to the Solo 1.30 line with workload claims on.
+# Resets the L7 story first (claims is pure L4). Image tag KEEPS -solo here.
+claims-upgrade:
+	./scripts/claims-upgrade.sh
+
+# annotate the two checkout pods (the claim lands in each pod's own cert at
+# issuance), then allow ONLY tier=gold at L4 with a CEL when-clause
+claims:
+	kubectl --context $(CTX) -n $(NS) patch deploy checkout-blue  -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"gold"}}}}}'
+	kubectl --context $(CTX) -n $(NS) patch deploy checkout-green -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"silver"}}}}}'
+	kubectl --context $(CTX) -n $(NS) rollout status deploy/checkout-blue deploy/checkout-green --timeout=120s
+	kubectl --context $(CTX) apply -f yaml/60-claims/10-allow-gold-checkout.yaml
+	@echo "checkout-blue (gold) -> 200 ; checkout-green (silver) -> denied by ztunnel, same sa/checkout. Watch: make logs"
 
 clean:
 	kind delete cluster --name cert-identity

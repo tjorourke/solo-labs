@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Workload claims (Solo Istio 1.30 line, Enterprise): authorize at L4 on a
+# claim embedded in the workload's own mTLS certificate. Closes the gap from
+# the shared-ServiceAccount step: checkout-blue and checkout-green both run as
+# sa/checkout, but each POD now carries its own cert with its own claims, so
+# ztunnel can tell them apart — still L4, still no waypoint.
+#
+# Prerequisites (make claims-upgrade / demo.ipynb §13):
+#   1. Control plane + ztunnel on the 1.30 line (image tag 1.30.3-solo — on
+#      this line the -solo suffix stays on the IMAGE tag, not just the chart).
+#   2. ENABLE_WORKLOAD_CLAIMS=true on ztunnel (per-pod certs, claims enforced).
+#   3. The pods annotated: solo.io.security-claims/tier: gold | silver.
+#      istiod embeds the claim in the pod's cert at issuance, alongside the
+#      auto claims istio.io.workload.name / .namespace / .pod.
+#
+# Fail-closed: a missing claim key means the when-clause does not match, so an
+# ALLOW rule that references it simply never fires. Grant with ALLOW on
+# annotated workloads rather than DENY on the absence of a claim.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gold-checkout
+  namespace: petshop
+spec:
+  selector:
+    matchLabels: { app: petstore }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cert-identity/ns/petshop/sa/checkout
+      to:
+        - operation:
+            ports: ["8080"]
+      when:
+        # the '/' in the annotation key becomes '.' in the claim key
+        - key: "source.claims['solo.io.security-claims.tier']"
+          values: ["gold"]
+# The auto-populated per-workload claims are also matchable, e.g.
+#   source.claims['istio.io.workload.pod']  /  source.claims['istio.io.workload.name']

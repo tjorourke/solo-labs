@@ -6,8 +6,8 @@
 # every workload gets a SPIFFE SVID from its ServiceAccount, ztunnel enforces
 # L4 AuthorizationPolicy on that identity with no waypoint, and we show the
 # one thing SA-scoped identity cannot do — tell two pods that share a
-# ServiceAccount apart — which is what the Solo 1.30 workload-claims feature
-# (shown as reference) closes.
+# ServiceAccount apart — then close it live with the Solo 1.30 workload-claims
+# step (an in-place upgrade at the end of the lab).
 #
 # Edition: ENTERPRISE. The mesh is installed straight from the Solo distribution
 # Helm charts (base, istiod, cni, ztunnel) on the Solo Istio images. Needs
@@ -60,7 +60,9 @@ export NS_APP="${NS_APP:-petshop}"
 # istiod / cni / ztunnel value up front — license, trust domain, JSON logs and
 # so on are Helm values, not post-hoc kubectl patches.
 export ISTIO_SYSTEM_NS="${ISTIO_SYSTEM_NS:-istio-system}"
-# Image hub + tag. The image tag has NO -solo suffix (e.g. pilot:1.29.3).
+# Image hub + tag. On the 1.29 line the image tag has NO -solo suffix
+# (pilot:1.29.3). On the 1.30 line it KEEPS it (pilot:1.30.3-solo) — the plain
+# 1.30.x tag is the upstream build; claims-upgrade.sh pins the -solo tag.
 export ISTIO_REGISTRY="${ISTIO_REGISTRY:-us-docker.pkg.dev/soloio-img/istio}"
 export ISTIO_VERSION="${ISTIO_VERSION:-${SOLO_ISTIO_VERSION%-solo}}"
 # Helm charts for the Solo distribution. The chart version KEEPS the -solo
