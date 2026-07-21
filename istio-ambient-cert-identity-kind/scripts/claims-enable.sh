@@ -16,12 +16,11 @@ source "$SCRIPT_DIR/lib.sh"
 require kubectl; require helm
 require_secrets
 
-step "Back to a pure L4 story (remove the L7 waypoint + JWT policies)"
-kc -n "$NS_APP" delete authorizationpolicy petstore-jwt-authz --ignore-not-found >/dev/null
-kc -n "$NS_APP" delete requestauthentication petshop-jwt --ignore-not-found >/dev/null
+step "Back to a pure L4 story (remove the agentgateway waypoint + its policies)"
+kc -n "$NS_APP" delete enterpriseagentgatewaypolicy petshop-jwt petshop-authz petshop-ratelimit-storefront --ignore-not-found >/dev/null 2>&1 || true
 kc label namespace "$NS_APP" istio.io/use-waypoint- >/dev/null 2>&1 || true
 kc -n "$NS_APP" delete httproute petstore-split --ignore-not-found >/dev/null
-kc -n "$NS_APP" delete gateway petstore-waypoint --ignore-not-found >/dev/null
+kc -n "$NS_APP" delete gateway petshop-waypoint --ignore-not-found >/dev/null
 ok "L7 objects removed; only L4 identity remains"
 
 step "Helm: ztunnel with ENABLE_WORKLOAD_CLAIMS=true (same chart, one new value)"

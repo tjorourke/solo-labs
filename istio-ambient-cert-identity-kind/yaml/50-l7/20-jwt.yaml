@@ -1,53 +1,50 @@
-# L7 JWT authorization, enforced at the petstore waypoint.
+# L7 JWT authentication + authorization at the agentgateway waypoint.
 #
-# RequestAuthentication validates the bearer token against Keycloak's JWKS. On
-# its own it only REJECTS bad tokens; it still lets token-less requests through,
-# so the AuthorizationPolicy is what actually requires a token and gates on a claim.
-apiVersion: security.istio.io/v1
-kind: RequestAuthentication
+# Policy 1 — jwtAuthentication (mode: Strict): every request through the
+# waypoint must carry a token that validates against Keycloak's JWKS (fetched
+# in-cluster via the backendRef). No token / bad token -> 401.
+#
+# Policy 2 — authorization: CEL over the validated claims. Any valid token may
+# GET; DELETE additionally requires realm_access.roles to contain "admin".
+# matchExpressions are OR'd; a request must satisfy at least one. -> alice
+# (user) can read but not delete; bob (admin) can do both.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
 metadata:
   name: petshop-jwt
   namespace: petshop
 spec:
   targetRefs:
-    - kind: Gateway
-      group: gateway.networking.k8s.io
-      name: petstore-waypoint
-  jwtRules:
-    - issuer: "http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop"
-      jwksUri: "http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/certs"
-      forwardOriginalToken: true
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: petshop-waypoint
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop
+          jwks:
+            remote:
+              backendRef:
+                name: keycloak
+                namespace: keycloak
+                port: 8080
+              jwksPath: /realms/petshop/protocol/openid-connect/certs
 ---
-# The authorization rules at L7:
-#   - any VALID token may GET (read the catalogue)
-#   - only a token whose realm_access.roles contains "admin" may DELETE a pet
-#   - no token → no rule matches (requestPrincipals requires a principal) → denied
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
 metadata:
-  name: petstore-jwt-authz
+  name: petshop-authz
   namespace: petshop
 spec:
   targetRefs:
-    - kind: Gateway
-      group: gateway.networking.k8s.io
-      name: petstore-waypoint
-  action: ALLOW
-  rules:
-    # 1) any authenticated caller may read
-    - from:
-        - source:
-            requestPrincipals: ["*"]
-      to:
-        - operation:
-            methods: ["GET"]
-    # 2) only admins may delete — CEL over the JWT claim (nested: realm_access.roles)
-    - from:
-        - source:
-            requestPrincipals: ["*"]
-      to:
-        - operation:
-            methods: ["DELETE"]
-      when:
-        - key: "request.auth.claims[realm_access][roles]"
-          values: ["admin"]
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: petshop-waypoint
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - 'request.method == "GET"'
+          - 'request.method == "DELETE" && "admin" in jwt.realm_access.roles'

@@ -1,0 +1,28 @@
+# Rate limit BY WORKLOAD IDENTITY at the agentgateway waypoint.
+#
+# The condition keys on source.identity.serviceAccount — the SPIFFE identity
+# ztunnel proved with the workload's mTLS certificate at L4. Only storefront's
+# requests draw from this token bucket; checkout presenting the SAME user JWT
+# is untouched. The user's token says who the USER is; the certificate says
+# who the WORKLOAD is — and here the L4 identity drives an L7 rate budget.
+#
+# Local rate limit: enforced in the waypoint itself, no external rate-limit
+# server needed. 5 requests per minute makes the 429s easy to see in a demo.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: petshop-ratelimit-storefront
+  namespace: petshop
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: petshop-waypoint
+  traffic:
+    rateLimit:
+      conditional:
+        - condition: 'source.identity.serviceAccount == "storefront"'
+          policy:
+            local:
+              - requests: 5
+                unit: Minutes

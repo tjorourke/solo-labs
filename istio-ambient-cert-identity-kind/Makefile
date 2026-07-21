@@ -11,11 +11,12 @@
 #   make allow-storefront                             # L4 ALLOW storefront -> analytics/checkout denied
 #   make allow-checkout                               # add sa/checkout -> BOTH checkout pods allowed (the gap)
 #   make logs                                         # ztunnel identity-aware L4 access logs
-#   make waypoint                                     # opt-in L7 waypoint on petstore (resets L4 policies)
+#   make waypoint                                     # AGENTGATEWAY as the L7 waypoint (installs enterprise-agentgateway; resets L4 policies)
 #   make idp                                          # Keycloak IdP (users alice/user, bob/admin)
 #   make jwt                                          # RequestAuthentication + claim-based L7 AuthorizationPolicy
 #   make jwt-test                                     # matrix: no-token / alice / bob against GET and DELETE
 #   make l7-routing                                   # petstore-v2 + HTTPRoute on the waypoint: 90/10 canary + x-beta header shift
+#   make ratelimit                                    # rate limit BY WORKLOAD IDENTITY (storefront 429s; checkout untouched, same token)
 #   make claims-enable                                # flip ENABLE_WORKLOAD_CLAIMS on ztunnel (per-pod certs; resets the L7 story)
 #   make claims                                       # annotate blue=gold green=silver + CEL claim policy: blue 200, green denied
 #   make clean                                        # delete the kind cluster
@@ -23,7 +24,7 @@ CTX ?= kind-cert-identity
 NS  ?= petshop
 KC  := http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 
-.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface l4-allow-warehouse logs waypoint idp jwt jwt-test l7-routing claims-enable claims clean
+.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface l4-allow-warehouse logs waypoint idp jwt jwt-test l7-routing ratelimit claims-enable claims clean
 
 setup:
 	./scripts/setup-cluster.sh
@@ -68,11 +69,15 @@ l4-allow-warehouse:
 logs:
 	./scripts/logs.sh
 
+# the waypoint is AGENTGATEWAY (enterprise-agentgateway-waypoint), not Envoy.
+# agw-install.sh puts in the control plane (needs AGENTGATEWAY_LICENSE_KEY).
 waypoint:
 	kubectl --context $(CTX) -n $(NS) delete authorizationpolicy allow-storefront allow-checkout --ignore-not-found
+	./scripts/agw-install.sh
 	kubectl --context $(CTX) apply -f yaml/50-l7/10-waypoint.yaml
-	kubectl --context $(CTX) label namespace $(NS) istio.io/use-waypoint=petstore-waypoint --overwrite
-	kubectl --context $(CTX) -n $(NS) rollout status deploy/petstore-waypoint --timeout=150s
+	kubectl --context $(CTX) label namespace $(NS) istio.io/use-waypoint=petshop-waypoint --overwrite
+	sleep 5
+	kubectl --context $(CTX) -n $(NS) rollout status deploy/petshop-waypoint --timeout=150s
 
 idp:
 	kubectl --context $(CTX) apply -f yaml/40-idp/keycloak.yaml
@@ -80,7 +85,12 @@ idp:
 
 jwt:
 	kubectl --context $(CTX) apply -f yaml/50-l7/20-jwt.yaml
-	@echo "L7 JWT authz on the waypoint: any valid token may GET; only realm_access.roles=admin may DELETE."
+	@echo "L7 JWT at the agentgateway waypoint: Strict authn (no token -> 401); CEL authz: any valid token GETs, only realm_access.roles=admin DELETEs."
+
+# §11c: rate limit by WORKLOAD identity (source.identity.serviceAccount CEL)
+ratelimit:
+	kubectl --context $(CTX) apply -f yaml/50-l7/50-ratelimit.yaml
+	@echo "storefront identity: 5 req/min -> 429s under burst; checkout with the SAME user token is untouched."
 
 # §11b: canary + header routing at the same waypoint (petstore-v2 + HTTPRoute)
 l7-routing:

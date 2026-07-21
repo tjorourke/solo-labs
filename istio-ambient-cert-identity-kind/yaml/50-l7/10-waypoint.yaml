@@ -1,23 +1,27 @@
-# The waypoint — opt-in L7 for the petstore service. This is a standalone Envoy
-# (GatewayClass istio-waypoint, HBONE :15008) that client traffic to petstore is
-# routed through once the Service is labelled istio.io/use-waypoint. L7 concerns
-# — JWT validation, method/path rules, request.auth.claims — live here, not in
-# ztunnel. A namespace that only needs L4 never deploys one.
+# The waypoint — opt-in L7 for the petshop namespace, and it is AGENTGATEWAY,
+# not Envoy. Solo Enterprise for agentgateway runs as the ambient waypoint
+# (GatewayClass enterprise-agentgateway-waypoint): ztunnel still proves the
+# caller's SPIFFE identity over HBONE at L4, then hands the connection to this
+# proxy for L7 — JWT validation, CEL authorization, routing, rate limiting.
+# The workload identity ztunnel proved is available to every policy here as
+# source.identity.* — no token needed to know WHO the workload is.
+#
+# A namespace that only needs L4 never deploys one.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: petstore-waypoint
+  name: petshop-waypoint
   namespace: petshop
   labels:
     istio.io/waypoint-for: service
 spec:
-  gatewayClassName: istio-waypoint
+  gatewayClassName: enterprise-agentgateway-waypoint
   listeners:
     - name: mesh
-      port: 15008
-      protocol: HBONE
+      port: 15088
+      protocol: HTTP
 # Enroll the whole petshop NAMESPACE to use it (one waypoint for every service,
 # the common default), shown as a command in the notebook/README:
-#   kubectl label namespace petshop istio.io/use-waypoint=petstore-waypoint
+#   kubectl label namespace petshop istio.io/use-waypoint=petshop-waypoint
 # For a single isolated service instead, label just that Service:
-#   kubectl label service petstore -n petshop istio.io/use-waypoint=petstore-waypoint
+#   kubectl label service petstore -n petshop istio.io/use-waypoint=petshop-waypoint

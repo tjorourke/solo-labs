@@ -62,13 +62,15 @@ assert "warehouse allowed in (widened when)" "$(wh_code)" "200"
 assert "analytics still denied (DENY > ALLOW)" "$(code_of analytics)" "000000"
 kc -n "$NS_APP" delete authorizationpolicy l4-allow-petshop-namespace l4-deny-analytics --ignore-not-found >/dev/null
 
-step "7/9 · Waypoint + Keycloak IdP"
+step "7/9 · agentgateway waypoint + Keycloak IdP"
 kc -n "$NS_APP" delete authorizationpolicy allow-storefront allow-checkout --ignore-not-found >/dev/null
+"$SCRIPT_DIR/agw-install.sh"
 kapply "$LAB_ROOT/yaml/50-l7/10-waypoint.yaml"
-kc label namespace "$NS_APP" istio.io/use-waypoint=petstore-waypoint --overwrite >/dev/null
-kc -n "$NS_APP" rollout status deploy/petstore-waypoint --timeout=150s >/dev/null
+kc label namespace "$NS_APP" istio.io/use-waypoint=petshop-waypoint --overwrite >/dev/null
+sleep 5
+kc -n "$NS_APP" rollout status deploy/petshop-waypoint --timeout=150s >/dev/null
 kc -n keycloak rollout status deploy/keycloak --timeout=240s >/dev/null   # applied early in step 2
-ok "waypoint + keycloak ready"
+ok "agentgateway waypoint + keycloak ready"
 
 step "8/9 · L7 JWT authz matrix"
 kapply "$LAB_ROOT/yaml/50-l7/20-jwt.yaml"; sleep 12
@@ -76,7 +78,7 @@ KCURL=http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/op
 tok() { kc -n "$NS_APP" exec deploy/storefront -- sh -c "curl -s -m10 -d grant_type=password -d client_id=petshop -d username=$1 -d password=$1 -d scope=openid $KCURL" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'; }
 call() { kc -n "$NS_APP" exec deploy/storefront -- sh -c "$1"; }
 ALICE=$(tok alice); BOB=$(tok bob)
-assert "no token -> GET 403"        "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 http://petstore:8080/pets")" "403"
+assert "no token -> GET 401 (agw authn)" "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 http://petstore:8080/pets")" "401"
 assert "alice -> GET 200"           "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -H 'Authorization: Bearer $ALICE' http://petstore:8080/pets")" "200"
 assert "alice(user) -> DELETE 403"  "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $ALICE' http://petstore:8080/pets/1")" "403"
 assert "bob(admin) -> DELETE 200"   "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $BOB' http://petstore:8080/pets/1")" "200"
@@ -92,7 +94,14 @@ V1=0; V2=0
 for _ in $(seq 1 20); do if [[ "$(served "")" == "v2" ]]; then V2=$((V2+1)); else V1=$((V1+1)); fi; done
 ok "canary split over 20 requests: v1=$V1 v2=$V2 (weights 90/10)"
 [[ $V1 -gt $V2 ]] && ok "v1 majority holds" || { warn "v1 not majority: v1=$V1 v2=$V2"; FAILS=$((FAILS+1)); }
-assert "no token on beta route -> 403" "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -H 'x-beta: true' http://petstore:8080/pets")" "403"
+assert "no token on beta route -> 401" "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -H 'x-beta: true' http://petstore:8080/pets")" "401"
+
+# 8c: rate limit BY WORKLOAD IDENTITY — storefront capped, checkout untouched (same token)
+kapply "$LAB_ROOT/yaml/50-l7/50-ratelimit.yaml"; sleep 8
+SF_CODES="$(call "for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w '%{http_code} ' -m5 -H 'Authorization: Bearer $ALICE' http://petstore:8080/pets; done")"
+[[ "$SF_CODES" == *"429"* ]] && ok "storefront rate limited: $SF_CODES" || { warn "storefront never hit 429: $SF_CODES"; FAILS=$((FAILS+1)); }
+BL_CODES="$(kc -n "$NS_APP" exec deploy/checkout-blue -- sh -c "for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w '%{http_code} ' -m5 -H 'Authorization: Bearer $ALICE' http://petstore:8080/pets; done")"
+[[ "$BL_CODES" == "200 200 200 200 200 200 200 200 " ]] && ok "checkout-blue unlimited (same token): $BL_CODES" || { warn "checkout-blue affected: $BL_CODES"; FAILS=$((FAILS+1)); }
 
 step "9/9 · Workload claims (ENABLE_WORKLOAD_CLAIMS) close the shared-SA gap"
 "$SCRIPT_DIR/claims-enable.sh"
