@@ -20,6 +20,7 @@ step "Back to a pure L4 story (remove the L7 waypoint + JWT policies)"
 kc -n "$NS_APP" delete authorizationpolicy petstore-jwt-authz --ignore-not-found >/dev/null
 kc -n "$NS_APP" delete requestauthentication petshop-jwt --ignore-not-found >/dev/null
 kc label namespace "$NS_APP" istio.io/use-waypoint- >/dev/null 2>&1 || true
+kc -n "$NS_APP" delete httproute petstore-split --ignore-not-found >/dev/null
 kc -n "$NS_APP" delete gateway petstore-waypoint --ignore-not-found >/dev/null
 ok "L7 objects removed; only L4 identity remains"
 

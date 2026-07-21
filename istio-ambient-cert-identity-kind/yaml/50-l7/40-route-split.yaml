@@ -1,0 +1,32 @@
+# Route at the waypoint (GAMMA): an HTTPRoute whose parentRef is the petstore
+# SERVICE. Callers keep calling petstore:8080; the waypoint enforces the route:
+#   - x-beta: "true"  -> always petstore-v2 (header-based shift)
+#   - everything else -> 90% petstore (v1), 10% petstore-v2 (canary)
+# The §11 JWT policy still gates every request at the same waypoint — policy
+# and routing compose.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: petstore-split
+  namespace: petshop
+spec:
+  parentRefs:
+    - group: ""
+      kind: Service
+      name: petstore
+      port: 8080
+  rules:
+    - matches:
+        - headers:
+            - name: x-beta
+              value: "true"
+      backendRefs:
+        - name: petstore-v2
+          port: 8080
+    - backendRefs:
+        - name: petstore
+          port: 8080
+          weight: 90
+        - name: petstore-v2
+          port: 8080
+          weight: 10

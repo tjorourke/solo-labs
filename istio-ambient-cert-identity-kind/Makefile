@@ -15,6 +15,7 @@
 #   make idp                                          # Keycloak IdP (users alice/user, bob/admin)
 #   make jwt                                          # RequestAuthentication + claim-based L7 AuthorizationPolicy
 #   make jwt-test                                     # matrix: no-token / alice / bob against GET and DELETE
+#   make l7-routing                                   # petstore-v2 + HTTPRoute on the waypoint: 90/10 canary + x-beta header shift
 #   make claims-enable                                # flip ENABLE_WORKLOAD_CLAIMS on ztunnel (per-pod certs; resets the L7 story)
 #   make claims                                       # annotate blue=gold green=silver + CEL claim policy: blue 200, green denied
 #   make clean                                        # delete the kind cluster
@@ -22,7 +23,7 @@ CTX ?= kind-cert-identity
 NS  ?= petshop
 KC  := http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop/protocol/openid-connect/token
 
-.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface logs waypoint idp jwt jwt-test claims-enable claims clean
+.PHONY: setup gloo-ui gloo-ui-forward deploy svid allow-storefront allow-checkout l4-surface l4-allow-warehouse logs waypoint idp jwt jwt-test l7-routing claims-enable claims clean
 
 setup:
 	./scripts/setup-cluster.sh
@@ -80,6 +81,13 @@ idp:
 jwt:
 	kubectl --context $(CTX) apply -f yaml/50-l7/20-jwt.yaml
 	@echo "L7 JWT authz on the waypoint: any valid token may GET; only realm_access.roles=admin may DELETE."
+
+# §11b: canary + header routing at the same waypoint (petstore-v2 + HTTPRoute)
+l7-routing:
+	kubectl --context $(CTX) apply -f yaml/50-l7/30-petstore-v2.yaml
+	kubectl --context $(CTX) -n $(NS) rollout status deploy/petstore-v2 --timeout=120s
+	kubectl --context $(CTX) apply -f yaml/50-l7/40-route-split.yaml
+	@echo "90/10 canary petstore/petstore-v2 + x-beta:true -> v2. JWT policy still applies. Test: demo.ipynb §11b."
 
 # matrix: no token / alice (user) / bob (admin), against GET and DELETE
 jwt-test:

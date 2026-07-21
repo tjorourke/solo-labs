@@ -81,6 +81,19 @@ assert "alice -> GET 200"           "$(call "curl -s -o /dev/null -w '%{http_cod
 assert "alice(user) -> DELETE 403"  "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $ALICE' http://petstore:8080/pets/1")" "403"
 assert "bob(admin) -> DELETE 200"   "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $BOB' http://petstore:8080/pets/1")" "200"
 
+# 8b: routing at the same waypoint — canary split + header shift, JWT still enforced
+kapply "$LAB_ROOT/yaml/50-l7/30-petstore-v2.yaml"
+kc -n "$NS_APP" rollout status deploy/petstore-v2 --timeout=120s >/dev/null
+kapply "$LAB_ROOT/yaml/50-l7/40-route-split.yaml"; sleep 10
+served() { call "curl -s -m5 -H 'Authorization: Bearer $ALICE' $1 http://petstore:8080/pets" | grep -o '"served_by": "petstore[^"]*"' | grep -q "petstore-v2" && echo v2 || echo v1; }
+BETA_V2=0; for _ in 1 2 3; do [[ "$(served "-H 'x-beta: true'")" == "v2" ]] && BETA_V2=$((BETA_V2+1)); done
+assert "x-beta header -> always v2 (3/3)" "$BETA_V2" "3"
+V1=0; V2=0
+for _ in $(seq 1 20); do if [[ "$(served "")" == "v2" ]]; then V2=$((V2+1)); else V1=$((V1+1)); fi; done
+ok "canary split over 20 requests: v1=$V1 v2=$V2 (weights 90/10)"
+[[ $V1 -gt $V2 ]] && ok "v1 majority holds" || { warn "v1 not majority: v1=$V1 v2=$V2"; FAILS=$((FAILS+1)); }
+assert "no token on beta route -> 403" "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -H 'x-beta: true' http://petstore:8080/pets")" "403"
+
 step "9/9 · Workload claims (ENABLE_WORKLOAD_CLAIMS) close the shared-SA gap"
 "$SCRIPT_DIR/claims-enable.sh"
 kc -n "$NS_APP" patch deploy checkout-blue  -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"gold"}}}}}' >/dev/null
