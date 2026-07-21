@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # e2e.sh — the whole lab, automated, with assertions. Stands up the mesh,
 # deploys the petshop, proves L4 identity authz (allow/deny + the shared-SA
-# gap), the L7 JWT authz matrix at a waypoint with Keycloak, then the in-place
-# 1.30 upgrade whose workload claims close the shared-SA gap at L4. Exits
-# non-zero on any failed assertion.
+# gap), the L7 JWT authz matrix at a waypoint with Keycloak, then flips
+# ENABLE_WORKLOAD_CLAIMS on ztunnel so workload claims close the shared-SA gap
+# at L4. Exits non-zero on any failed assertion.
 #
 #   ./scripts/e2e.sh SECRETS_FILE=... (or export SOLO_ISTIO_LICENSE_KEY)
 # Needs docker, kind, kubectl, helm, istioctl, gcloud (authenticated).
@@ -77,8 +77,8 @@ assert "alice -> GET 200"           "$(call "curl -s -o /dev/null -w '%{http_cod
 assert "alice(user) -> DELETE 403"  "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $ALICE' http://petstore:8080/pets/1")" "403"
 assert "bob(admin) -> DELETE 200"   "$(call "curl -s -o /dev/null -w '%{http_code}' -m5 -X DELETE -H 'Authorization: Bearer $BOB' http://petstore:8080/pets/1")" "200"
 
-step "9/9 · Workload claims: in-place 1.30 upgrade closes the shared-SA gap"
-"$SCRIPT_DIR/claims-upgrade.sh"
+step "9/9 · Workload claims (ENABLE_WORKLOAD_CLAIMS) close the shared-SA gap"
+"$SCRIPT_DIR/claims-enable.sh"
 kc -n "$NS_APP" patch deploy checkout-blue  -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"gold"}}}}}' >/dev/null
 kc -n "$NS_APP" patch deploy checkout-green -p '{"spec":{"template":{"metadata":{"annotations":{"solo.io.security-claims/tier":"silver"}}}}}' >/dev/null
 kc -n "$NS_APP" rollout status deploy/checkout-blue deploy/checkout-green --timeout=120s >/dev/null

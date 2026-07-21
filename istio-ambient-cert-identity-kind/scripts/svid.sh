@@ -29,4 +29,4 @@ ic ztunnel-config certificate "$ZT.$ISTIO_SYSTEM_NS" 2>/dev/null \
 echo
 log "The identity on the cert is the ServiceAccount. Note that checkout-blue and"
 log "checkout-green resolve to the SAME SVID (…/sa/checkout) — that is the gap the"
-log "workload-claims step (make claims-upgrade && make claims) closes."
+log "workload-claims step (make claims-enable && make claims) closes."

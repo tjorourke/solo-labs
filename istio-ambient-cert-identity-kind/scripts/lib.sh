@@ -6,8 +6,8 @@
 # every workload gets a SPIFFE SVID from its ServiceAccount, ztunnel enforces
 # L4 AuthorizationPolicy on that identity with no waypoint, and we show the
 # one thing SA-scoped identity cannot do — tell two pods that share a
-# ServiceAccount apart — then close it live with the Solo 1.30 workload-claims
-# step (an in-place upgrade at the end of the lab).
+# ServiceAccount apart — then close it live with the Solo workload-claims step
+# (flip ENABLE_WORKLOAD_CLAIMS on ztunnel at the end of the lab).
 #
 # Edition: ENTERPRISE. The mesh is installed straight from the Solo distribution
 # Helm charts (base, istiod, cni, ztunnel) on the Solo Istio images. Needs
@@ -16,11 +16,12 @@
 
 set -Eeuo pipefail
 
-# Central product/infra versions (generated from versions.json). Runtime env
-# still wins; the := fallbacks keep the lab runnable if versions.env is absent.
+# This lab pins the Solo 1.30 line (the workload-claims step needs it), so set
+# the pin BEFORE sourcing the repo-wide versions.env (whose ${VAR:-default}
+# keeps whatever is already set). A runtime SOLO_ISTIO_VERSION env still wins.
+: "${SOLO_ISTIO_VERSION:=1.30.3-solo}"
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
-: "${SOLO_ISTIO_VERSION:=1.29.3-solo}"
 : "${GATEWAY_API_VERSION:=v1.5.1}"
 
 # ── logging ───────────────────────────────────────────────────────────────────
@@ -60,13 +61,14 @@ export NS_APP="${NS_APP:-petshop}"
 # istiod / cni / ztunnel value up front — license, trust domain, JSON logs and
 # so on are Helm values, not post-hoc kubectl patches.
 export ISTIO_SYSTEM_NS="${ISTIO_SYSTEM_NS:-istio-system}"
-# Image hub + tag. On the 1.29 line the image tag has NO -solo suffix
-# (pilot:1.29.3). On the 1.30 line it KEEPS it (pilot:1.30.3-solo) — the plain
-# 1.30.x tag is the upstream build; claims-upgrade.sh pins the -solo tag.
+# Image hub + tag. On the 1.30 line the image tag KEEPS the -solo suffix
+# (pilot:1.30.3-solo) — the plain 1.30.x tag in the same registry is the
+# upstream build with none of the Solo additions (it installs cleanly and the
+# workload-claims step then silently fail-closes). 1.29 was the other way
+# round: chart -solo, image plain.
 export ISTIO_REGISTRY="${ISTIO_REGISTRY:-us-docker.pkg.dev/soloio-img/istio}"
-export ISTIO_VERSION="${ISTIO_VERSION:-${SOLO_ISTIO_VERSION%-solo}}"
-# Helm charts for the Solo distribution. The chart version KEEPS the -solo
-# suffix (e.g. 1.29.3-solo), while the image tag above does not.
+export ISTIO_VERSION="${ISTIO_VERSION:-${SOLO_ISTIO_VERSION}}"
+# Helm charts for the Solo distribution (same -solo version as the images).
 export ISTIO_HELM_REPO="${ISTIO_HELM_REPO:-oci://us-docker.pkg.dev/soloio-img/istio-helm}"
 export ISTIO_HELM_VERSION="${ISTIO_HELM_VERSION:-${SOLO_ISTIO_VERSION}}"
 # Mesh trust domain (identities become spiffe://$TRUST_DOMAIN/ns/<ns>/sa/<sa>).
