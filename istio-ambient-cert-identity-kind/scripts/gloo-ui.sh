@@ -55,6 +55,20 @@ install() {
     --namespace "$GLOO_MESH_NS" --version "$GLOO_PLATFORM_VERSION" --wait --timeout 5m >/dev/null
   ok "gloo-platform CRDs installed"
 
+  # Register the cluster FIRST (the CRD is already installed by gloo-platform-crds).
+  # If we register only after the main install, the gloo-mesh-agent crashloops with
+  # "cluster is not registered" and a helm --wait blocks on it forever.
+  kc apply -f - >/dev/null <<EOF
+apiVersion: admin.gloo.solo.io/v2
+kind: KubernetesCluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${GLOO_MESH_NS}
+spec:
+  clusterDomain: cluster.local
+EOF
+  ok "cluster '${CLUSTER_NAME}' registered"
+
   # Single-cluster values: mgmt server AND agent in one release, co-located.
   local values; values="$(mktemp)"
   cat > "$values" <<EOF
@@ -84,23 +98,16 @@ telemetryGateway:
 glooInsightsEngine:
   enabled: true
 EOF
+  # NO --wait: it blocks until EVERY pod is Ready, and on a small cluster some
+  # sit Pending / restart while the mgmt server boots, hanging the whole step.
+  # We wait only for the UI (in forward()) — the one thing we port-forward.
   helm --kube-context "$CTX" upgrade --install gloo-platform gloo-platform/gloo-platform \
-    --namespace "$GLOO_MESH_NS" --version "$GLOO_PLATFORM_VERSION" -f "$values" --wait --timeout 10m >/dev/null
+    --namespace "$GLOO_MESH_NS" --version "$GLOO_PLATFORM_VERSION" -f "$values" >/dev/null
   rm -f "$values"
 
-  # Register the cluster, or the co-located agent is rejected ("not registered").
-  kc apply -f - >/dev/null <<EOF
-apiVersion: admin.gloo.solo.io/v2
-kind: KubernetesCluster
-metadata:
-  name: ${CLUSTER_NAME}
-  namespace: ${GLOO_MESH_NS}
-spec:
-  clusterDomain: cluster.local
-EOF
-  ok "Gloo UI installed and cluster '${CLUSTER_NAME}' registered"
-  forward
-  log "In the UI: Observability → then the petshop namespace/workloads (deploy petshop first if you haven't)."
+  ok "Gloo Platform installing (cluster registered); waiting only for the UI"
+  forward   # waits for the gloo-mesh-ui deployment, then port-forwards
+  log "In the UI: Observability → the petshop namespace/workloads (deploy petshop first if you haven't)."
 }
 
 case "${1:-install}" in
