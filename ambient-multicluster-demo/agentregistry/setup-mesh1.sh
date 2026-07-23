@@ -15,7 +15,6 @@
 # Needs ANTHROPIC_API_KEY + SOLO_LICENSE_KEY (SECRETS_FILE) and gcloud auth.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_SCRIPTS="/Users/thomasorourke/code/solo/solo-demos/agentregistry-agentcore-kind/deploy/scripts"
 
 log(){ echo "  $*" >&2; }
 ok(){ echo "  ✓ $*" >&2; }
