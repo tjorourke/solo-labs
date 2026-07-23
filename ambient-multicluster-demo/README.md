@@ -32,9 +32,15 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./setup.sh   # ~15-20 min first
 Day-2:
 
 ```bash
+./demo-scripts/reset.sh       # wipe ALL demo workloads (both parts) back to square 1, keep the platform
 ./demo-scripts/wake.sh        # after a laptop sleep (expired 24h leaf certs)
-./setup.sh teardown           # delete both clusters
+./setup.sh teardown           # delete both clusters (full rebuild)
 ```
+
+**Three levels of reset**, lightest to heaviest:
+- **`1.R` / `2.R`** (notebook cells) — per-part *soft* reset; undoes that part's steps but keeps the app deployed, for a quick re-run of the same part.
+- **`./demo-scripts/reset.sh`** — hard reset the whole demo to square 1: removes every demo workload from both parts (bookinfo, petshop, warehouse) and reverts ztunnel to claims-off, but leaves the platform (mesh, peering, agentgateway, Gloo UI, Keycloak) up. No rebuild — restart the demo from §1.1 / §2.1. Use this between demo runs, or to start Phase 2 clean.
+- **`./setup.sh teardown`** — delete the clusters entirely (full ~20-min rebuild).
 
 ## What setup.sh stands up
 
