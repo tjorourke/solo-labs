@@ -1,0 +1,13 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: mesh-eu-central
+  region: eu-central-1
+  version: "1.33"
+managedNodeGroups:
+  - name: workers
+    instanceType: m5.large
+    desiredCapacity: 3
+    minSize: 2
+    maxSize: 12          # headroom for the 1k-tenant scale ramp
+    volumeSize: 40
