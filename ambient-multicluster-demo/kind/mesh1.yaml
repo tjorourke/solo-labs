@@ -1,10 +1,20 @@
-# kind cluster 1 for the two-part ambient demo (multicluster + cert identity).
-# One control-plane + one worker per cluster; the worker keeps app pods off the
-# control-plane. No host port mappings — north-south traffic uses MetalLB LB IPs
-# on the kind Docker network.
+# kind cluster 1 for the demo suite (multicluster + L4 + waypoint + agentregistry).
+# One control-plane + one worker; the worker keeps app pods off the control-plane.
+#
+# No host port mappings: north-south traffic (all four demos) uses MetalLB
+# LoadBalancer IPs on the kind Docker network, reachable from the host — so this
+# lab never fights another kind cluster for host :80. The agentregistry demo
+# (demo-4) reaches its consoles at <svc>.<LB-IP>.sslip.io through the same LB IP.
+#
+# The containerd registry patch lets the nodes pull arctl-built images from the
+# host-side kind-registry on localhost:5001 (demo-4). Demos 1-3 ignore it.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: mesh1
 nodes:
   - role: control-plane
   - role: worker
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"

@@ -74,6 +74,35 @@ for NAME in "$CLUSTER1_NAME" "$CLUSTER2_NAME"; do
   fi
 done
 
+# ── Step 1b: local OCI registry on :5001, wired into mesh1 (for the agentregistry
+# demo — arctl builds/pushes here and mesh1 pulls from it). Harmless for demos 1-3.
+# Follows the canonical kind local-registry recipe.
+step "Local registry (kind-registry :5001) wired into $CLUSTER1_NAME"
+REG_NAME="${REG_NAME:-kind-registry}"; REG_PORT="${REG_PORT:-5001}"
+if [[ "$(docker inspect -f '{{.State.Running}}' "$REG_NAME" 2>/dev/null)" == "true" ]]; then
+  ok "registry '$REG_NAME' already running"
+else
+  docker run -d --restart=always -p "127.0.0.1:${REG_PORT}:5000" --name "$REG_NAME" registry:2 >/dev/null
+  ok "registry '$REG_NAME' started on :$REG_PORT"
+fi
+for node in $(kind get nodes --name "$CLUSTER1_NAME"); do
+  docker exec "$node" mkdir -p "/etc/containerd/certs.d/localhost:${REG_PORT}"
+  printf '[host."http://%s:5000"]\n' "$REG_NAME" \
+    | docker exec -i "$node" cp /dev/stdin "/etc/containerd/certs.d/localhost:${REG_PORT}/hosts.toml"
+done
+[[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "$REG_NAME" 2>/dev/null)" == "null" ]] \
+  && docker network connect kind "$REG_NAME" >/dev/null 2>&1 || true
+kubectl --context "$CLUSTER1" apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: local-registry-hosting, namespace: kube-public }
+data:
+  localRegistryHosting.v1: |
+    host: "localhost:${REG_PORT}"
+    help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
+EOF
+ok "$CLUSTER1_NAME nodes pull localhost:${REG_PORT} -> ${REG_NAME}:5000"
+
 # ── Step 2: MetalLB ───────────────────────────────────────────────────────────
 step "Installing MetalLB $METALLB_VERSION"
 KIND_CIDR="$(docker network inspect kind \

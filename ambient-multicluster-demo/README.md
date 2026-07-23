@@ -5,8 +5,9 @@
 - **Part 1 — Multicluster.** Bookinfo on both clusters, east-west gateways + `istioctl multicluster link`, agentgateway ingress, global services (`solo.io/service-scope=global` → `*.mesh.internal`), cross-cluster failover, takeover of the local hostname (`solo.io/service-takeover=true`), then the same ingress doing canary + rate limit.
 - **Part 2 — L4 identity.** The petshop on `mesh1`: the certificate is the identity, authorise on it in ztunnel, identity-aware access logs, the shared-ServiceAccount gap, workload claims closing it — all at L4, no proxy in the path.
 - **Part 3 — Waypoint (L7).** Add the agentgateway waypoint to the petshop: JWT authorisation, canary routing and identity-keyed rate limiting. Needs the petshop from Part 2 §2.1.
+- **Part 4 — AgentRegistry.** On `mesh1`: a governed catalog of approved MCP tool servers, skills and runtimes; scaffold an agent with `arctl`, build/publish, deploy to kagent and ask it; add a tool; lock it down with a waypoint AccessPolicy; turn a REST API into MCP tools (OpenAPI → MCP); optionally deploy the same agent to AWS Bedrock AgentCore. Needs the extra platform standup below.
 
-The parts run **independently** — pick one per customer, or run all three. This lab is a personal demo driver: no `index.html`, not on the site.
+The parts run **independently** — pick one per customer, or run all four. This lab is a personal demo driver: no `index.html`, not on the site.
 
 ## Stack (validated live)
 
@@ -27,8 +28,17 @@ Trust domains are per-cluster (`mesh1` / `mesh2`), the documented 1.30.x multicl
 SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./setup.sh   # ~15-20 min first run
 
 ./demo-scripts/consoles.sh    # Gloo UI (service graph spans both clusters)
-# open demo.ipynb (Bash kernel) → run the Connect cell → Part 1 and/or Part 2
+# open a demo notebook (Bash kernel) → run its Connect cell → Parts 1-3
 ```
+
+**Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak) — heavy, so it is a separate one-time standup after `./setup.sh`:
+
+```bash
+SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./agentregistry/setup-mesh1.sh   # ~8 min
+# open demo-4-agentregistry.ipynb → run its Connect cell
+```
+
+Consoles are on the mesh1 LoadBalancer IP via `sslip.io` (no `/etc/hosts`): the Connect cell prints the AgentRegistry UI + Keycloak URLs.
 
 Day-2:
 
