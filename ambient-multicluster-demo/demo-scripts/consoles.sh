@@ -34,8 +34,10 @@ cat <<EOF
   ────────────────────────────────────────────────────────────
   Graph tips for the demo:
     - tick both clusters + the bookinfo / petshop namespaces in the pickers
-    - drop the time-interval picker (next to Refresh) to the smallest window
-      so policy changes reshape the graph within a minute or two
+    - Graph Settings (gear): turn "Idle Nodes" OFF so only LIVE traffic draws
+      (otherwise stale edges linger after a failover and it looks like traffic
+      never came back), and set Traffic to "Last 1 min"
+    - give it ~15-30s after each change for the scrape/refresh to catch up
   Port-forward log: /tmp/ambient-demo-gloo-ui-pf.log
   Stop it:          pkill -f 'port-forward.*gloo-mesh-ui'
 EOF
