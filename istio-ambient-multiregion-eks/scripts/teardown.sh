@@ -24,6 +24,21 @@ if [[ -n "$GA_ARN" && "$GA_ARN" != "None" ]]; then
   aws globalaccelerator delete-accelerator --accelerator-arn "$GA_ARN" --region us-west-2 && ok "accelerator deleted"
 fi
 
+step "Deleting the Route53 failover record set (if HOSTED_ZONE_ID + RECORD_NAME set)"
+if [[ -n "${HOSTED_ZONE_ID:-}" && -n "${RECORD_NAME:-}" ]]; then
+  # a failover record set must be deleted with its exact SetIdentifier/Failover/TTL/value —
+  # read the two records back and DELETE each verbatim
+  aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" \
+    --query "ResourceRecordSets[?Name=='${RECORD_NAME}.']" --output json 2>/dev/null \
+    | python3 -c 'import sys,json;
+rs=json.load(sys.stdin)
+print(json.dumps({"Changes":[{"Action":"DELETE","ResourceRecordSet":r} for r in rs]})) if rs else print("")' > /tmp/mr-del.json
+  if [[ -s /tmp/mr-del.json ]]; then
+    aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" \
+      --change-batch file:///tmp/mr-del.json >/dev/null && echo "  deleted record set $RECORD_NAME"
+  fi
+fi
+
 step "Deleting Route53 health checks tagged mesh-multiregion"
 for HC in $(aws route53 list-health-checks --query 'HealthChecks[].Id' --output text 2>/dev/null); do
   TAG="$(aws route53 list-tags-for-resource --resource-type healthcheck --resource-id "$HC" \

@@ -46,19 +46,27 @@ export SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh   # SOLO_ISTIO_LICENSE_K
 ./scripts/03-app.sh            # region-echo as a global service in both regions
 
 # 2. the demos
-./scripts/04-demo-pod-failover.sh                 # DEMO 1 — mesh failover
-./scripts/05-ingress-ga.sh                        # kgateway + Global Accelerator (prints the GA DNS)
-./scripts/07-demo-region-failover.sh <ga-dns>     # DEMO 2 — edge failover
-./scripts/06-scale.sh 100                         # DEMO 3 — scale ramp
+./scripts/04-demo-pod-failover.sh                 # DEMO 1  — mesh-layer failover
+
+# ── Edge failover, two independent approaches (pick one; both shown) ──
+./scripts/05-ingress-ga.sh                        # kgateway ingress per region + Global Accelerator
+./scripts/07-demo-region-failover.sh <ga-dns>     # DEMO 2B — edge failover via Global Accelerator (anycast)
+
+HOSTED_ZONE_ID=<zone> RECORD_NAME=region-echo.<domain> ./scripts/08-dns-route53.sh
+./scripts/09-demo-dns-failover.sh region-echo.<domain>   # DEMO 2A — edge failover via Route 53 (DNS)
+
+./scripts/06-scale.sh 100                         # DEMO 3  — scale ramp
 
 # 3. tear it ALL down (billed infra)
-./scripts/teardown.sh
+HOSTED_ZONE_ID=<zone> RECORD_NAME=region-echo.<domain> ./scripts/teardown.sh   # deletes the DNS record set too
 ```
 
 ## What each demo proves
 
 1. **Mesh failover (`04`).** Client calls the same hostname throughout. Scale `region-echo` to 0 in one region → responses come from the other region over the east-west gateway → scale back → local again. Deterministic locality, no health-check config, cross-region bytes only during the outage.
-2. **Edge failover (`07`).** Curl the Global Accelerator anycast address. Kill the ingress in the region GA is serving this client → GA fails it out and serves the other region in ~40s → restore. No DNS, no TTLs.
+2. **Edge failover — two approaches, both live.**
+   - **Global Accelerator (`05` + `07`)** — anycast static IPs over both regional NLBs. Kill the ingress in the region GA is serving this client → GA fails it out and serves the other in ~40s → restore. No DNS, no TTLs.
+   - **Route 53 DNS (`08` + `09`)** — a failover record set (PRIMARY eu-central, SECONDARY eu-west), each tied to a health check. Kill the primary ingress → the record hands out the secondary NLB on the next resolution. Needs a hosted zone; cutover is health-check + record TTL + client caching.
 3. **Scale (`06`).** Ramp N tenant namespaces (global services) on both clusters; capture istiod push metrics, ztunnel memory, and time-to-discovery of a new global service from the peer. There is no management plane in this path — istiod per cluster is the thing that scales.
 
 ## Gotchas found live (all fixed in the scripts)
