@@ -1,0 +1,56 @@
+# checkout — the identity gap, made concrete. TWO deployments, checkout-blue
+# and checkout-green, that SHARE ONE ServiceAccount (checkout). In community
+# ambient a workload's identity is its ServiceAccount, so both pods present the
+# same SVID: spiffe://mesh1/ns/petshop/sa/checkout.
+#
+# Consequence: an L4 policy can allow "sa/checkout" or deny it, but it CANNOT
+# allow blue while denying green — ztunnel sees one identity for both. That is
+# the limit SA-scoped identity hits, and what the Solo 1.30 workload-claims
+# feature (yaml/30-reference) is designed to close.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: checkout, namespace: petshop }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: checkout-blue, namespace: petshop, labels: { app: checkout, release: blue } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: checkout, release: blue } }
+  template:
+    metadata: { labels: { app: checkout, release: blue } }
+    spec:
+      serviceAccountName: checkout        # shared
+      containers:
+        - name: client
+          image: curlimages/curl:8.14.1
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              while true; do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://petstore:8080/pets || echo 000)
+                echo "$(date -u +%H:%M:%S) checkout-blue -> GET petstore/pets : $code"
+                sleep 2
+              done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: checkout-green, namespace: petshop, labels: { app: checkout, release: green } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: checkout, release: green } }
+  template:
+    metadata: { labels: { app: checkout, release: green } }
+    spec:
+      serviceAccountName: checkout        # shared — same identity as blue
+      containers:
+        - name: client
+          image: curlimages/curl:8.14.1
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              while true; do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://petstore:8080/pets || echo 000)
+                echo "$(date -u +%H:%M:%S) checkout-green -> GET petstore/pets : $code"
+                sleep 2
+              done

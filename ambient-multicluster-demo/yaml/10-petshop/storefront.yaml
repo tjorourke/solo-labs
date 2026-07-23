@@ -1,0 +1,28 @@
+# storefront — the customer-facing web tier, identity
+# spiffe://mesh1/ns/petshop/sa/storefront. Lists pets every 2s. This is
+# the workload the L4 policy ALLOWS to reach petstore.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: storefront, namespace: petshop }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: storefront, namespace: petshop, labels: { app: storefront } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: storefront } }
+  template:
+    metadata: { labels: { app: storefront } }
+    spec:
+      serviceAccountName: storefront
+      containers:
+        - name: client
+          image: curlimages/curl:8.14.1
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              while true; do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://petstore:8080/pets || echo 000)
+                echo "$(date -u +%H:%M:%S) storefront -> GET petstore/pets : $code"
+                sleep 2
+              done

@@ -1,0 +1,30 @@
+# analytics — a batch/reporting workload with a DIFFERENT identity,
+# spiffe://mesh1/ns/petshop/sa/analytics. Same call to petstore. Once
+# the allow-storefront policy is applied it is DENIED at L4 by ztunnel — an
+# ALLOW policy that selects petstore denies every identity it does not name.
+# Different identity, different outcome, no app change.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: analytics, namespace: petshop }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: analytics, namespace: petshop, labels: { app: analytics } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: analytics } }
+  template:
+    metadata: { labels: { app: analytics } }
+    spec:
+      serviceAccountName: analytics
+      containers:
+        - name: client
+          image: curlimages/curl:8.14.1
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              while true; do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://petstore:8080/pets || echo 000)
+                echo "$(date -u +%H:%M:%S) analytics -> GET petstore/pets : $code"
+                sleep 2
+              done

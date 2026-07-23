@@ -1,0 +1,10 @@
+# kind cluster 1 for the two-part ambient demo (multicluster + cert identity).
+# One control-plane + one worker per cluster; the worker keeps app pods off the
+# control-plane. No host port mappings — north-south traffic uses MetalLB LB IPs
+# on the kind Docker network.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: mesh1
+nodes:
+  - role: control-plane
+  - role: worker
