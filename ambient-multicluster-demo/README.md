@@ -2,7 +2,7 @@
 
 **Two-part customer demo for Solo Enterprise for Istio (ambient), driven from `demo.ipynb`.** A mash-up of `agentgw-multi-cluster-kind` (the multicluster story, per the "Solo Enterprise for Istio" deck from slide 24) and `istio-ambient-cert-identity-kind` (the L4/L7 workload-identity story) — with **one** setup script and no per-part helm plumbing in the demo itself.
 
-- **Part 1 — Multicluster.** Bookinfo on both clusters, east-west gateways + `istioctl multicluster link`, global services (`solo.io/service-scope=global` → `*.mesh.internal`), cross-cluster failover, takeover of the local hostname, agentgateway ingress (canary + rate limit) and an agentgateway waypoint.
+- **Part 1 — Multicluster.** Bookinfo on both clusters, east-west gateways + `istioctl multicluster link`, agentgateway ingress, global services (`solo.io/service-scope=global` → `*.mesh.internal`), cross-cluster failover, takeover of the local hostname (`solo.io/service-takeover=true`), then the same ingress doing canary + rate limit, and an agentgateway waypoint.
 - **Part 2 — Workload identity.** The petshop on `mesh1`: SVID = identity, L4 authorization in ztunnel, identity-aware access logs, the shared-ServiceAccount gap, workload claims closing it (still L4), then the agentgateway waypoint for JWT + CEL + canary + identity-keyed rate limiting.
 
 The parts run **independently** — pick one per customer, or run both. This lab is a personal demo driver: no `index.html`, not on the site.
