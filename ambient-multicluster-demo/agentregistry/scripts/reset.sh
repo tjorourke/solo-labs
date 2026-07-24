@@ -43,3 +43,15 @@ ok "clean — the platform + approved catalog remain up"
 echo "" >&2
 echo "  demo-4 reset. Approved catalog still present:" >&2
 { echo "  mcpservers:"; arctl get mcpservers 2>/dev/null; echo "  runtimes:"; arctl get runtimes 2>/dev/null; } | sed 's/^/  /' >&2
+
+# --- optional teardown: park the demo-4 platform to reclaim ~1.9 GiB of RAM ---
+# Usage:  bash scripts/reset.sh down     (or  PARK=1 bash scripts/reset.sh)
+# Only demo-4 needs this stack; demos 1-3 don't. The demo-4 setup cell scales it
+# back up before it runs, so parking here is safe between demos.
+if [ "${1:-}" = "down" ] || [ "${PARK:-}" = "1" ]; then
+  step "Parking demo-4 platform (scaling to 0 — frees ~1.9 GiB)"
+  for ns in agentregistry-system ar-keycloak kagent kyverno; do
+    kc -n "$ns" scale deploy,statefulset --all --replicas=0 >/dev/null 2>&1 || true
+  done
+  ok "demo-4 platform parked — the setup cell brings it back up"
+fi
