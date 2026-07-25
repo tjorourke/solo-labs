@@ -189,11 +189,25 @@ ok "kagent namespace enrolled in ambient (network=mesh1)"
 step "Kyverno model-key injection policy"
 KYVERNO_VER="${KYVERNO_VERSION:-v1.13.4}"
 kc get deploy -n kyverno kyverno-admission-controller >/dev/null 2>&1 || {
-  kc apply --server-side --force-conflicts -f "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VER}/install.yaml" >/dev/null 2>&1
-  kc -n kyverno rollout status deploy/kyverno-admission-controller --timeout=180s >/dev/null 2>&1 || log "kyverno not Ready"; }
+  kc apply --server-side --force-conflicts -f "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VER}/install.yaml" >/dev/null 2>&1; }
+# always wait for the admission controller + the ClusterPolicy CRD (agents that deploy
+# before the injection webhook is live come up keyless → litellm 'Missing API Key' at ask time)
+kc -n kyverno rollout status deploy/kyverno-admission-controller --timeout=180s >/dev/null 2>&1 || log "kyverno not Ready"
+kc wait --for=condition=Established crd/clusterpolicies.kyverno.io --timeout=60s >/dev/null 2>&1 || true
 kc -n "$KAGENT_NS" create secret generic kagent-anthropic --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
   --dry-run=client -o yaml | kc apply -f - >/dev/null
-kc apply -f "$SCRIPT_DIR/yaml/kyverno/inject-agent-model-key.yaml" >/dev/null 2>&1 && ok "Kyverno policy applied" || log "kyverno policy apply skipped"
+# retry the policy apply — Kyverno's own validating webhook can 500 for a few seconds
+# after the CRD lands; a single try silently loses the whole injection.
+KPOL_ERR=""; for _ in $(seq 1 12); do
+  KPOL_ERR="$(kc apply -f "$SCRIPT_DIR/yaml/kyverno/inject-agent-model-key.yaml" 2>&1)" && break
+  sleep 5
+done
+if kc get clusterpolicy inject-agent-model-key >/dev/null 2>&1; then
+  kc wait --for=condition=Ready clusterpolicy/inject-agent-model-key --timeout=60s >/dev/null 2>&1 || true
+  ok "Kyverno policy applied (agents inject ANTHROPIC_API_KEY on deploy)"
+else
+  log "kyverno policy apply FAILED — agents will be keyless: ${KPOL_ERR}"
+fi
 
 # ── ingress HTTPRoutes (keycloak + agentregistry at sslip hosts) ───────────────
 step "Ingress HTTPRoutes"
