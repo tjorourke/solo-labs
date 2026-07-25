@@ -1,0 +1,9 @@
+# Dedicated cluster for Part 5 (Agent Substrate / gVisor). Kept off mesh1 so it can
+# run kagent v0.5.2 without disturbing Part 4's AgentRegistry (v0.4.3). No image pin
+# → the kind binary's default node (v1.35 here) satisfies substrate's K8s >= 1.33.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: substrate
+nodes:
+  - role: control-plane
+  - role: worker

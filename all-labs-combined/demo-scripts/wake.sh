@@ -14,7 +14,7 @@
 # is red):   ./demo-scripts/wake.sh
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../scripts/lib.sh"
+source "$SCRIPT_DIR/scripts/lib.sh"
 
 IC="$ISTIOCTL"; command -v "$IC" >/dev/null 2>&1 || IC="istioctl"
 

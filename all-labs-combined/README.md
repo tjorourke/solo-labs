@@ -6,8 +6,10 @@
 - **Part 2 — L4 identity.** The petshop on `mesh1`: the certificate is the identity, authorise on it in ztunnel, identity-aware access logs, the shared-ServiceAccount gap, workload claims closing it — all at L4, no proxy in the path.
 - **Part 3 — Waypoint (L7).** Add the agentgateway waypoint to the petshop: JWT authorisation, canary routing and identity-keyed rate limiting. Needs the petshop from Part 2 §2.1.
 - **Part 4 — AgentRegistry.** On `mesh1`: a governed catalog of approved MCP tool servers, skills and runtimes; scaffold an agent with `arctl`, build/publish, deploy to kagent and ask it; add a tool; lock it down with a waypoint AccessPolicy; turn a REST API into MCP tools (OpenAPI → MCP); optionally deploy the same agent to AWS Bedrock AgentCore. Needs the extra platform standup below.
+- **Part 5 — Substrate (gVisor).** On its **own** `kind-substrate` cluster (kagent v0.5.2): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool` — prove the sandbox, warm-vs-cold bind, golden-snapshot resume. Isolated from Part 4 (which stays on kagent v0.4.3).
+- **Part 6 — Inference routing.** On its **own** `kind-inference` cluster: a standalone agentgateway fronts a vLLM-simulator pool; the GIE Endpoint Picker does KV-cache-aware routing to an `InferencePool`, with serving priority via `InferenceObjective`. (A mesh-integrated gateway can't route GIE pools, so it runs on its own non-mesh gateway.)
 
-The parts run **independently** — pick one per customer, or run all four. This lab is a personal demo driver: no `index.html`, not on the site.
+The parts run **independently** — pick one per customer, or run all six. This lab is a personal demo driver: no `index.html`, not on the site.
 
 ## Stack (validated live)
 
@@ -25,18 +27,35 @@ Trust domains are per-cluster (`mesh1` / `mesh2`), the documented 1.30.x multicl
 
 ```bash
 # licences: SOLO_ISTIO_LICENSE_KEY + AGENTGATEWAY_LICENSE_KEY
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./setup.sh   # ~15-20 min first run
+SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup.sh   # ~15-20 min first run
 
 ./demo-scripts/consoles.sh    # Gloo UI (service graph spans both clusters)
 # open a demo notebook (Bash kernel) → run its Connect cell → Parts 1-3
 ```
 
-**Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak) — heavy, so it is a separate one-time standup after `./setup.sh`:
+**Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak) — heavy, so it is a separate one-time standup after `./demo-scripts/setup.sh`:
 
 ```bash
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./agentregistry/setup-mesh1.sh   # ~8 min
-# open demo-4-agentregistry.ipynb → run its Connect cell
+SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/agentregistry/setup-mesh1.sh   # ~8 min
+# open demo-4-agentics-vision.ipynb → run its Connect cell
 ```
+
+### All six at once
+
+`setup-all-labs.sh` stands up every cluster needed for the suite in one go:
+
+```bash
+SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup-all-labs.sh
+# skip parts you don't need: SKIP_MESH / SKIP_PART4 / SKIP_SUBSTRATE / SKIP_INFERENCE = true
+```
+
+| Cluster | Parts | Roughly | Notes |
+|---|---|---|---|
+| `mesh1` + `mesh2` | 1-4 + Cost | ~11 GiB | istio ambient + agentgateway + Gloo UI + Keycloak + AgentRegistry/kagent **v0.4.3** + Cost ClickHouse |
+| `substrate` | 5 | ~2-3 GiB | kagent **v0.5.2** + gVisor substrate — a separate cluster so it doesn't clash with Part 4's kagent |
+| `inference` | 6 | ~1.5 GiB | standalone (non-mesh) agentgateway + vLLM sim + GIE |
+
+Parts 5 and 6 are separate clusters because they need platform versions/config incompatible with mesh1. Between demos, `docker stop` a cluster's node containers to reclaim RAM — kind survives a stop/start.
 
 Consoles are on the mesh1 LoadBalancer IP via `sslip.io` (no `/etc/hosts`): the Connect cell prints the AgentRegistry UI + Keycloak URLs.
 
@@ -45,13 +64,13 @@ Day-2:
 ```bash
 ./demo-scripts/reset.sh       # wipe ALL demo workloads (both parts) back to square 1, keep the platform
 ./demo-scripts/wake.sh        # after a laptop sleep (expired 24h leaf certs)
-./setup.sh teardown           # delete both clusters (full rebuild)
+./demo-scripts/setup.sh teardown           # delete both clusters (full rebuild)
 ```
 
 **Three levels of reset**, lightest to heaviest:
 - **Reset cell** (near the top of each notebook) — undoes that demo's steps so it can be re-run; safe on a fresh cluster.
 - **`./demo-scripts/reset.sh`** — hard reset the whole demo to square 1: removes every demo workload from both parts (bookinfo, petshop, warehouse) and reverts ztunnel to claims-off, but leaves the platform (mesh, peering, agentgateway, Gloo UI, Keycloak) up. No rebuild — restart the demo from §1.1 / §2.1. Use this between demo runs, or to start Phase 2 clean.
-- **`./setup.sh teardown`** — delete the clusters entirely (full ~20-min rebuild).
+- **`./demo-scripts/setup.sh teardown`** — delete the clusters entirely (full ~20-min rebuild).
 
 ## What setup.sh stands up
 

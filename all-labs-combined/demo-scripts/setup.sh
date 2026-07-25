@@ -19,15 +19,15 @@
 #   9. Keycloak IdP on mesh1 (Part 2's JWT sections)
 #
 # Usage:
-#   ./setup.sh                 — full standup (~15-20 min first run)
-#   ./setup.sh teardown        — delete both clusters + certs
+#   ./demo-scripts/setup.sh                 — full standup (~15-20 min first run)
+#   ./demo-scripts/setup.sh teardown        — delete both clusters + certs
 #
 # Licences: SOLO_ISTIO_LICENSE_KEY + AGENTGATEWAY_LICENSE_KEY (+ optional
 # GLOO_PLATFORM_LICENSE_KEY, falls back to SOLO_ISTIO_LICENSE_KEY). Export them
 # or point SECRETS_FILE at a file that does.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/scripts/lib.sh"
-LAB_ROOT="$SCRIPT_DIR"
+LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CERTS_DIR="$LAB_ROOT/.certs"
 
 # ── Teardown ──────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ for NAME in "$CLUSTER1_NAME" "$CLUSTER2_NAME"; do
   if kind get clusters 2>/dev/null | grep -qx "$NAME"; then
     log "[$NAME] already exists — skipping"
   else
-    kind create cluster --config "$LAB_ROOT/kind/${NAME}.yaml"
+    kind create cluster --config "$SCRIPT_DIR/kind/${NAME}.yaml"
     ok "[$NAME] created"
   fi
 done
@@ -441,22 +441,14 @@ done
 # (solo-cost) keeps it independent of the other parts. Skip: SKIP_COST_MGMT=true.
 if [[ "${SKIP_COST_MGMT:-false}" != "true" ]]; then
   step "Cost Management on $CLUSTER1_NAME (management chart + ClickHouse, seeded)"
-  CLUSTER1="$CLUSTER1" CLUSTER1_NAME="$CLUSTER1_NAME" bash "$LAB_ROOT/demo-scripts/cost-mgmt.sh" >/dev/null
+  CLUSTER1="$CLUSTER1" CLUSTER1_NAME="$CLUSTER1_NAME" bash "$SCRIPT_DIR/cost-mgmt.sh" >/dev/null
   ok "Cost Management up + seeded (open via ./demo-scripts/consoles.sh → :8095/age/cost-management)"
 fi
 
-# ── Agent Substrate (gVisor) — opt-in; bumps the shared kagent to v0.5.2 ───────
-# Part 5 only. It upgrades the kagent release Part 4 installs (v0.4.3 → v0.5.2), so
-# it is off by default; enable with ENABLE_SUBSTRATE=true. Needs Part 4's kagent present.
-if [[ "${ENABLE_SUBSTRATE:-false}" == "true" ]] && kubectl --context "$CLUSTER1" -n kagent get deploy kagent-controller >/dev/null 2>&1; then
-  step "Agent Substrate (gVisor) on $CLUSTER1_NAME — bumps kagent to v0.5.2 (ENABLE_SUBSTRATE=true)"
-  CTX="$CLUSTER1" bash "$LAB_ROOT/demo-scripts/substrate-up.sh" >/dev/null
-  ok "Agent Substrate enabled (demo it in demo-5-substrate.ipynb)"
-fi
 
 # ── Step 10: Keycloak IdP on mesh1 (Part 2 JWT sections) ──────────────────────
 step "Keycloak IdP on $CLUSTER1_NAME (realm petshop: alice/user, bob/admin)"
-kubectl --context "$CLUSTER1" apply -f "$LAB_ROOT/yaml/40-idp/keycloak.yaml" >/dev/null
+kubectl --context "$CLUSTER1" apply -f "$SCRIPT_DIR/yaml/40-idp/keycloak.yaml" >/dev/null
 ok "Keycloak applied (it finishes booting in the background)"
 
 # ── Step 11: Gloo UI — wait for mesh1, then register mesh2 ────────────────────
@@ -578,6 +570,6 @@ echo "  Demo:        open demo.ipynb (Bash kernel) — Part 1 and Part 2 run"
 echo "               independently; each starts from this platform."
 echo ""
 echo "  After a laptop sleep: ./demo-scripts/wake.sh"
-echo "  Teardown:            ./setup.sh teardown"
+echo "  Teardown:            ./demo-scripts/setup.sh teardown"
 echo ""
 [[ "$FAIL" == "0" ]] || { echo "  ⚠ one or more smoke checks failed — see above."; exit 1; }

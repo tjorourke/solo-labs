@@ -8,7 +8,7 @@
 #   ./demo-scripts/substrate-up.sh        # then demo it in demo-5-substrate.ipynb
 #
 set -euo pipefail
-CTX="${CTX:-kind-mesh1}"; KAGENT_NS="${KAGENT_NS:-kagent}"
+CTX="${CTX:-kind-substrate}"; KAGENT_NS="${KAGENT_NS:-kagent}"
 KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
 KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
 KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.2}"
