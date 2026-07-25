@@ -42,18 +42,21 @@ echo "→ kagent CRDs ${KAGENT_ENT_VERSION} (adds SandboxAgent + ate.dev WorkerP
 helm --kube-context "$CTX" upgrade -i kagent-crds "$KENT_CRDS_CHART" -n "$KAGENT_NS" --version "$KAGENT_ENT_VERSION" \
   --set substrate.enabled=true --wait --timeout 5m
 
-if helm --kube-context "$CTX" -n "$KAGENT_NS" status kagent >/dev/null 2>&1; then
+KSTATUS="$(helm --kube-context "$CTX" -n "$KAGENT_NS" status kagent -o json 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("info",{}).get("status",""))' 2>/dev/null || true)"
+if [ "$KSTATUS" = "deployed" ]; then
   echo "→ Part 4 kagent present — upgrading it to ${KAGENT_ENT_VERSION} with substrate on (~minutes) ..."
   helm --kube-context "$CTX" upgrade kagent "$KENT_CHART" -n "$KAGENT_NS" --version "$KAGENT_ENT_VERSION" \
     --reuse-values "${SUBSTRATE_FLAGS[@]}" --wait --timeout 12m
 else
-  echo "→ no kagent present — installing a minimal standalone kagent ${KAGENT_ENT_VERSION} with substrate (~minutes) ..."
+  [ -n "$KSTATUS" ] && { echo "→ clearing a non-deployed kagent release (status: $KSTATUS) ..."; helm --kube-context "$CTX" -n "$KAGENT_NS" uninstall kagent >/dev/null 2>&1 || true; }
+  echo "→ installing a minimal standalone kagent ${KAGENT_ENT_VERSION} with substrate (~minutes) ..."
   helm --kube-context "$CTX" upgrade -i kagent "$KENT_CHART" -n "$KAGENT_NS" --version "$KAGENT_ENT_VERSION" \
     --set global.licensing.licenseKey="$LIC" \
     --set providers.default=anthropic \
     --set providers.anthropic.apiKey="$ANTHROPIC_API_KEY" \
     --set kagent-tools.enabled=true --set ui.enabled=false \
     --set otel.tracing.enabled=false --set otel.logging.enabled=false \
+    --set-json 'controller.env=[{"name":"INSECURE_MODE","value":"true"}]' \
     "${SUBSTRATE_FLAGS[@]}" --wait --timeout 12m
 fi
 kubectl --context "$CTX" -n "$KAGENT_NS" scale deploy/kagent-controller --replicas=1 2>/dev/null || true
