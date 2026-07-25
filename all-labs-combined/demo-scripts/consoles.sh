@@ -22,8 +22,24 @@ if ! curl -fs -o /dev/null -m 2 "$GLOO_URL" 2>/dev/null; then
   done
 fi
 
+# Cost Management UI (mesh1) — present only when cost management was installed
+# at setup (SKIP_COST_MGMT!=true). Port-forward svc/solo-enterprise-ui.
+COST_PORT="${COST_UI_PORT:-8095}"
+COST_URL="http://localhost:${COST_PORT}/age/cost-management"
+HAVE_COST=""
+if kubectl --context "$CLUSTER1" -n solo-cost get svc solo-enterprise-ui >/dev/null 2>&1; then
+  HAVE_COST=1
+  if ! curl -fs -o /dev/null -m 2 "http://localhost:${COST_PORT}" 2>/dev/null; then
+    pkill -f "port-forward.*svc/solo-enterprise-ui ${COST_PORT}:" 2>/dev/null || true
+    nohup kubectl --context "$CLUSTER1" -n solo-cost \
+      port-forward svc/solo-enterprise-ui "${COST_PORT}:80" >/tmp/ambient-demo-cost-ui-pf.log 2>&1 &
+    disown 2>/dev/null || true
+  fi
+fi
+
 if command -v open >/dev/null 2>&1; then
   open "$GLOO_URL" 2>/dev/null || true
+  [ -n "$HAVE_COST" ] && open "$COST_URL" 2>/dev/null || true
 fi
 
 cat <<EOF
@@ -31,6 +47,7 @@ cat <<EOF
   Consoles
   ────────────────────────────────────────────────────────────
   Gloo UI (service graph, BOTH clusters)   ${GLOO_URL}
+  Cost Management (mesh1, if installed)    ${COST_URL}
   ────────────────────────────────────────────────────────────
   Graph tips for the demo:
     - tick both clusters + the bookinfo / petshop namespaces in the pickers

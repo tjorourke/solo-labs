@@ -434,6 +434,30 @@ for CTX in "$CLUSTER1" "$CLUSTER2"; do
   ok "[$NAME] enterprise-agentgateway running (GatewayClasses: enterprise-agentgateway + -waypoint)"
 done
 
+# ── Cost Management on mesh1: management chart + ClickHouse, seeded ────────────
+# The same enterprise-agentgateway also prices LLM spend. This brings up the Cost
+# Management UI (/age/cost-management) and seeds it with example stock data so
+# demo-1 §1.9 opens a fully-populated dashboard, no live LLM traffic. Own namespace
+# (solo-cost) keeps it independent of the other parts. Skip: SKIP_COST_MGMT=true.
+if [[ "${SKIP_COST_MGMT:-false}" != "true" ]]; then
+  step "Cost Management on $CLUSTER1_NAME (management chart + ClickHouse, seeded)"
+  helm --kube-context "$CLUSTER1" upgrade -i management \
+    oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management \
+    -n solo-cost --create-namespace --version "${MGMT_VERSION:-0.5.0}" \
+    --set cluster="$CLUSTER1_NAME" \
+    --set products.agentgateway.enabled=true \
+    --set products.agentgateway.namespace=agentgateway-system \
+    --set products.agentgateway.features.cost-management=true \
+    --set products.agentgateway.features.cost-management-writes=true \
+    --set clickhouse.persistentVolume.enabled=false \
+    --set licensing.licenseKey="$AGENTGATEWAY_LICENSE_KEY" \
+    --wait --timeout 6m >/dev/null
+  kubectl --context "$CLUSTER1" -n solo-cost rollout status statefulset/management-clickhouse-shard0 --timeout=300s >/dev/null
+  CTX="$CLUSTER1" NS=solo-cost CH_POD=management-clickhouse-shard0-0 TRUNCATE=true ROWS=300000 DAYS=30 \
+    bash "$LAB_ROOT/demo-scripts/seed-clickhouse.sh" >/dev/null
+  ok "Cost Management up + seeded (open via ./demo-scripts/consoles.sh → :8095/age/cost-management)"
+fi
+
 # ── Step 10: Keycloak IdP on mesh1 (Part 2 JWT sections) ──────────────────────
 step "Keycloak IdP on $CLUSTER1_NAME (realm petshop: alice/user, bob/admin)"
 kubectl --context "$CLUSTER1" apply -f "$LAB_ROOT/yaml/40-idp/keycloak.yaml" >/dev/null
