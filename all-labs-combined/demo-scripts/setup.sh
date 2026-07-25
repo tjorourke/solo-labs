@@ -547,8 +547,13 @@ for CTX in "$CLUSTER1" "$CLUSTER2"; do
       && ok "[$NAME] GatewayClass $GC" || { warn "[$NAME] GatewayClass $GC MISSING"; FAIL=1; }
   done
 done
-if "$ISTIOCTL" --context "$CLUSTER1" multicluster check 2>&1 \
-     | grep -q "Peers Check: all clusters connected"; then
+PEER_OK=no
+for _ in $(seq 1 18); do   # kind cross-cluster peering can take a couple of minutes to converge
+  if "$ISTIOCTL" --context "$CLUSTER1" multicluster check 2>&1 \
+       | grep -q "Peers Check: all clusters connected"; then PEER_OK=yes; break; fi
+  sleep 10
+done
+if [ "$PEER_OK" = yes ]; then
   ok "multicluster peering: connected"
 else
   warn "multicluster peering: NOT confirmed"; FAIL=1
