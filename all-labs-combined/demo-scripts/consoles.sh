@@ -42,12 +42,19 @@ if command -v open >/dev/null 2>&1; then
   [ -n "$HAVE_COST" ] && open "$COST_URL" 2>/dev/null || true
 fi
 
+# Only advertise the Cost Management link when its UI is actually present.
+if [ -n "$HAVE_COST" ]; then
+  COST_CONSOLE_LINE="  Cost Management (mesh1)                 ${COST_URL}"
+else
+  COST_CONSOLE_LINE="  Cost Management: not installed — run ./demo-scripts/cost-mgmt.sh"
+fi
+
 cat <<EOF
 
   Consoles
   ────────────────────────────────────────────────────────────
   Gloo UI (service graph, BOTH clusters)   ${GLOO_URL}
-  Cost Management (mesh1, if installed)    ${COST_URL}
+${COST_CONSOLE_LINE}
   ────────────────────────────────────────────────────────────
   Graph tips for the demo:
     - tick both clusters + the bookinfo / petshop namespaces in the pickers
