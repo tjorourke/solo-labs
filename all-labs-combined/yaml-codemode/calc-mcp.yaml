@@ -1,0 +1,23 @@
+# Calculator MCP server (streamable HTTP) for the Code Mode demo.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: calc-mcp, namespace: agentgateway-system, labels: { app: calc-mcp } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: calc-mcp } }
+  template:
+    metadata: { labels: { app: calc-mcp } }
+    spec:
+      containers:
+        - name: calc
+          image: localhost:5001/calc-mcp:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 3000 }]
+          readinessProbe: { tcpSocket: { port: 3000 }, initialDelaySeconds: 3, periodSeconds: 3 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: calc-mcp, namespace: agentgateway-system }
+spec:
+  selector: { app: calc-mcp }
+  ports: [{ name: http, port: 3000, targetPort: 3000 }]
