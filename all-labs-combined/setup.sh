@@ -445,6 +445,15 @@ if [[ "${SKIP_COST_MGMT:-false}" != "true" ]]; then
   ok "Cost Management up + seeded (open via ./demo-scripts/consoles.sh → :8095/age/cost-management)"
 fi
 
+# ── Agent Substrate (gVisor) — opt-in; bumps the shared kagent to v0.5.2 ───────
+# Part 5 only. It upgrades the kagent release Part 4 installs (v0.4.3 → v0.5.2), so
+# it is off by default; enable with ENABLE_SUBSTRATE=true. Needs Part 4's kagent present.
+if [[ "${ENABLE_SUBSTRATE:-false}" == "true" ]] && kubectl --context "$CLUSTER1" -n kagent get deploy kagent-controller >/dev/null 2>&1; then
+  step "Agent Substrate (gVisor) on $CLUSTER1_NAME — bumps kagent to v0.5.2 (ENABLE_SUBSTRATE=true)"
+  CTX="$CLUSTER1" bash "$LAB_ROOT/demo-scripts/substrate-up.sh" >/dev/null
+  ok "Agent Substrate enabled (demo it in demo-5-substrate.ipynb)"
+fi
+
 # ── Step 10: Keycloak IdP on mesh1 (Part 2 JWT sections) ──────────────────────
 step "Keycloak IdP on $CLUSTER1_NAME (realm petshop: alice/user, bob/admin)"
 kubectl --context "$CLUSTER1" apply -f "$LAB_ROOT/yaml/40-idp/keycloak.yaml" >/dev/null
