@@ -33,6 +33,24 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup.sh   # ~15
 # open a demo notebook (Bash kernel) → run its Connect cell → Parts 1-3
 ```
 
+### Prefer the terminal? `source demo-scripts/env.sh <N>`
+
+Every notebook's Connect cell has a terminal twin. `source` it with the demo number and
+you get the same variables (`CTX`, `ISTIOCTL`, licences, …) and the right working
+directory, so you can paste the notebook's `kubectl` / `istioctl` / `helm` / `arctl` /
+`curl` lines straight into a shell — no Jupyter needed:
+
+```bash
+source demo-scripts/env.sh 1   # istio ambient multicluster (mesh1 + mesh2)
+source demo-scripts/env.sh 2   # ztunnel L4 identity        (mesh1)
+source demo-scripts/env.sh 3   # waypoint L7                (mesh1)
+source demo-scripts/env.sh 4   # agentregistry + arctl login (mesh1)
+source demo-scripts/env.sh 5   # kagent substrate / gVisor  (substrate)
+source demo-scripts/env.sh 6   # inference routing / GIE    (inference)
+```
+
+Must be **sourced**, not executed (`./env.sh` runs in a subshell and the exports vanish).
+
 **Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak) — heavy, so it is a separate one-time standup after `./demo-scripts/setup.sh`:
 
 ```bash
