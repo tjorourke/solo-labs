@@ -27,7 +27,7 @@ __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/
 : "${AGW_OSS_VERSION:=v1.3.1}"
 : "${GATEWAY_API_VERSION:=v1.5.1}"
 : "${GIE_VERSION:=v1.4.0}"
-: "${VLLM_SIM_IMAGE:=ghcr.io/llm-d/llm-d-inference-sim:v0.5.0}"
+: "${VLLM_SIM_IMAGE:=ghcr.io/llm-d/llm-d-inference-sim:v0.10.2}"
 
 # ── logging ───────────────────────────────────────────────────────────────────
 __has_color() { [[ -t 2 ]] && command -v tput >/dev/null 2>&1; }
