@@ -1,16 +1,15 @@
-# Prompt guard on the LLM route: reject requests carrying PII, mask PII in responses.
-# Attaches to the HTTPRoute (here /openai from step 7; change name to anthropic if that is
-# the route you set up). Built-in detectors: CreditCard, Ssn, PhoneNumber, Email, CaSin.
-# Add your own regex under `matches`.
+# Prompt guard on the LLM routes: reject requests carrying PII, mask PII in responses.
+# One policy protects every route in targetRefs (here /openai and /anthropic from step 7).
+# Keep only the routes you actually created; a targetRef to a missing route just does not
+# attach. Built-in detectors: CreditCard, Ssn, PhoneNumber, Email, CaSin. Custom: `matches`.
 #   kubectl apply -f yaml/guardrails/prompt-guard.yaml
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata: { name: prompt-guard, namespace: demo }
 spec:
   targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: openai
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: openai }
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: anthropic }
   backend:
     ai:
       promptGuard:
