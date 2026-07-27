@@ -1,0 +1,20 @@
+# Send the gateway's traces to the management-plane OpenTelemetry collector, which writes
+# them to ClickHouse for the Solo Enterprise UI dashboard. Without this the gateway exports
+# nothing and the dashboard shows "No Data Available".
+#   kubectl apply -f yaml/observability/tracing.yaml
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: tracing, namespace: demo }
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: agw
+  frontend:
+    tracing:
+      backendRef:
+        name: solo-enterprise-telemetry-collector
+        namespace: agentgateway-system
+        port: 4317
+      protocol: GRPC
+      randomSampling: "true"      # sample every request (fine for a demo)
