@@ -1,0 +1,9 @@
+# kagent packages pinned to 0.9.1 to match the enterprise controller (app:0.9.1).
+kagent-adk==0.9.1
+kagent-core==0.9.1
+a2a-sdk>=0.3.23,<1.0
+google-adk>=1.0
+litellm>=1.0
+# Stable mcp 1.x (--pre would otherwise pull the 2.0.0a1 alpha).
+mcp>=1.12,<2
+uvicorn[standard]>=0.30.0

@@ -1,0 +1,12 @@
+{
+  "name": "greeter",
+  "description": "A minimal BYO Google ADK greeter agent hosted on kagent.",
+  "url": "localhost:8080",
+  "version": "0.1.0",
+  "capabilities": { "streaming": true },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    { "id": "greet", "name": "Greet", "description": "Greets the user.", "tags": ["adk", "byo", "greeter"] }
+  ]
+}

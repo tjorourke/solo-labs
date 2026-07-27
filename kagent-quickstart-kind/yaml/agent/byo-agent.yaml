@@ -1,0 +1,20 @@
+# A BYO (bring your own) kagent Agent: your own image, your own agent code. Here a minimal
+# Google ADK greeter (src/greeter). The image serves the kagent A2A protocol on :8080.
+# The model key goes in the pod env from a Secret you create:
+#   kubectl -n kagent create secret generic anthropic-key --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
+#   kubectl apply -f yaml/agent/byo-agent.yaml
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata: { name: greeter, namespace: kagent }
+spec:
+  type: BYO
+  description: A minimal BYO Google ADK greeter agent.
+  byo:
+    deployment:
+      image: greeter-adk:dev
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: MODEL
+          value: claude-haiku-4-5
+        - name: ANTHROPIC_API_KEY
+          valueFrom: { secretKeyRef: { name: anthropic-key, key: ANTHROPIC_API_KEY } }

@@ -1,0 +1,18 @@
+# A kagent MCPServer (kmcp): the controller runs the tool server in-cluster and
+# discovers its tools, making them available to agents and the UI. Here the official
+# "everything" reference server (echo, get-sum, get-tiny-image, ...), Streamable HTTP.
+#   kubectl apply -f yaml/mcp/mcpserver.yaml
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata: { name: everything, namespace: kagent }
+spec:
+  transportType: http          # required discriminator (stdio | http)
+  deployment:
+    image: node:22-alpine
+    cmd: npx
+    args: ["-y", "@modelcontextprotocol/server-everything", "streamableHttp"]
+    port: 3001
+  httpTransport:
+    path: /mcp
+    targetPort: 3001
+  timeout: 30s

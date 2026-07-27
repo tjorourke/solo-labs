@@ -1,0 +1,22 @@
+# A declarative kagent Agent: model + instruction + tools, no code. It references the
+# tools discovered from the everything MCPServer (step 2). Note apiVersion v1alpha2 —
+# the storage version that carries spec.type / spec.declarative.
+#   kubectl apply -f yaml/agent/declarative-agent.yaml
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata: { name: mathbot, namespace: kagent }
+spec:
+  type: Declarative
+  description: A concise helper that adds numbers using the everything MCP tools.
+  declarative:
+    modelConfig: default-model-config          # created by the install (Anthropic claude-haiku-4-5)
+    systemMessage: |
+      You are a concise assistant. When asked to add numbers, call the get-sum tool
+      and reply with just the result.
+    tools:
+      - type: McpServer
+        mcpServer:
+          kind: MCPServer
+          apiGroup: kagent.dev
+          name: everything
+          toolNames: ["get-sum", "echo"]       # a subset of the server's tools
