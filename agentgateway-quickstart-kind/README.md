@@ -16,10 +16,11 @@ A checklist at the top of the page tracks the six sections, each with its doc li
 2. **IdP**: Keycloak, the OIDC identity provider ([docs](https://docs.solo.io/agentgateway/latest/security/jwt/))
 3. **Configure**: a `Gateway` and an `HTTPRoute` to a sample app ([docs](https://docs.solo.io/agentgateway/latest/traffic-management/))
 4. **MCP**: expose an MCP tool server through the gateway ([docs](https://docs.solo.io/agentgateway/latest/mcp/static-mcp/))
-5. **MCP AuthZ**: require a Keycloak JWT on `/mcp`, then per-tool RBAC (alice locked to one tool) ([docs](https://docs.solo.io/agentgateway/latest/security/jwt/))
-6. **Connect to LLMs**: front OpenAI and Anthropic, key stays in a Secret at the gateway ([docs](https://docs.solo.io/agentgateway/latest/llm/))
-7. **Observability**: metrics, traces, access logs in the UI ([docs](https://docs.solo.io/agentgateway/latest/observability/))
-8. **Cost management**: model cost catalog, dimensions, and the cost dashboard ([docs](https://docs.solo.io/agentgateway/latest/llm/cost-controls/cost-tracking/))
+5. **Code Mode**: collapse many MCP tools into one `run_code` tool to cut tokens ([docs](https://docs.solo.io/agentgateway/latest/mcp/))
+6. **MCP AuthZ**: require a Keycloak JWT on `/mcp`, then per-tool RBAC (alice locked to one tool) ([docs](https://docs.solo.io/agentgateway/latest/security/jwt/))
+7. **Connect to LLMs**: front OpenAI and Anthropic, key stays in a Secret at the gateway ([docs](https://docs.solo.io/agentgateway/latest/llm/))
+8. **Observability**: metrics, traces, access logs in the UI ([docs](https://docs.solo.io/agentgateway/latest/observability/))
+9. **Cost management**: model cost catalog, dimensions, and the cost dashboard ([docs](https://docs.solo.io/agentgateway/latest/llm/cost-controls/cost-tracking/))
 
 ## Prerequisites
 
@@ -30,14 +31,15 @@ A checklist at the top of the page tracks the six sections, each with its doc li
 ## Create the cluster
 
 ```bash
-kind create cluster --name agw-quickstart
-export CTX=kind-agw-quickstart
+kind create cluster --name agw-quickstart   # kind makes it your current context
 ```
 
-On an existing cluster, skip the create and just set your context:
+Every cell uses your **current** kubectl context (there is no `--context` flag), so make
+sure it points at the right cluster before you start. If commands fail with
+`connection refused localhost:8080`, your current-context is unset or wrong:
 
 ```bash
-export CTX=$(kubectl config current-context)
+kubectl config use-context kind-agw-quickstart   # or your existing cluster's context
 ```
 
 ## Run it
@@ -68,6 +70,7 @@ The full walkthrough (with the Helm commands) is the lab page. The manifests it 
 - `yaml/keycloak/`: Keycloak Deployment + the `solo` realm (users alice/bob/carol, client `kagent`)
 - `yaml/gateway/httpbin-route.yaml`: sample app + `Gateway` + `HTTPRoute`
 - `yaml/mcp/mcp.yaml`: the official `everything` MCP reference server + `EnterpriseAgentgatewayBackend` + route
+- `yaml/mcp-code/backend.yaml`: Code Mode backend (`toolMode: Code`) + route at `/mcp-code`
 - `yaml/mcp-authz/policies.yaml`: JWT auth on `/mcp` + per-tool MCP authorization (alice restricted to `get-sum`)
 - `yaml/llm/openai.yaml`, `yaml/llm/anthropic.yaml`: LLM backends + routes (key comes from a Secret you create from your env)
 - `yaml/cost/cost-catalog.yaml`: model cost catalog + `EnterpriseAgentgatewayParameters`
