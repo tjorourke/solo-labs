@@ -1,25 +1,28 @@
-# An MCP tool server exposed through the gateway at /mcp.
+# The official "everything" MCP reference server, exposed through the gateway at /mcp.
+# It speaks Streamable HTTP and exposes a batch of demo tools (echo, get-sum, get-tiny-image, ...).
 # One command deploys it into the demo namespace:  kubectl apply -f yaml/mcp/mcp.yaml
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: mcp-website-fetcher, namespace: demo, labels: { app: mcp-website-fetcher } }
+metadata: { name: mcp-everything, namespace: demo, labels: { app: mcp-everything } }
 spec:
   replicas: 1
-  selector: { matchLabels: { app: mcp-website-fetcher } }
+  selector: { matchLabels: { app: mcp-everything } }
   template:
-    metadata: { labels: { app: mcp-website-fetcher } }
+    metadata: { labels: { app: mcp-everything } }
     spec:
       containers:
-        - name: fetcher
-          image: ghcr.io/peterj/mcp-website-fetcher:main
-          ports: [{ containerPort: 8000 }]
+        - name: everything
+          image: node:22-alpine
+          command: ["npx"]
+          args: ["-y", "@modelcontextprotocol/server-everything", "streamableHttp"]
+          ports: [{ containerPort: 3001 }]
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: mcp-website-fetcher, namespace: demo }
+metadata: { name: mcp-everything, namespace: demo }
 spec:
-  selector: { app: mcp-website-fetcher }
-  ports: [{ port: 80, targetPort: 8000 }]
+  selector: { app: mcp-everything }
+  ports: [{ port: 80, targetPort: 3001 }]
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
@@ -27,11 +30,11 @@ metadata: { name: mcp-backend, namespace: demo }
 spec:
   mcp:
     targets:
-      - name: fetcher
+      - name: everything
         static:
-          backendRef: { name: mcp-website-fetcher }
+          backendRef: { name: mcp-everything }
           port: 80
-          protocol: SSE
+          protocol: StreamableHTTP
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

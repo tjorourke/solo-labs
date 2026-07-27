@@ -66,6 +66,6 @@ The full walkthrough (with the Helm commands) is the lab page. The manifests it 
 
 - `yaml/keycloak/`: Keycloak Deployment + the `solo` realm (users alice/bob/carol, client `kagent`)
 - `yaml/gateway/httpbin-route.yaml`: sample app + `Gateway` + `HTTPRoute`
-- `yaml/mcp/mcp.yaml`: MCP tool server + `EnterpriseAgentgatewayBackend` + route
+- `yaml/mcp/mcp.yaml`: the official `everything` MCP reference server + `EnterpriseAgentgatewayBackend` + route
 - `yaml/llm/openai.yaml`, `yaml/llm/anthropic.yaml`: LLM backends + routes (key comes from a Secret you create from your env)
 - `yaml/cost/cost-catalog.yaml`: model cost catalog + `EnterpriseAgentgatewayParameters`
