@@ -1,0 +1,79 @@
+# Enforce per-tool MCP access with agentgateway -- NO service mesh.
+# agentgateway sits in front of the kagent MCP server ('everything', port 3001) and, after
+# validating the Keycloak JWT, authorizes each tool call by identity. alice is locked to the
+# single get-sum tool; everyone else keeps full access. Same mechanism as the AGW POC lab.
+#   kubectl apply -f yaml/agw-authz/agw-mcp-authz.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: { name: agw, namespace: kagent }
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes: { namespaces: { from: Same } }
+---
+# Front the existing 'everything' MCP Service (created by the MCPServer) as an MCP backend.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: { name: mcp-backend, namespace: kagent }
+spec:
+  mcp:
+    targets:
+      - name: everything
+        static:
+          backendRef: { name: everything }
+          port: 3001
+          protocol: StreamableHTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: mcp, namespace: kagent }
+spec:
+  parentRefs: [{ name: agw }]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /mcp } }]
+      backendRefs:
+        - name: mcp-backend
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+---
+# 1. Require a valid Keycloak JWT on /mcp (no token -> 401). The issuer string must match the
+#    token's 'iss' exactly (the kagent lab's browser-reachable issuer); JWKS is fetched from the
+#    in-cluster Keycloak Service.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: mcp-jwt, namespace: kagent }
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: mcp
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "http://keycloak.localtest.me:18080/realms/solo"
+          jwks:
+            remote:
+              jwksPath: "/realms/solo/protocol/openid-connect/certs"
+              backendRef: { kind: Service, name: keycloak, namespace: keycloak, port: 18080 }
+---
+# 2. Per-tool authorization: alice may only call get-sum; everyone else keeps full access.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: mcp-authz, namespace: kagent }
+spec:
+  targetRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: mcp-backend
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'jwt.email == "alice@example.com" && mcp.tool.name == "get-sum"'
+            - 'jwt.email != "alice@example.com"'
