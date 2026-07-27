@@ -1,8 +1,12 @@
-# Sample app + a Gateway (enterprise-agentgateway class) + an HTTPRoute to it.
-# Apply into the `demo` namespace:  kubectl -n demo apply -f yaml/gateway/httpbin-route.yaml
+# The demo namespace + a sample app + a Gateway (enterprise-agentgateway class) + an HTTPRoute.
+# One command creates everything:  kubectl apply -f yaml/gateway/httpbin-route.yaml
+apiVersion: v1
+kind: Namespace
+metadata: { name: demo }
+---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: httpbin, labels: { app: httpbin } }
+metadata: { name: httpbin, namespace: demo, labels: { app: httpbin } }
 spec:
   replicas: 1
   selector: { matchLabels: { app: httpbin } }
@@ -16,14 +20,14 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: httpbin }
+metadata: { name: httpbin, namespace: demo }
 spec:
   selector: { app: httpbin }
   ports: [{ port: 8000, targetPort: 8080 }]
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
-metadata: { name: agw }
+metadata: { name: agw, namespace: demo }
 spec:
   gatewayClassName: enterprise-agentgateway
   listeners:
@@ -34,7 +38,7 @@ spec:
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
-metadata: { name: httpbin }
+metadata: { name: httpbin, namespace: demo }
 spec:
   parentRefs: [{ name: agw }]
   rules:
