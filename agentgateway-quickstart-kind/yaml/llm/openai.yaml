@@ -1,0 +1,29 @@
+# OpenAI as an LLM backend behind the gateway, exposed at /openai.
+# Create the key Secret first (the key comes from your env, not this file):
+#   kubectl -n demo create secret generic openai-secret --from-literal=Authorization="$OPENAI_API_KEY"
+# Then:  kubectl apply -f yaml/llm/openai.yaml
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: { name: openai, namespace: demo }
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: openai
+            openai:
+              model: gpt-4o-mini
+            policies:
+              auth:
+                secretRef: { name: openai-secret }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: openai, namespace: demo }
+spec:
+  parentRefs: [{ name: agw }]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /openai } }]
+      backendRefs:
+        - name: openai
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend

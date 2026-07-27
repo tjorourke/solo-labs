@@ -1,0 +1,30 @@
+# Anthropic as an LLM backend behind the gateway, exposed at /anthropic.
+# Requests are OpenAI-format in and out; the gateway translates to Anthropic's Messages API.
+# Create the key Secret first (the key comes from your env, not this file):
+#   kubectl -n demo create secret generic anthropic-secret --from-literal=Authorization="$ANTHROPIC_API_KEY"
+# Then:  kubectl apply -f yaml/llm/anthropic.yaml
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: { name: anthropic, namespace: demo }
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: anthropic
+            anthropic:
+              model: claude-haiku-4-5-20251001
+            policies:
+              auth:
+                secretRef: { name: anthropic-secret }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: anthropic, namespace: demo }
+spec:
+  parentRefs: [{ name: agw }]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /anthropic } }]
+      backendRefs:
+        - name: anthropic
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend

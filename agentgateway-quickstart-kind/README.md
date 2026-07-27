@@ -16,8 +16,9 @@ A checklist at the top of the page tracks the six sections, each with its doc li
 2. **IdP**: Keycloak, the OIDC identity provider ([docs](https://docs.solo.io/agentgateway/latest/security/jwt/))
 3. **Configure**: a `Gateway` and an `HTTPRoute` to a sample app ([docs](https://docs.solo.io/agentgateway/latest/traffic-management/))
 4. **MCP**: expose an MCP tool server through the gateway ([docs](https://docs.solo.io/agentgateway/latest/mcp/static-mcp/))
-5. **Observability**: metrics, traces, access logs in the UI ([docs](https://docs.solo.io/agentgateway/latest/observability/))
-6. **Cost management**: model cost catalog, dimensions, and the cost dashboard ([docs](https://docs.solo.io/agentgateway/latest/llm/cost-controls/cost-tracking/))
+5. **Connect to LLMs**: front OpenAI and Anthropic, key stays in a Secret at the gateway ([docs](https://docs.solo.io/agentgateway/latest/llm/))
+6. **Observability**: metrics, traces, access logs in the UI ([docs](https://docs.solo.io/agentgateway/latest/observability/))
+7. **Cost management**: model cost catalog, dimensions, and the cost dashboard ([docs](https://docs.solo.io/agentgateway/latest/llm/cost-controls/cost-tracking/))
 
 ## Prerequisites
 
@@ -66,4 +67,5 @@ The full walkthrough (with the Helm commands) is the lab page. The manifests it 
 - `yaml/keycloak/`: Keycloak Deployment + the `solo` realm (users alice/bob/carol, client `kagent`)
 - `yaml/gateway/httpbin-route.yaml`: sample app + `Gateway` + `HTTPRoute`
 - `yaml/mcp/mcp.yaml`: MCP tool server + `EnterpriseAgentgatewayBackend` + route
+- `yaml/llm/openai.yaml`, `yaml/llm/anthropic.yaml`: LLM backends + routes (key comes from a Secret you create from your env)
 - `yaml/cost/cost-catalog.yaml`: model cost catalog + `EnterpriseAgentgatewayParameters`
