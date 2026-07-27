@@ -1,0 +1,16 @@
+# Helm values for the enterprise-agentgateway (control-plane) chart that add a custom
+# cost dimension. `model` and `provider` are built-in and need no config; Group, User and
+# Virtual Key ship as defaults. Here we add a Team dimension derived from an x-team header.
+# Apply:
+#   helm upgrade enterprise-agentgateway \
+#     oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway \
+#     -n agentgateway-system --version v2026.7.0 --reuse-values -f yaml/cost/dimensions-values.yaml
+#   kubectl -n demo rollout restart deploy/agw   # pick up the new dimension
+budgetDimensions:
+  config:
+    hierarchy:                 # ordered scopes
+      - { id: group, expression: 'coalesce(jwt.group, apiKey.group)', displayName: Group }
+      - { id: user,  expression: 'coalesce(apiKey.user, apiKey.name, apiKey.owner, jwt.sub, jwt.email, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn)', displayName: User }
+      - { id: team,  expression: 'request.headers["x-team"]', displayName: Team }
+    attributes:                # flat attributes
+      - { id: virtualKey, expression: apiKey.id, displayName: Virtual Key }
