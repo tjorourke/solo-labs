@@ -1,0 +1,42 @@
+# Lock the MCP server down: require a Keycloak JWT on /mcp, then authorize tools per identity.
+# Depends on: the Keycloak from step 2 and the MCP server + backend from step 4.
+#   kubectl apply -f yaml/mcp-authz/policies.yaml
+#
+# 1. Require a valid Keycloak JWT on the /mcp route (no token -> 401).
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: mcp-jwt, namespace: demo }
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: mcp
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/solo"
+          jwks:
+            remote:
+              jwksPath: "/realms/solo/protocol/openid-connect/certs"
+              backendRef: { kind: Service, name: keycloak, namespace: keycloak, port: 80 }
+---
+# 2. Per-tool authorization on the MCP backend. Rules are OR-ed; a tool is visible and
+#    callable only if at least one rule matches, so alice is locked down to just get-sum.
+#    CEL context: jwt.<claim> (from the token above) and mcp.tool.name (the MCP tool).
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: mcp-authz, namespace: demo }
+spec:
+  targetRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: mcp-backend
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'jwt.email == "alice@example.com" && mcp.tool.name == "get-sum"'
+            - 'jwt.email != "alice@example.com"'
