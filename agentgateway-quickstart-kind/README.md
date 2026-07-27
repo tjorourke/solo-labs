@@ -21,6 +21,7 @@ A checklist at the top of the page tracks the six sections, each with its doc li
 7. **Connect to LLMs**: front OpenAI and Anthropic, key stays in a Secret at the gateway ([docs](https://docs.solo.io/agentgateway/latest/llm/))
 8. **Observability**: attach a tracing policy so the gateway exports to the collector, then watch the UI dashboard ([docs](https://docs.solo.io/agentgateway/latest/observability/))
 9. **Cost management**: cost is automatic from the built-in catalog; add a custom dimension and see spend by it ([docs](https://docs.solo.io/agentgateway/latest/llm/cost-controls/cost-tracking/))
+10. **Guardrails**: block requests carrying PII and mask PII in responses, with a prompt guard ([docs](https://docs.solo.io/agentgateway/latest/llm/))
 
 ## Prerequisites
 
@@ -75,3 +76,4 @@ The full walkthrough (with the Helm commands) is the lab page. The manifests it 
 - `yaml/observability/tracing.yaml`: tracing policy that exports the gateway's traces to the management collector (feeds the UI dashboard)
 - `yaml/llm/openai.yaml`, `yaml/llm/anthropic.yaml`: LLM backends + routes (key comes from a Secret you create from your env)
 - `yaml/cost/dimensions-values.yaml`: helm values that add a custom `Team` cost dimension (model/provider are built in)
+- `yaml/guardrails/prompt-guard.yaml`: prompt guard on the LLM route (reject PII requests, mask PII responses)

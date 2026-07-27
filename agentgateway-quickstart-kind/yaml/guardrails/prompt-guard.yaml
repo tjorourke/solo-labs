@@ -1,0 +1,28 @@
+# Prompt guard on the LLM route: reject requests carrying PII, mask PII in responses.
+# Attaches to the HTTPRoute (here /openai from step 7; change name to anthropic if that is
+# the route you set up). Built-in detectors: CreditCard, Ssn, PhoneNumber, Email, CaSin.
+# Add your own regex under `matches`.
+#   kubectl apply -f yaml/guardrails/prompt-guard.yaml
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: { name: prompt-guard, namespace: demo }
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: openai
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - regex:
+              action: Reject               # Reject or Mask
+              builtins: ["Ssn", "CreditCard"]
+              # matches: ["(?i)api[_-]?key"]   # add your own regex too
+            response:
+              statusCode: 403
+              message: "Blocked: the request contained sensitive data (PII)."
+        response:
+          - regex:
+              action: Mask                  # mask PII the model returns
+              builtins: ["Ssn", "CreditCard", "Email"]
