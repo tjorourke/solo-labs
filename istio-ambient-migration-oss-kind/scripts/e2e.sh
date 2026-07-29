@@ -100,6 +100,10 @@ sidecar_count() {
 
 step "1/9 · Sidecar baseline (kind + upstream Istio $ISTIO_VERSION, sidecar mode)"
 "$SCRIPT_DIR/setup-cluster.sh"
+IMG_COUNT="$(docker exec "${CLUSTER_NAME}-control-plane" crictl images 2>/dev/null | grep -c docker.io/istio || true)"
+assert "four upstream Istio images on the node" "$IMG_COUNT" "4"
+DS_COUNT="$(kc -n "$ISTIO_SYSTEM_NS" get ds --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+assert "no DaemonSets before ambient (sidecar mode only)" "$DS_COUNT" "0"
 kapply "$LAB_ROOT/yaml/00-namespaces.yaml"
 kapply "$LAB_ROOT/yaml/10-apps/"
 kapply "$LAB_ROOT/yaml/20-policies-sidecar/"
@@ -154,6 +158,9 @@ poll "redis PONG still flowing (allowed identity, now via ztunnel)" 90 \
   sh -c "kubectl --context $CTX -n $NS_APP logs deploy/data-client --tail=1 | grep -q PONG"
 DENIED="$(redis_ping_from_checkout)"
 assert "redis still silent to checkout (ztunnel enforces the same L4 authz)" "$([[ "$DENIED" != *PONG* ]] && echo denied)" "denied"
+WKLD="$(ic ztunnel-config workload 2>/dev/null | grep -E '^petstore-data.*redis' | head -1)"
+assert_contains "ztunnel manages the redis workload (HBONE, no waypoint)" "$WKLD" "HBONE"
+assert_contains "redis workload has no waypoint" "$WKLD" "None"
 
 step "5/9 · Canary modernised: DR/VS subsets → per-version Services + HTTPRoute"
 kapply "$LAB_ROOT/yaml/50-httproute/10-versioned-services.yaml"
@@ -225,6 +232,8 @@ kc -n "$NS_APP" patch httproute catalog --type=json -p='[
   {"op":"replace","path":"/spec/rules/0/backendRefs/0/weight","value":100},
   {"op":"replace","path":"/spec/rules/0/backendRefs/1/weight","value":0}
 ]' >/dev/null
+sleep 5
+assert "canary pinned back to 100% v1" "$(v2_of_30)" "0"
 
 step "8/9 · Rollback: petstore-orders goes BACK to sidecars, then forward again"
 fortio_bg 90

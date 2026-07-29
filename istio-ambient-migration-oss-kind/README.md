@@ -92,3 +92,7 @@ Everything in this lab is upstream ambient. The
 distribution via the Gloo Operator, where the extra piece is mixed-fleet
 interop (`ENABLE_WAYPOINT_INTEROP`): sidecar and ingress traffic routed
 through waypoints, so L7 policy holds for callers that have not migrated yet.
+The guide ends with the full list of what Enterprise adds at each stage of
+this migration: the interop, the `gloo ambient` audit CLI, the one-field
+operator lifecycle, dual-dataplane observability (ztunnel HTTP telemetry with
+no waypoint), workload claims at L4, and the N-4 support window.
