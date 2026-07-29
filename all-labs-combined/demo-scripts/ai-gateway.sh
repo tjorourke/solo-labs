@@ -177,7 +177,8 @@ data:
         },
         "anthropic": {
           "models": {
-            "claude-sonnet-4-5": { "rates": { "input": "3", "output": "15" } }
+            "claude-sonnet-4-5": { "rates": { "input": "3", "output": "15" } },
+            "claude-opus-5":     { "rates": { "input": "5", "output": "25" } }
           }
         }
       }
