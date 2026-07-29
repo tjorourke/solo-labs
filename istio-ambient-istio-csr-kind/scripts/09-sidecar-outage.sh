@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 09-sidecar-outage.sh — what happens if someone "tidies up" the Vault role
-# to key_type=ec while sidecars still exist. Short version: a sidecar outage.
+# 09-sidecar-outage.sh — setting the Vault role to key_type=ec while sidecars
+# still exist starts a sidecar outage.
 #
 # New and restarted sidecar pods are hit immediately: their RSA CSR bounces
 # and the pod never becomes ready. Every EXISTING sidecar follows within one
 # certificate TTL (1h in this lab), because its renewal CSR bounces the same
-# way and the certificate it is serving with simply expires.
+# way and the certificate it is serving with expires.
 #
 # What this does (controlled, one replica, then repaired):
 #   - sets the role to key_type=ec
