@@ -140,6 +140,25 @@ Vault runs in dev mode (in-memory, HTTP, root token `root`) — right for a
 lab, never for production. The Issuer authenticates with a short-lived
 audience-scoped ServiceAccount token; no Vault token is stored in the cluster.
 
+## InfoSec notes
+
+Three things a security change request should cover (the lab page has the
+full write-up):
+
+1. `key_type=any` relaxes CA-side key-policy enforcement for the migration
+   window. Bounded: only istio-csr reaches this role, and the only CSR
+   generators behind it are istio-agent (RSA-2048) and ztunnel (P-256). End
+   state after the last sidecar: `key_type=ec key_bits=256`, stricter than
+   today.
+2. ECDSA P-256 enters scope: a strength upgrade over RSA-2048 (~128-bit vs
+   ~112-bit), approved in FIPS 186-5 and NCSC guidance. Roots/HSMs untouched.
+3. `caTrustedNodeAccounts` lets the ztunnel SA request certs for workloads on
+   its node: a real trust-model change to accept explicitly, though it stays
+   within the node blast radius a cluster already carries.
+
+Unchanged: trust anchors, TTLs, SPIFFE naming, SAN policy, STRICT mTLS, and
+the Vault audit trail (preserved CertificateRequests arguably improve it).
+
 ## References
 
 - [Vault PKI secrets engine API](https://developer.hashicorp.com/vault/api-docs/secret/pki) —
