@@ -1,0 +1,35 @@
+# THE waypoint — one for the whole cluster. A Gateway-API Gateway with the
+# istio-waypoint class, living in its own infrastructure namespace. istiod
+# provisions a single Envoy deployment for it, and every L7 namespace in the
+# cluster attaches to it with two labels:
+#
+#   istio.io/use-waypoint: cluster-waypoint
+#   istio.io/use-waypoint-namespace: mesh-infra
+#
+# The piece that makes cross-namespace attachment work is allowedRoutes:
+# namespaces.from: All — without it the waypoint only serves its own namespace.
+# (Scope it with from: Selector to admit specific namespaces instead.)
+#
+# istio.io/waypoint-for: service → it handles service-addressed traffic (the
+# common case). Values are service | workload | all | none.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mesh-infra
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: cluster-waypoint
+  namespace: mesh-infra
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+      allowedRoutes:
+        namespaces:
+          from: All

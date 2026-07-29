@@ -1,0 +1,17 @@
+# The orders GET-only policy in targetRefs form — same transform as catalog's.
+# Both namespaces' policies are now enforced by the ONE shared waypoint.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: orders-get-only-waypoint
+  namespace: petstore-orders
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: orders
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            methods: ["GET", "HEAD"]

@@ -1,0 +1,86 @@
+# The catalog service — the first L7 workload, in the petstore namespace.
+# One Service (app: catalog) fronts two versioned Deployments, v1 and v2: the
+# classic subset canary (DestinationRule declares subsets by the `version`
+# label, VirtualService splits traffic across them). Each replica is http-echo
+# returning a fixed JSON body naming its version, so a caller can see which
+# version served it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: catalog
+  namespace: petstore
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: petstore
+  labels:
+    app: catalog
+spec:
+  selector:
+    app: catalog
+  ports:
+    - name: http            # port name MUST start with http for Istio L7
+      port: 80
+      targetPort: 5678
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-v1
+  namespace: petstore
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: catalog, version: v1 }
+  template:
+    metadata:
+      labels: { app: catalog, version: v1 }
+    spec:
+      serviceAccountName: catalog
+      containers:
+        - name: catalog
+          image: hashicorp/http-echo:1.0
+          args: ["-listen=:5678", "-text={\"app\":\"catalog\",\"version\":\"v1\"}"]
+          ports:
+            - containerPort: 5678
+          # graceful drain: hold SIGTERM for 5s so in-flight and keep-alive
+          # connections finish after the endpoint is deregistered — this is
+          # what keeps the rolling restarts in this lab at a true 100%
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-v2
+  namespace: petstore
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: catalog, version: v2 }
+  template:
+    metadata:
+      labels: { app: catalog, version: v2 }
+    spec:
+      serviceAccountName: catalog
+      containers:
+        - name: catalog
+          image: hashicorp/http-echo:1.0
+          args: ["-listen=:5678", "-text={\"app\":\"catalog\",\"version\":\"v2\"}"]
+          ports:
+            - containerPort: 5678
+          # graceful drain: hold SIGTERM for 5s so in-flight and keep-alive
+          # connections finish after the endpoint is deregistered — this is
+          # what keeps the rolling restarts in this lab at a true 100%
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

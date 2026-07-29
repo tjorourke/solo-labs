@@ -1,0 +1,17 @@
+# The same GET-only L7 rule for orders, in its own namespace. Two namespaces
+# with L7 policy is the point: after migration BOTH are enforced by the SAME
+# single waypoint, not one proxy per namespace.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: orders-get-only
+  namespace: petstore-orders
+spec:
+  selector:
+    matchLabels:
+      app: orders
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            methods: ["GET", "HEAD"]

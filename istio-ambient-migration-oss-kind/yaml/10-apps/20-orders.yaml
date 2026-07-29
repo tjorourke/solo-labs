@@ -1,0 +1,55 @@
+# The orders service — the SECOND L7 workload, in its own namespace. It exists
+# to prove the point of a cluster-wide waypoint: petstore and petstore-orders
+# both attach to the SAME waypoint deployment, so L7 policy for two namespaces
+# is enforced by one proxy. It is also the namespace we roll back to sidecars
+# at the end.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders
+  namespace: petstore-orders
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  namespace: petstore-orders
+  labels:
+    app: orders
+spec:
+  selector:
+    app: orders
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5678
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  namespace: petstore-orders
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: orders }
+  template:
+    metadata:
+      labels: { app: orders }
+    spec:
+      serviceAccountName: orders
+      containers:
+        - name: orders
+          image: hashicorp/http-echo:1.0
+          args: ["-listen=:5678", "-text={\"app\":\"orders\",\"status\":\"ok\"}"]
+          ports:
+            - containerPort: 5678
+          # graceful drain: hold SIGTERM for 5s so in-flight and keep-alive
+          # connections finish after the endpoint is deregistered — this is
+          # what keeps the rolling restarts in this lab at a true 100%
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

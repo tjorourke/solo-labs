@@ -1,0 +1,57 @@
+# The DestinationRule + VirtualService pair that does the catalog canary in
+# sidecar mode. Two things are bundled here, and they behave differently under
+# ambient — which is the whole point of the migration:
+#
+#   - DestinationRule TRAFFIC POLICY (connection pool, outlier detection):
+#     carries over to a waypoint unchanged.
+#   - VirtualService L7 ROUTING: in sidecar mode this weighted SUBSET split is
+#     applied by the CLIENT's sidecar. Subset routing is the piece ambient
+#     waypoints do not support, so before the calling estate migrates we move
+#     the split to per-version Services + an HTTPRoute (yaml/50-httproute).
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: catalog
+  namespace: petstore
+spec:
+  host: catalog.petstore.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 100
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+  subsets:
+    - name: v1
+      labels: { version: v1 }
+    - name: v2
+      labels: { version: v2 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: catalog
+  namespace: petstore
+spec:
+  hosts:
+    - catalog.petstore.svc.cluster.local
+  http:
+    - timeout: 3s
+      retries:
+        attempts: 3
+        perTryTimeout: 1s
+        retryOn: "5xx,reset,connect-failure"
+      route:
+        - destination:
+            host: catalog.petstore.svc.cluster.local
+            subset: v1
+          weight: 100        # canary starts 100% v1 …
+        - destination:
+            host: catalog.petstore.svc.cluster.local
+            subset: v2
+          weight: 0          # … shift weight to v2 to canary
