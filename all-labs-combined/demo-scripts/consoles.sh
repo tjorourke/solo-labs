@@ -42,9 +42,13 @@ if command -v open >/dev/null 2>&1; then
   [ -n "$HAVE_COST" ] && open "$COST_URL" 2>/dev/null || true
 fi
 
-# Only advertise the Cost Management link when its UI is actually present.
+# Only advertise the Solo UI links when the UI is actually present. The same
+# UI serves demo-7's views: Dashboard (live traffic per model — watch the §2
+# failover move), Tracing (one span per request) and Virtual Keys.
 if [ -n "$HAVE_COST" ]; then
-  COST_CONSOLE_LINE="  Cost Management (mesh1)                 ${COST_URL}"
+  COST_CONSOLE_LINE="  Cost Management (mesh1)                 ${COST_URL}
+  AI gateway Dashboard (demo-7)           http://localhost:${COST_PORT}/age/
+  AI gateway Tracing (demo-7)             http://localhost:${COST_PORT}/age/tracing"
 else
   COST_CONSOLE_LINE="  Cost Management: not installed — run ./demo-scripts/cost-mgmt.sh"
 fi
