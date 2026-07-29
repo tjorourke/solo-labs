@@ -15,7 +15,7 @@ NS="${NS:-agentgateway-system}"
 kubectl --context "$CTX" -n "$NS" delete \
   httproute/models httproute/resilient httproute/service-models httproute/mcp \
   enterpriseagentgatewaybackend/azure-gpt5 enterpriseagentgatewaybackend/bedrock-haiku \
-  enterpriseagentgatewaybackend/anthropic-claude enterpriseagentgatewaybackend/self-hosted \
+  enterpriseagentgatewaybackend/anthropic-claude \
   enterpriseagentgatewaybackend/resilient-models enterpriseagentgatewaybackend/mcp-hub \
   enterpriseagentgatewaypolicy/models-jwt enterpriseagentgatewaypolicy/identity-metrics \
   enterpriseagentgatewaypolicy/models-access enterpriseagentgatewaypolicy/models-ratelimit \
@@ -24,7 +24,7 @@ kubectl --context "$CTX" -n "$NS" delete \
   agentgatewaypolicy/extract-model agentgatewaypolicy/mcp-tool-authz \
   ratelimitconfig/per-user-tokens enterpriseagentgatewaybudget/service-budgets \
   secret/team-data-platform-keys --ignore-not-found
-kubectl --context "$CTX" -n ai-models scale deploy/mock-llm --replicas=1 >/dev/null
+kubectl --context "$CTX" -n ai-models scale deploy/azure-openai --replicas=1 >/dev/null
 # fresh rate-limit buckets + provider eviction state. Budget spend is tracked
 # durably per key per day (by design, a restart never resets an allowance), so
 # the notebook's §6 mints a fresh virtual key each run instead.

@@ -8,7 +8,7 @@
 - **Part 4 — AgentRegistry.** On `mesh1`: a governed catalog of approved MCP tool servers, skills and runtimes; scaffold an agent with `arctl`, build/publish, deploy to kagent and ask it; add a tool; lock it down with a waypoint AccessPolicy; turn a REST API into MCP tools (OpenAPI → MCP); optionally deploy the same agent to AWS Bedrock AgentCore. Needs the extra platform standup below.
 - **Part 5 — Substrate (gVisor).** On its **own** `kind-substrate` cluster (kagent v0.5.2): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool` — prove the sandbox, warm-vs-cold bind, golden-snapshot resume. Isolated from Part 4 (which stays on kagent v0.4.3).
 - **Part 6 — Inference routing.** On its **own** `kind-inference` cluster: a standalone agentgateway fronts a vLLM-simulator pool; the GIE Endpoint Picker does KV-cache-aware routing to an `InferencePool`, with serving priority via `InferenceObjective`. (A mesh-integrated gateway can't route GIE pools, so it runs on its own non-mesh gateway.)
-- **Part 7 — The AI gateway.** On `mesh1`: one agentgateway in front of every model, key and tool. Corporate model names routed across two simulated cloud providers, the **real Anthropic API** and a self-hosted sim; failover priority groups; JWT identity stamped on every metric; group-based model access; per-user token limits; virtual keys with a declarative budget; realised-USD chargeback by user/team/BU; and an MCP hub with per-tool authorization. Needs the small extra standup below.
+- **Part 7 — The AI gateway.** On `mesh1`: one agentgateway in front of every model, key and tool. Corporate model names routed across Azure OpenAI, AWS Bedrock and Anthropic (frontier models only, inference stays in Part 6); failover priority groups; JWT identity stamped on every metric; group-based model access; per-user token limits; virtual keys with a declarative budget; realised-USD chargeback by user/team/BU; and an MCP hub with per-tool authorization. Needs the small extra standup below.
 
 The parts run **independently** — pick one per customer, or run all seven. This lab is a personal demo driver: no `index.html`, not on the site.
 
@@ -60,7 +60,7 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/agentregistry/se
 # open demo-4-agentics-vision.ipynb → run its Connect cell
 ```
 
-**Part 7 only** needs a light standup on `mesh1` (three llm-d model simulators, the MCP everything-server, the `ai-gateway` Gateway + cost catalog, and a demo IdP keypair). It reads `ANTHROPIC_API_KEY` from the secrets file for the one real provider:
+**Part 7 only** needs a light standup on `mesh1` (two local model servers, the MCP everything-server, the `ai-gateway` Gateway + cost catalog, and a demo IdP keypair). It reads `ANTHROPIC_API_KEY` from the secrets file for the one live provider:
 
 ```bash
 SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/ai-gateway.sh   # ~1 min
@@ -78,7 +78,7 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup-all-labs.s
 
 | Cluster | Parts | Roughly | Notes |
 |---|---|---|---|
-| `mesh1` + `mesh2` | 1-4, 7 + Cost | ~11 GiB | istio ambient + agentgateway + Gloo UI + Keycloak + AgentRegistry/kagent **v0.4.3** + Cost ClickHouse + AI-gateway sims |
+| `mesh1` + `mesh2` | 1-4, 7 + Cost | ~11 GiB | istio ambient + agentgateway + Gloo UI + Keycloak + AgentRegistry/kagent **v0.4.3** + Cost ClickHouse + AI-gateway model servers |
 | `substrate` | 5 | ~2-3 GiB | kagent **v0.5.2** + gVisor substrate — a separate cluster so it doesn't clash with Part 4's kagent |
 | `inference` | 6 | ~1.5 GiB | standalone (non-mesh) agentgateway + vLLM sim + GIE |
 

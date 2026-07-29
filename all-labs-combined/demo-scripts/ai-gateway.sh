@@ -2,12 +2,12 @@
 # ai-gateway.sh — stand up the Part 7 (AI gateway) platform on mesh1, on top of
 # the base ./demo-scripts/setup.sh standup:
 #
-#   - ai-models ns: three OpenAI-compatible model servers (the llm-d inference
-#     sim, no GPU) named azure-openai, bedrock and mock-llm — they play Azure
-#     OpenAI, AWS Bedrock and a self-hosted vLLM in the notebook, so the
-#     routing/failover/budget demos need no cloud accounts and cost nothing.
-#     The notebook presents them as the real providers; keep that in mind when
-#     presenting (only the Anthropic backend leaves the cluster).
+#   - ai-models ns: two local OpenAI-compatible model servers (built from
+#     demo-scripts/ai-gateway-mock/) named azure-openai and bedrock — they play
+#     Azure OpenAI and AWS Bedrock in the notebook, so the routing/failover/
+#     budget demos need no cloud accounts and cost nothing. The notebook
+#     presents them as the real providers; keep that in mind when presenting
+#     (only the Anthropic backend leaves the cluster).
 #   - anthropic secret: the one live provider (premium-reasoning), from
 #     ANTHROPIC_API_KEY in $SECRETS_FILE
 #   - mcp-servers ns: the MCP everything-server, deployed but NOT onboarded
@@ -28,7 +28,10 @@ GW_NS=agentgateway-system
 SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
 [ -f "$SECRETS_FILE" ] && set -a && . "$SECRETS_FILE" && set +a
 
-SIM_IMAGE="ghcr.io/llm-d/llm-d-inference-sim:v0.10.2"
+# The model servers run a small local OpenAI-compatible mock (keyword-aware
+# answers + real usage counts, so token limits, budgets and cost all behave).
+# Built from demo-scripts/ai-gateway-mock/ into the suite's local registry.
+MOCK_IMAGE="localhost:5001/ai-gateway-mock:latest"
 
 if [ "${1:-}" = "teardown" ]; then
   kubectl --context "$CTX" delete ns ai-models mcp-servers --ignore-not-found
@@ -65,20 +68,16 @@ else
   echo "→ demo IdP keypair already present"
 fi
 
-# ── 2. model simulators (ai-models ns) ────────────────────────────────────────
-echo "→ deploying model servers (llm-d inference sim ×3) ..."
+# ── 2. model servers (ai-models ns) ───────────────────────────────────────────
+echo "→ building + deploying the model servers (×2) ..."
+if ! docker image inspect "$MOCK_IMAGE" >/dev/null 2>&1 || [ "${REBUILD_MOCK:-}" = "true" ]; then
+  docker build -q -t "$MOCK_IMAGE" "$SCRIPT_DIR/ai-gateway-mock" >/dev/null
+fi
+docker push -q "$MOCK_IMAGE" >/dev/null
 kubectl --context "$CTX" create ns ai-models --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null
-for entry in "azure-openai gpt-5-nano" "bedrock claude-haiku-4-5" "mock-llm mock-llm"; do
+for entry in "azure-openai gpt-5-nano" "bedrock claude-haiku-4-5"; do
   name=${entry% *}; model=${entry#* }
   kubectl --context "$CTX" apply -f - >/dev/null <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata: { name: ${name}-config, namespace: ai-models }
-data:
-  config.yaml: |
-    model: ${model}
-    port: 8000
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -92,19 +91,16 @@ spec:
     metadata: { labels: { app: ${name} } }
     spec:
       containers:
-        - name: sim
-          image: ${SIM_IMAGE}
-          imagePullPolicy: IfNotPresent
-          args: ["--config", "/etc/sim/config.yaml"]
+        - name: model
+          image: ${MOCK_IMAGE}
+          imagePullPolicy: Always
+          env:
+            - { name: MODEL, value: "${model}" }
           ports: [{ containerPort: 8000, name: http }]
-          volumeMounts: [{ name: cfg, mountPath: /etc/sim }]
           readinessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 5 }
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits:   { cpu: "1", memory: 512Mi }
-      volumes:
-        - name: cfg
-          configMap: { name: ${name}-config }
+            requests: { cpu: 25m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
 ---
 apiVersion: v1
 kind: Service
@@ -176,8 +172,7 @@ data:
         "openai": {
           "models": {
             "gpt-5-nano":       { "rates": { "input": "0.05", "output": "0.40" } },
-            "claude-haiku-4-5": { "rates": { "input": "1",    "output": "5"    } },
-            "mock-llm":         { "rates": { "input": "0.15", "output": "0.60" } }
+            "claude-haiku-4-5": { "rates": { "input": "1",    "output": "5"    } }
           }
         },
         "anthropic": {
@@ -243,7 +238,7 @@ spec:
 EOF
 
 # ── 6. wait for it all ────────────────────────────────────────────────────────
-for d in azure-openai bedrock mock-llm; do
+for d in azure-openai bedrock; do
   kubectl --context "$CTX" -n ai-models rollout status deploy/$d --timeout=180s >/dev/null
 done
 kubectl --context "$CTX" -n mcp-servers rollout status deploy/server-everything --timeout=120s >/dev/null
