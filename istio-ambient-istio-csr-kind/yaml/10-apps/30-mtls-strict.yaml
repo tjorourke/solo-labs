@@ -1,0 +1,12 @@
+# Mesh-wide STRICT mTLS. This is what makes the certificate story honest:
+# every request in the lab is mutually authenticated with a Vault-issued
+# certificate, so if issuance broke, traffic would break — there is no
+# plaintext fallback hiding a dead CA.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT

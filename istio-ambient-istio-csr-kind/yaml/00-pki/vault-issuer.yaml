@@ -1,0 +1,64 @@
+# The cert-manager Issuer that fronts Vault, plus the ServiceAccount it
+# authenticates as and the RBAC that lets cert-manager mint tokens for it.
+#
+# cert-manager authenticates to Vault with a short-lived ServiceAccount token
+# (serviceAccountRef): it creates a token for sa/vault-issuer with the audience
+# vault://istio-system/istio-ca, and the Vault kubernetes-auth role checks that
+# exact audience. No long-lived Vault token is stored anywhere in the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-issuer
+  namespace: istio-system
+---
+# cert-manager's controller must be allowed to create tokens for that SA.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-issuer-token
+  namespace: istio-system
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["vault-issuer"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-issuer-token
+  namespace: istio-system
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager
+    namespace: cert-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-issuer-token
+---
+# The Issuer istio-csr hands every CertificateRequest to. Signing happens in
+# Vault at pki_int/sign/istio-ca — so the Vault ROLE decides which key types
+# the mesh may use, not istio-csr and not istiod.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: istio-ca
+  namespace: istio-system
+spec:
+  vault:
+    # Vault runs in-cluster in dev mode (HTTP). A real deployment would use
+    # HTTPS and set caBundle here.
+    server: http://vault.vault.svc:8200
+    path: pki_int/sign/istio-ca
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: vault-issuer
+        serviceAccountRef:
+          name: vault-issuer

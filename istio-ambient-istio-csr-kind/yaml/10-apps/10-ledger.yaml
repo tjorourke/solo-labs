@@ -1,0 +1,106 @@
+# ledger — the namespace that never migrates. httpbin serves, client calls the
+# OTHER namespace (payments) every 2s and logs the HTTP code, so its log is a
+# continuous record of cross-namespace (and later cross-dataplane) health.
+# fortio provides the bounded zero-downtime scoreboards.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin
+  namespace: ledger
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  namespace: ledger
+  labels:
+    app: httpbin
+spec:
+  selector:
+    app: httpbin
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  namespace: ledger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+  template:
+    metadata:
+      labels:
+        app: httpbin
+    spec:
+      serviceAccountName: httpbin
+      containers:
+        - name: httpbin
+          image: mccutchen/go-httpbin:2.25.0
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: client
+  namespace: ledger
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  namespace: ledger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: client
+  template:
+    metadata:
+      labels:
+        app: client
+    spec:
+      serviceAccountName: client
+      containers:
+        - name: client
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - while true; do
+                curl -s -o /dev/null -w "%{http_code}\n" --max-time 5
+                  http://httpbin.payments:8000/status/200;
+                sleep 2;
+              done
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fortio
+  namespace: ledger
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fortio
+  namespace: ledger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fortio
+  template:
+    metadata:
+      labels:
+        app: fortio
+    spec:
+      serviceAccountName: fortio
+      containers:
+        - name: fortio
+          image: fortio/fortio:1.66.5
+          args: ["server"]

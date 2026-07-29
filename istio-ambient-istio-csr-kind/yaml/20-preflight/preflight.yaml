@@ -1,0 +1,58 @@
+# preflight — a scratch namespace born straight into ambient
+# (istio.io/dataplane-mode=ambient on the namespace). Its only job is to make
+# ztunnel send its first CSR somewhere no real workload can be hurt: with the
+# Vault role still key_type=rsa, that CSR (ECDSA P-256 — the only key type
+# ztunnel can generate) is rejected, and the failure is visible in the
+# preserved CertificateRequest and in the ztunnel logs.
+#
+# This is the dev-cluster rehearsal a careful platform team would run before
+# enrolling anything that matters.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: preflight
+  labels:
+    istio.io/dataplane-mode: ambient
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin
+  namespace: preflight
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  namespace: preflight
+  labels:
+    app: httpbin
+spec:
+  selector:
+    app: httpbin
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  namespace: preflight
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+  template:
+    metadata:
+      labels:
+        app: httpbin
+    spec:
+      serviceAccountName: httpbin
+      containers:
+        - name: httpbin
+          image: mccutchen/go-httpbin:2.25.0
+          ports:
+            - containerPort: 8080

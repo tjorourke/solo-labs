@@ -1,0 +1,16 @@
+# Two app namespaces, both starting on sidecars:
+#   ledger    — stays on sidecars (RSA certs) for the whole lab
+#   payments  — will migrate to ambient (EC certs) later
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ledger
+  labels:
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: payments
+  labels:
+    istio-injection: enabled
