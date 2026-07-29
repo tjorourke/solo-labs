@@ -25,7 +25,12 @@ kubectl --context "$CTX" -n "$NS" delete \
   ratelimitconfig/per-user-tokens enterpriseagentgatewaybudget/service-budgets \
   secret/team-data-platform-keys --ignore-not-found
 kubectl --context "$CTX" -n ai-models scale deploy/mock-llm --replicas=1 >/dev/null
-# fresh token buckets + budget counters + eviction state
-kubectl --context "$CTX" -n "$NS" rollout restart deploy/rate-limiter-enterprise-agentgateway deploy/ai-gateway
+# fresh rate-limit buckets + provider eviction state. Budget spend is tracked
+# durably per key per day (by design, a restart never resets an allowance), so
+# the notebook's §6 mints a fresh virtual key each run instead.
+kubectl --context "$CTX" -n "$NS" rollout restart \
+  deploy/ext-cache-enterprise-agentgateway deploy/rate-limiter-enterprise-agentgateway deploy/ai-gateway
+kubectl --context "$CTX" -n "$NS" rollout status deploy/ext-cache-enterprise-agentgateway --timeout=120s
+kubectl --context "$CTX" -n "$NS" rollout status deploy/rate-limiter-enterprise-agentgateway --timeout=120s
 kubectl --context "$CTX" -n "$NS" rollout status deploy/ai-gateway --timeout=120s
 echo "reset: clean slate (platform still up)"

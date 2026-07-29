@@ -2,11 +2,13 @@
 # ai-gateway.sh — stand up the Part 7 (AI gateway) platform on mesh1, on top of
 # the base ./demo-scripts/setup.sh standup:
 #
-#   - ai-models ns: three OpenAI-compatible model simulators (the llm-d
-#     inference sim, no GPU) standing in for Azure OpenAI, AWS Bedrock and a
-#     self-hosted vLLM — so the routing/failover/budget demos need no cloud
-#     accounts and cost nothing
-#   - anthropic secret: the ONE real provider (premium-reasoning), from
+#   - ai-models ns: three OpenAI-compatible model servers (the llm-d inference
+#     sim, no GPU) named azure-openai, bedrock and mock-llm — they play Azure
+#     OpenAI, AWS Bedrock and a self-hosted vLLM in the notebook, so the
+#     routing/failover/budget demos need no cloud accounts and cost nothing.
+#     The notebook presents them as the real providers; keep that in mind when
+#     presenting (only the Anthropic backend leaves the cluster).
+#   - anthropic secret: the one live provider (premium-reasoning), from
 #     ANTHROPIC_API_KEY in $SECRETS_FILE
 #   - mcp-servers ns: the MCP everything-server, deployed but NOT onboarded
 #     (demo §8 onboards it with a label)
@@ -64,9 +66,9 @@ else
 fi
 
 # ── 2. model simulators (ai-models ns) ────────────────────────────────────────
-echo "→ deploying model simulators (llm-d inference sim ×3) ..."
+echo "→ deploying model servers (llm-d inference sim ×3) ..."
 kubectl --context "$CTX" create ns ai-models --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null
-for entry in "azure-sim gpt-5-nano-sim" "bedrock-sim claude-haiku-sim" "mock-llm mock-llm"; do
+for entry in "azure-openai gpt-5-nano" "bedrock claude-haiku-4-5" "mock-llm mock-llm"; do
   name=${entry% *}; model=${entry#* }
   kubectl --context "$CTX" apply -f - >/dev/null <<EOF
 apiVersion: v1
@@ -173,8 +175,8 @@ data:
       "providers": {
         "openai": {
           "models": {
-            "gpt-5-nano-sim":   { "rates": { "input": "0.05", "output": "0.40" } },
-            "claude-haiku-sim": { "rates": { "input": "1",    "output": "5"    } },
+            "gpt-5-nano":       { "rates": { "input": "0.05", "output": "0.40" } },
+            "claude-haiku-4-5": { "rates": { "input": "1",    "output": "5"    } },
             "mock-llm":         { "rates": { "input": "0.15", "output": "0.60" } }
           }
         },
@@ -241,7 +243,7 @@ spec:
 EOF
 
 # ── 6. wait for it all ────────────────────────────────────────────────────────
-for d in azure-sim bedrock-sim mock-llm; do
+for d in azure-openai bedrock mock-llm; do
   kubectl --context "$CTX" -n ai-models rollout status deploy/$d --timeout=180s >/dev/null
 done
 kubectl --context "$CTX" -n mcp-servers rollout status deploy/server-everything --timeout=120s >/dev/null
