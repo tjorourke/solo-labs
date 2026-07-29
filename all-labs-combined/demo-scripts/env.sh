@@ -17,15 +17,16 @@ LAB_ROOT="$(cd "$(dirname "$_ENV_SRC")/.." && pwd)"
 
 DEMO="${1:-}"
 case "$DEMO" in
-  1|2|3|4|5|6) : ;;
+  1|2|3|4|5|6|7) : ;;
   *)
-    echo "usage: source demo-scripts/env.sh <1|2|3|4|5|6>"
+    echo "usage: source demo-scripts/env.sh <1|2|3|4|5|6|7>"
     echo "  1  istio ambient multicluster (mesh1+mesh2)"
     echo "  2  ztunnel L4 identity        (mesh1)"
     echo "  3  waypoint L7                (mesh1)"
     echo "  4  agentregistry + arctl login (mesh1)"
     echo "  5  kagent substrate / gVisor  (substrate)"
     echo "  6  inference routing / GIE    (inference)"
+    echo "  7  AI gateway                 (mesh1)"
     return 2 2>/dev/null || exit 2
     ;;
 esac
@@ -72,6 +73,14 @@ case "$DEMO" in
     kubectl --context $CTX get ns "$KAGENT_NS" >/dev/null 2>&1 \
       && echo "substrate cluster: up" \
       || echo "substrate not found: run ./demo-scripts/substrate-cluster.sh"
+    ;;
+  7)
+    cd "$LAB_ROOT" || return 1
+    export CTX=kind-mesh1 NS=agentgateway-system
+    export GATEWAY=$(kubectl --context $CTX -n $NS get gateway ai-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+    echo "demo-7 · context: $CTX · GATEWAY=${GATEWAY:-<not up>} · licence: $(_lic)"
+    [ -n "$GATEWAY" ] \
+      || echo "ai-gateway not found: run SECRETS_FILE=\$SECRETS_FILE ./demo-scripts/ai-gateway.sh"
     ;;
   6)
     # demo-6 is a symlink to the standalone inference lab; its cells run from there
