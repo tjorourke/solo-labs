@@ -2,12 +2,16 @@
 # 05-interop-roll.sh — one rolling restart of the sidecar namespace, BEFORE
 # anything migrates to ambient.
 #
-# Why this step exists: sidecars injected before istiod moved to the ambient
-# profile lack ISTIO_META_ENABLE_HBONE, so istiod advertises them as workloads
-# that cannot accept HBONE. ztunnel's only way to reach them would be
-# plaintext, and STRICT mTLS (correctly) resets that. The symptom, if you skip
-# this, shows up later and looks baffling: ambient callers get connection
-# resets from sidecar services that sidecar callers reach fine.
+# Why this step exists: a sidecar's config is stamped in at injection time,
+# when the pod is created. istiod's ambient profile injects new pods with
+# ISTIO_META_ENABLE_HBONE=true (the "this proxy can accept HBONE" flag), but
+# pods created before the profile change are still running the old template
+# without it. istiod therefore advertises them as unable to accept HBONE, and
+# ztunnel's only way to reach them is plaintext, which STRICT mTLS (correctly)
+# resets. The symptom, if you skip this, shows up later and looks baffling:
+# ambient callers get connection resets from sidecar services that sidecar
+# callers reach fine. A rolling restart re-injects the pods with the current
+# template.
 #
 # What this does:
 #   - rolling restart of every ledger deployment (they come back as sidecars)

@@ -23,12 +23,15 @@ The lab proves the safe way through, live:
    `profile=ambient`, CNI + ztunnel install. fortio runs across the whole
    change and scores 100%; the ledger workload keeps the exact same
    certificate serial (nothing re-issued, nothing restarted).
-   Then one rolling restart of the sidecar namespace: sidecars injected
-   before the ambient profile lack `ISTIO_META_ENABLE_HBONE`, so ztunnel
-   could only reach them in plaintext, which STRICT rejects. Re-injected
-   sidecars accept HBONE mTLS from ambient callers — and their fresh certs
-   are still RSA, proving the rsa-only role keeps serving sidecars after
-   ambient arrives. Do this roll before any namespace they talk to migrates.
+   Then one rolling restart of the sidecar namespace. A sidecar's config is
+   stamped in at injection time: istiod's ambient profile injects new pods
+   with `ISTIO_META_ENABLE_HBONE=true` (the "this proxy can accept HBONE"
+   flag), but pods created before the profile change still run the old
+   template without it, so ztunnel could only reach them in plaintext, which
+   STRICT rejects. The roll re-injects them with the current template; they
+   accept HBONE mTLS from ambient callers, and their fresh certs are still
+   RSA, proving the rsa-only role keeps serving sidecars after ambient
+   arrives. Do this roll before any namespace they talk to migrates.
 3. **The rejection, somewhere safe** — a scratch `preflight` namespace is the
    first thing enrolled into ambient. ztunnel's EC CSR is refused by the
    RSA-only role; the preserved CertificateRequest carries the exact Vault
