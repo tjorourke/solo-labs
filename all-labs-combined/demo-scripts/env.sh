@@ -76,9 +76,12 @@ case "$DEMO" in
     ;;
   7)
     cd "$LAB_ROOT" || return 1
-    export CTX=kind-mesh1 NS=agentgateway-system
-    export GATEWAY=$(kubectl --context $CTX -n $NS get gateway ai-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
-    echo "demo-7 · context: $CTX · GATEWAY=${GATEWAY:-<not up>} · licence: $(_lic)"
+    # demo-7 uses plain kubectl (no --context), so pin the kubeconfig here
+    kubectl config use-context kind-mesh1 >/dev/null 2>&1 || echo "kind-mesh1 context not found: run ./demo-scripts/setup.sh"
+    export NS=agentgateway-system
+    export GATEWAY=$(kubectl -n $NS get gateway ai-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+    source "$LAB_ROOT/demo-scripts/scripts/ai-gateway-helpers.sh"
+    echo "demo-7 · kubectl context: kind-mesh1 · GATEWAY=${GATEWAY:-<not up>} · helpers: try_model | status | mcp_tools | mcp_call"
     [ -n "$GATEWAY" ] \
       || echo "ai-gateway not found: run SECRETS_FILE=\$SECRETS_FILE ./demo-scripts/ai-gateway.sh"
     ;;
