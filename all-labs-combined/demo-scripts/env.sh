@@ -43,7 +43,7 @@ case "$DEMO" in
     export ISTIOCTL=$HOME/.istioctl/bin/istioctl-1.30.3-solo
     echo "demo-1 · mesh1=$CLUSTER1  mesh2=$CLUSTER2 · licence: $(_lic)"
     $ISTIOCTL --context $CLUSTER1 multicluster check 2>&1 | grep -E "Peers Check|Gateway Check" \
-      || echo "not peered: run ./demo-scripts/setup.sh (or ./demo-scripts/wake.sh after a sleep)"
+      || echo "not peered yet — demo-1 §1.2 exposes and links the clusters live"
     ;;
   2|3)
     cd "$LAB_ROOT" || return 1

@@ -11,7 +11,7 @@
 #   5. Solo Istio AMBIENT on both, plain Helm (base/istiod/cni/ztunnel) with the
 #      multicluster values, licence, per-cluster trust domain and JSON logs set
 #      as VALUES (no post-hoc patches)
-#   6. East-west gateways + peering: istioctl multicluster expose + link
+#   6. istio-eastwest namespace only — expose + link run LIVE in demo-1 §1.2
 #   7. Gloo UI (Gloo Platform mgmt plane on mesh1, agents on BOTH clusters →
 #      the service graph spans both)
 #   8. Solo Enterprise for agentgateway on both clusters (ingress + waypoint
@@ -383,38 +383,15 @@ EOF
 install_ambient "$CLUSTER1" "$CLUSTER1_NAME"
 install_ambient "$CLUSTER2" "$CLUSTER2_NAME"
 
-# ── Step 8: peering — east-west gateways + link ───────────────────────────────
-step "East-west gateways: istioctl multicluster expose (both clusters)"
+# ── Step 8: peering namespace only — demo-1 §1.2 exposes and links LIVE ───────
+# The expose + link commands are the demo moment, not a platform step: demo-1
+# §1.2 runs them in front of the audience and the gateways appear from nothing.
+step "East-west namespace (peering itself happens live in demo-1 §1.2)"
 for CTX in "$CLUSTER1" "$CLUSTER2"; do
   kubectl --context "$CTX" create namespace istio-eastwest --dry-run=client -o yaml \
     | kubectl --context "$CTX" apply -f - >/dev/null
-  "$ISTIOCTL" --context "$CTX" multicluster expose -n istio-eastwest >/dev/null
-  ok "[${CTX#kind-}] east-west gateway exposed"
+  ok "[${CTX#kind-}] istio-eastwest namespace ready — not yet exposed or linked"
 done
-
-# `link` fails if it runs before the expose-istiod label lands on the services
-step "Waiting for the east-west services, then linking the clusters"
-for CTX in "$CLUSTER1" "$CLUSTER2"; do
-  for _ in $(seq 1 40); do
-    [[ -n "$(kubectl --context "$CTX" -n istio-eastwest get svc -l istio.io/expose-istiod -o name 2>/dev/null)" ]] && break
-    sleep 3
-  done
-done
-"$ISTIOCTL" multicluster link --namespace istio-eastwest \
-  --contexts "$CLUSTER1,$CLUSTER2" >/dev/null
-ok "$CLUSTER1_NAME ⇄ $CLUSTER2_NAME linked"
-
-step "Verifying peering (kind cross-cluster convergence can take a few minutes)"
-PEERED=no
-for _ in $(seq 1 30); do
-  if "$ISTIOCTL" --context "$CLUSTER1" multicluster check 2>&1 \
-       | grep -q "Peers Check: all clusters connected"; then
-    PEERED=yes; break
-  fi
-  sleep 10
-done
-[[ "$PEERED" == "yes" ]] && ok "peering verified — both clusters connected" \
-  || warn "peering not confirmed yet — cross-cluster traffic may need a minute"
 
 # ── Step 9: Solo Enterprise for agentgateway (both clusters) ──────────────────
 # gloo-platform-crds (Gloo UI) and enterprise-agentgateway-crds both ship
@@ -562,16 +539,11 @@ for CTX in "$CLUSTER1" "$CLUSTER2"; do
       && ok "[$NAME] GatewayClass $GC" || { warn "[$NAME] GatewayClass $GC MISSING"; FAIL=1; }
   done
 done
-PEER_OK=no
-for _ in $(seq 1 18); do   # kind cross-cluster peering can take a couple of minutes to converge
-  if "$ISTIOCTL" --context "$CLUSTER1" multicluster check 2>&1 \
-       | grep -q "Peers Check: all clusters connected"; then PEER_OK=yes; break; fi
-  sleep 10
-done
-if [ "$PEER_OK" = yes ]; then
-  ok "multicluster peering: connected"
+if [ -z "$(kubectl --context "$CLUSTER1" -n istio-eastwest get gateway -o name 2>/dev/null)" ]; then
+  ok "multicluster peering: not created (by design — demo-1 §1.2 exposes and links live)"
 else
-  warn "multicluster peering: NOT confirmed"; FAIL=1
+  "$ISTIOCTL" --context "$CLUSTER1" multicluster check 2>&1 | grep -q "Peers Check: all clusters connected" \
+    && ok "multicluster peering: connected" || warn "peering gateways exist but not connected yet"
 fi
 kubectl --context "$CLUSTER1" -n keycloak rollout status deploy/keycloak --timeout=600s >/dev/null 2>&1 \
   && ok "Keycloak ready" || { warn "Keycloak not ready yet"; }

@@ -96,11 +96,11 @@ Day-2:
 
 **Three levels of reset**, lightest to heaviest:
 - **Reset cell** (near the top of each notebook) — undoes that demo's steps so it can be re-run; safe on a fresh cluster.
-- **`./demo-scripts/reset.sh`** — hard reset the whole demo to square 1: removes every demo workload from both parts (bookinfo, petshop, warehouse) and reverts ztunnel to claims-off, but leaves the platform (mesh, peering, agentgateway, Gloo UI, Keycloak) up. No rebuild — restart the demo from §1.1 / §2.1. Use this between demo runs, or to start Phase 2 clean.
+- **`./demo-scripts/reset.sh`** — hard reset the whole demo to square 1: removes every demo workload from both parts (bookinfo, petshop, warehouse) and reverts ztunnel to claims-off, but leaves the platform (mesh, agentgateway, Gloo UI, Keycloak) up and unlinks the clusters so demo-1 re-creates peering live. No rebuild — restart the demo from §1.1 / §2.1. Use this between demo runs, or to start Phase 2 clean.
 - **`./demo-scripts/setup.sh teardown`** — delete the clusters entirely (full ~20-min rebuild).
 
 ## What setup.sh stands up
 
-kind ×2 → MetalLB (pools `.140-.150` / `.160-.170` inside the kind net) → shared root CA + per-cluster intermediates (`cacerts`) → Gateway API CRDs → Solo Istio ambient via plain Helm (licence, per-cluster trust domain, multicluster peering values, JSON ztunnel logs — all Helm values, no patches) → `istioctl multicluster expose` + `link` → Gloo UI (mgmt plane on mesh1, agent on both) → Solo Enterprise agentgateway on both clusters → Keycloak (realm `petshop`, alice/user + bob/admin) on mesh1.
+kind ×2 → MetalLB (pools `.140-.150` / `.160-.170` inside the kind net) → shared root CA + per-cluster intermediates (`cacerts`) → Gateway API CRDs → Solo Istio ambient via plain Helm (licence, per-cluster trust domain, multicluster peering values, JSON ztunnel logs — all Helm values, no patches) → Gloo UI (mgmt plane on mesh1, agent on both) → Solo Enterprise agentgateway on both clusters → Keycloak (realm `petshop`, alice/user + bob/admin) on mesh1. **Peering is deliberately not pre-created**: demo-1 §1.2 runs `istioctl multicluster expose` + `link` live, and `reset.sh` unlinks so every run creates it fresh.
 
 Each notebook has its own **Reset** cell near the top, so any demo can be re-run without a rebuild.

@@ -18,7 +18,11 @@ source "$SCRIPT_DIR/scripts/lib.sh"
 
 IC="$ISTIOCTL"; command -v "$IC" >/dev/null 2>&1 || IC="istioctl"
 
-if "$IC" --context "$CLUSTER1" multicluster check 2>&1 \
+# The platform ships unpeered by design (demo-1 §1.2 exposes + links live).
+PEERING_EXISTS=yes
+[ -z "$(kubectl --context "$CLUSTER1" -n istio-eastwest get gateway -o name 2>/dev/null)" ] && PEERING_EXISTS=no
+
+if [ "$PEERING_EXISTS" = yes ] && "$IC" --context "$CLUSTER1" multicluster check 2>&1 \
      | grep -q "Peers Check: all clusters connected"; then
   echo "✓ already peered over HBONE — nothing to heal"
   exit 0
@@ -45,6 +49,11 @@ for CTX in "$CLUSTER1" "$CLUSTER2"; do
   kubectl --context "$CTX" -n istio-system rollout status deploy/istiod --timeout=180s >/dev/null
   kubectl --context "$CTX" -n istio-system rollout status ds/ztunnel --timeout=180s >/dev/null
 done
+
+if [ "$PEERING_EXISTS" = no ]; then
+  echo "✓ certs refreshed — clusters are unpeered by design (demo-1 §1.2 links them)"
+  exit 0
+fi
 
 echo "… waiting for peering to re-establish (~2 min)"
 for _ in $(seq 1 24); do

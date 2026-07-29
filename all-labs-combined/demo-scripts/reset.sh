@@ -42,6 +42,12 @@ for CTX in "$CLUSTER1" "$CLUSTER2"; do
     -l 'solo.io/service-scope' --ignore-not-found >/dev/null 2>&1 || true
 done
 
+step "Removing multicluster peering (demo-1 §1.2 re-creates it live)"
+for CTX in "$CLUSTER1" "$CLUSTER2"; do
+  kubectl --context "$CTX" -n istio-eastwest delete gateway --all --ignore-not-found >/dev/null 2>&1 || true
+done
+ok "east-west + remote-peer gateways removed — clusters unlinked"
+
 step "Reverting ztunnel to claims-off on ${CLUSTER1#kind-} (if Part 2 §2.7 turned it on)"
 CLAIMS="$(kubectl --context "$CLUSTER1" -n "$ISTIO_SYSTEM_NS" get ds ztunnel \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ENABLE_WORKLOAD_CLAIMS")].value}' 2>/dev/null || true)"
@@ -78,6 +84,6 @@ echo ""
 echo "  Restart the demo: open demo.ipynb, run Connect, then Part 1 / Part 2"
 echo "  from the top (§1.1 redeploys bookinfo, §2.1 redeploys petshop)."
 echo ""
-echo "  Platform left intact: clusters, ambient mesh, peering, agentgateway,"
+echo "  Platform left intact: clusters, ambient mesh, agentgateway,"
 echo "  Gloo UI (${CLUSTER1#kind-}+${CLUSTER2#kind-}), Keycloak."
 echo ""
