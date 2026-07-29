@@ -20,8 +20,8 @@
 #      still RSA, still the same serial as after the roll
 #   8. payments migrates to ambient UNDER LOAD: fortio 100%, no sidecar left,
 #      EC certs in ztunnel, cross-dataplane traffic 200 both ways
-#   9. The ec-only trap: role key_type=ec breaks the next sidecar issuance in
-#      ledger (proving why 'any' is the right posture), then any repairs it
+#   9. The sidecar outage: role key_type=ec breaks the next sidecar issuance
+#      in ledger (proving why 'any' is the right posture), then any repairs it
 #
 #   ./scripts/e2e.sh          # everything upstream OSS — no licence, no auth
 # Teardown: kind delete cluster --name istio-csr
@@ -60,7 +60,7 @@ poll() {
 }
 
 step "1/9 · RSA baseline (kind + Vault RSA PKI + istio-csr + Istio sidecar)"
-"$SCRIPT_DIR/setup-cluster.sh"
+"$SCRIPT_DIR/01-setup.sh"
 
 step "2/9 · Deploy ledger + payments (both sidecar) with STRICT mTLS"
 kapply "$LAB_ROOT/yaml/10-apps/"
@@ -87,7 +87,7 @@ kc -n "$NS_STAY" exec deploy/fortio -c fortio -- \
   fortio load -c 4 -qps 25 -t 150s -quiet \
   "http://httpbin.${NS_MOVE}:8000/status/200" >"$__fortio_out" 2>&1 &
 __fortio_pid=$!
-"$SCRIPT_DIR/ambient-enable.sh"
+"$SCRIPT_DIR/04-enable-ambient.sh"
 wait "$__fortio_pid" || true
 assert_contains "fortio 100% across the istio-csr/istiod change" "$(grep 'Code ' "$__fortio_out")" "(100.0 %)"
 rm -f "$__fortio_out"
@@ -163,7 +163,7 @@ assert "ledger -> payments (sidecar -> ambient) still 200" "$(code_of "$NS_STAY"
 assert "payments -> ledger (ambient -> sidecar) still 200" "$(code_of "$NS_MOVE" client)" "200"
 assert "ledger untouched: RSA" "$(sidecar_leaf_pem "$NS_STAY" httpbin | pem_key_algo)" "rsaEncryption"
 
-step "9/9 · The ec-only trap (why 'any', not 'ec')"
+step "9/9 · The sidecar outage: key_type=ec (why 'any', not 'ec')"
 "$SCRIPT_DIR/vault-pki.sh" role ec
 kc -n "$NS_STAY" scale deploy/httpbin --replicas=2 >/dev/null
 cr_rejected_ec() {
@@ -178,7 +178,7 @@ poll "role back to 'any': second ledger replica becomes Ready" 240 \
 kc -n "$NS_STAY" scale deploy/httpbin --replicas=1 >/dev/null
 
 echo
-"$SCRIPT_DIR/certs.sh" || true
+"$SCRIPT_DIR/03-show-certs.sh" || true
 if (( FAILS == 0 )); then
   ok "E2E PASSED — RSA sidecars untouched, EC only where ambient took over, zero dropped requests."
 else

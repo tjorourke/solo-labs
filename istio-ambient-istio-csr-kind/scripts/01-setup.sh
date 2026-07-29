@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-cluster.sh — stands up the RSA starting posture, end to end:
+# 01-setup.sh — stands up the RSA starting posture, end to end:
 #
 #   1. kind cluster (1 control-plane + 1 worker) + Gateway API CRDs
 #   2. Istio images pre-pulled on the host and kind-loaded
@@ -11,8 +11,9 @@
 #   7. Istio in SIDECAR mode: istiod with its built-in CA disabled and
 #      caAddress pointed at istio-csr
 #
-# Nothing ambient yet — that arrives later (scripts/ambient-enable.sh), which
-# is the whole point: this is the mesh a long-standing RSA estate runs today.
+# Nothing ambient yet — that arrives later (scripts/04-enable-ambient.sh),
+# which is the whole point: this is the mesh a long-standing RSA estate runs
+# today.
 # Idempotent. Needs docker, kind, kubectl, helm, jq. Everything is upstream
 # OSS — no licence, no registry auth.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -150,4 +151,4 @@ ok "istiod ready (sidecar mode), CA duties delegated to istio-csr -> Vault"
 
 echo
 ok "RSA baseline up: Istio $ISTIO_VERSION (upstream OSS), CA = Vault (RSA root/intermediate, role key_type=rsa)."
-log "Next: kubectl apply -f yaml/10-apps/ then follow the README."
+log "Next: ./scripts/02-deploy-apps.sh"

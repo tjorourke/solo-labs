@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ambient-enable.sh — the ambient control-plane arrives, with NO workloads
+# 04-enable-ambient.sh — the ambient control-plane arrives, with NO workloads
 # enrolled and NO Vault changes. Four moves, in order:
 #
 #   1. istio-csr: add app.server.caTrustedNodeAccounts=istio-system/ztunnel —
@@ -77,6 +77,6 @@ ok "ztunnel running on every node — zero CSRs sent (nothing is enrolled yet)"
 
 echo
 ok "Ambient control plane in place. Both app namespaces still on sidecars, certs untouched."
-log "Next: roll the sidecar namespaces once (make interop) — sidecars injected"
-log "before the ambient profile lack ISTIO_META_ENABLE_HBONE, and ztunnel can"
-log "only reach those in plaintext (STRICT rejects it). Then: make preflight."
+log "Next: ./scripts/05-interop-roll.sh — sidecars injected before the ambient"
+log "profile lack ISTIO_META_ENABLE_HBONE, and ztunnel can only reach those in"
+log "plaintext (STRICT rejects it). One roll fixes it."

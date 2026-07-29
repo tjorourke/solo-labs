@@ -45,6 +45,15 @@ step() { printf '\n' >&2; { __step "══> $*"; printf '\n'; } >&2; }
 
 require() { command -v "$1" >/dev/null 2>&1 || die "$1 not found — install it first"; }
 
+# run — print the command, then execute it. The demo scripts use this for
+# every command so the audience sees exactly what is being run, live.
+run() {
+  { printf '\n'; if __has_color; then tput setaf 6; fi
+    printf '$ %s\n' "$*"
+    if __has_color; then tput sgr0; fi; } >&2
+  "$@"
+}
+
 # ── cluster + namespace constants ─────────────────────────────────────────────
 export CLUSTER_NAME="${CLUSTER_NAME:-istio-csr}"
 export CTX="kind-${CLUSTER_NAME}"
