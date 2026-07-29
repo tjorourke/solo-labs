@@ -34,8 +34,23 @@ CERTS_DIR="$LAB_ROOT/.certs"
 if [[ "${1:-}" == "teardown" ]]; then
   step "Tearing down the ambient-demo clusters"
   pkill -f "port-forward.*gloo-mesh-ui" 2>/dev/null || true
-  kind delete cluster --name "$CLUSTER1_NAME" 2>/dev/null && ok "$CLUSTER1_NAME deleted" || true
-  kind delete cluster --name "$CLUSTER2_NAME" 2>/dev/null && ok "$CLUSTER2_NAME deleted" || true
+  # delete each cluster, verify it is really gone, and retry once — a silently
+  # failed delete here leaves a half-torn-down pair behind
+  for c in "$CLUSTER1_NAME" "$CLUSTER2_NAME"; do
+    if ! kind get clusters 2>/dev/null | grep -qx "$c"; then
+      ok "$c not present"
+      continue
+    fi
+    kind delete cluster --name "$c" || warn "delete of $c reported an error; verifying"
+    if kind get clusters 2>/dev/null | grep -qx "$c"; then
+      warn "$c still present — retrying delete"
+      kind delete cluster --name "$c" || true
+    fi
+    if kind get clusters 2>/dev/null | grep -qx "$c"; then
+      die "could not delete kind cluster $c — delete it manually: kind delete cluster --name $c"
+    fi
+    ok "$c deleted"
+  done
   rm -rf "$CERTS_DIR" && ok ".certs/ removed" || true
   echo ""; echo "Done."; exit 0
 fi
