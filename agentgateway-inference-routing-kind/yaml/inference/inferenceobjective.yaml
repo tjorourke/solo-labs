@@ -1,7 +1,10 @@
 # InferenceObjective attaches a serving priority to requests against the pool.
+# A request opts into a tier by naming the objective in the
+# x-gateway-inference-objective header; no header means priority 0.
 # Higher priority is dispatched first when the pool is under contention (the GIE
-# flow-control / scheduling layer drains higher-priority work before lower).
-# Two tiers here: interactive production traffic vs sheddable batch work.
+# flow-control / scheduling layer drains higher-priority work before lower),
+# fairness is only tracked within a tier, and negative priorities mark work
+# that can be shed entirely. Two tiers here: interactive vs batch.
 apiVersion: inference.networking.x-k8s.io/v1alpha2
 kind: InferenceObjective
 metadata:
