@@ -7,6 +7,7 @@ spec:
   title: Dice game
   source:
     repository:
-      url: https://github.com/tjorourke/agentgateway-enterprise-demo.git
+      # the public mirror of this lab — `arctl pull skill dice-game` clones from here
+      url: https://github.com/tjorourke/solo-labs.git
       branch: main
-      subfolder: agentregistry-agentcore-kind/setup/skill/dice-game
+      subfolder: all-labs-combined/demo-scripts/agentregistry/skill/dice-game

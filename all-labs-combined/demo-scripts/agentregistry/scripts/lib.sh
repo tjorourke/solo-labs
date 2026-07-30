@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib.sh — shared helpers for the demo-4 (AgentRegistry) scripts on mesh1.
 # Self-contained: no dependency on the source agentcore lab. Sourced by
-# connect.sh, ask.sh and add-skill.sh. Reads .env.mesh1 (written by setup-mesh1.sh)
+# connect.sh, ask.sh and the AgentCore scripts. Reads .env.mesh1 (written by setup-mesh1.sh)
 # for the sslip hostnames and the mesh1 LB IP.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
