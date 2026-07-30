@@ -16,9 +16,11 @@ SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
 : "${AGENTGATEWAY_LICENSE_KEY:?set AGENTGATEWAY_LICENSE_KEY (or point SECRETS_FILE at a file that does) first}"
 
 echo "→ installing Cost Management (management chart + ClickHouse) on ${CLUSTER1_NAME} (~a few minutes) ..."
+# --reuse-values: demo-4 shares this release (kagent UI/telemetry + OIDC values);
+# neither script may drop the other's values, so both upgrade with reuse.
 helm --kube-context "$CLUSTER1" upgrade -i management \
   oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management \
-  -n solo-cost --create-namespace --version "$MGMT_VERSION" \
+  -n solo-cost --create-namespace --version "$MGMT_VERSION" --reuse-values \
   --set cluster="$CLUSTER1_NAME" \
   --set products.agentgateway.enabled=true \
   --set products.agentgateway.namespace=agentgateway-system \

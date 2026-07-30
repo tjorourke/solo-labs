@@ -53,7 +53,18 @@ KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/ka
 AR_BACKEND_CLIENT=ar-backend
 AR_UI_CLIENT=ar-ui
 KAGENT_BACKEND_CLIENT=kagent-backend
+KAGENT_UI_CLIENT=kagent-ui
 RBAC_SUPERUSER_ROLE=admins
+# Solo Enterprise UI + telemetry (ClickHouse + OTel collector + kagent UI with
+# Tracing / Agents / Access Policies). ONE management release per cluster: the
+# chart ships cluster-scoped CRDs, so this SHARES the `management` release in
+# solo-cost with demo-7's Cost Management (both scripts upgrade it with
+# --reuse-values, so either can run first and neither drops the other's values).
+# Because demo-7 needs it too, it is NOT parked with the rest of demo-4.
+SOLO_MGMT_NS=solo-cost
+SOLO_ENT_MGMT_VERSION=0.5.2
+MGMT_CHART="oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management"
+TELEMETRY_COLLECTOR_ENDPOINT="http://solo-enterprise-telemetry-collector.${SOLO_MGMT_NS}.svc.cluster.local:4317"
 
 # ── ingress LB IP + sslip hosts ────────────────────────────────────────────────
 step "agentgateway ingress (LB IP) + sslip.io hostnames"
@@ -77,6 +88,7 @@ done
 [[ -n "$LB" ]] || die "ar-ingress got no LB IP (MetalLB)"
 export KEYCLOAK_HOST="keycloak.${LB}.sslip.io"
 export AR_HOST="agentregistry.${LB}.sslip.io"
+export KAGENT_UI_HOST="kagent.${LB}.sslip.io"
 export KEYCLOAK_ISSUER="http://${KEYCLOAK_HOST}/realms/${KEYCLOAK_REALM}"
 export ARCTL_API_BASE_URL="http://${AR_HOST}"
 ok "LB ${LB}  ·  issuer ${KEYCLOAK_ISSUER}"
@@ -150,7 +162,8 @@ helm --kube-context "$CTX" upgrade --install kagent "$KENT_CHART" -n "$KAGENT_NS
   --set oidc.secretRef=kagent-enterprise-oidc-secret --set oidc.secretKey=clientSecret --set oidc.skipOBO=false \
   --set-json 'controller.envFrom=[{"configMapRef":{"name":"kagent-enterprise-config"}}]' \
   --set kagent-tools.enabled=true --set ui.enabled=false \
-  --set otel.tracing.enabled=false --set otel.logging.enabled=false \
+  --set otel.tracing.enabled=true --set otel.tracing.exporter.otlp.endpoint="$TELEMETRY_COLLECTOR_ENDPOINT" \
+  --set otel.logging.enabled=true --set otel.logging.exporter.otlp.endpoint="$TELEMETRY_COLLECTOR_ENDPOINT" \
   --set-json 'rbac.roleMapping={"roleMapper":"claims.Groups.transformList(i, v, v in rolesMap, rolesMap[v])","roleMappings":{"admins":"global.Admin","readers":"global.Reader","writers":"global.Writer"}}' \
   --timeout 12m >/dev/null &
 KAGENT_PID=$!
@@ -209,7 +222,37 @@ else
   log "kyverno policy apply FAILED — agents will be keyless: ${KPOL_ERR}"
 fi
 
-# ── ingress HTTPRoutes (keycloak + agentregistry at sslip hosts) ───────────────
+# ── Solo Enterprise UI + telemetry (ClickHouse + OTel + kagent UI) ─────────────
+# This is where the kagent Tracing / Agents / Access Policies UI lives. Agents
+# export OTLP -> the telemetry collector -> ClickHouse, and the Enterprise UI's
+# Tracing tab reads it back. OIDC: frontend = public kagent-ui client (PKCE),
+# backend = confidential kagent-backend (same realm as everything else).
+step "Solo Enterprise UI + telemetry (${SOLO_ENT_MGMT_VERSION}) in ${SOLO_MGMT_NS} (shared with demo-7)"
+kc create namespace "$SOLO_MGMT_NS" --dry-run=client -o yaml | kc apply -f - >/dev/null
+kc -n "$SOLO_MGMT_NS" create secret generic ui-backend-oidc-secret \
+  --from-literal=clientSecret="${KAGENT_BACKEND_SECRET}" --dry-run=client -o yaml | kc apply -f - >/dev/null
+# No --wait: the UI backend does OIDC discovery against the sslip issuer, which a
+# pod can't resolve until the hostAlias lands (below). Install, bridge, THEN wait.
+helm --kube-context "$CTX" upgrade --install management "$MGMT_CHART" \
+  -n "$SOLO_MGMT_NS" --version "$SOLO_ENT_MGMT_VERSION" --reuse-values \
+  --set cluster=mesh1 \
+  --set products.kagent.enabled=true \
+  --set products.kagent.namespace="$KAGENT_NS" \
+  --set products.agentgateway.namespace=agentgateway-system \
+  --set licensing.licenseKey="${AGENTGATEWAY_LICENSE_KEY:-$KAGENT_ENT_LICENSE_KEY}" \
+  --set clickhouse.persistentVolume.enabled=false \
+  --set oidc.issuer="$KEYCLOAK_ISSUER" \
+  --set ui.frontend.oidc.clientId="$KAGENT_UI_CLIENT" \
+  --set ui.backend.oidc.clientId="$KAGENT_BACKEND_CLIENT" \
+  --set-json 'rbac.roleMapping={"roleMapper":"claims.Groups.transformList(i, v, v in rolesMap, rolesMap[v])","roleMappings":{"admins":"global.Admin","readers":"global.Reader","writers":"global.Writer"}}' \
+  --timeout 10m >/dev/null
+for _ in $(seq 1 30); do kc -n "$SOLO_MGMT_NS" get deploy solo-enterprise-ui >/dev/null 2>&1 && break; sleep 2; done
+bridge solo-enterprise-ui "$SOLO_MGMT_NS" && ok "hostAlias ${KEYCLOAK_HOST} -> Keycloak on solo-enterprise-ui"
+kc -n "$SOLO_MGMT_NS" rollout status statefulset/management-clickhouse-shard0 --timeout=300s >/dev/null 2>&1 || true
+kc -n "$SOLO_MGMT_NS" rollout status deploy/solo-enterprise-ui --timeout=300s >/dev/null 2>&1 \
+  && ok "Enterprise UI ready (Keycloak SSO)" || log "Enterprise UI not Ready in 5m — check: kc -n $SOLO_MGMT_NS get pods"
+
+# ── ingress HTTPRoutes (keycloak + agentregistry + kagent UI at sslip hosts) ────
 step "Ingress HTTPRoutes"
 kc apply -f - >/dev/null <<EOF
 apiVersion: gateway.networking.k8s.io/v1
@@ -227,8 +270,16 @@ spec:
   parentRefs: [{ name: ar-ingress, namespace: agentgateway-system }]
   hostnames: ["${AR_HOST}"]
   rules: [{ matches: [{ path: { type: PathPrefix, value: / } }], backendRefs: [{ name: ${AR_SERVER_SVC}, port: ${AR_SERVER_PORT} }] }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: kagent-ui, namespace: ${SOLO_MGMT_NS} }
+spec:
+  parentRefs: [{ name: ar-ingress, namespace: agentgateway-system }]
+  hostnames: ["${KAGENT_UI_HOST}"]
+  rules: [{ matches: [{ path: { type: PathPrefix, value: / } }], backendRefs: [{ name: solo-enterprise-ui, port: 80 }] }]
 EOF
-ok "routes applied: ${KEYCLOAK_HOST}, ${AR_HOST}"
+ok "routes applied: ${KEYCLOAK_HOST}, ${AR_HOST}, ${KAGENT_UI_HOST}"
 
 # ── register the kagent runtime + seed the approved catalog (engineer pre-work) ──
 # The notebook's "browse" step and `arctl init agent --mcp <ref>` both expect the
@@ -272,6 +323,7 @@ export CTX=kind-mesh1
 export LB=${LB}
 export KEYCLOAK_HOST=${KEYCLOAK_HOST}
 export AR_HOST=${AR_HOST}
+export KAGENT_UI_HOST=${KAGENT_UI_HOST}
 export KEYCLOAK_ISSUER=${KEYCLOAK_ISSUER}
 export ARCTL_API_BASE_URL=${ARCTL_API_BASE_URL}
 export KEYCLOAK_NS=${KEYCLOAK_NS}
@@ -282,6 +334,7 @@ echo "" >&2
 echo "════════════════════════════════════════════════════════════════════" >&2
 echo "  AgentRegistry demo platform on mesh1 — up" >&2
 echo "    registry API/UI : http://${AR_HOST}" >&2
+echo "    kagent UI       : http://${KAGENT_UI_HOST}  (Tracing / Agents / Access Policies)" >&2
 echo "    Keycloak issuer : ${KEYCLOAK_ISSUER}" >&2
 echo "    arctl login     : arctl user login --api-server-url http://${AR_HOST} ..." >&2
 echo "════════════════════════════════════════════════════════════════════" >&2

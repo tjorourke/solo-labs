@@ -20,11 +20,24 @@ kc -n kagent label mcpserver everything-server kagent.solo.io/waypoint- >/dev/nu
 ok "AccessPolicies cleared, waypoint label removed"
 
 step "Removing the deployed agent + MCP tool servers"
-arctl delete deployment agentdemo         >/dev/null 2>&1 || true
-arctl delete deployment everything-server >/dev/null 2>&1 || true
-arctl delete deployment my-mcp            >/dev/null 2>&1 || true
-# also drop the agent record itself so a fresh run re-publishes cleanly
-arctl delete agent agentdemo              >/dev/null 2>&1 || true
+arctl delete deployment agentdemo           >/dev/null 2>&1 || true
+arctl delete deployment agentdemo-agentcore >/dev/null 2>&1 || true
+arctl delete deployment everything-server   >/dev/null 2>&1 || true
+arctl delete deployment my-mcp              >/dev/null 2>&1 || true
+# also drop the agent records so a fresh run re-publishes cleanly (the AgentCore
+# deploy publishes its OWN record, agentdemo-agentcore, with the ECR image)
+arctl delete agent agentdemo                >/dev/null 2>&1 || true
+arctl delete agent agentdemo-agentcore      >/dev/null 2>&1 || true
+
+# the deployed AgentCore runtime INSTANCE in AWS (keep the platform: the
+# aws-agentcore runtime connection, CF role and ECR repo all stay)
+if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity >/dev/null 2>&1; then
+  export AWS_REGION="${AWS_REGION:-us-east-1}"
+  rid="$(aws bedrock-agentcore-control list-agent-runtimes --region "$AWS_REGION" 2>/dev/null \
+    | jq -r '.agentRuntimes[]? | select(.agentRuntimeName=="agentdemo_agentcore") | .agentRuntimeId' 2>/dev/null)"
+  [ -n "$rid" ] && aws bedrock-agentcore-control delete-agent-runtime --region "$AWS_REGION" \
+    --agent-runtime-id "$rid" >/dev/null 2>&1 && ok "AWS AgentCore runtime instance removed" || true
+fi
 # belt-and-braces: remove any kagent CRs the registry left behind
 kc -n kagent delete agent agentdemo                    >/dev/null 2>&1 || true
 kc -n kagent delete mcpserver my-mcp everything-server >/dev/null 2>&1 || true

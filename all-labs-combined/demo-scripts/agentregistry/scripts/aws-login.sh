@@ -8,16 +8,17 @@
 # notebook kernel).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-set -a; [ -f "$LAB_ROOT/.env.local" ] && . "$LAB_ROOT/.env.local"; [ -n "${SECRETS_FILE:-}" ] && [ -f "$SECRETS_FILE" ] && . "$SECRETS_FILE"; set +a
-export PATH="$HOME/.arctl/bin:$PATH"
-export CLUSTER_NAME="${CLUSTER_NAME:-agentcore-demo}"; export CTX="kind-${CLUSTER_NAME}"
-export AR_NS="${AR_NS:-agentregistry-system}"
+# lib.sh loads .env.mesh1 (CTX=kind-mesh1, the sslip hosts, ar-keycloak ns) and
+# defines load_secrets; SECRETS_FILE carries AWS_PROFILE / AGENT_GIT_URL.
+# shellcheck source=lib.sh
+. "$SCRIPT_DIR/lib.sh"
+load_secrets
 export AR_VERSION="${AR_VERSION:-2026.6.1}"
 export AR_CHART="${AR_CHART:-oci://us-docker.pkg.dev/solo-public/agentregistry-enterprise/helm/agentregistry-enterprise}"
 export GAR_HOST="${GAR_HOST:-us-docker.pkg.dev}"
 
 if [ -z "${AWS_PROFILE:-}" ]; then
-  echo "Set AWS_PROFILE in .env.local (./scripts/setup-env.sh), then: source scripts/aws-login.sh"; return 2>/dev/null || exit 1
+  echo "Set AWS_PROFILE (export it, or put it in SECRETS_FILE), then: source scripts/aws-login.sh"; return 2>/dev/null || exit 1
 fi
 # Drop static creds a PRIOR aws-login run exported into this shell/kernel (line
 # below). They expire in ~1h and explicit AWS_ACCESS_KEY_ID/… override AWS_PROFILE,
@@ -44,11 +45,11 @@ helm --kube-context "$CTX" upgrade agentregistry "$AR_CHART" -n "$AR_NS" --versi
   --set aws.region="$AWS_REGION" >/dev/null 2>&1 \
   && echo "✓ registry upgraded with AWS creds" || echo "! helm upgrade failed — check: helm -n $AR_NS status agentregistry"
 # The helm upgrade regenerates the Deployment, dropping the kubectl-added issuer
-# hostAlias — re-add it so the server keeps resolving keycloak.localtest.me.
-KCIP="$(kubectl --context "$CTX" -n keycloak get svc keycloak -o jsonpath='{.spec.clusterIP}' 2>/dev/null)"
+# hostAlias — re-add it so the server keeps resolving the sslip issuer host.
+KCIP="$(kubectl --context "$CTX" -n "$KEYCLOAK_NS" get svc keycloak -o jsonpath='{.spec.clusterIP}' 2>/dev/null)"
 [ -n "$KCIP" ] && { kubectl --context "$CTX" -n "$AR_NS" patch deploy agentregistry-enterprise-server --type=json \
-  -p "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"$KCIP\",\"hostnames\":[\"keycloak.localtest.me\"]}]}]" >/dev/null 2>&1 \
+  -p "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"$KCIP\",\"hostnames\":[\"$KEYCLOAK_HOST\"]}]}]" >/dev/null 2>&1 \
   || kubectl --context "$CTX" -n "$AR_NS" patch deploy agentregistry-enterprise-server --type=json \
-  -p "[{\"op\":\"add\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"$KCIP\",\"hostnames\":[\"keycloak.localtest.me\"]}]}]" >/dev/null 2>&1; }
+  -p "[{\"op\":\"add\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"$KCIP\",\"hostnames\":[\"$KEYCLOAK_HOST\"]}]}]" >/dev/null 2>&1; }
 kubectl --context "$CTX" -n "$AR_NS" rollout status deploy/agentregistry-enterprise-server --timeout=180s >/dev/null 2>&1 || true
 echo "AWS ****${AWS_ACCOUNT_ID: -4} / ${AWS_REGION} · in-cluster registry has AWS creds"

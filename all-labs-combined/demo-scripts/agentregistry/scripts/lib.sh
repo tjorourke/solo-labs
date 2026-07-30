@@ -11,6 +11,9 @@ PROJECT_ROOT="${PROJECT_ROOT:-$LAB_ROOT}"     # where `arctl init agent` scaffol
 # platform facts from the standup
 set -a
 [ -f "$LAB_ROOT/.env.mesh1" ] && . "$LAB_ROOT/.env.mesh1"
+# local AWS/AgentCore facts (AWS_PROFILE, AGENT_GIT_URL/BRANCH) — gitignored;
+# SECRETS_FILE (load_secrets) can also provide them
+[ -f "$LAB_ROOT/.env.aws" ] && . "$LAB_ROOT/.env.aws"
 set +a
 
 # cluster + namespaces (mesh1 is the single cluster for this demo)
@@ -33,6 +36,11 @@ export AS_PASSWORD="${AS_PASSWORD:-password}"
 export REG_NAME="${REG_NAME:-kind-registry}"
 export REG_PORT="${REG_PORT:-5001}"
 
+# Solo Enterprise UI (kagent Tracing / Agents / Access Policies) — the management
+# release in solo-cost, SHARED with demo-7's Cost Management; KAGENT_UI_HOST from .env.mesh1
+export SOLO_MGMT_NS="${SOLO_MGMT_NS:-solo-cost}"
+[ -z "${KAGENT_UI_HOST:-}" ] && [ -n "${LB:-}" ] && export KAGENT_UI_HOST="kagent.${LB}.sslip.io"
+
 # arctl on PATH, clean output for a notebook kernel
 export PATH="$HOME/.arctl/bin:$PATH"
 export NO_COLOR=1 CLICOLOR=0
@@ -45,6 +53,7 @@ else
 fi
 
 kc(){ kubectl --context "$CTX" "$@"; }
+log(){  printf '  %s\n' "$*" >&2; }
 step(){ printf '\n\033[1m▸ %s\033[0m\n' "$*" >&2; }
 ok(){   printf '  \033[32m✓ %s\033[0m\n' "$*" >&2; }
 warn(){ printf '  \033[33m! %s\033[0m\n' "$*" >&2; }
