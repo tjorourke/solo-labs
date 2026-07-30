@@ -6,7 +6,9 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"      # the agentregistry/ dir
-PROJECT_ROOT="${PROJECT_ROOT:-$LAB_ROOT}"     # where `arctl init agent` scaffolds
+# where `arctl init agent` scaffolds: the SUITE root (istio-ambient-demo-kind),
+# so agentdemo/ appears in the editor next to the demo notebooks
+export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$LAB_ROOT/../.." && pwd)}"
 
 # platform facts from the standup
 set -a

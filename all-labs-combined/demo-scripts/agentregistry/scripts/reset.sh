@@ -50,7 +50,7 @@ kc -n agentgateway-system delete configmap petstore-openapi                     
 ok "Petstore backend removed"
 
 step "Removing the local scaffold"
-rm -rf "$LAB_ROOT/agentdemo"
+rm -rf "$PROJECT_ROOT/agentdemo" "$LAB_ROOT/agentdemo"
 ok "clean — the platform + approved catalog remain up"
 
 echo "" >&2
