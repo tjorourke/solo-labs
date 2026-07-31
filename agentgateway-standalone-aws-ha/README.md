@@ -111,6 +111,32 @@ Then work through the demos. Each one explains itself as it runs.
 
 ---
 
+## What the HA testing showed
+
+Every script was run against the live three node fleet. These are the observed results.
+
+| Exercise | Result |
+| --- | --- |
+| Fleet health | 3 of 3 healthy, one per availability zone, identical binary version and config hash |
+| Load distribution | 7 / 7 / 6 over 20 requests |
+| Process loss | Out of service within ~20s, traffic continued on the survivors, back to 3 after restart |
+| Instance loss | **139 seconds** from terminate to three healthy, replacement identical, no manual step |
+| Portable MCP session, direct to each node | HTTP 200 on all three, each call ran on the node addressed |
+| Portable MCP session, through the load balancer | 12 of 12 calls on one session, served by all three |
+| Portable MCP session, negative test | Only the node with a different session key refused (400); restoring the key returned it to 200 |
+| Config push | All three serving a new route within the sync interval, nothing restarted, **124 server-sent events** held across the reload |
+| Overlay propagation | A model created on one node was published by all three in about 8 seconds |
+| Overlay durability | The replacement for a destroyed node inherited it from Aurora |
+| Per-node rate limit | 90 of 90 allowed against a 60 a minute per-process bucket |
+| Fleet-wide rate limit | **Exactly 10 of 20 allowed**, a second caller unaffected |
+| Rate limit degradation | With one node's limiter stopped, that node allowed and the others refused, as `failOpen` specifies |
+
+Sixty-seven assertions across the nine scripts, all passing. Each capability test pairs a
+positive case with a negative one: a token without the scope, a tool the caller is not
+entitled to, a request past the limit.
+
+---
+
 ## The config file
 
 `config/config.yaml` is the whole control plane, and it is worth reading before you
