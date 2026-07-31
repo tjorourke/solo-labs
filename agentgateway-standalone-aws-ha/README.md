@@ -113,7 +113,18 @@ Then work through the demos. Each one explains itself as it runs.
 
 ## What the HA testing showed
 
-Every script was run against the live three node fleet. These are the observed results.
+Every script was run against the live three node fleet. Four things were proven, and the
+numbers are what the scripts printed rather than what the design predicted.
+
+- **Self-healing in 139 seconds.** An instance was destroyed; a replacement built itself,
+  loaded the same config and was serving, with nobody touching anything.
+- **Sessions survive node loss.** One MCP session worked on all three nodes, so a client
+  keeps working when the node it started on goes away. No sticky sessions and no session
+  store.
+- **Config changes with no downtime.** The whole fleet took a change with no restart, and a
+  response streaming at the time delivered all 124 of its events uninterrupted.
+- **Limits mean what they say.** A limit of 10 a minute allowed precisely 10 across three
+  nodes; three independent per-node buckets would have let 30 through.
 
 | Exercise | Result |
 | --- | --- |
