@@ -199,6 +199,31 @@ session genuinely portable.
 
 ---
 
+## Rotating credentials
+
+Every credential lives in one Secrets Manager document, and each node renders it into
+`/etc/agentgateway/env` at start. Updating the secret does not reach a running node on its
+own, so the general shape is: change it at source, put the new value in the secret, then
+roll the fleet one node at a time.
+
+```bash
+scripts/30-rotate-credentials.sh --show   # which keys exist, and which need a restart
+scripts/30-rotate-credentials.sh          # rolling re-render and restart, health-checked
+```
+
+| Credential | Needs a fleet roll | Visible to clients |
+| --- | --- | --- |
+| Aurora password | Yes | No, if the cluster change and the secret update are close together |
+| Session key | Yes | Yes, MCP clients re-initialise |
+| OIDC cookie secret | Yes | Yes, admin UI users sign in again |
+| Provider API keys | Yes | No |
+| Cognito client secret | Yes | No, a client can hold two secrets at once |
+| Virtual keys | **No** | No, both keys work at once |
+
+Virtual keys are the exception worth knowing: they are configuration rather than startup
+credentials, so adding the replacement and deleting the old one needs no restart and no
+roll. The page has the per-credential commands.
+
 ## Operating it
 
 ```bash
