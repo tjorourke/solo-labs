@@ -1,0 +1,38 @@
+# Descriptors for the Envoy rate limit service.
+#
+# config.yaml names a domain and the descriptor keys; this file assigns the actual
+# limits to them. Each gateway node runs its own copy of the service, and all of
+# them count into the same ElastiCache cluster, so a limit here applies to the
+# fleet rather than to one process.
+#
+# The service has no file watcher of its own, so the config sync timer restarts it
+# when this file changes. That is fine: the counters live in ElastiCache, not in
+# the service, so a restart loses nothing.
+domain: agentgateway
+
+descriptors:
+
+# Per-caller limit on the MCP endpoint, keyed on the JWT subject.
+#
+# Set deliberately low so the difference between this and localRateLimit is
+# obvious: send 15 requests spread across all three nodes and exactly 10 succeed.
+# The same limit expressed as localRateLimit would let roughly 30 through, because
+# each process would keep its own bucket.
+- key: mcp_caller
+  rate_limit:
+    unit: minute
+    requests_per_unit: 10
+
+# Per-caller limit on the LLM endpoint.
+- key: llm_caller
+  rate_limit:
+    unit: minute
+    requests_per_unit: 20
+
+# Token spend rather than request count. The gateway reports the cost after the
+# response completes, so this caps how many tokens a caller can burn per minute
+# across the whole fleet.
+- key: llm_tokens_caller
+  rate_limit:
+    unit: minute
+    requests_per_unit: 50000

@@ -1,0 +1,504 @@
+#!/bin/bash
+# ---------------------------------------------------------------------------
+# Bootstrap for an agentgateway node.
+#
+# Everything here is ordinary Linux: a binary in /usr/local/bin, a config file in
+# /etc/agentgateway, and a systemd unit. The only cluster-shaped behaviour comes from
+# two things the node pulls at boot and keeps pulling:
+#
+#   - config.yaml from S3, re-synced every 30s. agentgateway watches the file, so a
+#     push to S3 reloads all three nodes with no restart.
+#   - the runtime secret from Secrets Manager, rendered into /etc/agentgateway/env.
+#     This is where the Aurora URL, the fleet-wide session key and the provider
+#     credentials come from. The config file references them as $VAR, and
+#     agentgateway shell-expands the whole file before parsing it.
+#
+# The gateway must come up even if observability does not, so the CloudWatch agent
+# and the OTel collector are installed best-effort and never fail the boot.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+exec > >(tee -a /var/log/agw-bootstrap.log) 2>&1
+
+echo "=== agentgateway node bootstrap starting $(date -Is)"
+
+AGW_VERSION="${agentgateway_version}"
+CONFIG_BUCKET="${config_bucket}"
+RUNTIME_SECRET_ARN="${runtime_secret_arn}"
+REGION="${region}"
+LOG_GROUP="${log_group}"
+METRICS_NAMESPACE="${metrics_namespace}"
+REDIS_HOST="${redis_host}"
+RATELIMIT_PORT="${ratelimit_port}"
+RATELIMIT_IMAGE="${ratelimit_image}"
+METRICS_PORT="${metrics_port}"
+READINESS_PORT="${readiness_port}"
+OTLP_PORT="${otlp_port}"
+
+export AWS_DEFAULT_REGION="$REGION"
+
+warn() { echo "WARN: $*" >&2; }
+
+# ---------------------------------------------------------------------------
+# Packages
+#
+# Split deliberately. The first list is required and a failure there should stop
+# the boot. The psql client is only used by the lab's inspection scripts, and its
+# package name moves between Amazon Linux releases, so a miss there must not take
+# the gateway down with it.
+# ---------------------------------------------------------------------------
+dnf install -y jq tar gzip podman
+
+for pg in postgresql16 postgresql15 postgresql; do
+  if dnf install -y "$pg" 2>/dev/null; then
+    echo "installed psql client from $pg"
+    break
+  fi
+done
+command -v psql >/dev/null || warn "no psql client; the request-log inspection commands will not work on this node"
+
+# ---------------------------------------------------------------------------
+# Identity of this node. Stamped into every access log line so per-node attribution
+# works in CloudWatch Logs Insights, and used by the HA scripts to tell nodes apart.
+# ---------------------------------------------------------------------------
+IMDS_TOKEN=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+INSTANCE_ID=$(curl -sf -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+AZ=$(curl -sf -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/placement/availability-zone)
+PRIVATE_IP=$(curl -sf -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/local-ipv4)
+
+echo "=== node $INSTANCE_ID in $AZ at $PRIVATE_IP"
+
+# ---------------------------------------------------------------------------
+# The agentgateway binary. Pinned, checksum-verified, installed from the release.
+#
+# The version is pinned rather than "latest" so a node the Auto Scaling group builds
+# three days from now runs the same build as the two nodes beside it.
+# ---------------------------------------------------------------------------
+ARCH=$(uname -m)
+case "$ARCH" in
+  aarch64) AGW_ARCH="arm64" ;;
+  x86_64)  AGW_ARCH="amd64" ;;
+  *) echo "unsupported architecture $ARCH"; exit 1 ;;
+esac
+
+BASE_URL="https://github.com/agentgateway/agentgateway/releases/download/$AGW_VERSION"
+
+for tool in agentgateway agctl; do
+  curl -fsSL -o "/tmp/$tool" "$BASE_URL/$tool-linux-$AGW_ARCH"
+  curl -fsSL -o "/tmp/$tool.sha256" "$BASE_URL/$tool-linux-$AGW_ARCH.sha256"
+  expected=$(awk '{print $1}' "/tmp/$tool.sha256")
+  actual=$(sha256sum "/tmp/$tool" | awk '{print $1}')
+  if [ "$expected" != "$actual" ]; then
+    echo "checksum mismatch for $tool: expected $expected got $actual"
+    exit 1
+  fi
+  install -m 0755 "/tmp/$tool" "/usr/local/bin/$tool"
+done
+
+/usr/local/bin/agentgateway --version
+
+# ---------------------------------------------------------------------------
+# Service account and layout
+# ---------------------------------------------------------------------------
+id -u agentgateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /sbin/nologin agentgateway
+
+mkdir -p /etc/agentgateway/remote /var/log/agentgateway /var/lib/agentgateway
+chown -R agentgateway:agentgateway /var/log/agentgateway /var/lib/agentgateway
+
+# ---------------------------------------------------------------------------
+# /etc/agentgateway/env
+#
+# Rendered from the one Secrets Manager document, plus this node's own identity.
+# Values are single-quoted so a credential containing an awkward character cannot
+# break systemd's EnvironmentFile parsing.
+# ---------------------------------------------------------------------------
+render_env() {
+  local tmp
+  tmp=$(mktemp)
+
+  aws secretsmanager get-secret-value \
+    --secret-id "$RUNTIME_SECRET_ARN" \
+    --query SecretString --output text \
+  | jq -r 'to_entries[] | "\(.key)=\(.value | tostring | @sh)"' > "$tmp"
+
+  # Per-node values. AGW_NODE_ID ends up in the access log and in the metrics
+  # dimensions, which is how the lab shows which node served a request.
+  {
+    echo "AGW_NODE_ID=$(printf '%q' "$INSTANCE_ID")"
+    echo "AGW_NODE_AZ=$(printf '%q' "$AZ")"
+    echo "AGW_NODE_IP=$(printf '%q' "$PRIVATE_IP")"
+    echo "RUST_LOG=info"
+  } >> "$tmp"
+
+  install -o root -g agentgateway -m 0640 "$tmp" /etc/agentgateway/env
+  rm -f "$tmp"
+}
+
+render_env
+
+# ---------------------------------------------------------------------------
+# Fleet config sync.
+#
+# S3 is the source of truth. This runs once now and then every 30 seconds from a
+# timer. agentgateway's own file watcher does the reloading, so the sync never has
+# to restart the gateway; it only restarts the rate limit service, which has no
+# watcher of its own.
+# ---------------------------------------------------------------------------
+cat >/usr/local/bin/agw-config-sync <<'SYNC'
+#!/bin/bash
+set -euo pipefail
+
+BUCKET="$1"
+REMOTE=/etc/agentgateway/remote
+
+aws s3 sync "s3://$BUCKET/" "$REMOTE/" --exact-timestamps --delete --only-show-errors
+
+changed=0
+sync_file() {
+  local src="$REMOTE/$1" dst="$2"
+  [ -f "$src" ] || return 0
+  if ! cmp -s "$src" "$dst"; then
+    install -o root -g agentgateway -m 0640 "$src" "$dst"
+    echo "updated $dst"
+    changed=1
+  fi
+}
+
+# agentgateway watches all three of these and picks up changes itself.
+sync_file config.yaml       /etc/agentgateway/config.yaml
+sync_file model-costs.json  /etc/agentgateway/model-costs.json
+sync_file echo-openapi.json /etc/agentgateway/echo-openapi.json
+
+# The rate limit service has no file watcher, so it needs a nudge.
+if [ -f "$REMOTE/ratelimit-config.yaml" ] \
+   && ! cmp -s "$REMOTE/ratelimit-config.yaml" /etc/ratelimit/config/config.yaml; then
+  install -D -m 0644 "$REMOTE/ratelimit-config.yaml" /etc/ratelimit/config/config.yaml
+  echo "updated ratelimit config, restarting service"
+  systemctl restart agw-ratelimit.service || true
+fi
+
+exit 0
+SYNC
+chmod 0755 /usr/local/bin/agw-config-sync
+
+mkdir -p /etc/ratelimit/config
+/usr/local/bin/agw-config-sync "$CONFIG_BUCKET"
+
+cat >/etc/systemd/system/agw-config-sync.service <<EOF
+[Unit]
+Description=Sync agentgateway fleet configuration from S3
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=AWS_DEFAULT_REGION=$REGION
+ExecStart=/usr/local/bin/agw-config-sync $CONFIG_BUCKET
+EOF
+
+cat >/etc/systemd/system/agw-config-sync.timer <<'EOF'
+[Unit]
+Description=Sync agentgateway fleet configuration from S3 every 30 seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# ---------------------------------------------------------------------------
+# A small echo service on 127.0.0.1:8080.
+#
+# This is the upstream the HTTP routes forward to, and the REST API that the MCP
+# section turns into tools from its OpenAPI description. Keeping it local means the
+# traffic section has no external dependency, and its reply names the node that
+# served it, which is what makes the load balancing visible.
+#
+# Three endpoints, matching config/echo-openapi.json exactly: /whoami, /headers,
+# and /status/<code>.
+# ---------------------------------------------------------------------------
+cat >/usr/local/bin/agw-echo <<'ECHO'
+#!/usr/bin/env python3
+import json, os, socketserver
+from http.server import BaseHTTPRequestHandler
+
+NODE = os.environ.get("AGW_NODE_ID", "unknown")
+ZONE = os.environ.get("AGW_NODE_AZ", "unknown")
+
+
+class H(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *a):
+        pass
+
+    def reply(self, code, payload):
+        raw = json.dumps(payload).encode()
+        self.send_response(code)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def handle_any(self, body=None):
+        path = self.path.split("?")[0]
+        if path.startswith("/status/"):
+            try:
+                code = int(path.rsplit("/", 1)[1])
+            except ValueError:
+                code = 400
+            return self.reply(code, {"status": code, "node": NODE})
+        payload = {
+            "node": NODE,
+            "zone": ZONE,
+            "path": self.path,
+            "method": self.command,
+            "headers": {k.lower(): v for k, v in self.headers.items()},
+        }
+        if body is not None:
+            payload["body"] = body
+        return self.reply(200, payload)
+
+    def do_GET(self):
+        self.handle_any()
+
+    def do_POST(self):
+        n = int(self.headers.get("content-length") or 0)
+        self.handle_any(self.rfile.read(n).decode("utf-8", "replace") if n else "")
+
+
+class S(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+S(("127.0.0.1", 8080), H).serve_forever()
+ECHO
+chmod 0755 /usr/local/bin/agw-echo
+
+cat >/etc/systemd/system/agw-echo.service <<'EOF'
+[Unit]
+Description=Local echo upstream for the agentgateway routes and OpenAPI-derived MCP tools
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentgateway
+Group=agentgateway
+EnvironmentFile=/etc/agentgateway/env
+ExecStart=/usr/local/bin/agw-echo
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------------------------------------------------------------------------
+# The global rate limit service.
+#
+# The reference Envoy ratelimit implementation, one instance per node, all of them
+# counting into the same ElastiCache cluster. That is what makes remoteRateLimit in
+# the gateway config a fleet-wide limit rather than three independent ones.
+# ---------------------------------------------------------------------------
+cat >/etc/systemd/system/agw-ratelimit.service <<EOF
+[Unit]
+Description=Envoy rate limit service backing agentgateway remoteRateLimit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+ExecStartPre=-/usr/bin/podman rm -f agw-ratelimit
+ExecStart=/usr/bin/podman run --rm --name agw-ratelimit \\
+  --network host \\
+  -e USE_STATSD=false \\
+  -e LOG_LEVEL=info \\
+  -e REDIS_SOCKET_TYPE=tcp \\
+  -e REDIS_URL=$REDIS_HOST:6379 \\
+  -e RUNTIME_ROOT=/data \\
+  -e RUNTIME_SUBDIRECTORY=ratelimit \\
+  -e RUNTIME_WATCH_ROOT=false \\
+  -e GRPC_PORT=$RATELIMIT_PORT \\
+  -e PORT=8080 \\
+  -v /etc/ratelimit/config:/data/ratelimit/config:ro,Z \\
+  $RATELIMIT_IMAGE \\
+  /bin/ratelimit
+ExecStop=/usr/bin/podman stop -t 10 agw-ratelimit
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------------------------------------------------------------------------
+# agentgateway itself.
+#
+# One process, one config file. adminAddr in config.yaml stays on loopback, so the
+# admin API and the UI backend are never exposed by this unit; the UI is published
+# through the data plane gateway behind OIDC instead.
+# ---------------------------------------------------------------------------
+cat >/etc/systemd/system/agentgateway.service <<EOF
+[Unit]
+Description=agentgateway standalone
+Documentation=https://agentgateway.dev/docs/standalone/latest/
+After=network-online.target agw-ratelimit.service agw-echo.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentgateway
+Group=agentgateway
+EnvironmentFile=/etc/agentgateway/env
+ExecStart=/usr/local/bin/agentgateway -f /etc/agentgateway/config.yaml
+Restart=always
+RestartSec=5
+
+StandardOutput=append:/var/log/agentgateway/agentgateway.log
+StandardError=append:/var/log/agentgateway/agentgateway.log
+
+# Give in-flight requests time to finish. connectionTerminationDeadline in
+# config.yaml governs the drain; this only has to outlast it.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/agentgateway /var/lib/agentgateway
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now agw-echo.service
+systemctl enable --now agw-ratelimit.service
+systemctl enable --now agw-config-sync.timer
+systemctl enable --now agentgateway.service
+
+# ---------------------------------------------------------------------------
+# Observability, best-effort. A failure here must never stop the node from serving.
+# ---------------------------------------------------------------------------
+
+install_cloudwatch_agent() {
+  dnf install -y amazon-cloudwatch-agent
+
+  cat >/opt/aws/amazon-cloudwatch-agent/etc/agentgateway.json <<EOF
+{
+  "agent": { "run_as_user": "root" },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/agentgateway/agentgateway.log",
+            "log_group_name": "$LOG_GROUP",
+            "log_stream_name": "$INSTANCE_ID/agentgateway",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/agw-bootstrap.log",
+            "log_group_name": "$LOG_GROUP",
+            "log_stream_name": "$INSTANCE_ID/bootstrap",
+            "timezone": "UTC"
+          }
+        ]
+      }
+    }
+  }
+}
+EOF
+
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config -m ec2 -s \
+    -c file:/opt/aws/amazon-cloudwatch-agent/etc/agentgateway.json
+}
+
+install_otel_collector() {
+  curl -fsSL -o /tmp/aws-otel-collector.rpm \
+    "https://aws-otel-collector.s3.amazonaws.com/amazon_linux/$AGW_ARCH/latest/aws-otel-collector.rpm"
+  rpm -Uvh --replacepkgs /tmp/aws-otel-collector.rpm
+
+  # Two jobs in one collector: take OTLP traces from the gateway and put them in
+  # X-Ray, and scrape the gateway's Prometheus endpoint into CloudWatch metrics.
+  cat >/opt/aws/aws-otel-collector/etc/config.yaml <<EOF
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:$OTLP_PORT
+  prometheus:
+    config:
+      scrape_configs:
+      - job_name: agentgateway
+        scrape_interval: 30s
+        static_configs:
+        - targets: ['127.0.0.1:$METRICS_PORT']
+
+processors:
+  batch/traces:
+    timeout: 5s
+  resourcedetection:
+    detectors: [env, ec2]
+    timeout: 5s
+
+exporters:
+  awsxray:
+    region: $REGION
+  awsemf:
+    region: $REGION
+    namespace: $METRICS_NAMESPACE
+    dimension_rollup_option: NoDimensionRollup
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, batch/traces]
+      exporters: [awsxray]
+    metrics:
+      receivers: [prometheus]
+      processors: [resourcedetection]
+      exporters: [awsemf]
+EOF
+
+  systemctl enable --now aws-otel-collector
+}
+
+install_cloudwatch_agent || warn "CloudWatch agent setup failed; logs will stay on the instance"
+install_otel_collector   || warn "OTel collector setup failed; traces and CloudWatch metrics disabled"
+
+# ---------------------------------------------------------------------------
+# Wait for readiness so the Auto Scaling group's grace period is not the only thing
+# standing between a broken config and a node in service.
+# ---------------------------------------------------------------------------
+for i in $(seq 1 60); do
+  if curl -sf "http://127.0.0.1:$READINESS_PORT/healthz/ready" >/dev/null; then
+    echo "=== agentgateway ready after $${i}s"
+    break
+  fi
+  sleep 1
+done
+
+curl -sf "http://127.0.0.1:$READINESS_PORT/healthz/ready" \
+  || warn "agentgateway did not report ready; check /var/log/agentgateway/agentgateway.log"
+
+echo "=== bootstrap finished $(date -Is)"

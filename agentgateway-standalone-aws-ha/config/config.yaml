@@ -1,0 +1,717 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# ===========================================================================
+# agentgateway standalone: one config file for a three-node fleet on EC2
+# ===========================================================================
+#
+# This file is the whole control plane. There are no CRDs, no controller and no
+# xDS: agentgateway reads this file, watches it, and reloads the dynamic sections
+# when it changes. All three nodes run this file byte-identical.
+#
+# Nothing environment-specific is templated in. agentgateway shell-expands the
+# entire file before parsing it, on first load and on every reload, so every
+# endpoint and credential below is an environment variable reference resolved
+# from /etc/agentgateway/env, which each node renders from AWS Secrets Manager
+# at boot.
+#
+# Three consequences worth knowing before you edit this file:
+#
+#   1. A referenced variable that is not set in the environment is a hard load
+#      failure, not an empty string. The gateway keeps serving its last good
+#      config and says why in the log.
+#   2. Expansion does not respect YAML comments. A dollar sign in a comment is
+#      expanded exactly like one in a value, which is a genuinely surprising way
+#      to break a config file.
+#   3. A dollar sign followed by a letter, a digit or an opening brace is
+#      expanded. A trailing dollar, such as a regex end anchor, is left alone.
+#
+# Push a change to the whole fleet with:
+#   aws s3 cp config/config.yaml s3://<config-bucket>/config.yaml
+#
+# ---------------------------------------------------------------------------
+
+# ===========================================================================
+# 1. Startup configuration
+#
+# Everything under `config` is read once at process start. The rest of the file
+# reloads live. `modelCatalog` is the documented exception: it sits here but
+# reloads dynamically.
+# ===========================================================================
+config:
+  # The admin API and the UI backend stay on loopback. The UI is published
+  # through the data plane gateway further down, behind Cognito OIDC, so the
+  # fleet exposes exactly one port to the load balancer.
+  # Reach the admin API with:
+  #   aws ssm start-session --target <id> \
+  #     --document-name AWS-StartPortForwardingSession \
+  #     --parameters 'portNumber=15000,localPortNumber=15000'
+  adminAddr: "127.0.0.1:15000"
+
+  # Prometheus metrics. Scraped on the node by the OTel collector and forwarded
+  # to CloudWatch, so nothing needs to reach this port from outside.
+  statsAddr: "0.0.0.0:15020"
+
+  # The ALB target group health check points here, not at the data port. It
+  # reports ready only once the config parsed and the listeners are bound, so a
+  # node that came up with a broken config never receives traffic.
+  readinessAddr: "0.0.0.0:15021"
+
+  # Omitted, so the async runtime sizes itself to the instance's CPU count. A
+  # fixed number or a percentage such as "50%" would pin it instead.
+
+  # Finish in-flight requests before exiting. The systemd unit allows 45s, which
+  # has to outlast this.
+  connectionTerminationDeadline: 30s
+
+  # -------------------------------------------------------------------------
+  # The session key is why this fleet needs no session affinity.
+  #
+  # agentgateway serialises MCP session state (which targets are in the session,
+  # their upstream session ids, and the backend address) and encrypts it into the
+  # Mcp-Session-Id it hands the client. Every node here loads the same key from
+  # Secrets Manager, so any node can decrypt a session ID any other node issued.
+  # The ALB round-robins with stickiness off and MCP sessions still work.
+  #
+  # Give the nodes different keys and the property disappears: a session created
+  # on one node is undecodable garbage to the other two.
+  # -------------------------------------------------------------------------
+  session:
+    key: $SESSION_KEY
+
+  # -------------------------------------------------------------------------
+  # Aurora PostgreSQL. This is the state the three processes share.
+  #
+  # It backs the request log, which is what the Analytics page and the cost
+  # dashboard read. Point three nodes at one database and the dashboard shows
+  # the whole fleet's traffic instead of whichever third you happened to hit.
+  #
+  # The schema is created on first startup. SQLite is the default backend and is
+  # documented as unsafe for more than one instance, so Postgres is not a
+  # preference here, it is a requirement.
+  # -------------------------------------------------------------------------
+  database:
+    url: $AGW_DATABASE_URL
+    # Hybrid storage on PostgreSQL refuses to start below 2, because the overlay
+    # holds a LISTEN connection open alongside its query pool.
+    maxConnections: 10
+
+  # -------------------------------------------------------------------------
+  # Hybrid storage: the file above is the baseline, the database holds the
+  # overlay.
+  #
+  # In the default `file` mode, editing anything in the admin UI writes back to
+  # the local config file, which on a fleet means three files immediately
+  # disagreeing with each other and with S3.
+  #
+  # In `hybrid` mode, UI edits are written to Aurora instead, and agentgateway
+  # uses PostgreSQL LISTEN/NOTIFY to tell the other nodes the overlay changed.
+  # Create a virtual key on one node and it is live on the other two without a
+  # restart, and a node the Auto Scaling group builds tomorrow inherits it.
+  #
+  # Overlay-backed resource kinds: modelCatalog, llm.provider, llm.model,
+  # llm.virtualModel, llm.apiKey, llm.policy, mcp.target, mcp.policy,
+  # mcp.settings, traffic.gateway, traffic.route, traffic.tcpRoute, ui.policy.
+  # -------------------------------------------------------------------------
+  storage:
+    mode: hybrid
+
+  mcp:
+    sessionTtl: 30m
+
+  # Prices every request so cost lands in the logs, the metrics and the CEL
+  # context. Synced from S3 alongside this file and reloaded live.
+  modelCatalog:
+  - file: /etc/agentgateway/model-costs.json
+
+  # The OTel collector on this node forwards traces to X-Ray and scrapes the
+  # metrics endpoint into CloudWatch.
+  #
+  # This and frontendPolicies.tracing are mutually exclusive; setting both is a
+  # startup error. Span attributes therefore live here rather than in a frontend
+  # policy.
+  tracing:
+    otlpEndpoint: $OTLP_ENDPOINT
+    randomSampling: true
+    fields:
+      add:
+        node: '"$AGW_NODE_ID"'
+        zone: '"$AGW_NODE_AZ"'
+
+  logging:
+    format: json
+    level: info
+
+# ===========================================================================
+# 2. Fleet-wide policies
+#
+# Applied to all traffic on every listener.
+# ===========================================================================
+frontendPolicies:
+  accessLog:
+    add:
+      # Which node served this request. The value is a quoted CEL string
+      # literal after shell expansion, which is how a per-node value gets into
+      # an otherwise identical config file.
+      # In CloudWatch Logs Insights:
+      #   stats count(*) by node
+      node: '"$AGW_NODE_ID"'
+      zone: '"$AGW_NODE_AZ"'
+      # Identity, whichever way the caller authenticated.
+      user: 'jwt.sub'
+      user_email: 'jwt.email'
+      client: 'jwt.client_id'
+      api_key_owner: 'apiKey.key'
+      # LLM attribution, unset on non-LLM routes.
+      llm_provider: 'llm.provider'
+      llm_model: 'llm.responseModel'
+      llm_tokens: 'llm.totalTokens'
+      llm_cost_usd: 'llm.cost'
+      mcp_tool: 'mcp.tool.name'
+      mcp_session: 'mcp.sessionId'
+
+# ===========================================================================
+# 3. The gateway
+#
+# One named gateway on one port. The LLM, MCP and UI sections all attach to it,
+# as do the explicit routes, so the ALB has a single target.
+# ===========================================================================
+gateways:
+  main:
+    port: 3000
+
+# ===========================================================================
+# 4. HTTP routing
+#
+# Ordinary API traffic, to show that this is a general-purpose proxy and not only
+# an AI gateway. The upstream is a small echo service running on each node at
+# 127.0.0.1:8080, so this section has no external dependency and its response
+# tells you which node handled the request.
+# ===========================================================================
+routes:
+
+# ---------------------------------------------------------------------------
+# 4a. Unauthenticated node identity.
+#
+# The HA scripts hammer this to watch traffic move between nodes as instances go
+# away and come back. directResponse means it is answered in-process, so it stays
+# up even when every upstream is gone.
+# ---------------------------------------------------------------------------
+- name: whoami
+  gateways: main
+  matches:
+  - path:
+      exact: /whoami
+  policies:
+    directResponse:
+      status: 200
+      body: '{"node":"$AGW_NODE_ID","zone":"$AGW_NODE_AZ","ip":"$AGW_NODE_IP"}'
+      # directResponse header values are CEL expressions, hence the quoting: the
+      # inner quotes make each one a CEL string literal.
+      headers:
+        content-type: '"application/json"'
+        x-agw-node: '"$AGW_NODE_ID"'
+        x-agw-zone: '"$AGW_NODE_AZ"'
+
+# ---------------------------------------------------------------------------
+# 4b. A public API route with the traffic management stack on it.
+# ---------------------------------------------------------------------------
+- name: echo-public
+  gateways: main
+  matches:
+  - path:
+      pathPrefix: /api/public
+  policies:
+    urlRewrite:
+      path:
+        # /api/public/foo reaches the upstream as /foo
+        prefix: /
+    # add, set and remove take a map of header name to value, not a list.
+    requestHeaderModifier:
+      set:
+        x-served-by: $AGW_NODE_ID
+      add:
+        x-gateway-tier: public
+      remove:
+      - x-internal-only
+    responseHeaderModifier:
+      add:
+        x-agw-node: $AGW_NODE_ID
+    cors:
+      allowOrigins:
+      - $AGW_PUBLIC_URL
+      allowMethods:
+      - GET
+      - POST
+      - OPTIONS
+      allowHeaders:
+      - content-type
+      - authorization
+      maxAge: 10m
+    timeout:
+      requestTimeout: 15s
+    retry:
+      attempts: 3
+      backoff: 100ms
+      codes:
+      - 502
+      - 503
+      - 504
+    # Per-process, so three nodes allow roughly three times this. Section 8
+    # replaces it with a limit that means what it says.
+    localRateLimit:
+    - maxTokens: 60
+      tokensPerFill: 60
+      fillInterval: 60s
+      type: requests
+  backends:
+  - host: 127.0.0.1:8080
+
+# ---------------------------------------------------------------------------
+# 4c. The same upstream behind Cognito, with authorization on the token claims.
+#
+# mode: strict rejects a request with no token at all. The authorization rules
+# then run against the verified claims. Cognito access tokens carry client_id and
+# scope but no aud, which is why no audiences are configured: agentgateway treats
+# audiences as optional and issuer plus JWKS is a complete check.
+# ---------------------------------------------------------------------------
+- name: echo-private
+  gateways: main
+  matches:
+  - path:
+      pathPrefix: /api/private
+  policies:
+    jwtAuth:
+      mode: strict
+      issuer: $COGNITO_ISSUER
+      jwks:
+        url: $COGNITO_JWKS_URL
+      jwtValidationOptions:
+        requiredClaims:
+        - exp
+        - iss
+        - sub
+    authorization:
+      rules:
+      # Machine callers need the LLM scope. Mint a token that has it, and one
+      # that does not, to see both sides of this rule.
+      - allow: 'jwt.scope.contains("$COGNITO_API_AUDIENCE/llm.invoke")'
+      # Human callers need to be in the platform group.
+      - allow: '"platform" in jwt["cognito:groups"]'
+    urlRewrite:
+      path:
+        prefix: /
+    # Hand the upstream the identity the gateway actually verified. `set` replaces
+    # any existing value, so a client that sends its own x-verified-subject has it
+    # overwritten rather than trusted. Values are CEL against the verified claims.
+    transformations:
+      request:
+        set:
+          x-verified-subject: 'jwt.sub'
+          x-verified-scope: 'jwt.scope'
+          x-verified-client: 'jwt.client_id'
+  backends:
+  - host: 127.0.0.1:8080
+
+# ---------------------------------------------------------------------------
+# 4d. Fault injection, on its own path so it never touches anything real.
+# ---------------------------------------------------------------------------
+- name: echo-chaos
+  gateways: main
+  matches:
+  - path:
+      pathPrefix: /api/chaos
+  policies:
+    urlRewrite:
+      path:
+        prefix: /
+    # duration is a CEL expression, so probabilistic delay is expressed directly
+    # rather than with a separate percentage field. A number is milliseconds.
+    delay:
+      duration: 'random() < 0.5 ? 500 : 0'
+    # Mirror every request to the same upstream. percentage is a fraction from 0.0
+    # to 1.0, not 0 to 100.
+    requestMirror:
+      backend:
+        host: 127.0.0.1:8080
+      percentage: 1.0
+  backends:
+  - host: 127.0.0.1:8080
+
+# ---------------------------------------------------------------------------
+# 4e. A2A. Marking the route as A2A turns on agent-to-agent processing and the
+# matching telemetry, rather than treating the traffic as opaque HTTP.
+# ---------------------------------------------------------------------------
+- name: a2a
+  gateways: main
+  matches:
+  - path:
+      pathPrefix: /a2a
+  policies:
+    a2a: {}
+    jwtAuth:
+      mode: strict
+      issuer: $COGNITO_ISSUER
+      jwks:
+        url: $COGNITO_JWKS_URL
+    urlRewrite:
+      path:
+        prefix: /
+  backends:
+  - host: 127.0.0.1:8080
+
+# ---------------------------------------------------------------------------
+# Not here: an MCP route for clients that register themselves.
+#
+# Everything in section 6 authenticates MCP callers against Cognito, which covers
+# curl and any client you configure by hand with a token. What it does not cover is
+# a client that discovers the authorization server from our metadata and registers
+# itself, using OAuth Dynamic Client Registration. Cognito has no DCR, and no AWS
+# service does, so there is nothing to point at.
+#
+# agentgateway ships native MCP OAuth adapters for auth0, keycloak, okta, descope,
+# authentik and entra. Any one of those can be added as a SECOND issuer on its own
+# route without disturbing anything above, and adding it is one `aws s3 cp` because
+# routes reload live. The shape is:
+#
+#   - name: mcp-dcr
+#     gateways: main
+#     matches:
+#     - path: { exact: /mcp-dcr }
+#     - path: { exact: /.well-known/oauth-protected-resource/mcp-dcr }
+#     - path: { pathPrefix: /.well-known/oauth-authorization-server/mcp-dcr }
+#     policies:
+#       mcpAuthentication:
+#         mode: strict
+#         issuer: <a variable holding your issuer URL>
+#         audiences: [ <a variable holding your audience> ]
+#         jwks:
+#           url: <a variable holding your JWKS URL>
+#         provider:
+#           auth0: {}          # or keycloak / okta / descope / authentik / entra
+#         resourceMetadata:
+#           resource: <the AGW_PUBLIC_URL variable>/mcp-dcr
+#           scopesSupported: [openid, profile, offline_access]
+#           bearerMethodsSupported: [header]
+#     backends:
+#     - mcp:
+#         targets:
+#         - name: bin
+#           mcp:
+#             host: https://mcpbin.is.solo.io/remote/mcp
+#
+# The placeholders above are deliberately not written as real variable references.
+# Expansion runs over comments too, so a commented-out example that names a variable
+# nobody has set stops the whole file from loading. That is gotcha number two in the
+# header, and writing this block is how I re-discovered it.
+# ---------------------------------------------------------------------------
+
+# ===========================================================================
+# 5. LLM
+#
+# Three providers on one OpenAI-compatible endpoint. Bedrock authenticates with
+# the instance role, so that provider has no key anywhere in this file or in the
+# environment; OpenAI and Anthropic use keys from Secrets Manager.
+# ===========================================================================
+llm:
+  gateways: main
+
+  policies:
+    # Virtual keys. Callers present one of these instead of a provider key, so
+    # the real provider credentials never leave the node, and the metadata below
+    # becomes the identity in the logs, the metrics and the cost dashboard.
+    #
+    # These are the file baseline. With hybrid storage on, keys created in the
+    # admin UI go to Aurora and are live on all three nodes, which is how you
+    # would actually issue them.
+    apiKey:
+      mode: optional
+      location:
+        header:
+          name: x-api-key
+      # keyHash rather than key, so the file in git and in S3 holds only a hash.
+      # These two are demo keys, deliberately published so the lab is runnable:
+      #   agw_sk_platform_demo     -> platform team
+      #   agw_sk_datascience_demo  -> data science team
+      # Hash your own with: printf %s "<key>" | shasum -a 256
+      keys:
+      - keyHash: sha256:a12d4bd12457b4752df4c7b8629501e13d2dffbd5b3c2a9dad4057596301fa6f
+        metadata:
+          name: platform-team
+          owner: platform
+          tier: internal
+      - keyHash: sha256:911ea8d13f653fac61c07b2a950e07e50e31277e6f04e3a3247e24c4f0ca96e5
+        metadata:
+          name: data-science
+          owner: data-science
+          tier: standard
+
+    # Either a virtual key or a Cognito token gets you in. permissive decodes
+    # whatever is present for the authorization rule to use without rejecting on
+    # its own, and the rule below does the actual enforcement.
+    jwtAuth:
+      mode: permissive
+      issuer: $COGNITO_ISSUER
+      jwks:
+        url: $COGNITO_JWKS_URL
+
+    authorization:
+      rules:
+      - allow: 'has(apiKey.key)'
+      - allow: 'has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/llm.invoke")'
+
+    # Guards applied to every model below, cheapest first. A regex pass costs
+    # nothing and runs in-process; Bedrock Guardrails costs a network call and is
+    # only reached by prompts the regex pass let through.
+    guardrails:
+      request:
+      - regex:
+          action: reject
+          rules:
+          - builtin: creditCard
+          - builtin: ssn
+          - builtin: email
+      - bedrockGuardrails:
+          guardrailIdentifier: $BEDROCK_GUARDRAIL_ID
+          # Literal, not an environment variable, and it has to stay that way.
+          #
+          # In hybrid storage mode the config file is round-tripped through JSON
+          # and back out through the YAML emitter before shell expansion runs.
+          # A quoted variable reference survives that trip unquoted, because at
+          # that point its value is still the variable name, which needs no
+          # quoting. Expansion then turns it into a bare 1, and the next parse
+          # reads an integer where a string is required. Writing the version
+          # here keeps the quotes on the value that actually needs them.
+          guardrailVersion: "1"
+          region: $BEDROCK_REGION
+        rejection:
+          status: 403
+          body: '{"error":{"message":"Blocked by the gateway content policy","type":"content_policy"}}'
+      response:
+      - regex:
+          action: mask
+          rules:
+          - builtin: creditCard
+          - builtin: ssn
+
+  # -------------------------------------------------------------------------
+  # Reusable provider defaults, referenced by the models below.
+  # -------------------------------------------------------------------------
+  providers:
+  - name: openai
+    provider: openAI
+    params:
+      apiKey: $OPENAI_API_KEY
+
+  - name: anthropic
+    provider: anthropic
+    params:
+      apiKey: $ANTHROPIC_API_KEY
+
+  - name: bedrock
+    provider: bedrock
+    params:
+      # No apiKey. Bedrock is reached with the EC2 instance role, which is the
+      # single best reason to run this on EC2 rather than off-cloud.
+      awsRegion: $BEDROCK_REGION
+
+  models:
+  - name: gpt-4o-mini
+    provider:
+      reference: openai
+    params:
+      model: gpt-4o-mini
+
+  - name: claude-direct
+    provider:
+      reference: anthropic
+    params:
+      model: claude-sonnet-4-5-20250929
+
+  - name: claude-bedrock
+    provider:
+      reference: bedrock
+    params:
+      model: $BEDROCK_MODEL
+
+  # Internal, so it cannot be requested by name; only the virtual model below
+  # can route to it. Useful for a cheap fallback you do not want advertised.
+  - name: gpt-4o-mini-fallback
+    visibility: internal
+    provider:
+      reference: openai
+    params:
+      model: gpt-4o-mini
+
+  virtualModels:
+  # One client-facing name, traffic split across two providers. The cost
+  # dashboard then prices the same prompt two ways, which is the point.
+  - name: chat-split
+    routing:
+      weighted:
+        targets:
+        - model: claude-bedrock
+          weight: 50
+        - model: claude-direct
+          weight: 50
+
+  # Priority groups. Everything goes to Bedrock until Bedrock looks unhealthy,
+  # then to Anthropic direct, then to the cheap fallback.
+  - name: chat-resilient
+    routing:
+      failover:
+        targets:
+        - model: claude-bedrock
+          priority: 0
+        - model: claude-direct
+          priority: 1
+        - model: gpt-4o-mini-fallback
+          priority: 2
+
+# ===========================================================================
+# 6. MCP
+#
+# Served at /mcp and /sse on the gateway. Two targets multiplexed into one
+# virtual MCP server, so a client sees one tool list.
+#
+# Both targets are remote. That is not incidental: MCP session state travels in
+# the encrypted session ID, and it includes the upstream's address. A stdio
+# target is a child process of one specific node, so its session cannot be
+# picked up elsewhere no matter how well the session ID decodes. Remote targets
+# are what make the session genuinely portable across the fleet.
+# ===========================================================================
+mcp:
+  gateways: main
+  statefulMode: stateful
+  prefixMode: always
+  failureMode: failClosed
+
+  targets:
+  # A hosted MCP test server, reachable over streamable HTTP.
+  - name: bin
+    mcp:
+      host: https://mcpbin.is.solo.io/remote/mcp
+
+  # The local echo service turned into MCP tools from its OpenAPI description.
+  # No MCP server is involved: agentgateway generates the tools from the spec and
+  # calls the REST API. The spec file is synced from S3 with the rest of the
+  # fleet config.
+  - name: echo
+    openapi:
+      schema:
+        file: /etc/agentgateway/echo-openapi.json
+      host: 127.0.0.1:8080
+
+  policies:
+    # Sessions are what make MCP stateful, and Mcp-Session-Id has to be readable
+    # by the browser client for the session to survive.
+    cors:
+      allowOrigins:
+      - "*"
+      allowHeaders:
+      - mcp-protocol-version
+      - content-type
+      - authorization
+      exposeHeaders:
+      - Mcp-Session-Id
+
+    mcpAuthentication:
+      mode: strict
+      issuer: $COGNITO_ISSUER
+      audiences:
+      - $AGW_PUBLIC_URL/mcp
+      jwks:
+        url: $COGNITO_JWKS_URL
+      # Cognito access tokens have no aud claim, so require only what they
+      # actually carry. The audience above is still published in the resource
+      # metadata for spec-compliant clients.
+      jwtValidationOptions:
+        requiredClaims:
+        - exp
+        - iss
+      resourceMetadata:
+        resource: $AGW_PUBLIC_URL/mcp
+        scopesSupported:
+        - $COGNITO_API_AUDIENCE/mcp.call
+        bearerMethodsSupported:
+        - header
+        resourceDocumentation: $AGW_PUBLIC_URL/api/public/docs
+
+    # Per-tool authorization on the verified token. This is the control that
+    # matters for MCP: not "can this caller reach the server" but "can this
+    # caller call this tool".
+    # Two things to know about these expressions, both of which cost time to
+    # discover:
+    #
+    #   - mcp.tool.name is the name sent to the upstream target, not the prefixed
+    #     name the client sees. Multiplexing exposes echo_whoami, but the rule sees
+    #     whoami. Select the server with mcp.tool.target instead of matching a
+    #     prefix on the name.
+    #   - Guard every optional claim. A machine token has scope and no
+    #     cognito:groups; a human token is the other way round. An unguarded
+    #     reference to a claim the token does not carry makes the expression fail
+    #     rather than evaluate to false. has() only accepts a field selection, so
+    #     a claim whose name contains a colon has to be guarded with map
+    #     membership: "cognito:groups" in jwt, not has(jwt["cognito:groups"]).
+    #
+    # These rules filter tools/list as well as gating tools/call, so a caller only
+    # ever sees the tools it is allowed to use.
+    mcpAuthorization:
+      rules:
+      # The locally generated tools, for anyone holding the MCP scope.
+      - allow: 'mcp.tool.target == "echo" && has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/mcp.call")'
+      # The hosted target needs the admin scope on top, so a token with only
+      # mcp.call sees the echo tools and not these.
+      - allow: 'mcp.tool.target == "bin" && has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/admin")'
+      # Human callers in the platform group can call anything.
+      - allow: '"cognito:groups" in jwt && "platform" in jwt["cognito:groups"]'
+
+    # Global limits, counted in ElastiCache by the rate limit service on each
+    # node. See section 8 for why this is not localRateLimit.
+    remoteRateLimit:
+      host: $RATELIMIT_HOST
+      domain: agentgateway
+      failureMode: failOpen
+      descriptors:
+      - entries:
+        - key: mcp_caller
+          value: 'jwt.sub'
+        type: requests
+
+# ===========================================================================
+# 7. The admin UI
+#
+# By default the UI is only on the admin interface, which here is loopback. This
+# publishes it through the data plane gateway instead, behind Cognito browser
+# login, so it is reachable at https://<fqdn>/ui without opening a second port.
+#
+# With hybrid storage on, what you do in this UI is written to Aurora and
+# announced to the other two nodes. That is the difference between an admin UI on
+# a fleet and an admin UI on one box.
+# ===========================================================================
+ui:
+  gateways: main
+
+  policies:
+    oidc:
+      issuer: $COGNITO_ISSUER
+      # Explicit endpoints rather than discovery. Cognito serves the OAuth
+      # endpoints on the hosted-UI domain, not on the issuer host, so spelling
+      # them out is both correct and one less startup dependency.
+      authorizationEndpoint: $COGNITO_AUTHORIZE_URL
+      tokenEndpoint: $COGNITO_TOKEN_URL
+      tokenEndpointAuth: clientSecretBasic
+      jwks:
+        url: $COGNITO_JWKS_URL
+      clientId: $COGNITO_UI_CLIENT_ID
+      clientSecret: $COGNITO_UI_CLIENT_SECRET
+      redirectURI: $AGW_PUBLIC_URL/oauth/callback
+      scopes:
+      - openid
+      - email
+      - profile
+
+    # Authentication is not authorization. Anyone in the pool can log in; only
+    # the platform group gets in here.
+    authorization:
+      rules:
+      - allow: '"platform" in jwt["cognito:groups"]'

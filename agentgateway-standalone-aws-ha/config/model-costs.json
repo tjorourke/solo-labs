@@ -1,0 +1,47 @@
+{
+  "providers": {
+    "bedrock": {
+      "models": {
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0": {
+          "rates": {
+            "input": "3",
+            "output": "15",
+            "cacheRead": "0.3",
+            "cacheWrite": "3.75"
+          }
+        },
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
+          "rates": {
+            "input": "1",
+            "output": "5",
+            "cacheRead": "0.1",
+            "cacheWrite": "1.25"
+          }
+        }
+      }
+    },
+    "anthropic": {
+      "models": {
+        "claude-sonnet-4-5-20250929": {
+          "rates": {
+            "input": "3",
+            "output": "15",
+            "cacheRead": "0.3",
+            "cacheWrite": "3.75"
+          }
+        }
+      }
+    },
+    "openai": {
+      "models": {
+        "gpt-4o-mini": {
+          "rates": {
+            "input": "0.15",
+            "output": "0.6",
+            "cacheRead": "0.075"
+          }
+        }
+      }
+    }
+  }
+}
