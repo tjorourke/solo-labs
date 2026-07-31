@@ -4,7 +4,17 @@ agentgateway as a plain binary under systemd on three EC2 instances, driven by *
 YAML file**. No CRDs, no controller, no Kubernetes. The state that makes three
 independent processes behave like one gateway lives in managed AWS services.
 
-Runs on the OSS build. Tested on `v1.4.1`.
+Runs on the OSS build, straight from the public GitHub releases. No licence key and nothing
+to register. Tested on `v1.4.1`.
+
+```bash
+# the quick way, on a laptop or a server
+curl -sL https://agentgateway.dev/install | bash
+agentgateway --version
+```
+
+The lab pins the version and verifies the checksum instead, because a node the Auto Scaling
+group builds next week has to be the same build as the two beside it.
 
 ---
 

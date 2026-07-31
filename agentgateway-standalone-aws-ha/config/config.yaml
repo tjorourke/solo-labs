@@ -664,7 +664,7 @@ mcp:
       - allow: '"cognito:groups" in jwt && "platform" in jwt["cognito:groups"]'
 
     # Global limits, counted in ElastiCache by the rate limit service on each
-    # node. See section 8 for why this is not localRateLimit.
+    # node, so the count is shared rather than one bucket per process.
     remoteRateLimit:
       host: $RATELIMIT_HOST
       domain: agentgateway
