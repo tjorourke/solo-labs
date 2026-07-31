@@ -106,8 +106,8 @@ fleet_table
 
 hdr "The replacement is indistinguishable from its siblings"
 for id in $(fleet_instances); do
-  sum="$(node_exec "$id" 'sha256sum /etc/agentgateway/config.yaml | cut -c1-12' 2>/dev/null | tr -d '\n ')"
-  ver="$(node_exec "$id" '/usr/local/bin/agentgateway --version | jq -r .version' 2>/dev/null | tr -d '\n ')"
+  sum="$(node_try "$id" 'sha256sum /etc/agentgateway/config.yaml | cut -c1-12' 2>/dev/null | tr -d '\n ')"
+  ver="$(node_try "$id" '/usr/local/bin/agentgateway --version | jq -r .version' 2>/dev/null | tr -d '\n ')"
   printf '  %-20s version=%-8s config=%s\n' "$id" "${ver:-?}" "${sum:-?}"
 done
 log "Same pinned binary, same config hash. The version is pinned in the launch"

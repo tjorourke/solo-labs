@@ -40,7 +40,12 @@ resource "aws_launch_template" "gateway" {
     }
   }
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh.tftpl", {
+  # base64gzip, not base64encode. EC2 caps user data at 16 KB and this bootstrap is
+  # about 17 KB of shell, which base64 inflates to roughly 22 KB. cloud-init detects
+  # and decompresses gzipped user data, which brings it down to under 8 KB.
+  # The tradeoff is that the user data is no longer readable in the console; read the
+  # rendered copy on a node at /var/log/agw-bootstrap.log instead.
+  user_data = base64gzip(templatefile("${path.module}/user_data.sh.tftpl", {
     region               = var.aws_region
     agentgateway_version = var.agentgateway_version
     ratelimit_image      = var.ratelimit_image

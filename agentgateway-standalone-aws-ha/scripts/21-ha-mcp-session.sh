@@ -53,7 +53,7 @@ echo
 for i in "${!NODES[@]}"; do
   target_ip="${IPS[$i]}"
   target_id="${NODES[$i]}"
-  out="$(node_exec "$CLIENT" "curl -s -X POST http://$target_ip:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":$((10+i)),\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}' | sed -n 's/^data: //p' | head -1" 2>/dev/null)"
+  out="$(node_try "$CLIENT" "curl -s -X POST http://$target_ip:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":$((10+i)),\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}' | sed -n 's/^data: //p' | head -1" 2>/dev/null)"
   served="$(echo "$out" | jq -r '.result.content[0].text // ""' 2>/dev/null | jq -r '.node // "?"' 2>/dev/null)"
   if echo "$out" | grep -q '"result"'; then
     printf '  %s  ok    %-20s tool ran on %s\n' "$c_green" "$target_id" "${served:-?}"
@@ -72,7 +72,9 @@ log "coordination between the nodes."
 
 hdr "3. The same thing through the load balancer, at volume"
 log "Stickiness is off, so these round-robin. Every one carries the same session."
-declare -A seen=()
+# A plain string rather than an associative array: macOS ships bash 3.2, which has
+# neither declare -A nor mapfile.
+seen=""
 okc=0; badc=0
 for i in $(seq 1 12); do
   r="$(curl -s -X POST "$GATEWAY_URL/mcp" \
@@ -81,10 +83,10 @@ for i in $(seq 1 12); do
       -d "{\"jsonrpc\":\"2.0\",\"id\":$((100+i)),\"method\":\"tools/call\",\"params\":{\"name\":\"echo_whoami\",\"arguments\":{}}}" \
       | sed -n 's/^data: //p' | head -1)"
   node="$(echo "$r" | jq -r '.result.content[0].text // "{}"' 2>/dev/null | jq -r '.node // "?"' 2>/dev/null)"
-  if echo "$r" | grep -q '"result"'; then okc=$((okc+1)); seen[$node]=1; else badc=$((badc+1)); fi
+  if echo "$r" | grep -q '"result"'; then okc=$((okc+1)); seen="$seen$node\n"; else badc=$((badc+1)); fi
 done
 log "12 tool calls on one session: $okc succeeded, $badc failed"
-log "nodes that served them: ${!seen[*]}"
+log "nodes that served them: $(printf '%b' "$seen" | sort -u | grep . | tr '\n' ' ')"
 expect "every call on the shared session succeeded" 12 "$okc"
 
 hdr "4. Now break it, so the mechanism is not taken on faith"
@@ -102,7 +104,7 @@ log "giving $ODD a different session key"
 node_exec "$ODD" "sed -i \"s/^SESSION_KEY=.*/SESSION_KEY='$(openssl rand -hex 32)'/\" /etc/agentgateway/env && systemctl restart agentgateway" >/dev/null
 sleep 15
 
-out="$(node_exec "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[1]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":99,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
+out="$(node_try "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[1]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":99,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
 log "the same session sent to the odd node: HTTP $out"
 if [[ "$out" == "200" ]]; then
   warn "expected the odd node to refuse the session; it accepted it"
@@ -114,7 +116,7 @@ fi
 
 log "and the other two still accept it:"
 for i in 0 2; do
-  out="$(node_exec "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[$i]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":98,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
+  out="$(node_try "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[$i]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":98,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
   printf '    %-20s HTTP %s\n' "${NODES[$i]}" "$out"
 done
 
@@ -123,7 +125,7 @@ log "restoring $ODD from Secrets Manager"
 SECRET_ARN="$(tf_out runtime_secret_arn)"
 node_exec "$ODD" "KEY=\$(aws secretsmanager get-secret-value --secret-id $SECRET_ARN --query SecretString --output text --region $AWS_REGION | jq -r .SESSION_KEY) && sed -i \"s|^SESSION_KEY=.*|SESSION_KEY='\$KEY'|\" /etc/agentgateway/env && systemctl restart agentgateway" >/dev/null
 sleep 15
-out="$(node_exec "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[1]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":97,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
+out="$(node_try "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[1]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":97,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
 expect "the restored node accepts the session again" 200 "$out"
 
 hdr "5. The limit of this, which the config comments also state"

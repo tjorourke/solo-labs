@@ -33,7 +33,7 @@ overlay_on() { # overlay_on <node-index> -> kind/id lines
 
 hdr "1. Storage mode on each node"
 for i in "${!NODES[@]}"; do
-  m="$(node_exec "${NODES[$i]}" "curl -s http://127.0.0.1:15000/config_dump | jq -r '.config.storage.mode // \"?\"'" 2>/dev/null | tr -d '\n ')"
+  m="$(node_try "${NODES[$i]}" "curl -s http://127.0.0.1:15000/config_dump | jq -r '.config.storage.mode // \"?\"'" 2>/dev/null | tr -d '\n ')"
   printf '  %-20s %-14s storage.mode=%s\n' "${NODES[$i]}" "${IPS[$i]}" "$m"
 done
 log ""

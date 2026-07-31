@@ -138,29 +138,45 @@ healthy_count() {
 }
 
 # Run a shell command on one node over SSM and print its output.
+#
+# The command is passed as JSON built by jq rather than interpolated into the
+# --parameters string, so quotes, pipes and backslashes in the command survive.
 node_exec() {
   local id="$1"; shift
-  local cmd="$*"
-  local cid
-  cid="$(aws ssm send-command --instance-ids "$id" \
+  local payload cid status
+  payload="$(mktemp)"
+  jq -nc --arg c "$*" '{commands: [$c]}' > "$payload"
+
+  cid="$(aws ssm send-command \
+    --instance-ids "$id" \
     --document-name AWS-RunShellScript \
-    --parameters "commands=[\"$cmd\"]" \
-    --query 'Command.CommandId' --output text)"
-  for _ in $(seq 1 60); do
-    local status
+    --parameters "file://$payload" \
+    --query 'Command.CommandId' --output text 2>/dev/null)" || { rm -f "$payload"; return 1; }
+  rm -f "$payload"
+  [[ -n "$cid" && "$cid" != "None" ]] || return 1
+
+  for _ in $(seq 1 90); do
     status="$(aws ssm get-command-invocation --command-id "$cid" --instance-id "$id" \
       --query 'Status' --output text 2>/dev/null || echo Pending)"
     case "$status" in
-      Success) aws ssm get-command-invocation --command-id "$cid" --instance-id "$id" \
-                 --query 'StandardOutputContent' --output text; return 0 ;;
-      Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$cid" --instance-id "$id" \
-                 --query 'StandardErrorContent' --output text >&2; return 1 ;;
+      Success)
+        aws ssm get-command-invocation --command-id "$cid" --instance-id "$id" \
+          --query 'StandardOutputContent' --output text
+        return 0 ;;
+      Failed|Cancelled|TimedOut)
+        aws ssm get-command-invocation --command-id "$cid" --instance-id "$id" \
+          --query 'StandardErrorContent' --output text >&2
+        return 1 ;;
     esac
     sleep 2
   done
   warn "SSM command on $id did not finish in time"
   return 1
 }
+
+# node_exec with failures reduced to empty output, for display loops that should not
+# take the whole script down with them.
+node_try() { node_exec "$@" 2>/dev/null || true; }
 
 # Which node answered? /whoami is served in-process by every node.
 whoami_node() {

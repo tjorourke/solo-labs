@@ -46,8 +46,28 @@ warn() { echo "WARN: $*" >&2; }
 # package name moves between Amazon Linux releases, so a miss there must not take
 # the gateway down with it.
 # ---------------------------------------------------------------------------
-dnf install -y jq tar gzip podman
+dnf install -y jq tar gzip
 
+# A container runtime, for the third-party rate limit service. Amazon Linux 2023 ships
+# docker in the default repo; podman is not available on every architecture. Neither is
+# required for the gateway to serve, so a miss here must not stop the boot: the
+# remoteRateLimit policy is failOpen, so the fleet degrades to no global limit rather
+# than to no gateway.
+CONTAINER_RT=""
+for rt in docker podman; do
+  if dnf install -y "$rt" 2>/dev/null; then
+    CONTAINER_RT="$rt"
+    echo "container runtime: $rt"
+    break
+  fi
+done
+if [ "$CONTAINER_RT" = "docker" ]; then
+  systemctl enable --now docker || warn "docker installed but would not start"
+fi
+[ -n "$CONTAINER_RT" ] || warn "no container runtime available; global rate limiting will be disabled on this node"
+
+# The psql client is only used by the lab's inspection scripts, and its package name
+# moves between Amazon Linux releases.
 for pg in postgresql16 postgresql15 postgresql; do
   if dnf install -y "$pg" 2>/dev/null; then
     echo "installed psql client from $pg"
@@ -312,6 +332,7 @@ EOF
 # counting into the same ElastiCache cluster. That is what makes remoteRateLimit in
 # the gateway config a fleet-wide limit rather than three independent ones.
 # ---------------------------------------------------------------------------
+RT_BIN="$(command -v $CONTAINER_RT 2>/dev/null || echo /bin/false)"
 cat >/etc/systemd/system/agw-ratelimit.service <<EOF
 [Unit]
 Description=Envoy rate limit service backing agentgateway remoteRateLimit
@@ -323,8 +344,8 @@ Type=simple
 Restart=always
 RestartSec=5
 TimeoutStartSec=180
-ExecStartPre=-/usr/bin/podman rm -f agw-ratelimit
-ExecStart=/usr/bin/podman run --rm --name agw-ratelimit \\
+ExecStartPre=-$RT_BIN rm -f agw-ratelimit
+ExecStart=$RT_BIN run --rm --name agw-ratelimit \\
   --network host \\
   -e USE_STATSD=false \\
   -e LOG_LEVEL=info \\
@@ -334,11 +355,11 @@ ExecStart=/usr/bin/podman run --rm --name agw-ratelimit \\
   -e RUNTIME_SUBDIRECTORY=ratelimit \\
   -e RUNTIME_WATCH_ROOT=false \\
   -e GRPC_PORT=$RATELIMIT_PORT \\
-  -e PORT=8080 \\
+  -e PORT=8090 \\
   -v /etc/ratelimit/config:/data/ratelimit/config:ro,Z \\
   $RATELIMIT_IMAGE \\
   /bin/ratelimit
-ExecStop=/usr/bin/podman stop -t 10 agw-ratelimit
+ExecStop=$RT_BIN stop -t 10 agw-ratelimit
 
 [Install]
 WantedBy=multi-user.target
@@ -355,7 +376,7 @@ cat >/etc/systemd/system/agentgateway.service <<EOF
 [Unit]
 Description=agentgateway standalone
 Documentation=https://agentgateway.dev/docs/standalone/latest/
-After=network-online.target agw-ratelimit.service agw-echo.service
+After=network-online.target agw-echo.service
 Wants=network-online.target
 
 [Service]
@@ -388,7 +409,9 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now agw-echo.service
-systemctl enable --now agw-ratelimit.service
+if [ -n "$CONTAINER_RT" ]; then
+  systemctl enable --now agw-ratelimit.service || warn "rate limit service would not start; global rate limiting disabled on this node"
+fi
 systemctl enable --now agw-config-sync.timer
 systemctl enable --now agentgateway.service
 

@@ -23,7 +23,7 @@ EOT
 
 hdr "1. Current state"
 for id in $(fleet_instances); do
-  sum="$(node_exec "$id" 'sha256sum /etc/agentgateway/config.yaml | cut -c1-12' 2>/dev/null | tr -d '\n ')"
+  sum="$(node_try "$id" 'sha256sum /etc/agentgateway/config.yaml | cut -c1-12' 2>/dev/null | tr -d '\n ')"
   printf '  %-20s config=%s\n' "$id" "$sum"
 done
 BEFORE="$(code "$GATEWAY_URL/api/public/newroute")"
@@ -91,18 +91,19 @@ log "elapsed: $(( $(date +%s) - T0 ))s"
 
 log ""
 log "And it is live on every node, not just the one that answered:"
-declare -A hit=()
+hit=""
 for _ in $(seq 1 20); do
   n="$(curl -s "$GATEWAY_URL/api/public/newroute" | jq -r '.node // "?"')"
-  hit[$n]=1
+  hit="$hit$n\n"
 done
-log "nodes that served the new route: ${!hit[*]}"
-expect "all three nodes serve the new route" 3 "${#hit[@]}"
+distinct="$(printf '%b' "$hit" | sort -u | grep -c . | tr -d ' ')"
+log "nodes that served the new route: $(printf '%b' "$hit" | sort -u | grep . | tr '\n' ' ')"
+expect "all three nodes serve the new route" 3 "$distinct"
 
 hdr "6. Nothing restarted"
 for id in $(fleet_instances); do
-  up="$(node_exec "$id" 'systemctl show agentgateway -p ActiveEnterTimestamp --value; echo; ps -o etimes= -p $(systemctl show agentgateway -p MainPID --value) 2>/dev/null | tr -d " "' 2>/dev/null | tr '\n' ' ')"
-  sum="$(node_exec "$id" 'sha256sum /etc/agentgateway/config.yaml | cut -c1-12' 2>/dev/null | tr -d '\n ')"
+  up="$(node_try "$id" 'systemctl show agentgateway -p ActiveEnterTimestamp --value; echo; ps -o etimes= -p $(systemctl show agentgateway -p MainPID --value) 2>/dev/null | tr -d " "' 2>/dev/null | tr '\n' ' ')"
+  sum="$(node_try "$id" 'sha256sum /etc/agentgateway/config.yaml | cut -c1-12' 2>/dev/null | tr -d '\n ')"
   printf '  %-20s config=%s  process uptime and start: %s\n' "$id" "$sum" "$up"
 done
 log "The process start times predate the push. The config changed underneath a"
