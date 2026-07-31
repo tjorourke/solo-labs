@@ -22,7 +22,11 @@ expect "the upstream sees the rewritten path" "/headers" "$path"
 hdr "3. Header manipulation"
 log "Sending x-internal-only, which the route is configured to strip."
 body="$(curl -s -H 'x-internal-only: should-not-arrive' "$GATEWAY_URL/api/public/headers")"
-expect_contains "x-served-by was set by the gateway" "$(whoami_node)" "$(echo "$body" | jq -r '.headers["x-served-by"] // ""')"
+# Compare against the node that served THIS request, not a separate one: the load
+# balancer will happily send two requests to two different nodes.
+served_by="$(echo "$body" | jq -r '.headers["x-served-by"] // ""')"
+node_field="$(echo "$body" | jq -r '.node // ""')"
+expect "x-served-by matches the node that answered" "$node_field" "$served_by"
 expect "x-gateway-tier was added"    "public" "$(echo "$body" | jq -r '.headers["x-gateway-tier"] // "missing"')"
 expect "x-internal-only was removed" "null"   "$(echo "$body" | jq -r '.headers["x-internal-only"]')"
 echo "$body" | jq '.headers | with_entries(select(.key | startswith("x-")))'

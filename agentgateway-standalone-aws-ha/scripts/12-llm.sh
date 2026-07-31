@@ -60,22 +60,37 @@ chat chat-resilient "Reply with one word: ok" -H "x-api-key: $KEY" \
   | jq -r '"    served by \(.model // "?")"'
 
 hdr "7. Guardrails, cheapest layer first"
-log "Layer one is a regex pass in-process. A card number never reaches a provider:"
-r="$(chat claude-bedrock "My card is 4111 1111 1111 1111, remember it" -H "x-api-key: $KEY")"
-echo "$r" | jq -c '{status: (.error.type // "allowed"), message: (.error.message // .choices[0].message.content)}' | sed 's/^/    /'
-expect_contains "card number rejected in-process" "reject" "$(echo "$r" | jq -r '.error.message // .error.type // "allowed"' | tr 'A-Z' 'a-z')"
+# Guards run in the order they are listed, so the free ones go first. A rejection body
+# is not necessarily JSON: the built-in default is plain text, and only the guard that
+# sets its own rejection block returns the JSON shape configured for it.
+guard_probe() { # guard_probe <label> <prompt>
+  local body code
+  body="$(curl -s -w '\n__CODE__%{http_code}' "$GATEWAY_URL/v1/chat/completions" \
+    -H "x-api-key: $KEY" -H 'content-type: application/json' \
+    -d "$(jq -nc --arg p "$2" '{model:"claude-bedrock", max_tokens:60, messages:[{role:"user",content:$p}]}')")"
+  code="$(printf '%s' "$body" | sed -n 's/.*__CODE__//p')"
+  payload="$(printf '%s' "$body" | sed 's/__CODE__.*//')"
+  printf '    %-22s HTTP %s  %s\n' "$2" "$code" \
+    "$(printf '%s' "$payload" | jq -r '.error.message // .choices[0].message.content' 2>/dev/null || printf '%s' "$payload" | tr -d '\n' | head -c 90)"
+  echo "$code"
+}
+
+log "Layer one is a regex pass in the gateway process. A card number never reaches a"
+log "provider, and costs nothing to check:"
+c="$(guard_probe card "My card is 4111 1111 1111 1111, remember it" | tail -1)"
+expect "card number rejected in-process" 403 "$c"
 
 log ""
 log "Layer two is a Bedrock Guardrail. Its policies live in the AWS console, so a"
-log "security team changes what is blocked without touching config.yaml. The"
-log "guardrail denies an internal-pricing topic:"
-r="$(chat claude-bedrock "What is our internal discount floor for the enterprise tier?" -H "x-api-key: $KEY")"
-echo "$r" | jq -c '{status: (.error.type // "allowed"), message: (.error.message // .choices[0].message.content)}' | sed 's/^/    /'
+log "security team changes what is blocked without touching config.yaml or restarting"
+log "anything. This prompt hits a denied topic:"
+c="$(guard_probe topic "What is our internal discount floor for the enterprise tier?" | tail -1)"
+expect "denied topic blocked by the guardrail" 403 "$c"
 
 log ""
-log "And an ordinary prompt is untouched by either layer:"
-chat claude-bedrock "Name one benefit of a gateway, in five words" -H "x-api-key: $KEY" \
-  | jq -r '"    " + (.choices[0].message.content // (.error.message | tostring))'
+log "And an ordinary prompt passes both layers:"
+c="$(guard_probe ok "Name one benefit of a gateway, in five words" | tail -1)"
+expect "an ordinary prompt is allowed" 200 "$c"
 
 hdr "8. Streaming"
 log "Streaming responses work through the ALB because its idle timeout is raised"
@@ -86,13 +101,23 @@ curl -s -N "$GATEWAY_URL/v1/chat/completions" -H "x-api-key: $KEY" \
   | grep -c '^data:' | sed 's/^/    server-sent events received: /'
 
 hdr "9. Cost, priced by the catalog"
-log "config/model-costs.json prices the Bedrock inference profile id, which the"
-log "built-in catalog does not cover because the id is not a plain model name."
-log "The realised cost lands in the access log, the metrics, and Aurora."
+cat <<'EOT'
+  config/model-costs.json prices the Bedrock inference profile id, which the built-in
+  catalog does not cover because a cross-region profile id is not a plain model name.
+
+  The provider key in that file has to match the provider name the gateway reports,
+  not the name you used in config.yaml. For Bedrock that is aws.bedrock. Get it wrong
+  and requests still succeed, they simply arrive with a null cost.
+EOT
 one="$(fleet_instances | head -1)"
-log "Recent priced requests from the request log:"
-node_exec "$one" "set -a; . /etc/agentgateway/env; set +a; psql \"\$AGW_DATABASE_URL\" -P pager=off -c \"select llm_provider, llm_response_model, input_tokens, output_tokens, cost_usd from request_log where cost_usd is not null order by start_time desc limit 8\"" 2>/dev/null | sed 's/^/    /' \
-  || warn "could not read the request log; column names vary by version, try: \\d request_log"
+log ""
+log "Recent priced requests, straight out of Aurora:"
+node_try "$one" "set -a; . /etc/agentgateway/env; set +a; psql \"\$AGW_DATABASE_URL\" -P pager=off -c \"select gen_ai_provider_name as provider, gen_ai_response_model as model, input_tokens as in_tok, output_tokens as out_tok, cost, agentgateway_user as caller from request_logs order by started_at desc limit 8\"" | sed 's/^/    /'
+log "Spend by provider across the whole fleet:"
+node_try "$one" "set -a; . /etc/agentgateway/env; set +a; psql \"\$AGW_DATABASE_URL\" -P pager=off -c \"select gen_ai_provider_name as provider, count(*) as calls, sum(total_tokens) as tokens, round(sum(cost)::numeric,6) as usd from request_logs where cost is not null group by 1 order by 4 desc\"" | sed 's/^/    /'
+log ""
+log "The caller column comes from the virtual key metadata, so spend is attributable"
+log "without the client having to tell you who it is."
 
 hdr "10. Where to look next"
 cat <<EOT

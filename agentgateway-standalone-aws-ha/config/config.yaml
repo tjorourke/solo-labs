@@ -119,7 +119,13 @@ config:
     sessionTtl: 30m
 
   # Prices every request so cost lands in the logs, the metrics and the CEL
-  # context. Synced from S3 alongside this file and reloaded live.
+  # context. Synced from S3 alongside this file and reloaded live: repricing the
+  # fleet is one s3 cp and no restart.
+  #
+  # The provider key inside that file has to match the provider name the gateway
+  # reports, which is not always the name used under `llm.providers` below. Bedrock
+  # reports aws.bedrock. A key that does not match is not an error: requests succeed
+  # and simply arrive with a null cost, which is easy to miss.
   modelCatalog:
   - file: /etc/agentgateway/model-costs.json
 
@@ -459,39 +465,44 @@ llm:
       - allow: 'has(apiKey.key)'
       - allow: 'has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/llm.invoke")'
 
-    # Guards applied to every model below, cheapest first. A regex pass costs
-    # nothing and runs in-process; Bedrock Guardrails costs a network call and is
-    # only reached by prompts the regex pass let through.
-    guardrails:
-      request:
-      - regex:
-          action: reject
-          rules:
-          - builtin: creditCard
-          - builtin: ssn
-          - builtin: email
-      - bedrockGuardrails:
-          guardrailIdentifier: $BEDROCK_GUARDRAIL_ID
-          # Literal, not an environment variable, and it has to stay that way.
-          #
-          # In hybrid storage mode the config file is round-tripped through JSON
-          # and back out through the YAML emitter before shell expansion runs.
-          # A quoted variable reference survives that trip unquoted, because at
-          # that point its value is still the variable name, which needs no
-          # quoting. Expansion then turns it into a bare 1, and the next parse
-          # reads an integer where a string is required. Writing the version
-          # here keeps the quotes on the value that actually needs them.
-          guardrailVersion: "1"
-          region: $BEDROCK_REGION
-        rejection:
-          status: 403
-          body: '{"error":{"message":"Blocked by the gateway content policy","type":"content_policy"}}'
-      response:
-      - regex:
-          action: mask
-          rules:
-          - builtin: creditCard
-          - builtin: ssn
+    # Fleet-wide, counted in ElastiCache by the rate limit service on each node.
+    # This is where a shared counter matters most: LLM calls cost money, so a limit
+    # that silently multiplies by the number of nodes is not a limit.
+    #
+    # The descriptor value is a CEL expression, so the limit is per caller. Falling
+    # back to the API key name means a virtual key gets its own bucket rather than
+    # everyone sharing one.
+    # Fleet-wide, counted in ElastiCache by the rate limit service on each node.
+    # This is where a shared counter earns its keep: LLM calls cost money, so a limit
+    # that silently multiplies by the number of nodes is not a limit.
+    #
+    # The descriptor value is a CEL expression evaluated per request, so the limit is
+    # per caller rather than per fleet. `jwt.sub` is the caller identity the gateway
+    # verified.
+    #
+    # Two things about descriptors that are worth internalising:
+    #
+    #   A descriptor whose expression fails to evaluate is skipped, and a skipped
+    #   descriptor means no limit was applied. There is no error and no log line, so a
+    #   rate limit can look configured and never fire. Test every limit by exceeding
+    #   it, not by reading the config.
+    #
+    #   Because of that, prefer one descriptor per identity type over a single
+    #   conditional expression. `has(jwt.sub) ? jwt.sub : something` fails outright
+    #   when the whole jwt variable is absent, because has() errors rather than
+    #   returning false in that case.
+    #
+    # Callers presenting a virtual key instead of a token are covered by the
+    # localRateLimit on the traffic routes and by virtual-key budgets.
+    remoteRateLimit:
+      host: $RATELIMIT_HOST
+      domain: agentgateway
+      failureMode: failOpen
+      descriptors:
+      - entries:
+        - key: llm_caller
+          value: 'jwt.sub'
+        type: requests
 
   # -------------------------------------------------------------------------
   # Reusable provider defaults, referenced by the models below.

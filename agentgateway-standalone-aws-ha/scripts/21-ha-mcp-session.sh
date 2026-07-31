@@ -44,22 +44,31 @@ while read -r id; do
   NODES+=("$id"); IPS+=("$ip")
 done < <(fleet_instances)
 
-# The calls have to originate inside the VPC to reach the private addresses, so
-# they run on one node over SSM. That node is the client, not the server.
+
+# Calling a specific node means originating the request inside the VPC, so it runs on
+# one node over SSM. Rather than escaping a JSON body through several layers of shell,
+# the body is base64-encoded and decoded on the node.
+mcp_call_node() { # mcp_call_node <client-node> <target-ip> <token> <session> <tool> -> "HTTP <code>|<body>"
+  local client="$1" ip="$2" tok="$3" sid="$4" tool="$5"
+  local body b64
+  body="$(jq -nc --arg t "$tool" '{jsonrpc:"2.0",id:42,method:"tools/call",params:{name:$t,arguments:{}}}')"
+  b64="$(printf '%s' "$body" | base64 | tr -d '\n')"
+  node_try "$client" "printf %s '$b64' | base64 -d > /tmp/mcp.json && curl -s -w '|HTTP %{http_code}' -X POST http://$ip:3000/mcp -H 'authorization: Bearer $tok' -H 'mcp-session-id: $sid' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' --data-binary @/tmp/mcp.json"
+}
+
 CLIENT="${NODES[0]}"
 log "running the client from $CLIENT over SSM"
 echo
 
 for i in "${!NODES[@]}"; do
-  target_ip="${IPS[$i]}"
-  target_id="${NODES[$i]}"
-  out="$(node_try "$CLIENT" "curl -s -X POST http://$target_ip:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":$((10+i)),\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}' | sed -n 's/^data: //p' | head -1" 2>/dev/null)"
-  served="$(echo "$out" | jq -r '.result.content[0].text // ""' 2>/dev/null | jq -r '.node // "?"' 2>/dev/null)"
-  if echo "$out" | grep -q '"result"'; then
-    printf '  %s  ok    %-20s tool ran on %s\n' "$c_green" "$target_id" "${served:-?}"
+  out="$(mcp_call_node "$CLIENT" "${IPS[$i]}" "$TOK" "$SID" echo_whoami)"
+  httpc="$(printf '%s' "$out" | sed -n 's/.*|HTTP //p' | tr -d ' ')"
+  served="$(printf '%s' "$out" | sed -n 's/^data: //p' | head -1 | jq -r '.result.content[0].text // "{}"' 2>/dev/null | jq -r '.node // "?"' 2>/dev/null)"
+  if [[ "$httpc" == "200" ]]; then
+    printf '  %s  ok%s   %-20s HTTP 200, tool ran on %s\n' "$c_green" "$c_off" "${NODES[$i]}" "${served:-?}"
     PASS=$((PASS+1))
   else
-    printf '  %sFAIL%s  %-20s %s\n' "$c_red" "$c_off" "$target_id" "$(echo "$out" | head -c 200)"
+    printf '  %sFAIL%s   %-20s HTTP %s\n' "$c_red" "$c_off" "${NODES[$i]}" "${httpc:-?}"
     FAIL=$((FAIL+1))
   fi
 done
@@ -104,7 +113,7 @@ log "giving $ODD a different session key"
 node_exec "$ODD" "sed -i \"s/^SESSION_KEY=.*/SESSION_KEY='$(openssl rand -hex 32)'/\" /etc/agentgateway/env && systemctl restart agentgateway" >/dev/null
 sleep 15
 
-out="$(node_try "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[1]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":99,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
+out="$(mcp_call_node "$CLIENT" "${IPS[1]}" "$TOK" "$SID" echo_whoami | sed -n 's/.*|HTTP //p' | tr -d ' ')"
 log "the same session sent to the odd node: HTTP $out"
 if [[ "$out" == "200" ]]; then
   warn "expected the odd node to refuse the session; it accepted it"
@@ -116,8 +125,9 @@ fi
 
 log "and the other two still accept it:"
 for i in 0 2; do
-  out="$(node_try "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[$i]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":98,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
+  out="$(mcp_call_node "$CLIENT" "${IPS[$i]}" "$TOK" "$SID" echo_whoami | sed -n 's/.*|HTTP //p' | tr -d ' ')"
   printf '    %-20s HTTP %s\n' "${NODES[$i]}" "$out"
+  expect "${NODES[$i]} still accepts the session" 200 "$out"
 done
 
 log ""
@@ -125,7 +135,7 @@ log "restoring $ODD from Secrets Manager"
 SECRET_ARN="$(tf_out runtime_secret_arn)"
 node_exec "$ODD" "KEY=\$(aws secretsmanager get-secret-value --secret-id $SECRET_ARN --query SecretString --output text --region $AWS_REGION | jq -r .SESSION_KEY) && sed -i \"s|^SESSION_KEY=.*|SESSION_KEY='\$KEY'|\" /etc/agentgateway/env && systemctl restart agentgateway" >/dev/null
 sleep 15
-out="$(node_try "$CLIENT" "curl -s -o /dev/null -w '%{http_code}' -X POST http://${IPS[1]}:3000/mcp -H 'authorization: Bearer $TOK' -H 'mcp-session-id: $SID' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":97,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"echo_whoami\\\",\\\"arguments\\\":{}}}'" 2>/dev/null | tr -d '\n ')"
+out="$(mcp_call_node "$CLIENT" "${IPS[1]}" "$TOK" "$SID" echo_whoami | sed -n 's/.*|HTTP //p' | tr -d ' ')"
 expect "the restored node accepts the session again" 200 "$out"
 
 hdr "5. The limit of this, which the config comments also state"

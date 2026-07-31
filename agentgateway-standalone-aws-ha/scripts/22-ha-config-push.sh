@@ -132,12 +132,18 @@ log "S3 versioning is on, so the previous object is still there. Pushing the"
 log "committed file back has the same effect."
 aws s3 cp "$SRC" "s3://$BUCKET/config.yaml" --only-show-errors
 log "waiting for the fleet to converge"
+# Note the path still returns 200 afterwards, because /api/public/newroute also
+# matches the echo-public prefix route. What proves the rollback is the body: the
+# direct response is gone, so the request now reaches the upstream instead.
 for i in $(seq 1 20); do
-  c="$(code "$GATEWAY_URL/api/public/newroute")"
-  [[ "$c" != "200" ]] && break
+  pushed="$(curl -s "$GATEWAY_URL/api/public/newroute" | jq -r '.pushed // "absent"')"
+  [[ "$pushed" == "absent" ]] && break
   sleep 5
 done
-expect "the added route is gone again" 404 "$(code "$GATEWAY_URL/api/public/newroute")"
+expect "the direct response is gone, so the prefix route handles it again" "absent" \
+  "$(curl -s "$GATEWAY_URL/api/public/newroute" | jq -r '.pushed // "absent"')"
+log "The path still answers 200, but from the echo upstream rather than from the"
+log "direct response the pushed config added."
 
 hdr "What this replaces"
 cat <<'EOT'

@@ -85,11 +85,19 @@ expect "llm.invoke sees no tools"     ""                                    "$(t
 log ""
 log "And a call to a tool the caller cannot see is refused, not just hidden:"
 SID2="$(mcp_init "$MCP_ONLY")"
-deny="$(mcp_rpc "$MCP_ONLY" "$SID2" '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"bin_get","arguments":{}}}')"
-echo "$deny" | jq -c '{error: (.error.message // "ALLOWED")}' | sed 's/^/    /'
-expect_contains "bin_get refused for an mcp.call-only token" "rror" "$deny"
-allow="$(mcp_rpc "$MCP_ONLY" "$SID2" '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"echo_whoami","arguments":{}}}')"
-expect_contains "echo_whoami allowed for the same token" "result" "$allow"
+
+# A refused tool call comes back as an HTTP error, not a JSON-RPC error body, so
+# check the status rather than grepping the payload.
+mcp_status() { # mcp_status <token> <session> <tool>
+  curl -s -o /dev/null -w '%{http_code}' -X POST "$GATEWAY_URL/mcp" \
+    -H "authorization: Bearer $1" -H "mcp-session-id: $2" \
+    -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"$3\",\"arguments\":{}}}"
+}
+expect "echo_whoami allowed for an mcp.call-only token" 200 "$(mcp_status "$MCP_ONLY" "$SID2" echo_whoami)"
+expect "bin_get refused for the same token"             400 "$(mcp_status "$MCP_ONLY" "$SID2" bin_get)"
+log "A disallowed tool is not merely hidden from tools/list; calling it by name is"
+log "refused outright."
 
 hdr "5. A note on writing those rules"
 cat <<'EOT'

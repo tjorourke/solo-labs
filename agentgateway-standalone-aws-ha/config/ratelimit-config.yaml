@@ -12,22 +12,23 @@ domain: agentgateway
 
 descriptors:
 
-# Per-caller limit on the MCP endpoint, keyed on the JWT subject.
-#
-# Set deliberately low so the difference between this and localRateLimit is
-# obvious: send 15 requests spread across all three nodes and exactly 10 succeed.
-# The same limit expressed as localRateLimit would let roughly 30 through, because
-# each process would keep its own bucket.
+# Per-caller limit on the MCP endpoint, keyed on the JWT subject. A realistic
+# ceiling: an agent doing real work makes many calls in a session.
 - key: mcp_caller
   rate_limit:
     unit: minute
-    requests_per_unit: 10
+    requests_per_unit: 60
 
-# Per-caller limit on the LLM endpoint.
+# Per-caller limit on the LLM endpoint, which is where a limit earns its keep.
+#
+# Set deliberately low so the difference from localRateLimit is unmistakable: send 30
+# requests spread across all three nodes and exactly 10 succeed. The same limit
+# written as localRateLimit would let roughly 30 through, because each process would
+# keep its own bucket.
 - key: llm_caller
   rate_limit:
     unit: minute
-    requests_per_unit: 20
+    requests_per_unit: 10
 
 # Token spend rather than request count. The gateway reports the cost after the
 # response completes, so this caps how many tokens a caller can burn per minute
