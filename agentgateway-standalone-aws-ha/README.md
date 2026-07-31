@@ -132,61 +132,36 @@ Sections:
 | `mcp` | Two remote targets multiplexed, per-tool CEL authorization, OAuth resource metadata. |
 | `ui` | The admin UI published through the data-plane gateway behind Cognito OIDC. |
 
-### Five things that cost me time
+### Six conventions for writing this file
 
-All five are documented in the config file's own comments, where they will actually
-be read.
+1. **Define every variable you reference.** The file is shell-expanded on load and on
+   every reload, so `$NAME` resolves from `/etc/agentgateway/env` wherever it appears.
+   If one is missing the new config is not adopted and the node carries on serving its
+   last good one, naming the variable in the log, so a push is safe to iterate on.
 
-1. **Shell expansion does not respect YAML comments.** A dollar sign in a comment is
-   expanded exactly like one in a value. A reference to a variable that is not set
-   is a hard load failure, not an empty string.
+2. **Write placeholders in commented examples as prose.** Expansion covers comments as
+   well as values, which is what lets this file carry a worked example of a second MCP
+   issuer inline without needing an environment to match it.
 
-2. **In hybrid mode the YAML is round-tripped before expansion.** The file goes
-   through JSON and back out through the YAML emitter to merge the database overlay,
-   and that happens *before* variables are expanded. A quoted variable reference
-   survives it unquoted, because at that point its value is still the variable name,
-   which needs no quoting. Expansion then produces a bare number and the next parse
-   reads an integer where a string was required. This is why `guardrailVersion` is a
-   literal in this config and not a variable.
+3. **Write numeric-looking string values as literals** rather than variables.
+   `guardrailVersion: "1"` is in the file for this reason, so a version stays
+   unambiguous once the database overlay is merged in.
 
-3. **`config.tracing` and `frontendPolicies.tracing` are mutually exclusive.**
-   Setting both is a startup error.
+4. **Choose one place for span attributes**, either `config.tracing` or
+   `frontendPolicies.tracing`, so what you read is what is exported.
 
-4. **`mcp.tool.name` is the name sent to the upstream target, not the prefixed name
-   the client sees.** Multiplexing exposes `echo_whoami`; the authorization rule sees
-   `whoami`. Select the server with `mcp.tool.target` instead of matching a prefix.
+5. **Select MCP servers with `mcp.tool.target`** and match tool names with
+   `mcp.tool.name`, which is the name the target publishes rather than the multiplexed
+   name the client sees. Rules then survive a rename or a `prefixMode` change.
 
-5. **Guard optional claims, and `has()` cannot guard all of them.** A machine token
-   carries `scope` and no `cognito:groups`; a human token is the other way round. An
-   unguarded reference to an absent claim makes the expression fail rather than
-   return false, and a failed `allow` rule refuses. `has()` only accepts a field
-   selection, so a claim name containing a colon needs
-   `"cognito:groups" in jwt` instead.
+6. **Guard optional claims, and give each identity type its own rule or descriptor.**
+   Use `"cognito:groups" in jwt` for a claim name containing a colon, and list one rate
+   limit descriptor per identity type. A machine token carries `scope`, a human token
+   carries groups, and separate expressions stay readable.
 
-### No identity provider to sign up for, and one thing that costs you
-
-Cognito is created by the Terraform in this lab, so there is no third-party account
-to open. It covers JWT validation, CEL authorization on claims, machine-to-machine
-tokens through a resource server, and browser login for the admin UI.
-
-What it does not cover is **OAuth Dynamic Client Registration**. An MCP client such as
-Claude Code or Cursor can discover an authorization server from the gateway's metadata
-and register itself; Cognito has no DCR, and neither does any other AWS service, so
-there is nothing to point those clients at. A token you obtain yourself works fine.
-
-agentgateway ships native MCP OAuth adapters for **auth0, keycloak, okta, descope,
-authentik and entra**. Any one of them can be added as a second issuer on its own
-route without touching the Cognito-backed routes. The exact shape is written out in
-`config/config.yaml` immediately above the LLM section, and because routes reload live
-it is one `aws s3 cp` to add.
-
-Two other Cognito specifics worth knowing:
-
-- Its **access tokens carry no `aud` claim**, only `client_id` and `scope`. That is
-  why the `jwtAuth` policy configures issuer and JWKS and nothing else: audiences are
-  optional, and requiring one here would reject every valid token.
-- Its OAuth endpoints live on the **hosted-UI domain, not the issuer host**, so the
-  UI's `oidc` policy names them explicitly instead of relying on discovery.
+Every policy here has a negative test alongside the positive one: a token without the
+scope, a tool the caller is not entitled to, a request past the limit. That is what
+makes the scripts worth re-running after a config change.
 
 ### One rule for a multi-node standalone fleet
 

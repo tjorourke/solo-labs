@@ -16,12 +16,11 @@
 #
 # Three consequences worth knowing before you edit this file:
 #
-#   1. A referenced variable that is not set in the environment is a hard load
-#      failure, not an empty string. The gateway keeps serving its last good
-#      config and says why in the log.
-#   2. Expansion does not respect YAML comments. A dollar sign in a comment is
-#      expanded exactly like one in a value, which is a genuinely surprising way
-#      to break a config file.
+#   1. Define every variable you reference. If one is missing the new config is
+#      not adopted and the gateway carries on serving its last good one, naming
+#      the variable in the log, so a push is safe to iterate on.
+#   2. Expansion covers comments as well as values, so write placeholders in
+#      commented examples as prose rather than as variable references.
 #   3. A dollar sign followed by a letter, a digit or an opening brace is
 #      expanded. A trailing dollar, such as a regex end anchor, is left alone.
 #
@@ -91,8 +90,8 @@ config:
   # -------------------------------------------------------------------------
   database:
     url: $AGW_DATABASE_URL
-    # Hybrid storage on PostgreSQL refuses to start below 2, because the overlay
-    # holds a LISTEN connection open alongside its query pool.
+    # At least 2 on PostgreSQL when using hybrid storage: the overlay keeps a
+    # LISTEN connection open alongside the query pool.
     maxConnections: 10
 
   # -------------------------------------------------------------------------
@@ -122,10 +121,10 @@ config:
   # context. Synced from S3 alongside this file and reloaded live: repricing the
   # fleet is one s3 cp and no restart.
   #
-  # The provider key inside that file has to match the provider name the gateway
-  # reports, which is not always the name used under `llm.providers` below. Bedrock
-  # reports aws.bedrock. A key that does not match is not an error: requests succeed
-  # and simply arrive with a null cost, which is easy to miss.
+  # Key each entry on the provider name the gateway reports, which is not always the
+  # name used under `llm.providers` below: Bedrock reports aws.bedrock. Matching them
+  # up is what puts a USD figure on every request; check one request's cost after
+  # adding a provider to confirm the catalog is being used.
   modelCatalog:
   - file: /etc/agentgateway/model-costs.json
 
@@ -405,10 +404,9 @@ routes:
 #           mcp:
 #             host: https://mcpbin.is.solo.io/remote/mcp
 #
-# The placeholders above are deliberately not written as real variable references.
-# Expansion runs over comments too, so a commented-out example that names a variable
-# nobody has set stops the whole file from loading. That is gotcha number two in the
-# header, and writing this block is how I re-discovered it.
+# The placeholders above are written as prose rather than as real variable references,
+# because expansion covers comments as well as values. That keeps this example inline
+# and useful without needing an environment to match it.
 # ---------------------------------------------------------------------------
 
 # ===========================================================================
@@ -466,31 +464,20 @@ llm:
       - allow: 'has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/llm.invoke")'
 
     # Fleet-wide, counted in ElastiCache by the rate limit service on each node.
-    # This is where a shared counter matters most: LLM calls cost money, so a limit
-    # that silently multiplies by the number of nodes is not a limit.
-    #
-    # The descriptor value is a CEL expression, so the limit is per caller. Falling
-    # back to the API key name means a virtual key gets its own bucket rather than
-    # everyone sharing one.
-    # Fleet-wide, counted in ElastiCache by the rate limit service on each node.
-    # This is where a shared counter earns its keep: LLM calls cost money, so a limit
-    # that silently multiplies by the number of nodes is not a limit.
+    # This is where a shared counter earns its keep: LLM calls cost money, so the limit
+    # should mean the same number across the fleet as it does on one node.
     #
     # The descriptor value is a CEL expression evaluated per request, so the limit is
     # per caller rather than per fleet. `jwt.sub` is the caller identity the gateway
     # verified.
     #
-    # Two things about descriptors that are worth internalising:
+    # Two conventions for descriptors:
     #
-    #   A descriptor whose expression fails to evaluate is skipped, and a skipped
-    #   descriptor means no limit was applied. There is no error and no log line, so a
-    #   rate limit can look configured and never fire. Test every limit by exceeding
-    #   it, not by reading the config.
+    #   Give each identity type its own descriptor rather than writing one conditional
+    #   expression. Each is then evaluated independently and stays readable.
     #
-    #   Because of that, prefer one descriptor per identity type over a single
-    #   conditional expression. `has(jwt.sub) ? jwt.sub : something` fails outright
-    #   when the whole jwt variable is absent, because has() errors rather than
-    #   returning false in that case.
+    #   Confirm a new limit by exceeding it. scripts/15-ratelimit.sh does exactly that,
+    #   and it is the quickest way to see a policy working end to end.
     #
     # Callers presenting a virtual key instead of a token are covered by the
     # localRateLimit on the traffic routes and by virtual-key budgets.

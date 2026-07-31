@@ -99,40 +99,38 @@ expect "bin_get refused for the same token"             400 "$(mcp_status "$MCP_
 log "A disallowed tool is not merely hidden from tools/list; calling it by name is"
 log "refused outright."
 
-hdr "5. A note on writing those rules"
+hdr "5. Two conventions for writing those rules"
 cat <<'EOT'
-  Two things cost real time to work out, and both are in the config comments:
+  Select the server with mcp.tool.target, and match tool names with mcp.tool.name,
+  which is the name the target publishes rather than the multiplexed name the client
+  sees. The client calls echo_whoami; the rule sees whoami. Keying on the target means
+  the rule survives a rename or a prefixMode change.
 
-    mcp.tool.name is the name sent to the upstream target, not the prefixed name
-    the client sees. The client calls echo_whoami; the rule sees whoami. Select
-    the server with mcp.tool.target instead of matching a prefix on the name.
-
-    Guard optional claims. A machine token has scope and no cognito:groups, a
-    human token the reverse. An unguarded reference to an absent claim makes the
-    expression fail rather than return false, and a failed allow rule refuses.
+  Give each identity type its own rule. A machine token carries scope and a human token
+  carries groups, so guard each with has(), or with map membership for a claim name
+  containing a colon.
 EOT
 
-hdr "6. The second issuer, for clients that register themselves"
+hdr "6. Adding a second issuer"
 cat <<EOT
-  Cognito handles everything above. What it cannot do is Dynamic Client
-  Registration, and agentgateway has no Cognito adapter, so an MCP client that
-  discovers the authorization server and registers itself cannot complete the flow.
+  Everything above authenticates against one issuer. A gateway can validate several:
+  give each its own route with its own mcpAuthentication block.
 
-  agentgateway does ship native MCP OAuth adapters for Auth0, Keycloak, Okta,
-  Descope, authentik and Entra ID. The /mcp-dcr route uses Auth0 for exactly that,
-  which also means this one gateway is validating two issuers at once.
+  For MCP clients that discover the authorization server and register themselves, set
+  mcpAuthentication.provider. agentgateway ships native adapters for auth0, keycloak,
+  okta, descope, authentik and entra, and the setting makes the gateway adapt its OAuth
+  metadata and answer client registration on the provider's behalf.
 
-  Point a DCR-capable client at:
-    $GATEWAY_URL/mcp-dcr
+  A ready-to-uncomment example is in config/config.yaml just above the LLM section.
+  Routes reload live, so adding it is one command:
 
-  For example, in Claude Code:
-    claude mcp add --transport http agw-lab $GATEWAY_URL/mcp-dcr
+    aws s3 cp config/config.yaml s3://\$(cd terraform && $TF output -raw config_bucket)/config.yaml
+
+  With Cognito, hand the client a token instead:
+
+    claude mcp add --transport http agw $GATEWAY_URL/mcp \\
+      --header "Authorization: Bearer \$TOKEN"
 EOT
-echo
-log "The DCR route's metadata, adapted for Auth0:"
-curl -s "$GATEWAY_URL/.well-known/oauth-protected-resource/mcp-dcr" | jq . | sed 's/^/    /'
-echo
-curl -s "$GATEWAY_URL/.well-known/oauth-authorization-server/mcp-dcr" | jq '{issuer, authorization_endpoint, token_endpoint, registration_endpoint}' | sed 's/^/    /'
 
 hdr "7. The session"
 log "This is the session id the gateway issued:"

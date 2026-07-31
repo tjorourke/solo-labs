@@ -44,7 +44,7 @@ hdr "4. Global limit: the count is fleet-wide"
 cat <<'EOT'
   The LLM routes carry a remoteRateLimit of 10 a minute per caller, counted in
   ElastiCache. That is where a shared counter earns its keep: LLM calls cost money, so
-  a limit that silently multiplies by the number of nodes is not a limit.
+  the limit should mean the same number across the fleet as it does on one node.
 
   The descriptor value is a CEL expression, so each caller gets its own bucket:
       value: 'has(jwt.sub) ? jwt.sub : apiKey.key'

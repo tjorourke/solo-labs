@@ -1,10 +1,9 @@
 #!/bin/bash
 # The hybrid config store: a change made on one node, live on all three.
 #
-# In the default `file` storage mode, editing anything in the admin UI writes back
-# to the local config file. On a fleet that means three files immediately
-# disagreeing with each other and with S3, and the next config sync silently
-# reverts whichever one you edited.
+# The storage mode decides where the admin UI writes. `file` mode writes back to the
+# local config file, which is what you want on a single instance. On a fleet you want
+# the reviewed baseline and the runtime changes kept apart, which is what `hybrid` does.
 #
 # In `hybrid` mode the file from S3 is the baseline and UI edits go to Aurora
 # instead, with PostgreSQL LISTEN/NOTIFY telling the other nodes the overlay
@@ -147,8 +146,7 @@ cat <<EOT
   An admin UI on a single box is a convenience. On a fleet it is either a liability
   or a control plane, and storage.mode decides which.
 
-  file    three nodes each write their own copy, and the next sync from S3
-          silently reverts whichever one you edited.
+  file    each node owns its own copy, which is ideal for a single instance.
 
   hybrid  the file stays the reviewed baseline in git and in S3, and the things an
           operator legitimately changes at runtime - virtual keys, model entries,
