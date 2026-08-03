@@ -1,0 +1,62 @@
+# ops-mcp: the demo MCP 2026-07-28 server.
+# The single-file server is mounted from the ops-mcp-src ConfigMap, created with:
+#   kubectl -n mcp-2026 create configmap ops-mcp-src --from-file=server.py=src/server.py
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ops-mcp-state-key
+  namespace: mcp-2026
+stringData:
+  # HMAC key for MRTR requestState integrity protection.
+  secret: change-me-lab-only-0b9f4c
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ops-mcp
+  namespace: mcp-2026
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ops-mcp
+  template:
+    metadata:
+      labels:
+        app: ops-mcp
+    spec:
+      containers:
+      - name: server
+        image: python:3.12-slim
+        command: ["python", "/app/server.py"]
+        env:
+        - name: MCP_STATE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: ops-mcp-state-key
+              key: secret
+        ports:
+        - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+        volumeMounts:
+        - name: src
+          mountPath: /app
+      volumes:
+      - name: src
+        configMap:
+          name: ops-mcp-src
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ops-mcp
+  namespace: mcp-2026
+spec:
+  selector:
+    app: ops-mcp
+  ports:
+  - port: 8000
+    targetPort: 8000
