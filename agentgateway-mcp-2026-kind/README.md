@@ -1,7 +1,10 @@
 # MCP 2026-07-28 on the wire, live: MRTR and Tasks through agentgateway v1.4.1
 
-A standalone kind lab for the final MCP 2026-07-28 specification through
-agentgateway v1.4.1 (OSS, standalone). A single-file, stdlib-only Python MCP
+A kind lab for the final MCP 2026-07-28 specification through agentgateway
+v1.4.1 (OSS), declared entirely through Kubernetes CRDs: the control plane is
+installed with helm (chart 1.4.1) and the gateway is a `Gateway` +
+`AgentgatewayParameters` + `AgentgatewayBackend` + `HTTPRoute`.
+A single-file, stdlib-only Python MCP
 server (`src/server.py`) answers `server/discover`, pauses `cleanup_files`
 with an MRTR `input_required` result carrying an HMAC-protected
 `requestState`, and runs `run_pipeline` as an MCP Task

@@ -1,0 +1,39 @@
+# The gateway, declared entirely through the Kubernetes API.
+# AgentgatewayParameters shapes the generated proxy Service so kind's
+# mapped host port (30080) reaches the listener.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: mcp-gw-params
+  namespace: mcp-2026
+spec:
+  service:
+    spec:
+      type: NodePort
+      ports:
+      - $patch: replace
+      - name: mcp
+        port: 3000
+        targetPort: 3000
+        nodePort: 30080
+        protocol: TCP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mcp-gw
+  namespace: mcp-2026
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: mcp-gw-params
+  listeners:
+  - name: mcp
+    protocol: HTTP
+    port: 3000
+    allowedRoutes:
+      namespaces:
+        from: Same
