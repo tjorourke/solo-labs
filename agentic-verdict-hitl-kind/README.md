@@ -243,6 +243,7 @@ In a real pipeline the register is read at first deploy and there is no extra st
 | `yaml/agentgateway/10-mcp-routes.yaml` | the one MCP route every agent uses |
 | `scripts/test-policy.sh` | the policy's offline test matrix (Kyverno CLI) |
 | `scripts/preview.sh` | dry-run the real policy against the live agents, with optional register overrides |
+| `../scripts/build-embedded-snippets.py` | rebuilds the policy and agent code shown on the page from the actual files |
 
 ## Things worth knowing before you change it
 
