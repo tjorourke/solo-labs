@@ -107,6 +107,11 @@ can call a gated tool needs a human, whoever built it and whenever it arrives. T
 list is still resolved per agent, so an agent that uses none of the gated servers is
 untouched. Broad in agents, narrow in tools.
 
+`./scripts/preview.sh` answers "which agents will this hit?" before you change anything.
+It runs the real policy against a copy of the live agents with the Kyverno CLI, so it is
+a rehearsal rather than a reimplementation, and `--red` / `--default` / `--gated-file`
+let you ask the question about a register you have not written yet.
+
 The control works in both directions. Clearing `red`, or dropping a server from `gated`,
 **removes** the mutation from agents that already carry it. Without that the agent keeps
 pausing while labelled green — safe, and a lie. That is four `ungate-*` rules rather than
@@ -237,6 +242,7 @@ In a real pipeline the register is read at first deploy and there is no extra st
 | `yaml/agents/declarative-native.yaml` | the kagent-native variant (Declarative + `requireApproval`) |
 | `yaml/agentgateway/10-mcp-routes.yaml` | the one MCP route every agent uses |
 | `scripts/test-policy.sh` | the policy's offline test matrix (Kyverno CLI) |
+| `scripts/preview.sh` | dry-run the real policy against the live agents, with optional register overrides |
 
 ## Things worth knowing before you change it
 

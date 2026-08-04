@@ -93,6 +93,10 @@ def _gated_tools():
     Read from KAGENT_REQUIRE_APPROVAL, a comma-separated list. The developer never
     sets this and never names a tool; the platform injects it at admission from the
     risk register. Absent or empty means nothing needs approval.
+
+    A single `*` means every tool needs approval. The platform uses it to gate a
+    whole MCP server without having to enumerate its tools, which matters when a
+    server exposes dozens of them or gains new ones after this agent was built.
     """
     raw = os.environ.get("KAGENT_REQUIRE_APPROVAL", "")
     return {t.strip() for t in raw.split(",") if t.strip()}
@@ -144,6 +148,13 @@ def build_mcp_tools():
         if not gated:
             # Nothing is gated for this agent: one plain toolset, no confirmation.
             toolsets.append(MCPToolset(connection_params=conn(url)))
+            continue
+
+        if "*" in gated:
+            # The whole server is gated, so there is no ungated half to build.
+            toolsets.append(
+                MCPToolset(connection_params=conn(url), require_confirmation=True)
+            )
             continue
 
         # Everything the platform did NOT name — runs straight through.
