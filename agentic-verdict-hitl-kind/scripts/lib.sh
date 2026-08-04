@@ -83,6 +83,11 @@ export KEYCLOAK_NS="${KEYCLOAK_NS:-ar-keycloak}"
 export KEYCLOAK_REALM="${KEYCLOAK_REALM:-agentregistry}"
 export SRE_NS="${SRE_NS:-sre-tools}"
 export HITL_NS="${HITL_NS:-hitl}"
+# The Solo Enterprise UI lives in its own chart and namespace. This is the product a
+# customer runs — the OSS kagent dashboard is a different thing and is NOT used here.
+export SOLO_MGMT_NS="${SOLO_MGMT_NS:-solo-mgmt}"
+export SOLO_MGMT_VERSION="${SOLO_MGMT_VERSION:-0.5.3}"
+export MGMT_CHART="${MGMT_CHART:-oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management}"
 
 # ── OIDC clients (from the realm import) ──────────────────────────────────────
 export AR_BACKEND_CLIENT="${AR_BACKEND_CLIENT:-ar-backend}"

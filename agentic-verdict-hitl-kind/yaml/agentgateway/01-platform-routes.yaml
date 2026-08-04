@@ -38,14 +38,21 @@ spec:
         - name: agentregistry-enterprise-server
           port: 12121
 ---
-# The kagent UI. This is where the NATIVE approval card appears for declarative
-# agents, so it is the surface a customer actually clicks — worth having on a real
-# hostname rather than behind a port-forward.
+# The Solo Enterprise UI. This is where the approval card appears, and it is the
+# Enterprise product — NOT the OSS kagent dashboard. Two things follow from that:
+#
+#   * It ships in the separate `management` chart (solo-enterprise-helm/charts/
+#     management), not in the kagent chart. Setting ui.enabled=true on the kagent
+#     chart deploys the OSS dashboard instead, which is not what an Enterprise
+#     customer runs.
+#   * It authenticates against Keycloak, so it needs the realm's kagent-ui
+#     (public, PKCE) and kagent-backend (confidential) clients. Reaching it without
+#     that returns "Failed to get user ID: no session found".
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: kagent-ui
-  namespace: kagent
+  namespace: solo-mgmt
 spec:
   parentRefs:
     - name: verdict-ingress
@@ -54,5 +61,5 @@ spec:
     - "kagent.__LB__.sslip.io"
   rules:
     - backendRefs:
-        - name: kagent-ui
-          port: 8080   # the chart's Service listens on 8080, not 80
+        - name: solo-enterprise-ui
+          port: 80

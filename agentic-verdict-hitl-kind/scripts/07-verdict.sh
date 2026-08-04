@@ -9,8 +9,7 @@
 # republishes to the catalogue. Three things happen:
 #
 #   1. The verdict is written to the risk register (a ConfigMap).
-#   2. The restricted AI backend is created (the prompt-injection layer).
-#   3. The Kyverno policy is applied, so admission redirects red agents.
+#   2. The Kyverno policy is applied, so admission turns approval on.
 #
 # Then the two Agent CRs are re-admitted and the difference is shown.
 #
@@ -26,7 +25,7 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-require_secrets     # the gateway needs the upstream model key for the AI backend
+require_secrets
 [[ -n "${LB:-}" ]] || die "LB not set — run ./scripts/02-agentgateway.sh first"
 VERDICT_RED="${VERDICT_RED-$RED_AGENT,$NATIVE_AGENT}"
 VERDICT_DEFAULT="${VERDICT_DEFAULT:-green}"
@@ -53,22 +52,7 @@ ok "configmap/agent-risk-register written (the decision)"
 log "this is the ONLY place the verdict is recorded — no agent was modified"
 
 
-# ── 2. the restricted AI backend ──────────────────────────────────────────────
-step "Creating the restricted AI backend (prompt injection at the gateway)"
-sed "s/__LB__/${LB}/g" "$LAB_ROOT/yaml/agentgateway/30-restricted-llm.yaml" \
-  | kc apply -f - >/dev/null
-sleep 3
-BACC="$(kc -n "$AGW_NS" get enterpriseagentgatewaybackend restricted-anthropic \
-  -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null)"
-[[ "$BACC" == "True" ]] && ok "backend restricted-anthropic Accepted" \
-  || warn "backend not Accepted (${BACC:-?}) — check: kc -n $AGW_NS describe eagbe restricted-anthropic"
-
-# The gateway needs an upstream key to call Anthropic on the agent's behalf.
-kc -n "$AGW_NS" create secret generic anthropic-upstream \
-  --from-literal=Authorization="$ANTHROPIC_API_KEY" \
-  --dry-run=client -o yaml | kc apply -f - >/dev/null 2>&1 || true
-
-# ── 3. the policy ─────────────────────────────────────────────────────────────
+# ── 2. the policy ─────────────────────────────────────────────────────────────
 step "Applying the verdict policy"
 # The policy discovers the gated route via an apiCall, which needs a read that
 # Kyverno lacks by default. Grant it first or the rule errors and agents are
@@ -127,13 +111,6 @@ RA="$(kc -n "$KAGENT_NS" get agent "$NATIVE_AGENT" \
   -o jsonpath='{.spec.declarative.tools[0].mcpServer.requireApproval}' 2>/dev/null)"
 printf '  %-14s %s\n' "$NATIVE_AGENT" "${RA:-(none)}" >&2
 
-printf '\n  %-14s %s\n' "AGENT" "MODEL ENDPOINT IN THE RUNNING POD" >&2
-printf '  %-14s %s\n' "──────────────" "─────────────────────────────────" >&2
-for a in "$GREEN_AGENT" "$RED_AGENT"; do
-  base="$(kc -n "$KAGENT_NS" get agent "$a" \
-    -o jsonpath='{.spec.byo.deployment.env[?(@.name=="ANTHROPIC_API_BASE")].value}' 2>/dev/null)"
-  printf '  %-14s %s\n' "$a" "${base:-api.anthropic.com (default)}" >&2
-done
 
 # Prove the developer's source is untouched. If this ever fails, the lab is
 # claiming something it is not doing.
@@ -143,14 +120,14 @@ grep -q '/mcp"' "$LAB_ROOT/yaml/agents/deployments.yaml" \
   || warn "the developer's deployment no longer reads /mcp; did something edit it?"
 
 # The meaningful assertion is that the agent has no knowledge of the gated path or
-# the restricted model endpoint — not that the word "approval" is absent. The
+# approval logic — not that the word "approval" is absent anywhere. The
 # template's own comments discuss approval precisely to explain that none is
 # implemented, so a naive keyword grep flags the documentation and reads as a
 # failure when nothing is wrong.
-if grep -qE "mcp-gated|llm\.[0-9]|ANTHROPIC_API_BASE *=" "$LAB_ROOT/artifacts/$RED_AGENT/$RED_AGENT/agent.py"; then
-  warn "the red agent's source references the gated path or a hardcoded endpoint"
+if grep -qE "restart_deployment|scale_deployment" "$LAB_ROOT/artifacts/$RED_AGENT/$RED_AGENT/agent.py"; then
+  warn "the red agent's source names a sensitive tool — it should not"
 else
-  ok "the red agent's source has no knowledge of the gated route or the restricted backend"
+  ok "the red agent's source never names a tool as needing approval"
 fi
 
 step "Verdict applied"

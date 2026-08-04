@@ -73,7 +73,9 @@ helm --kube-context "$CTX" upgrade --install kagent "$KENT_CHART" \
   --set oidc.secretKey=clientSecret \
   --set oidc.skipOBO=false \
   --set kagent-tools.enabled=true \
-  --set ui.enabled=true \
+  `# ui.enabled=false on purpose: this chart's UI is the OSS kagent dashboard.` \
+  `# The Enterprise UI is the separate management chart, installed further down.` \
+  --set ui.enabled=false \
   --set-json 'rbac.roleMapping={"roleMapper":"claims.Groups.transformList(i, v, v in rolesMap, rolesMap[v])","roleMappings":{"admins":"global.Admin","readers":"global.Reader","writers":"global.Writer"}}' \
   --timeout 12m >/dev/null &
 KAGENT_PID=$!
@@ -111,6 +113,45 @@ kc -n "$KAGENT_NS" rollout status deploy/kagent-controller --timeout=360s >/dev/
   && ok "kagent controller Ready" || warn "kagent controller not Ready yet"
 kc -n "$AR_NS" rollout status deploy/"$AR_SERVER_SVC" --timeout=360s >/dev/null 2>&1 \
   && ok "AgentRegistry server Ready" || warn "AgentRegistry server not Ready yet"
+
+# ── Solo Enterprise UI ────────────────────────────────────────────────────────
+# The approval card a reviewer clicks lives here. It is the ENTERPRISE UI, which
+# ships in its own `management` chart — setting ui.enabled=true on the kagent chart
+# deploys the OSS kagent dashboard instead, which is not what a customer runs and
+# which cannot use the Keycloak realm.
+#
+# It authenticates against the same realm: kagent-ui is the public PKCE client for
+# the browser, kagent-backend the confidential one for the UI's backend. Without
+# both, the UI loads and then fails with "Failed to get user ID: no session found".
+step "Installing the Solo Enterprise UI ${SOLO_MGMT_VERSION} in ${SOLO_MGMT_NS}"
+kc create namespace "$SOLO_MGMT_NS" --dry-run=client -o yaml | kc apply -f - >/dev/null
+kc -n "$SOLO_MGMT_NS" create secret generic ui-backend-oidc-secret \
+  --from-literal=clientSecret="$KAGENT_BACKEND_SECRET" \
+  --dry-run=client -o yaml | kc apply -f - >/dev/null
+
+# No --wait: the UI backend does OIDC discovery against the sslip issuer, which the
+# pod cannot resolve until the hostAlias lands. Install, bridge, then wait.
+helm --kube-context "$CTX" upgrade --install management "$MGMT_CHART" \
+  -n "$SOLO_MGMT_NS" --version "$SOLO_MGMT_VERSION" \
+  --set cluster="$CLUSTER_NAME" \
+  --set products.kagent.enabled=true \
+  --set products.kagent.namespace="$KAGENT_NS" \
+  --set products.agentgateway.namespace="$AGW_NS" \
+  --set licensing.licenseKey="$AGW_LICENSE_KEY" \
+  --set clickhouse.persistentVolume.enabled=false \
+  --set oidc.issuer="$KEYCLOAK_ISSUER" \
+  --set ui.frontend.oidc.clientId=kagent-ui \
+  --set ui.backend.oidc.clientId="$KAGENT_BACKEND_CLIENT" \
+  --set-json 'rbac.roleMapping={"roleMapper":"claims.Groups.transformList(i, v, v in rolesMap, rolesMap[v])","roleMappings":{"admins":"global.Admin","readers":"global.Reader","writers":"global.Writer"}}' \
+  --timeout 12m >/dev/null
+for _ in $(seq 1 40); do
+  kc -n "$SOLO_MGMT_NS" get deploy solo-enterprise-ui >/dev/null 2>&1 && break
+  sleep 3
+done
+bridge solo-enterprise-ui "$SOLO_MGMT_NS" && ok "hostAlias on solo-enterprise-ui"
+kc -n "$SOLO_MGMT_NS" rollout status deploy/solo-enterprise-ui --timeout=420s >/dev/null 2>&1 \
+  && ok "Solo Enterprise UI ready (Keycloak SSO)" \
+  || warn "Enterprise UI not Ready — check: kc -n $SOLO_MGMT_NS get pods"
 
 # ── Kyverno ───────────────────────────────────────────────────────────────────
 # The platform team's admission webhook. Phase 07 applies the policies; this

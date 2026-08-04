@@ -12,8 +12,7 @@ MCP_SERVERS_CONFIG env var that AgentRegistry injects at deploy time.
 The one thing worth noticing is that the toolsets are built with ADK's
 require_confirmation hook wired to an environment variable. The developer never
 names a tool as sensitive; the platform team decides that from outside and injects
-it. When it fires, the approval appears in the kagent UI — the same surface a
-declarative agent gets.
+it. When it fires, ADK pauses the tool and the approval appears in the kagent UI.
 
 DO NOT EDIT THE COPIES. This file is the single source for BOTH agents:
 scripts/06-agents.sh renders it into artifacts/sretriage/sretriage/agent.py and
@@ -83,21 +82,9 @@ def create_model():
     a secretKeyRef at admission — it is never written into this project, the
     registry record, or the Agent CR spec.
 
-    ANTHROPIC_API_BASE is read explicitly and passed as api_base rather than left
-    to LiteLLM's own env discovery. LiteLLM does honour ANTHROPIC_API_BASE, but
-    only on its text-completion and /models paths; the /v1/messages chat path that
-    ADK uses resolves api_base from the call, not from the environment. Relying on
-    the env var alone would silently send traffic straight to api.anthropic.com
-    and the platform's redirect would appear to work while doing nothing.
-
-    Both agents ship this identical code. Neither sets the variable. Whether it is
-    present in the pod is the platform team's decision, not the developer's.
+    Both agents ship this identical code.
     """
-    kwargs = {"model": "anthropic/claude-haiku-4-5"}
-    api_base = os.environ.get("ANTHROPIC_API_BASE")
-    if api_base:
-        kwargs["api_base"] = api_base
-    return LiteLlm(**kwargs)
+    return LiteLlm(model="anthropic/claude-haiku-4-5")
 
 
 def _gated_tools():
