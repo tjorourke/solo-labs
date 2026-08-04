@@ -11,6 +11,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # every call 401 — clear it so plain arctl uses the fresh login token.
 unset ARCTL_API_TOKEN
 
+# clear strays off this demo's local ports (:8080 arctl-run chat, :8099 registry
+# forward): dev servers and other labs' forwards squat them and answer 200 to
+# everything. Docker publishes and this suite's own forwards survive.
+"$SCRIPT_DIR/../../free-ports.sh" 8080 8099
+
 arctl_login && ok "arctl logged in to ${ARCTL_API_BASE_URL} as ${AS_USER}" \
             || warn "arctl login failed — check the platform is up (setup-mesh1.sh)"
 

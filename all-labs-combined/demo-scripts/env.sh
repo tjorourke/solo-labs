@@ -39,6 +39,7 @@ _lic() { [ -n "$SOLO_ISTIO_LICENSE_KEY" ] && echo yes || echo NO; }
 case "$DEMO" in
   1)
     cd "$LAB_ROOT" || return 1
+    ./demo-scripts/free-ports.sh 8091 8095
     export CLUSTER1=kind-mesh1 CLUSTER2=kind-mesh2 CTX=kind-mesh1
     export ISTIOCTL=$HOME/.istioctl/bin/istioctl-1.30.3-solo
     echo "demo-1 · mesh1=$CLUSTER1  mesh2=$CLUSTER2 · licence: $(_lic)"
@@ -47,6 +48,7 @@ case "$DEMO" in
     ;;
   2|3)
     cd "$LAB_ROOT" || return 1
+    ./demo-scripts/free-ports.sh 8091
     export CTX=kind-mesh1 ISTIO_NS=istio-system TD=mesh1
     export ISTIOCTL=$HOME/.istioctl/bin/istioctl-1.30.3-solo
     export HUB=us-docker.pkg.dev/soloio-img/istio TAG=1.30.3-solo
@@ -65,6 +67,7 @@ case "$DEMO" in
     ;;
   5)
     cd "$LAB_ROOT" || return 1
+    ./demo-scripts/free-ports.sh 18083
     export CTX=kind-substrate KAGENT_NS=kagent
     export KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
     export KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
@@ -76,6 +79,7 @@ case "$DEMO" in
     ;;
   7)
     cd "$LAB_ROOT" || return 1
+    ./demo-scripts/free-ports.sh 15020 8095
     # demo-7 uses plain kubectl (no --context), so pin the kubeconfig here
     kubectl config use-context kind-mesh1 >/dev/null 2>&1 || echo "kind-mesh1 context not found: run ./demo-scripts/setup.sh"
     export NS=agentgateway-system
@@ -89,6 +93,7 @@ case "$DEMO" in
     # demo-6 is a symlink to the standalone inference lab; its cells run from there
     INF_DIR="$(cd "$LAB_ROOT/.." && pwd)/agentgateway-inference-routing-kind"
     cd "$INF_DIR" || { echo "inference lab not found at $INF_DIR"; return 1; }
+    ./scripts/free-ports.sh 18080
     export CTX=kind-inference NS=inference
     echo "demo-6 · context: $CTX · dir: $INF_DIR"
     kubectl --context $CTX get ns "$NS" >/dev/null 2>&1 \
