@@ -30,10 +30,40 @@ system prompt changes what the model tends to do; it stops nothing. Pair it with
 
 `requireApproval` is the obvious answer and it does not work here.
 
-The kagent `Agent` CRD has both `spec.declarative` and `spec.byo`. `requireApproval`
-lives at `spec.declarative.tools[].mcpServer.requireApproval`. But `spec.byo`
-contains **only** `deployment` — no tool list, nowhere to put it. An agent from
-`arctl init agent --framework adk` deploys as `type: BYO`, its ADK tool loop runs
+A `kagent.dev/v1alpha2` `Agent` has two alternative bodies and you pick one with
+`spec.type`. A **Declarative** agent is described to kagent field by field, tools
+included. A **BYO** agent is a container image kagent is told to run, and nothing
+more:
+
+```yaml
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+spec:
+  type: Declarative          # kagent knows what the agent is made of
+  declarative:
+    modelConfig: default-model
+    systemMessage: "..."
+    tools:                   # <-- requireApproval lives in here
+      - type: McpServer
+        mcpServer:
+          toolNames: [list_pods, restart_deployment]
+          requireApproval: [restart_deployment]
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+spec:
+  type: BYO                  # kagent knows only "run this image"
+  byo:
+    deployment:              # <-- and this is the ONLY field under byo
+      image: localhost:5001/sreremediate:latest
+      env:
+        - name: MCP_SERVERS_CONFIG
+          value: '[{"name":"sre-tools","type":"remote","url":"..."}]'
+```
+
+`requireApproval` lives at `spec.declarative.tools[].mcpServer.requireApproval`. But
+`spec.byo` contains **only** `deployment` — no tool list, nowhere to put it. An agent
+from `arctl init agent --framework adk` deploys as `type: BYO`, its ADK tool loop runs
 inside its own container, and kagent never sees the individual tools.
 
 So for an agent scaffolded by `arctl`, the native kagent approval card is not
@@ -84,7 +114,8 @@ review process you already trust:
 ```bash
 kubectl -n kyverno create configmap agent-risk-register \
   --from-literal=red="sreremediate" \
-  --from-literal=lb="172.18.255.200"
+  --from-literal=default="green" \
+  --from-literal=lb="192.168.97.180"
 ```
 
 Keyed by a `red` list rather than per-agent keys because Kyverno ConfigMap lookups
