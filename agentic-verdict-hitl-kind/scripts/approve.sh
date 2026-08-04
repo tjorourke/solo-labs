@@ -43,10 +43,11 @@ DECISION="${3:-approve}"
 kc -n "$KAGENT_NS" get agent "$AGENT" >/dev/null 2>&1 \
   || die "no kagent Agent '$AGENT'"
 TYPE="$(kc -n "$KAGENT_NS" get agent "$AGENT" -o jsonpath='{.spec.type}' 2>/dev/null)"
-if [[ "$TYPE" != "Declarative" ]]; then
-  die "agent '$AGENT' is type $TYPE. Only Declarative agents surface approvals through
-     kagent. For a BYO agent gated at the gateway use: ./scripts/quick.sh approve"
-fi
+# Works for BOTH agent types. A Declarative agent gets requireApproval on its tool
+# stanza; a BYO agent gets KAGENT_REQUIRE_APPROVAL in its env, which its ADK toolsets
+# turn into the same native confirmation. Either way the approval is a kagent task in
+# input-required state, so the same A2A call decides it.
+log "agent type: ${TYPE:-unknown}"
 
 POD="$(kc -n "$KAGENT_NS" get pods -l "app.kubernetes.io/name=$AGENT" -o name 2>/dev/null | head -1)"
 [[ -n "$POD" ]] || die "no running pod for '$AGENT'"

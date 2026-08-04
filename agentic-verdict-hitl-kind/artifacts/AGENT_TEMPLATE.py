@@ -9,6 +9,12 @@ The scaffold's sample tools (roll_die, check_prime) are removed; the agent's onl
 tools come from the sre-tools MCP server, resolved at startup from the
 MCP_SERVERS_CONFIG env var that AgentRegistry injects at deploy time.
 
+The one thing worth noticing is that the toolsets are built with ADK's
+require_confirmation hook wired to an environment variable. The developer never
+names a tool as sensitive; the platform team decides that from outside and injects
+it. When it fires, the approval appears in the kagent UI — the same surface a
+declarative agent gets.
+
 DO NOT EDIT THE COPIES. This file is the single source for BOTH agents:
 scripts/06-agents.sh renders it into artifacts/sretriage/sretriage/agent.py and
 artifacts/sreremediate/sreremediate/agent.py, substituting only __NAME__.
@@ -24,12 +30,16 @@ developer writing this has not been asked to think about human-in-the-loop, and
 is not trusted to implement it. Every control in this lab is applied to the agent
 after this code is finished.
 """
+import json
 import os
 
 from google.adk import Agent
 from google.adk.models.lite_llm import LiteLlm
+from google.adk.tools.mcp_tool.mcp_toolset import (
+    MCPToolset,
+    StreamableHTTPConnectionParams,
+)
 
-from .mcp_tools import get_mcp_tools
 from .prompts_loader import build_instruction
 
 # Set the OTel service name before the providers are initialised, so traces for
@@ -90,7 +100,84 @@ def create_model():
     return LiteLlm(**kwargs)
 
 
-mcp_tools = get_mcp_tools()
+def _gated_tools():
+    """Tool names the PLATFORM has decided need human approval.
+
+    Read from KAGENT_REQUIRE_APPROVAL, a comma-separated list. The developer never
+    sets this and never names a tool; the platform injects it at admission from the
+    risk register. Absent or empty means nothing needs approval.
+    """
+    raw = os.environ.get("KAGENT_REQUIRE_APPROVAL", "")
+    return {t.strip() for t in raw.split(",") if t.strip()}
+
+
+def build_mcp_tools():
+    """Build the agent's MCP toolsets from MCP_SERVERS_CONFIG.
+
+    Same input as arctl's generated mcp_tools.py — a JSON list of {name, type, url}
+    injected by AgentRegistry at deploy time — but built here so ADK's native
+    require_confirmation hook can be wired up.
+
+    require_confirmation makes ADK pause before running a tool and emit the
+    confirmation request that kagent renders as an approval card in its UI. That is
+    the same surface a declarative agent's requireApproval produces, so a BYO agent
+    gets kagent's own approval flow with nothing sitting in front of it.
+
+    Why TWO toolsets per server rather than one with a predicate:
+
+    require_confirmation is a per-toolset setting, and when ADK invokes the callable
+    form it passes the TOOL'S OWN ARGUMENTS plus tool_context — not the tool name
+    (google/adk/tools/mcp_tool/mcp_tool.py, run_async). So a single callable cannot
+    tell which tool it is being asked about. Splitting the server into a gated
+    toolset and an ungated one, using tool_filter to decide membership, puts the
+    tool name where it is actually available.
+    """
+    gated = _gated_tools()
+
+    raw = os.environ.get("MCP_SERVERS_CONFIG", "")
+    try:
+        servers = json.loads(raw) if raw else []
+    except ValueError:
+        servers = []
+
+    timeout = float(os.environ.get("MCP_CONNECT_TIMEOUT", "60"))
+    terminate = os.environ.get("MCP_TERMINATE_ON_CLOSE", "true").lower() != "false"
+
+    def conn(url):
+        return StreamableHTTPConnectionParams(
+            url=url, timeout=timeout, terminate_on_close=terminate
+        )
+
+    toolsets = []
+    for srv in servers:
+        url = srv.get("url") or ""
+        if not url:
+            continue
+
+        if not gated:
+            # Nothing is gated for this agent: one plain toolset, no confirmation.
+            toolsets.append(MCPToolset(connection_params=conn(url)))
+            continue
+
+        # Everything the platform did NOT name — runs straight through.
+        toolsets.append(
+            MCPToolset(
+                connection_params=conn(url),
+                tool_filter=lambda tool, ctx=None: tool.name not in gated,
+            )
+        )
+        # The tools the platform DID name — ADK pauses and kagent asks a human.
+        toolsets.append(
+            MCPToolset(
+                connection_params=conn(url),
+                tool_filter=lambda tool, ctx=None: tool.name in gated,
+                require_confirmation=True,
+            )
+        )
+    return toolsets
+
+
+mcp_tools = build_mcp_tools()
 root_agent = Agent(
     model=create_model(),
     name="__NAME___agent",
