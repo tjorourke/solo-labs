@@ -82,6 +82,25 @@ for a in "$GREEN_AGENT" "$RED_AGENT"; do
     || die "arctl build failed for $a — is the kind-registry container running?"
 done
 
+# Evict the cached layer from every kind node, or the rebuild above is invisible.
+#
+# AgentRegistry deploys the agent with imagePullPolicy: IfNotPresent on a :latest
+# tag, so a node that already holds :latest never pulls the new one. The pod comes
+# up healthy running OLD code, and nothing anywhere reports a problem.
+#
+# This bit us for real: the green agent's image was left behind by a template
+# change, and because a green agent's gating path is never exercised the drift
+# stayed invisible until the register was switched to red: "*" — at which point the
+# agent was correctly mutated, carried the right env var, and still did not gate,
+# because its image predated the code that reads it.
+step "Evicting the cached agent images from the kind nodes"
+for n in $(kind get nodes --name "$CLUSTER_NAME" 2>/dev/null); do
+  for a in "$GREEN_AGENT" "$RED_AGENT"; do
+    docker exec "$n" crictl rmi "localhost:${REG_PORT}/${a}:latest" >/dev/null 2>&1 || true
+  done
+done
+ok "nodes will pull the images just pushed"
+
 step "Publishing both agents to the catalogue"
 for a in "$GREEN_AGENT" "$RED_AGENT"; do
   arctl apply -f "$ARTIFACTS_DIR/$a/agent.yaml" >/dev/null 2>&1 \
@@ -121,6 +140,39 @@ for a in "$GREEN_AGENT" "$RED_AGENT" "$NATIVE_AGENT"; do
       && ok "$cr Ready" || warn "$cr not Ready yet"
   else
     warn "no kagent Agent for $a yet — check: kubectl --context $CTX -n $KAGENT_NS get agent"
+  fi
+done
+
+# ── the premise, checked on the RUNNING pods ──────────────────────────────────
+# 06 already diffs the two rendered sources, which catches drift in the repo. It
+# cannot catch a stale image, and a stale image breaks the lab in the most
+# misleading way available: the policy mutates correctly, the env var is present,
+# and the agent still does not gate. So assert on what is actually running.
+# Evicting the layer is not enough on its own: the Deployment spec has not changed,
+# so nothing creates a new pod and the old one keeps running. Restart it explicitly,
+# which is what makes the node pull the image pushed above.
+step "Restarting both agents so the nodes pull the fresh image"
+for a in "$GREEN_AGENT" "$RED_AGENT"; do
+  kc -n "$KAGENT_NS" rollout restart "deploy/$a" >/dev/null 2>&1 || true
+done
+for a in "$GREEN_AGENT" "$RED_AGENT"; do
+  kc -n "$KAGENT_NS" rollout status "deploy/$a" --timeout=300s >/dev/null 2>&1 \
+    && ok "$a restarted on the new image" || warn "$a did not report a completed rollout"
+done
+
+step "Confirming both pods run the agent code just built"
+for a in "$GREEN_AGENT" "$RED_AGENT"; do
+  # Exact comparison, not a heuristic: the file in the pod must be the file this
+  # phase rendered and built. A count of some marker string would drift the moment
+  # the template changes shape.
+  if kc -n "$KAGENT_NS" exec "deploy/$a" -- cat "/app/$a/agent.py" 2>/dev/null \
+       | diff -q - "$ARTIFACTS_DIR/$a/$a/agent.py" >/dev/null 2>&1; then
+    ok "$a is running exactly the code just built"
+  else
+    warn "$a is running DIFFERENT code from the image just built — stale layer"
+    warn "  for n in \$(kind get nodes --name $CLUSTER_NAME); do"
+    warn "    docker exec \$n crictl rmi localhost:${REG_PORT}/${a}:latest; done"
+    warn "  kubectl -n $KAGENT_NS rollout restart deploy/$a"
   fi
 done
 

@@ -37,7 +37,8 @@ FAILED=0
 # it is an untested policy: Kyverno silently leaves the context unresolved, the
 # precondition goes false, and every approval assertion fails for the wrong reason.
 # Checked against the policy below so it cannot drift again.
-RULES=(approval-declarative approval-byo label-red label-green)
+RULES=(approval-declarative approval-byo ungate-declarative ungate-byo
+       ungate-declarative-unlisted ungate-byo-unlisted label-red label-green)
 
 for r in "${RULES[@]}"; do
   grep -q "name: $r" "$POLICY" \
@@ -184,6 +185,16 @@ check "both named red                   → both gated, both types" \
 "sreremediate red restart_deployment,scale_deployment
 sretriage red restart_deployment,scale_deployment"
 
+check "red=* — no agent named, gate on tools alone" \
+  "*" "green" "$GATED_DEFAULT" \
+"sreremediate red restart_deployment,scale_deployment
+sretriage red restart_deployment,scale_deployment"
+
+check "red=* but the register is empty → nothing gated" \
+  "*" "green" "[]" \
+"sreremediate red -
+sretriage red -"
+
 step "Register matrix — WHICH tools get gated, with no tool named in the policy"
 
 check "one tool in the register         → exactly that tool is gated" \
@@ -218,10 +229,53 @@ check "a different server               → this agent is untouched" \
 "sreremediate red -
 sretriage red -"
 
+check "red=* and a server nobody uses  → every agent labelled, none gated" \
+  "*" "green" \
+'- server: payments-tools
+  tools: ["*"]' \
+"sreremediate red -
+sretriage red -"
+
 check "empty register                   → red agents labelled, nothing gated" \
   "sretriage,sreremediate" "green" "[]" \
 "sreremediate red -
 sretriage red -"
+
+step "De-gating — taking an agent off the register removes the mutation"
+
+# $1 desc  $2 red  $3 default  $4 gated  $5 expected. Same as check(), but the
+# fixtures start out ALREADY mutated, which is the state a running cluster is in.
+recheck() {
+  local desc="$1" red="$2" def="$3" gated="$4" expected="$5"
+  write_values "$red" "$def" "$gated"
+  { declarative_cr sretriage yes; echo "---"; byo_cr sreremediate yes; } > "$WORK/mutated.yaml"
+  local got
+  got="$(kyverno apply "$POLICY" --resource "$WORK/mutated.yaml" \
+         --values-file "$WORK/values.yaml" 2>/dev/null | summarise)"
+  if [[ "$got" == "$expected" ]]; then
+    ok "$desc"
+  else
+    warn "$desc"
+    printf '      expected:\n%s\n      got:\n%s\n' \
+      "$(sed 's/^/        /' <<<"$expected")" "$(sed 's/^/        /' <<<"$got")" >&2
+    FAILED=1
+  fi
+}
+
+recheck "red cleared            → gating REMOVED, not just relabelled" \
+  "" "green" "$GATED_DEFAULT" \
+"sreremediate green -
+sretriage green -"
+
+recheck "server dropped from gated → gating removed" \
+  "sretriage,sreremediate" "green" "[]" \
+"sreremediate red -
+sretriage red -"
+
+recheck "still red              → gating left exactly as it was" \
+  "sretriage,sreremediate" "green" "$GATED_DEFAULT" \
+"sreremediate red restart_deployment,scale_deployment
+sretriage red restart_deployment,scale_deployment"
 
 step "Idempotence — re-admitting an already-mutated agent"
 write_values "sretriage,sreremediate" "green" "$GATED_DEFAULT"

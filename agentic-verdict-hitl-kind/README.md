@@ -98,9 +98,20 @@ Three keys, and between them the whole decision:
 
 | key | what it answers |
 | --- | --- |
-| `red` | which agents need a human |
+| `red` | which agents need a human. `*` = every agent, so the register gates on tools alone |
 | `default` | the answer for anything not named; set `red` for deny-by-default |
 | `gated` | which tools need approval, per MCP server. `tools: ["*"]` gates every tool a server exposes, including ones it has not shipped yet |
+
+`red: "*"` is the mode worth knowing about: no agent is ever named, so any agent that
+can call a gated tool needs a human, whoever built it and whenever it arrives. The tool
+list is still resolved per agent, so an agent that uses none of the gated servers is
+untouched. Broad in agents, narrow in tools.
+
+The control works in both directions. Clearing `red`, or dropping a server from `gated`,
+**removes** the mutation from agents that already carry it. Without that the agent keeps
+pausing while labelled green — safe, and a lie. That is four `ungate-*` rules rather than
+a condition on the existing ones, because Kyverno's preconditions are a flat
+`all`/`any` and cannot express "out of scope *or* nothing gated" in one rule.
 
 **No tool name appears in the policy.** Adding the hundredth tool, or a whole new MCP
 server, is a ConfigMap edit. That separation is the point: the policy is cluster-wide
@@ -260,6 +271,14 @@ Full detail in [CLAUDE.md](./CLAUDE.md). The short list:
   cannot tell which tool it is being asked about. The template splits each server into
   a gated and an ungated `MCPToolset` and uses `tool_filter` for membership, which is
   where the tool name is actually available.
+- **A `:latest` agent image with `imagePullPolicy: IfNotPresent` will not be re-pulled.**
+  AgentRegistry sets that policy, so a rebuilt-and-pushed image is invisible: the pod
+  comes up healthy on OLD code and nothing reports a problem. This bit us for real — the
+  green agent's image was left behind by a template change, and because a green agent's
+  gating path is never exercised the drift stayed hidden until the register was switched
+  to `red: "*"`, at which point the agent was correctly mutated, carried the right env
+  var, and still did not gate. `06-agents.sh` now evicts the layer from every node,
+  forces a rollout, and diffs the file in each running pod against the one it built.
 - **Never leave `ANTHROPIC_API_BASE` pointing at a route that no longer exists.**
   The agent dies with `AnthropicException - route not found`, which reads as a model
   or credentials problem and says nothing about a missing HTTPRoute. Nothing in the

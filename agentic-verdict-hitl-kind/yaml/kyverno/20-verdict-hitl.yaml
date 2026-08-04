@@ -7,7 +7,9 @@
 #
 # NOTHING IN THIS FILE NAMES A TOOL. The register answers both questions:
 #
-#   red      which agents need a human
+#   red      which agents need a human. `*` means every agent, which turns this
+#            into a purely tool-driven control: any agent that uses a gated tool
+#            needs approval, and no agent is ever named.
 #   gated    which tools need approval, per MCP server
 #
 # So adding the hundredth tool, or a whole new MCP server, is a ConfigMap edit and
@@ -67,6 +69,13 @@ spec:
             value: Declarative
         any:
           - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: true
+          # red: "*" — every agent is in scope, so the register gates on TOOLS alone.
+          # Without this clause a `*` would match no agent name, the agent would be
+          # labelled green, and nothing would be gated: a silent fail-open for the
+          # most natural thing to write.
+          - key: "{{ contains(split(register.data.red || '', ','), '*') }}"
             operator: Equals
             value: true
           - key: "{{ register.data.default || 'green' }}"
@@ -156,6 +165,13 @@ spec:
           - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
             operator: Equals
             value: true
+          # red: "*" — every agent is in scope, so the register gates on TOOLS alone.
+          # Without this clause a `*` would match no agent name, the agent would be
+          # labelled green, and nothing would be gated: a silent fail-open for the
+          # most natural thing to write.
+          - key: "{{ contains(split(register.data.red || '', ','), '*') }}"
+            operator: Equals
+            value: true
           - key: "{{ register.data.default || 'green' }}"
             operator: Equals
             value: red
@@ -166,6 +182,172 @@ spec:
             value:
               name: KAGENT_REQUIRE_APPROVAL
               value: "{{ join(',', gated) }}"
+
+
+    # ── Taking an agent OFF the register must actually un-gate it ──────────────
+    #
+    # Without these two rules the control is one-way. Clearing `red`, or dropping a
+    # server from `gated`, leaves the previous mutation in place: the agent keeps its
+    # requireApproval or its env var, keeps pausing, and is labelled green while doing
+    # it. Safe, in that it fails closed, but it makes the register a lie.
+    #
+    # These fire only on the green path, so they can never race the add rules.
+    - name: ungate-declarative
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap: { name: agent-risk-register, namespace: kyverno }
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: Declarative
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: false
+          - key: "{{ contains(split(register.data.red || '', ','), '*') }}"
+            operator: Equals
+            value: false
+          - key: "{{ register.data.default || 'green' }}"
+            operator: NotEquals
+            value: red
+      mutate:
+        foreach:
+          - list: "request.object.spec.declarative.tools"
+            preconditions:
+              all:
+                - key: "{{ element.mcpServer.requireApproval || `[]` | length(@) }}"
+                  operator: GreaterThan
+                  value: 0
+            patchesJson6902: |-
+              - op: remove
+                path: "/spec/declarative/tools/{{ elementIndex }}/mcpServer/requireApproval"
+
+    - name: ungate-byo
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap: { name: agent-risk-register, namespace: kyverno }
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: BYO
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: false
+          - key: "{{ contains(split(register.data.red || '', ','), '*') }}"
+            operator: Equals
+            value: false
+          - key: "{{ register.data.default || 'green' }}"
+            operator: NotEquals
+            value: red
+      mutate:
+        foreach:
+          # Only ever one matching entry, so removing by elementIndex cannot shift
+          # the index of another entry this same foreach still has to visit.
+          - list: "request.object.spec.byo.deployment.env"
+            preconditions:
+              all:
+                - key: "{{ element.name || '' }}"
+                  operator: Equals
+                  value: KAGENT_REQUIRE_APPROVAL
+            patchesJson6902: |-
+              - op: remove
+                path: "/spec/byo/deployment/env/{{ elementIndex }}"
+
+
+    # ── ...and so must dropping the SERVER, while the agent stays red ───────────
+    #
+    # The two rules above only fire on the green path, so they miss the other way an
+    # agent stops needing approval: it is still red, but its MCP server is no longer
+    # in `gated`, or its tools were narrowed. Kyverno's preconditions are a flat
+    # all/any and cannot express "green OR nothing-gated" in one rule, so that case
+    # is its own rule rather than a nested condition.
+    #
+    # Scope is not checked here on purpose: if the register gates nothing on this
+    # agent's servers then it should carry no gating, red or green.
+    - name: ungate-declarative-unlisted
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap: { name: agent-risk-register, namespace: kyverno }
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: Declarative
+      mutate:
+        foreach:
+          - list: "request.object.spec.declarative.tools"
+            context:
+              - name: want
+                variable:
+                  jmesPath: "parse_yaml(register.data.gated || '[]')[?server=='{{ element.mcpServer.name }}'].tools | [0] || `[]`"
+              - name: gated
+                variable:
+                  jmesPath: "contains(`{{ want }}`, '*') && element.mcpServer.toolNames || element.mcpServer.toolNames[?contains(`{{ want }}`, @)]"
+            preconditions:
+              all:
+                - key: "{{ element.mcpServer.requireApproval || `[]` | length(@) }}"
+                  operator: GreaterThan
+                  value: 0
+                - key: "{{ length(gated) }}"
+                  operator: Equals
+                  value: 0
+            patchesJson6902: |-
+              - op: remove
+                path: "/spec/declarative/tools/{{ elementIndex }}/mcpServer/requireApproval"
+
+    - name: ungate-byo-unlisted
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap: { name: agent-risk-register, namespace: kyverno }
+        - name: mine
+          variable:
+            jmesPath: "parse_json(request.object.spec.byo.deployment.env[?name=='MCP_SERVERS_CONFIG'].value | [0] || '[]')[].name"
+        - name: gated
+          variable:
+            jmesPath: "parse_yaml(register.data.gated || '[]')[?contains(`{{ mine }}`, server)].tools[]"
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: BYO
+          - key: "{{ length(gated) }}"
+            operator: Equals
+            value: 0
+          - key: "{{ request.object.spec.byo.deployment.env[?name=='KAGENT_REQUIRE_APPROVAL'] | length(@) }}"
+            operator: GreaterThan
+            value: 0
+      mutate:
+        foreach:
+          - list: "request.object.spec.byo.deployment.env"
+            preconditions:
+              all:
+                - key: "{{ element.name || '' }}"
+                  operator: Equals
+                  value: KAGENT_REQUIRE_APPROVAL
+            patchesJson6902: |-
+              - op: remove
+                path: "/spec/byo/deployment/env/{{ elementIndex }}"
 
     # ── Record the decision, for humans reading the cluster ────────────────────
     # The label is a record, not the mechanism. Do not key enforcement off it.
@@ -181,6 +363,13 @@ spec:
       preconditions:
         any:
           - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: true
+          # red: "*" — every agent is in scope, so the register gates on TOOLS alone.
+          # Without this clause a `*` would match no agent name, the agent would be
+          # labelled green, and nothing would be gated: a silent fail-open for the
+          # most natural thing to write.
+          - key: "{{ contains(split(register.data.red || '', ','), '*') }}"
             operator: Equals
             value: true
           - key: "{{ register.data.default || 'green' }}"
@@ -204,6 +393,9 @@ spec:
       preconditions:
         all:
           - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: false
+          - key: "{{ contains(split(register.data.red || '', ','), '*') }}"
             operator: Equals
             value: false
           - key: "{{ register.data.default || 'green' }}"
