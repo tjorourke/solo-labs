@@ -46,9 +46,11 @@ export SOLO_MGMT_NS="${SOLO_MGMT_NS:-solo-cost}"
 # arctl on PATH, clean output for a notebook kernel
 export PATH="$HOME/.arctl/bin:$PATH"
 export NO_COLOR=1 CLICOLOR=0
-unset PROMPT_COMMAND
 if ps -o comm= -p "$PPID" 2>/dev/null | grep -qi python \
    || stty -a 2>/dev/null | grep -Eq '(^|[[:space:]])-echo([[:space:],]|$)'; then
+  # notebook kernel: dumb terminal, no prompt hooks. Leave both alone in an
+  # interactive terminal so sourcing connect.sh doesn't break the user's prompt.
+  unset PROMPT_COMMAND
   export TERM=dumb
 else
   : "${TERM:=dumb}"; export TERM
@@ -63,6 +65,20 @@ die(){  printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; return 1; }
 
 resolve_kagent_agent() {
   kc -n kagent get agents.kagent.dev -o name 2>/dev/null | sed 's#.*/##' | grep -i "^${1:-agentdemo}" | head -1
+}
+
+# seed_agent_env — stamp the model key from the cluster's kagent-anthropic
+# Secret into a scaffolded agent project's .env (`arctl run` reads it, and
+# `arctl init` regenerates the file empty on every re-scaffold). Idempotent:
+# no-op until the project exists or when the key is already set.
+seed_agent_env() {
+  local proj="${1:-$PROJECT_ROOT/agentdemo}" key
+  [ -f "$proj/.env" ] || return 0
+  grep -q '^ANTHROPIC_API_KEY=..*' "$proj/.env" && return 0
+  key="$(kc -n kagent get secret kagent-anthropic -o jsonpath='{.data.ANTHROPIC_API_KEY}' 2>/dev/null | base64 -d)"
+  [ -n "$key" ] || { warn "kagent-anthropic secret not readable on $CTX — fill ${proj}/.env by hand"; return 0; }
+  sed -i '' "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=${key}|" "$proj/.env"
+  ok "stamped ANTHROPIC_API_KEY into ${proj#"$PROJECT_ROOT"/}/.env (from the cluster Secret)"
 }
 
 # load_secrets — source an optional secrets env (AWS_PROFILE, AWS_REGION,

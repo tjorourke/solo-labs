@@ -13,3 +13,8 @@ unset ARCTL_API_TOKEN
 
 arctl_login && ok "arctl logged in to ${ARCTL_API_BASE_URL} as ${AS_USER}" \
             || warn "arctl login failed — check the platform is up (setup-mesh1.sh)"
+
+# a re-run of `arctl init` regenerates agentdemo/.env with an empty key — re-stamp
+# it from the cluster Secret whenever we connect (no-op before the scaffold exists).
+seed_agent_env
+log "agent projects scaffold at \$PROJECT_ROOT = ${PROJECT_ROOT}"
