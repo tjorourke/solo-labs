@@ -4,11 +4,15 @@
 #
 #   ./scripts/quick.sh up         stand the whole thing up (~15-20 min cold)
 #   ./scripts/quick.sh status     what is running, and which agent is gated
-#   ./scripts/quick.sh pending    what is sitting in the approval queue
+#   ./scripts/quick.sh pending    what is parked in the BYO approval queue
 #   ./scripts/quick.sh approve    approve everything currently parked
 #   ./scripts/quick.sh reject     reject everything currently parked
 #   ./scripts/quick.sh reset      reset the mock cluster + clear the queue
 #   ./scripts/quick.sh down       delete the kind cluster and the registry
+#
+# pending/approve/reject act on a BYO agent's call parked at the GATEWAY. A
+# DECLARATIVE agent's approval lives in kagent instead, so use the kagent UI, or:
+#   ./scripts/approve.sh srenative "restart checkout" [approve|reject]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -61,21 +65,32 @@ import sys, json
 d = json.load(sys.stdin).get("data", {})
 print("  red     = %s" % (d.get("red") or "(none)"))
 print("  default = %s" % (d.get("default") or "green"))
-print("  lb      = %s" % (d.get("lb") or "?"))
 ' >&2 2>/dev/null || true
   else
     log "no register yet — run ./scripts/07-verdict.sh"
   fi
 
-  step "Agents, and how each one is actually wired"
-  printf '  %-14s %-8s %-8s %s\n' "AGENT" "VERDICT" "READY" "MCP URL" >&2
-  for a in "$GREEN_AGENT" "$RED_AGENT"; do
-    kc -n "$KAGENT_NS" get agent "$a" >/dev/null 2>&1 || { printf '  %-14s %s\n' "$a" "not deployed" >&2; continue; }
+  step "Agents, and how each one is actually gated"
+  printf '  %-14s %-12s %-8s %-7s %s\n' "AGENT" "TYPE" "VERDICT" "READY" "HOW IT IS GATED" >&2
+  for a in "$GREEN_AGENT" "$RED_AGENT" "$NATIVE_AGENT"; do
+    kc -n "$KAGENT_NS" get agent "$a" >/dev/null 2>&1 \
+      || { printf '  %-14s %s\n' "$a" "not deployed" >&2; continue; }
+    typ="$(kc -n "$KAGENT_NS" get agent "$a" -o jsonpath='{.spec.type}' 2>/dev/null)"
     verdict="$(kc -n "$KAGENT_NS" get agent "$a" -o jsonpath="{.metadata.labels.risk\.platform\.solo\.io/verdict}" 2>/dev/null)"
     ready="$(kc -n "$KAGENT_NS" get deploy "$a" -o jsonpath='{.status.readyReplicas}/{.status.replicas}' 2>/dev/null)"
-    url="$(kc -n "$KAGENT_NS" get agent "$a" -o jsonpath='{.spec.byo.deployment.env[?(@.name=="MCP_SERVERS_CONFIG")].value}' 2>/dev/null \
-      | python3 -c 'import sys,json;d=sys.stdin.read().strip();print(json.loads(d)[0]["url"] if d else "(unset)")' 2>/dev/null || echo "?")"
-    printf '  %-14s %-8s %-8s %s\n' "$a" "${verdict:-none}" "${ready:-0/0}" "$url" >&2
+    if [[ "$typ" == "Declarative" ]]; then
+      ra="$(kc -n "$KAGENT_NS" get agent "$a" -o jsonpath='{.spec.declarative.tools[0].mcpServer.requireApproval}' 2>/dev/null)"
+      how="${ra:-not gated}"
+      [[ -n "$ra" ]] && how="kagent requireApproval $ra"
+    else
+      url="$(kc -n "$KAGENT_NS" get agent "$a" -o jsonpath='{.spec.byo.deployment.env[?(@.name=="MCP_SERVERS_CONFIG")].value}' 2>/dev/null \
+        | python3 -c 'import sys,json;d=sys.stdin.read().strip();print(json.loads(d)[0]["url"] if d else "(unset)")' 2>/dev/null || echo "?")"
+      case "$url" in
+        *"/mcp-gated") how="gateway gate  $url" ;;
+        *)             how="ungated       $url" ;;
+      esac
+    fi
+    printf '  %-14s %-12s %-8s %-7s %s\n' "$a" "${typ:-?}" "${verdict:-none}" "${ready:-0/0}" "$how" >&2
   done
 
   step "Gateway policy"
@@ -85,7 +100,8 @@ print("  lb      = %s" % (d.get("lb") or "?"))
 
   [[ -n "${LB:-}" ]] && cat >&2 <<EOF
 
-  Approvals queue   http://hitl.${LB}.sslip.io
+  kagent UI         http://kagent.${LB}.sslip.io      (declarative approvals)
+  BYO approvals     http://hitl.${LB}.sslip.io        (gateway-gated calls)
   AgentRegistry     http://${AR_HOST}
   MCP (open/gated)  http://${MCP_HOST}/mcp  ·  /mcp-gated
 EOF

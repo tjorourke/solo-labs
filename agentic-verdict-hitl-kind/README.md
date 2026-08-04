@@ -12,98 +12,61 @@ Single kind cluster, Solo Enterprise throughout: **agentgateway 2026.7.1**,
 ## The question this answers
 
 > Without trusting the developer to add human-in-the-loop, how does a platform
-> team add it, based on a decision made somewhere else, at build time?
+> team add it, based on a decision made somewhere else?
 
-Three mechanisms, applied together, all keyed off one verdict:
+One verdict in a ConfigMap, imposed by one Kyverno policy at admission. **How** it
+is imposed depends on one field on the agent, `spec.type`:
 
-| # | Mechanism | What it does | Is it a control? |
+| Agent type | kagent sees | Gate | Approve via |
 |---|---|---|---|
-| 1 | **Kyverno rewrites `MCP_SERVERS_CONFIG`** | Red agent's tool traffic is redirected from `/mcp` to `/mcp-gated` at admission | Yes, it decides the path |
-| 2 | **`extAuth` on the gated route** | Every call across `/mcp-gated` parks until a human decides | **Yes. This is the gate.** |
-| 3 | **`prompt.prepend` on a restricted AI backend** | Injects a system message into every model request | **No.** Advisory only |
+| **Declarative** (ADK on kagent's runtime) | the tool list | `requireApproval` | **kagent UI**, or the kagent A2A API |
+| **BYO** (`arctl init agent`) | a pod | `extAuth` on a gateway route | the approval service's API |
 
-Mechanism 3 is in the lab specifically so you can watch it *not* be a control. A
-system prompt changes what the model tends to do; it stops nothing. Pair it with
-2 or it is decoration.
+**Prefer Declarative.** It is the native surface, there is nothing extra to run, and
+the approver is the person already in the conversation. `declarative.runtime` is
+"which ADK implementation to use", so this is still an ADK agent — you give up
+owning the image, not the framework.
 
-## The thing that surprised me
+The BYO path exists because `requireApproval` lives on the tool list and `spec.byo`
+has no tool list — just `deployment`. Nothing to annotate means the pause cannot
+happen inside kagent, so it moves to the gateway. Use it for opaque containers, or
+when the approver deliberately must not be the requester.
 
-`requireApproval` is the obvious answer and it does not work here.
-
-A `kagent.dev/v1alpha2` `Agent` has two alternative bodies and you pick one with
-`spec.type`. A **Declarative** agent is described to kagent field by field, tools
-included. A **BYO** agent is a container image kagent is told to run, and nothing
-more:
-
-```yaml
-apiVersion: kagent.dev/v1alpha2
-kind: Agent
-spec:
-  type: Declarative          # kagent knows what the agent is made of
-  declarative:
-    modelConfig: default-model
-    systemMessage: "..."
-    tools:                   # <-- requireApproval lives in here
-      - type: McpServer
-        mcpServer:
-          toolNames: [list_pods, restart_deployment]
-          requireApproval: [restart_deployment]
----
-apiVersion: kagent.dev/v1alpha2
-kind: Agent
-spec:
-  type: BYO                  # kagent knows only "run this image"
-  byo:
-    deployment:              # <-- and this is the ONLY field under byo
-      image: localhost:5001/sreremediate:latest
-      env:
-        - name: MCP_SERVERS_CONFIG
-          value: '[{"name":"sre-tools","type":"remote","url":"..."}]'
-```
-
-`requireApproval` lives at `spec.declarative.tools[].mcpServer.requireApproval`. But
-`spec.byo` contains **only** `deployment` — no tool list, nowhere to put it. An agent
-from `arctl init agent --framework adk` deploys as `type: BYO`, its ADK tool loop runs
-inside its own container, and kagent never sees the individual tools.
-
-So for an agent scaffolded by `arctl`, the native kagent approval card is not
-reachable. The gateway is the only place platform-imposed HITL can live. Which is
-the better architecture anyway: HITL belongs at the gateway precisely because the
-agent's internals are not yours to edit.
-
-(If you want the native card, the agent has to be `Declarative` and the developer
-has to have declared its tools. That is a different lab.)
+A third, optional layer injects a system prompt at the gateway
+(`ai.prompt.prepend`) so the agent explains itself before acting. It is **advisory**:
+it improves what the reviewer reads and prevents nothing. In the lab specifically so
+you can watch it not be a control.
 
 ## Topology
 
 ```
-      developer                        platform team
-      ─────────                        ─────────────
-  arctl init agent  ×2
-  arctl build --push ×2
-  arctl apply       ×2  ──► AgentRegistry ──► kagent controller
-                                                  │
-                                        Kyverno admission webhook
-                                        reads the risk register
-                                                  │
-                        ┌─────────────────────────┴──────────────────────┐
-                        │                                               │
-                   green: untouched                            red: rewritten
-                        │                                               │
-              MCP_SERVERS_CONFIG                          MCP_SERVERS_CONFIG
-                  .../mcp                                    .../mcp-gated
-                                                     + ANTHROPIC_API_BASE
-                        │                                               │
-                        ▼                                               ▼
-        ┌───────────────────────────── agentgateway ─────────────────────────────┐
-        │  /mcp          no policy                                              │
-        │  /mcp-gated    EnterpriseAgentgatewayPolicy.traffic.extAuth  ──────────┼──► hitl-extauth :9001
-        │  llm.<LB>      EnterpriseAgentgatewayBackend  ai.prompt.prepend        │      (parks Check())
-        └───────────────────────────────┬───────────────────────────────────────┘            │
-                                        ▼                                                    │
-                              sre-tools MCP server                        hitl-ui ◄── poll ──┘
-                              (one tool set, no idea                      (approve / reject)
-                               who is calling)
+   developer                                    platform team
+   ─────────                                    ─────────────
+ arctl init agent ×2 ─► AgentRegistry ─┐
+ kubectl apply (declarative) ──────────┤
+                                       ▼
+                            kagent controller
+                                       │
+                       Kyverno admission webhook
+                     reads configmap/agent-risk-register
+                                       │
+        ┌──────────────────────────────┼──────────────────────────────┐
+        │ Declarative + red            │ BYO + red                    │ green
+        ▼                              ▼                              ▼
+  + requireApproval            MCP_SERVERS_CONFIG                untouched
+  [restart, scale]               .../mcp-gated
+        │                     + ANTHROPIC_API_BASE                     │
+        │                              │                              │
+        ▼                              ▼                              ▼
+  ┌───────────┐   ┌──────────── agentgateway ─────────────┐    (direct to /mcp)
+  │  kagent   │   │ /mcp        no policy                 │
+  │  pauses   │   │ /mcp-gated  extAuth ──────────────────┼──► hitl-extauth :9001
+  │  the tool │   │ llm.<LB>    ai.prompt.prepend         │      parks Check()
+  └─────┬─────┘   └──────────────────┬───────────────────┘            │
+        │                            ▼                                │
+  approve in the           sre-tools MCP server            hitl-ui ◄── poll
+  kagent UI, or via        (one tool set, no idea          approve / reject
+  the A2A API              who is calling)
 ```
 
 ## The verdict
@@ -113,10 +76,13 @@ review process you already trust:
 
 ```bash
 kubectl -n kyverno create configmap agent-risk-register \
-  --from-literal=red="sreremediate" \
-  --from-literal=default="green" \
-  --from-literal=lb="192.168.97.180"
+  --from-literal=red="sreremediate,srenative" \
+  --from-literal=default="green"
 ```
+
+Only the decision. Addresses are not in here: the policy discovers the gated route's
+URL from the route itself with an `apiCall`, so there is nothing to keep in sync and
+the same policy works on any cluster.
 
 Keyed by a `red` list rather than per-agent keys because Kyverno ConfigMap lookups
 with a dynamic key need nested `{{ }}` interpolation, which is fragile.
@@ -145,13 +111,13 @@ brew install kyverno
 ./scripts/test-policy.sh
 ```
 
-Four postures plus an idempotence check. Run it after any edit to
+Four postures plus an idempotence check, covering the decision logic — who gets
+gated, under which posture. Run it after any edit to
 `yaml/kyverno/20-verdict-hitl.yaml`.
 
-It has already earned its keep: the first run found that with the register absent,
-every agent resolved to green, so a missing ConfigMap silently ungated the whole
-cluster. That is what the `default` key and the bootstrap register in phase 04
-fix.
+It earned its keep on the first run: with the register absent, every agent resolved
+to green, so a missing ConfigMap silently ungated the whole cluster. That is what the
+`default` key and the bootstrap register in phase 04 fix.
 
 ## Run it
 
@@ -167,30 +133,48 @@ export SOLO_LICENSE_KEY=...
 ./scripts/quick.sh status    # which agent is gated, and how each is wired
 ```
 
-Then drive the comparison:
+Then drive it. Same prompt, three agents:
 
 ```bash
-# the green agent diagnoses and fixes, unattended
+# green BYO agent: diagnoses and fixes, unattended
 ./scripts/ask.sh sretriage "checkout is unhealthy — diagnose and fix it"
 
-# the red agent diagnoses, then stops and waits for you
+# red BYO agent: diagnoses, then its change parks at the GATEWAY
 ./scripts/ask.sh sreremediate "checkout is unhealthy — diagnose and fix it"
-```
-
-While the red agent waits, open the approval queue at `http://hitl.<LB>.sslip.io`
-(the URL is printed by `status`), or decide from the CLI:
-
-```bash
 ./scripts/quick.sh pending
-./scripts/quick.sh approve     # or: reject
+./scripts/quick.sh approve          # or: reject
+
+# red DECLARATIVE agent: approval belongs to kagent, not the gateway
+./scripts/approve.sh srenative "restart the checkout deployment in shop" approve
+./scripts/approve.sh srenative "restart the checkout deployment in shop" reject
 ```
 
-Change who is red and re-run:
+`approve.sh` makes the same A2A call the kagent UI makes when you click Approve: a
+follow-up `message/send` on the paused task with a `function_response` data part
+setting `confirmed`. There is no separate approvals REST endpoint. Or just open the
+kagent UI and click — `quick.sh status` prints the URL.
+
+Change who needs approval, without touching an agent:
 
 ```bash
-VERDICT_RED="sretriage,sreremediate" ./scripts/07-verdict.sh   # gate both
-VERDICT_RED="" ./scripts/07-verdict.sh                          # gate neither
+kubectl -n kyverno patch configmap agent-risk-register \
+  --type merge -p '{"data":{"red":"sretriage,sreremediate,srenative"}}'
+
+# deny-by-default: every agent needs approval unless explicitly cleared
+kubectl -n kyverno patch configmap agent-risk-register \
+  --type merge -p '{"data":{"default":"red"}}'
 ```
+
+The policy runs when the Agent resource is written, so an already-running agent needs
+to pass through admission again to pick up a change:
+
+```bash
+kubectl -n kagent annotate agent sreremediate \
+  risk.platform.solo.io/reviewed-at="$(date +%s)" --overwrite
+```
+
+In a real pipeline the register is read at first deploy and there is no extra step.
+`./scripts/07-verdict.sh` does both for you.
 
 ## Layout
 
@@ -203,14 +187,17 @@ VERDICT_RED="" ./scripts/07-verdict.sh                          # gate neither
 | `scripts/05-mcp-and-hitl.sh` | MCP server, approval gate, both routes, the HITL policy |
 | `scripts/06-agents.sh` | **the developer's phase** — build, publish, deploy both agents |
 | `scripts/07-verdict.sh` | **the platform team's phase** — the verdict lands |
-| `scripts/ask.sh` | talk to either agent over kagent's OIDC-protected A2A endpoint |
+| `scripts/ask.sh` | talk to any agent over kagent's OIDC-protected A2A endpoint |
+| `scripts/approve.sh` | approve/reject a **declarative** agent's pending call over the kagent A2A API — the same call the UI makes |
 | `scripts/quick.sh` | `up` / `status` / `pending` / `approve` / `reject` / `reset` / `down` |
 | `artifacts/AGENT_TEMPLATE.py` | the single source for BOTH agents — do not edit the copies |
 | `artifacts/sretriage/`, `artifacts/sreremediate/` | the two `arctl init` projects |
 | `src/sre-tools/` | Python MCP server, mock cluster with one OOM-looping workload |
 | `src/hitl-extauth/` | Go ext-auth gRPC service that parks `Check()` |
 | `src/hitl-ui/` | Go HTMX approval queue |
-| `yaml/kyverno/20-verdict-hitl.yaml` | **the control** — the mutation that imposes HITL |
+| `yaml/kyverno/05-rbac.yaml` | lets Kyverno read HTTPRoutes, so the policy discovers addresses |
+| `yaml/kyverno/20-verdict-hitl.yaml` | **the control** — one policy, both HITL paths |
+| `yaml/agents/declarative-native.yaml` | the kagent-native variant (Declarative + `requireApproval`) |
 | `yaml/agentgateway/20-hitl-policy.yaml` | the gate — `extAuth`, attached by label |
 | `yaml/agentgateway/30-restricted-llm.yaml` | the advisory layer — `ai.prompt.prepend` |
 
