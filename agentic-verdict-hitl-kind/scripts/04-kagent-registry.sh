@@ -127,17 +127,16 @@ kc -n kyverno rollout status deploy/kyverno-admission-controller --timeout=240s 
   && ok "Kyverno admission controller Ready" || warn "Kyverno not Ready yet"
 kc wait --for=condition=Established crd/clusterpolicies.kyverno.io --timeout=60s >/dev/null 2>&1 || true
 
-# Bootstrap both ConfigMaps the verdict policy reads, so its context can never
-# resolve against a missing object. Phase 07 overwrites them with real values.
-# Created empty-and-green here so nothing is gated before a review has happened.
+# Bootstrap the risk register so the policy context can never resolve against a
+# missing object. Phase 07 fills in the real verdict. Created empty-and-green so
+# nothing is gated before a review has actually happened.
+#
+# Only the DECISION lives here. Addresses are discovered from the HTTPRoutes at
+# admission time, so there is no address config to bootstrap.
 kc -n kyverno create configmap agent-risk-register \
   --from-literal=red="" --from-literal=default="green" \
   --dry-run=client -o yaml | kc apply -f - >/dev/null
-kc -n kyverno create configmap agent-platform-config \
-  --from-literal=gatedMcpUrl="http://mcp.${LB:-invalid}.sslip.io/mcp-gated" \
-  --from-literal=restrictedLlmUrl="http://llm.${LB:-invalid}.sslip.io" \
-  --dry-run=client -o yaml | kc apply -f - >/dev/null
-ok "risk register + platform config bootstrapped (nothing gated yet)"
+ok "risk register bootstrapped, empty (nothing gated yet)"
 
 # ── model-key injection ───────────────────────────────────────────────────────
 # Applied here rather than in phase 07 because it is infrastructure, not part of

@@ -4,6 +4,18 @@
 # The policy is the control in this lab, so it gets a real test rather than a
 # read-through. Four postures plus an idempotence check, all offline.
 #
+# WHAT THIS COVERS: the decision logic — who gets gated, under which posture, and
+# that re-admission does not double-apply. It drives that through the DECLARATIVE
+# rule, which needs no cluster.
+#
+# WHAT IT DOES NOT COVER: the BYO rule's URL discovery. That rule reads the gated
+# HTTPRoute with an apiCall, and the Kyverno CLI cannot stub a nested apiCall result
+# (`gatedRoute.hostnames[0]` fails with `Unknown key "hostnames"`), while --cluster
+# mode only accepts resources already in the cluster, not fixtures. The decision
+# logic is shared between both rules, so testing it once here is enough; the BYO
+# redirect itself is verified by the live run in scripts/07-verdict.sh, which prints
+# the resulting URL from each running pod.
+#
 # Needs the kyverno CLI matching the lab's KYVERNO_VERSION:
 #   brew install kyverno
 #   # or: https://github.com/kyverno/kyverno/releases
@@ -21,9 +33,9 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 FAILED=0
 
-# Two Agent CRs shaped the way AgentRegistry actually creates them: type BYO,
-# MCP_SERVERS_CONFIG not first in the env list (so a fixed-index patch would
-# hit the wrong variable and the test would catch it).
+# A Declarative Agent, which is what the tested rule matches. toolNames lists the
+# mutating tools, because the CRD's CEL rule means requireApproval can only be added
+# when they are already declared. Pass $2 to pre-set requireApproval (idempotence).
 agent_cr() {
   cat <<EOF
 apiVersion: kagent.dev/v1alpha2
@@ -32,20 +44,20 @@ metadata:
   name: $1
   namespace: kagent
 spec:
-  type: BYO
+  type: Declarative
   description: SRE assistant
-  byo:
-    deployment:
-      image: localhost:5001/$1:latest
-      env:
-        - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: http://collector:4318
-        - name: MCP_SERVERS_CONFIG
-          value: '[{"name":"sre-tools","type":"remote","url":"http://mcp.172.18.255.200.sslip.io/${2:-mcp}"}]'
-        - name: MCP_TERMINATE_ON_CLOSE
-          value: "false"${3:+
-        - name: ANTHROPIC_API_BASE
-          value: http://llm.172.18.255.200.sslip.io}
+  declarative:
+    runtime: python
+    modelConfig: default-model-config
+    systemMessage: "..."
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: sre-tools
+          toolNames: [list_pods, get_pod_logs, restart_deployment, scale_deployment]${2:+
+          requireApproval: [restart_deployment, scale_deployment]}
 EOF
 }
 
@@ -56,18 +68,17 @@ write_values() {
     echo "policies:"
     echo "  - name: verdict-hitl-enrolment"
     echo "    rules:"
-    for r in gate-mcp-traffic restrict-model-traffic label-red label-green; do
+    # apiCall results are stubbed by variable name — the CLI cannot reach a cluster.
+    for r in native-approval-declarative label-red label-green; do
       echo "      - name: $r"
       echo "        values:"
       echo "          register.data.red: \"$red\""
       echo "          register.data.default: \"$def\""
-      echo "          platform.data.gatedMcpUrl: \"http://mcp.test.example/mcp-gated\""
-      echo "          platform.data.restrictedLlmUrl: \"http://llm.test.example\""
     done
   } > "$WORK/values.yaml"
 }
 
-# Reduce each mutated Agent to "<name> <verdict> <mcp-path> <has-api-base>".
+# Reduce each mutated Agent to "<name> <verdict> <approval-or-not>".
 summarise() {
   python3 -c "
 import sys, yaml
@@ -78,10 +89,8 @@ for blk in sys.stdin.read().split('---'):
     if not isinstance(d, dict) or d.get('kind') != 'Agent': continue
     n = d['metadata']['name']
     lbl = (d['metadata'].get('labels') or {}).get('risk.platform.solo.io/verdict', '-')
-    env = {e['name']: e.get('value', '') for e in d['spec']['byo']['deployment']['env']}
-    path = 'gated' if '/mcp-gated' in env.get('MCP_SERVERS_CONFIG', '') else 'open'
-    base = 'base' if 'ANTHROPIC_API_BASE' in env else 'nobase'
-    print(n, lbl, path, base)
+    ra = (d['spec']['declarative']['tools'][0]['mcpServer'].get('requireApproval') or [])
+    print(n, lbl, 'approval' if ra else 'noapproval')
 " | sort
 }
 
@@ -106,27 +115,27 @@ step "Verdict policy — posture matrix"
 
 check "red=sreremediate, default=green  → only the named agent is gated" \
   "sreremediate" "green" \
-"sreremediate red gated base
-sretriage green open nobase"
+"sreremediate red approval
+sretriage green noapproval"
 
 check "red empty, default=red           → fail-closed, everything gated" \
   "" "red" \
-"sreremediate red gated base
-sretriage red gated base"
+"sreremediate red approval
+sretriage red approval"
 
 check "red empty, default=green         → nothing gated" \
   "" "green" \
-"sreremediate green open nobase
-sretriage green open nobase"
+"sreremediate green noapproval
+sretriage green noapproval"
 
 check "both named red                   → both gated" \
   "sretriage,sreremediate" "green" \
-"sreremediate red gated base
-sretriage red gated base"
+"sreremediate red approval
+sretriage red approval"
 
 step "Idempotence — re-admitting an already-mutated agent"
 write_values "sreremediate" "green"
-agent_cr sreremediate "mcp-gated" "yes" > "$WORK/mutated.yaml"
+agent_cr sreremediate "yes" > "$WORK/mutated.yaml"
 DUPES="$(kyverno apply "$POLICY" --resource "$WORK/mutated.yaml" \
          --values-file "$WORK/values.yaml" 2>/dev/null | python3 -c "
 import sys, yaml
@@ -136,13 +145,13 @@ for blk in sys.stdin.read().split('---'):
     try: d = yaml.safe_load(blk[blk.index('apiVersion:'):])
     except Exception: continue
     if not isinstance(d, dict) or d.get('kind') != 'Agent': continue
-    names = [e['name'] for e in d['spec']['byo']['deployment']['env']]
-    print(','.join(k for k, v in Counter(names).items() if v > 1))
+    ra = d['spec']['declarative']['tools'][0]['mcpServer'].get('requireApproval') or []
+    print(','.join(k for k, v in Counter(ra).items() if v > 1))
 ")"
 if [[ -z "${DUPES//[[:space:]]/}" ]]; then
-  ok "no duplicate env vars on re-admission"
+  ok "no duplicate requireApproval entries on re-admission"
 else
-  warn "duplicate env vars appeared: $DUPES"
+  warn "duplicate requireApproval entries appeared: $DUPES"
   FAILED=1
 fi
 

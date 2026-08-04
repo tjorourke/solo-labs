@@ -52,13 +52,6 @@ kc -n kyverno create configmap agent-risk-register \
 ok "configmap/agent-risk-register written (the decision)"
 log "this is the ONLY place the verdict is recorded — no agent was modified"
 
-# Platform addresses: where a gated agent's tools and model calls should point.
-# Same on every agent; changes only when the cluster's ingress changes.
-kc -n kyverno create configmap agent-platform-config \
-  --from-literal=gatedMcpUrl="http://mcp.${LB}.sslip.io/mcp-gated" \
-  --from-literal=restrictedLlmUrl="http://llm.${LB}.sslip.io" \
-  --dry-run=client -o yaml | kc apply -f - >/dev/null
-ok "configmap/agent-platform-config written (the addresses)"
 
 # ── 2. the restricted AI backend ──────────────────────────────────────────────
 step "Creating the restricted AI backend (prompt injection at the gateway)"
@@ -77,6 +70,11 @@ kc -n "$AGW_NS" create secret generic anthropic-upstream \
 
 # ── 3. the policy ─────────────────────────────────────────────────────────────
 step "Applying the verdict policy"
+# The policy discovers the gated route via an apiCall, which needs a read that
+# Kyverno lacks by default. Grant it first or the rule errors and agents are
+# refused admission.
+kc apply -f "$LAB_ROOT/yaml/kyverno/05-rbac.yaml" >/dev/null
+ok "Kyverno granted read on Gateway API (for route discovery)"
 KPOL_ERR=""
 for _ in $(seq 1 12); do
   KPOL_ERR="$(kc apply -f "$LAB_ROOT/yaml/kyverno/20-verdict-hitl.yaml" 2>&1)" && break
@@ -85,18 +83,8 @@ done
 kc get clusterpolicy verdict-hitl-enrolment >/dev/null 2>&1 \
   || die "verdict policy failed to apply: ${KPOL_ERR}"
 kc wait --for=condition=Ready clusterpolicy/verdict-hitl-enrolment --timeout=60s >/dev/null 2>&1 || true
-ok "clusterpolicy/verdict-hitl-enrolment active (BYO agents -> gateway gate)"
+ok "clusterpolicy/verdict-hitl-enrolment active (both HITL paths, 5 rules)"
 
-# The native path: for Declarative agents, add requireApproval so the approval
-# appears in the kagent UI instead of a separate queue.
-for _ in $(seq 1 12); do
-  KPOL_ERR="$(kc apply -f "$LAB_ROOT/yaml/kyverno/30-native-approval.yaml" 2>&1)" && break
-  sleep 5
-done
-kc get clusterpolicy verdict-native-approval >/dev/null 2>&1 \
-  || die "native approval policy failed to apply: ${KPOL_ERR}"
-kc wait --for=condition=Ready clusterpolicy/verdict-native-approval --timeout=60s >/dev/null 2>&1 || true
-ok "clusterpolicy/verdict-native-approval active (Declarative agents -> kagent UI)"
 
 # ── 4. re-admit the two agents ────────────────────────────────────────────────
 # The mutation runs at admission. Both Agent CRs already exist, so they need to

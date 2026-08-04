@@ -1,85 +1,101 @@
-# The control. This is the policy that imposes HITL on an agent whose developer
+# THE CONTROL. One policy that puts a human in front of an agent whose developer
 # never agreed to it, never implemented it, and cannot remove it.
 #
-# It reads the risk register (a ConfigMap the external review process writes) and,
-# for any agent on the red list, rewrites two things in the Agent CR at admission:
+# It reads one ConfigMap — the risk register — and for any agent named there it
+# imposes approval. HOW it imposes it depends on what kind of agent it is, because
+# kagent gives you two different surfaces:
 #
-#   1. MCP_SERVERS_CONFIG   /mcp  ->  /mcp-gated
-#      The agent's tool traffic now crosses a route carrying an extAuth policy, so
-#      every call parks until a human decides. This is real enforcement: the agent
-#      cannot route around it, because it never learns the ungated URL exists.
+#   spec.type: Declarative   kagent knows the agent's tool list, so it can gate the
+#                            tools itself. Adding requireApproval makes the approval
+#                            appear in the kagent chat UI. This is the good path:
+#                            native surface, nothing extra to run.
 #
-#   2. ANTHROPIC_API_BASE   (added)
-#      The agent's model traffic now goes through agentgateway's restricted AI
-#      backend, which prepends a system message. This is ADVISORY: a system prompt
-#      changes what the model tends to do, it does not gate anything. It is in the
-#      lab to show the contrast with (1), not as a substitute for it.
+#   spec.type: BYO           kagent only knows "run this image" — spec.byo has a
+#                            single field, `deployment`, and no tool list, so there
+#                            is nowhere to put requireApproval. The gate has to move
+#                            outside the agent, to the gateway, by redirecting the
+#                            agent's MCP traffic onto a route that holds every call
+#                            until a human decides.
 #
-# Why a ConfigMap register rather than a label on the Agent CR:
+# Both are in ONE ClusterPolicy on purpose. It is one decision with two
+# implementations, and `spec.type` in each rule's preconditions is what picks the
+# implementation. Splitting them across two policy objects made it look like two
+# unrelated features and meant two things to install and keep in step.
 #
-# The register lets the policy fire on CREATE, before the agent has ever run. If
-# the verdict were a label stamped on the CR after AgentRegistry created it, the
-# red agent would be live and completely ungated for the seconds between creation
-# and labelling. For a security control that window is a hole, so the decision has
-# to be available at admission time. It also means an agent can be red before it
-# is ever deployed a first time.
+# ── Where the addresses come from ────────────────────────────────────────────────
 #
-# The register uses a single `red` list rather than per-agent keys because Kyverno
-# ConfigMap lookups with a dynamic key need nested {{ }} interpolation, which is
-# fragile across releases. split() + contains() is exact-match and stable.
-# contains() on the raw string would be wrong: an agent named "sre" would match
-# "sreremediate".
+# Nowhere. They are discovered.
 #
-# TWO ConfigMaps, on purpose:
+# The BYO rule needs the URL of the gated route. Rather than being told it in config,
+# the policy reads it off the route itself with an apiCall context: the hostname from
+# spec.hostnames[0] and the path from the route's own path match. The HTTPRoute is
+# the single source of truth, so there is nothing to keep in sync and the same policy
+# works unmodified on any cluster.
 #
-#   agent-risk-register    the DECISION only — `red` and `default`. Nothing in it
-#                          is infrastructure. This is the thing a review process
-#                          writes to.
-#   agent-platform-config  platform ADDRESSES — currently just the restricted LLM
-#                          URL for the optional prompt-injection layer.
+# This replaced two earlier attempts, both worse:
+#   - Putting the cluster's ingress IP in the risk register. That mixed a security
+#     decision with a deployment detail, and every cluster had to edit the register.
+#   - Rewriting only the path in place with
+#     replace_all(element.value, '/mcp"', '/mcp-gated"'), which needs no address at
+#     all but does not work: patchesJson6902 is a literal block scalar, so YAML's ''
+#     escape never fires and JMESPath receives the doubled quotes verbatim. Matching
+#     a bare '/mcp' is not an option either — it also matches the '//mcp' inside
+#     'http://mcp.<host>', so replace_all would corrupt the hostname too.
 #
-# An earlier version stuffed the cluster's ingress IP into the register so the
-# policy could build absolute URLs. That was wrong: it mixed a security decision
-# with a deployment detail, and it meant every cluster needed the register edited.
+# apiCall needs RBAC that Kyverno does not have by default. yaml/kyverno/05-rbac.yaml
+# grants it via an aggregated ClusterRole. Without that the rule errors and the agent
+# is not admitted, which is the right way round for a control.
 #
-# Both target URLs come from agent-platform-config, so the register stays purely a
-# decision and the same policy works on any cluster by editing platform config.
+# ── Why a ConfigMap register and not a label on the Agent ────────────────────────
 #
-# Tried and rejected: rewriting only the PATH in place with
-# replace_all(element.value, '/mcp"', '/mcp-gated"'), which would need no address at
-# all. It does not work. patchesJson6902 is a literal block scalar, so YAML's ''
-# escape never fires and JMESPath receives the doubled quotes verbatim:
-#   invalid JMESPath query replace_all(element.value, ''/mcp"'', ''/mcp-gated"'')
-# Matching a bare '/mcp' instead is not an option either — it also matches the '//mcp'
-# in 'http://mcp.<host>', so replace_all would corrupt the hostname as well as the
-# path. Reading the whole URL from config is simpler and cannot silently half-work.
+# The register is readable at admission, so the mutation fires on CREATE and the
+# agent never serves a request ungated. A label could only be applied after
+# AgentRegistry created the resource, leaving a window — brief, but a window — where
+# a red agent is running with nothing gating it. It also means an agent can be marked
+# red before it has ever been deployed.
 #
-# patchesJson6902, NOT patchStrategicMerge, for anything touching env: the kagent
-# Agent CRD has no merge key for spec.byo.deployment.env, so a strategic merge
-# REPLACES the whole env list and silently drops the registry-injected wiring and
-# the model key. Same trap as 10-inject-model-key.yaml. Labels are a map, so a
-# strategic merge is safe there.
+# The policy still writes a verdict label, as a record for humans. Do not key
+# enforcement off it.
 #
-# The MCP rewrite uses foreach + {{ elementIndex }} rather than a hardcoded env
-# index. The env list order is set by AgentRegistry and Kyverno's own injection,
-# so patching /env/0/value would eventually patch the wrong variable.
+# ── The two traps ────────────────────────────────────────────────────────────────
+#
+# 1. patchesJson6902, never patchStrategicMerge, for anything touching a list. The
+#    Agent CRD has no merge key for spec.byo.deployment.env, so a strategic merge
+#    replaces the WHOLE list and silently drops the registry-injected MCP wiring and
+#    the model key. Labels are a map, so a strategic merge is safe there.
+# 2. Patch by {{ elementIndex }} from a foreach, never a fixed index. The env order
+#    is set by AgentRegistry plus other injecting webhooks, so /env/0/value will
+#    eventually patch the wrong variable.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: verdict-hitl-enrolment
   annotations:
-    policies.kyverno.io/title: Enrol red-verdict agents in gateway HITL
+    policies.kyverno.io/title: Put a human in front of agents named red
     policies.kyverno.io/category: Platform
     policies.kyverno.io/description: >-
-      Agents named on the red list of the agent-risk-register ConfigMap have their
-      MCP traffic redirected onto the HITL-gated gateway route and their model
-      traffic redirected through the restricted AI backend. Applied at admission,
-      so it takes effect before the agent serves a single request.
+      Agents named on the red list of the agent-risk-register ConfigMap get human
+      approval imposed on their state-changing tools. Declarative agents get
+      requireApproval, so the approval appears in the kagent UI. BYO agents have
+      their MCP traffic redirected onto a gateway route that parks every call until
+      a human decides. Applied at admission, so it is in force before the agent
+      serves a single request.
 spec:
-  background: false            # admission-time only; the registry creates the CR
+  background: false            # admission-time only; mutating policy
   rules:
-    # ── 1. redirect tool traffic onto the gated route ─────────────────────────
-    - name: gate-mcp-traffic
+
+    # ══ THE GOOD PATH: Declarative agents, gated by kagent itself ═══════════════
+    #
+    # Adds the mutating tools to requireApproval. kagent then pauses the agent and
+    # renders an approval card in its chat UI. No gateway involved, no approval
+    # service to run.
+    #
+    # Only fires when both tools are ALREADY in toolNames. A CEL rule on the Agent
+    # CRD requires every requireApproval entry to appear in toolNames, so patching
+    # an agent that left toolNames empty would produce a resource the API server
+    # rejects — the deploy would fail rather than the agent being gated. Skipping
+    # quietly is the correct failure here.
+    - name: native-approval-declarative
       match:
         any:
           - resources:
@@ -90,24 +106,73 @@ spec:
           configMap:
             name: agent-risk-register
             namespace: kyverno
-        - name: platform
-          configMap:
-            name: agent-platform-config
-            namespace: kyverno
       preconditions:
         all:
-          # BYO only: a Declarative agent has no spec.byo.deployment.env to patch.
           - key: "{{ request.object.spec.type || '' }}"
             operator: Equals
-            value: BYO
-        # `all` and `any` are both evaluated and ANDed, so: must be BYO, AND
-        # either named red or covered by a red default posture.
+            value: Declarative
         any:
           - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
             operator: Equals
             value: true
-          # Fail-closed posture. With default=red every agent is gated unless it
-          # is explicitly cleared, which is the right way round for a control.
+          - key: "{{ register.data.default || 'green' }}"
+            operator: Equals
+            value: red
+      mutate:
+        foreach:
+          - list: "request.object.spec.declarative.tools"
+            preconditions:
+              all:
+                - key: "{{ element.type || '' }}"
+                  operator: Equals
+                  value: McpServer
+                # Idempotence: re-applies arrive as admission UPDATEs.
+                - key: "{{ element.mcpServer.requireApproval || `[]` | length(@) }}"
+                  operator: Equals
+                  value: 0
+                - key: restart_deployment
+                  operator: AnyIn
+                  value: "{{ element.mcpServer.toolNames || `[]` }}"
+                - key: scale_deployment
+                  operator: AnyIn
+                  value: "{{ element.mcpServer.toolNames || `[]` }}"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/declarative/tools/{{ elementIndex }}/mcpServer/requireApproval"
+                value: ["restart_deployment", "scale_deployment"]
+
+    # ══ THE FALLBACK: BYO agents, gated at the gateway ══════════════════════════
+    #
+    # kagent cannot see this agent's tools, so instead we change where its tools
+    # come from. The gated route's URL is discovered from the route itself.
+    - name: gateway-gate-byo
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap:
+            name: agent-risk-register
+            namespace: kyverno
+        # Read the gated route and build its URL from what it actually says.
+        - name: gatedRoute
+          apiCall:
+            urlPath: "/apis/gateway.networking.k8s.io/v1/namespaces/sre-tools/httproutes/mcp-gated"
+            jmesPath: "spec"
+        - name: gatedUrl
+          variable:
+            value: "http://{{ gatedRoute.hostnames[0] }}{{ gatedRoute.rules[0].matches[0].path.value }}"
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: BYO
+        any:
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: true
           - key: "{{ register.data.default || 'green' }}"
             operator: Equals
             value: red
@@ -122,10 +187,14 @@ spec:
             patchesJson6902: |-
               - op: replace
                 path: "/spec/byo/deployment/env/{{ elementIndex }}/value"
-                value: '[{"name":"sre-tools","type":"remote","url":"{{ platform.data.gatedMcpUrl }}"}]'
+                value: '[{"name":"sre-tools","type":"remote","url":"{{ gatedUrl }}"}]'
 
-    # ── 2. redirect model traffic through the restricted AI backend ───────────
-    - name: restrict-model-traffic
+    # ══ OPTIONAL: send a BYO agent's model calls through the gateway ════════════
+    #
+    # Advisory only. Lets the gateway prepend a system message so the agent explains
+    # itself before acting. Prevents nothing — see 30-restricted-llm.yaml. The
+    # backend's own route is the source of truth for the address.
+    - name: restrict-model-traffic-byo
       match:
         any:
           - resources:
@@ -136,17 +205,15 @@ spec:
           configMap:
             name: agent-risk-register
             namespace: kyverno
-        - name: platform
-          configMap:
-            name: agent-platform-config
-            namespace: kyverno
+        - name: llmHost
+          apiCall:
+            urlPath: "/apis/gateway.networking.k8s.io/v1/namespaces/agentgateway-system/httproutes/restricted-llm"
+            jmesPath: "spec.hostnames[0]"
       preconditions:
         all:
           - key: "{{ request.object.spec.type || '' }}"
             operator: Equals
             value: BYO
-          # Idempotence: re-applies arrive as admission UPDATEs, and without this
-          # the rule appends a duplicate on every reconcile.
           - key: "{{ request.object.spec.byo.deployment.env[?name=='ANTHROPIC_API_BASE'] | length(@) }}"
             operator: Equals
             value: 0
@@ -163,11 +230,11 @@ spec:
             path: "/spec/byo/deployment/env/-"
             value:
               name: ANTHROPIC_API_BASE
-              value: "{{ platform.data.restrictedLlmUrl }}"
+              value: "http://{{ llmHost }}"
 
-    # ── 3. record the verdict as a label, for humans ──────────────────────────
-    # The rewrites above are invisible in `kubectl get agent`. Two plain rules
-    # rather than one clever conditional expression, so the intent is obvious.
+    # ══ RECORD THE DECISION, for humans reading the cluster ═════════════════════
+    # Two plain rules rather than one clever expression. The label is a record, not
+    # the mechanism.
     - name: label-red
       match:
         any:
