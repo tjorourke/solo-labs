@@ -50,9 +50,22 @@ cmd_status() {
   done
 
   step "The risk register"
-  kc -n kyverno get configmap agent-risk-register \
-    -o jsonpath='  red     = {.data.red}{"\n"}  default = {.data.default}{"\n"}  lb      = {.data.lb}{"\n"}' 2>/dev/null >&2 \
-    || log "no register yet — run ./scripts/07-verdict.sh"
+  # Capture then print. Writing `2>/dev/null >&2` sends stderr to /dev/null and
+  # THEN points stdout at the same place, so the whole thing prints nothing while
+  # still exiting 0 — the section just silently vanishes.
+  local reg
+  reg="$(kc -n kyverno get configmap agent-risk-register -o json 2>/dev/null)"
+  if [[ -n "$reg" ]]; then
+    printf '%s' "$reg" | python3 -c '
+import sys, json
+d = json.load(sys.stdin).get("data", {})
+print("  red     = %s" % (d.get("red") or "(none)"))
+print("  default = %s" % (d.get("default") or "green"))
+print("  lb      = %s" % (d.get("lb") or "?"))
+' >&2 2>/dev/null || true
+  else
+    log "no register yet — run ./scripts/07-verdict.sh"
+  fi
 
   step "Agents, and how each one is actually wired"
   printf '  %-14s %-8s %-8s %s\n' "AGENT" "VERDICT" "READY" "MCP URL" >&2
