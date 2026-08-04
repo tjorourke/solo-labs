@@ -1,0 +1,85 @@
+# Platform-imposed HITL for DECLARATIVE agents, using kagent's own approval flow.
+#
+# Where 20-verdict-hitl.yaml redirects a BYO agent's traffic to a gated gateway
+# route, this rule adds `requireApproval` to a Declarative agent's tool stanza. The
+# effect is the same decision, enforced by kagent rather than the gateway, and the
+# approval appears as a card in the kagent chat UI with no custom UI involved.
+#
+# Prefer this when you can. It is the native surface, the approver is the person in
+# the conversation, and there is nothing extra to run. Use the gateway gate when the
+# agent is BYO (kagent cannot see its tools) or when the approver must be someone
+# other than the user chatting to the agent.
+#
+# The CRD constraint that shapes this rule: a CEL validation on the Agent CRD
+# requires every requireApproval entry to also appear in toolNames. So this rule
+# only fires when toolNames already contains the tools it wants to gate — if a
+# developer left toolNames empty (meaning "all tools"), the API server would reject
+# the mutated resource outright and the agent would fail to deploy. Silently doing
+# nothing is the right failure here; blocking the deploy is not.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verdict-native-approval
+  annotations:
+    policies.kyverno.io/title: Require approval on declarative agents named red
+    policies.kyverno.io/category: Platform
+    policies.kyverno.io/description: >-
+      For Declarative kagent agents named on the red list, add the mutating tools to
+      requireApproval so the kagent UI prompts for approval before they execute.
+      Applied at admission, so it is in force before the agent serves a request.
+spec:
+  background: false
+  rules:
+    - name: require-approval-on-mutating-tools
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap:
+            name: agent-risk-register
+            namespace: kyverno
+        - name: platform
+          configMap:
+            name: agent-platform-config
+            namespace: kyverno
+      preconditions:
+        all:
+          # Declarative only. The BYO path is 20-verdict-hitl.yaml.
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: Declarative
+        any:
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: true
+          - key: "{{ register.data.default || 'green' }}"
+            operator: Equals
+            value: red
+      mutate:
+        foreach:
+          - list: "request.object.spec.declarative.tools"
+            preconditions:
+              all:
+                # Only the MCP tool stanzas, and only ones that have not already
+                # been given a requireApproval list (idempotence on UPDATE).
+                - key: "{{ element.type || '' }}"
+                  operator: Equals
+                  value: McpServer
+                - key: "{{ element.mcpServer.requireApproval || `[]` | length(@) }}"
+                  operator: Equals
+                  value: 0
+                # Both tools must already be declared, or the CRD's CEL rule
+                # rejects the patched resource and the deploy fails.
+                - key: restart_deployment
+                  operator: AnyIn
+                  value: "{{ element.mcpServer.toolNames || `[]` }}"
+                - key: scale_deployment
+                  operator: AnyIn
+                  value: "{{ element.mcpServer.toolNames || `[]` }}"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/declarative/tools/{{ elementIndex }}/mcpServer/requireApproval"
+                value: ["restart_deployment", "scale_deployment"]

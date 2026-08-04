@@ -30,6 +30,30 @@
 # contains() on the raw string would be wrong: an agent named "sre" would match
 # "sreremediate".
 #
+# TWO ConfigMaps, on purpose:
+#
+#   agent-risk-register    the DECISION only — `red` and `default`. Nothing in it
+#                          is infrastructure. This is the thing a review process
+#                          writes to.
+#   agent-platform-config  platform ADDRESSES — currently just the restricted LLM
+#                          URL for the optional prompt-injection layer.
+#
+# An earlier version stuffed the cluster's ingress IP into the register so the
+# policy could build absolute URLs. That was wrong: it mixed a security decision
+# with a deployment detail, and it meant every cluster needed the register edited.
+#
+# Both target URLs come from agent-platform-config, so the register stays purely a
+# decision and the same policy works on any cluster by editing platform config.
+#
+# Tried and rejected: rewriting only the PATH in place with
+# replace_all(element.value, '/mcp"', '/mcp-gated"'), which would need no address at
+# all. It does not work. patchesJson6902 is a literal block scalar, so YAML's ''
+# escape never fires and JMESPath receives the doubled quotes verbatim:
+#   invalid JMESPath query replace_all(element.value, ''/mcp"'', ''/mcp-gated"'')
+# Matching a bare '/mcp' instead is not an option either — it also matches the '//mcp'
+# in 'http://mcp.<host>', so replace_all would corrupt the hostname as well as the
+# path. Reading the whole URL from config is simpler and cannot silently half-work.
+#
 # patchesJson6902, NOT patchStrategicMerge, for anything touching env: the kagent
 # Agent CRD has no merge key for spec.byo.deployment.env, so a strategic merge
 # REPLACES the whole env list and silently drops the registry-injected wiring and
@@ -66,6 +90,10 @@ spec:
           configMap:
             name: agent-risk-register
             namespace: kyverno
+        - name: platform
+          configMap:
+            name: agent-platform-config
+            namespace: kyverno
       preconditions:
         all:
           # BYO only: a Declarative agent has no spec.byo.deployment.env to patch.
@@ -94,7 +122,7 @@ spec:
             patchesJson6902: |-
               - op: replace
                 path: "/spec/byo/deployment/env/{{ elementIndex }}/value"
-                value: '[{"name":"sre-tools","type":"remote","url":"http://mcp.{{ register.data.lb }}.sslip.io/mcp-gated"}]'
+                value: '[{"name":"sre-tools","type":"remote","url":"{{ platform.data.gatedMcpUrl }}"}]'
 
     # ── 2. redirect model traffic through the restricted AI backend ───────────
     - name: restrict-model-traffic
@@ -107,6 +135,10 @@ spec:
         - name: register
           configMap:
             name: agent-risk-register
+            namespace: kyverno
+        - name: platform
+          configMap:
+            name: agent-platform-config
             namespace: kyverno
       preconditions:
         all:
@@ -131,7 +163,7 @@ spec:
             path: "/spec/byo/deployment/env/-"
             value:
               name: ANTHROPIC_API_BASE
-              value: "http://llm.{{ register.data.lb }}.sslip.io"
+              value: "{{ platform.data.restrictedLlmUrl }}"
 
     # ── 3. record the verdict as a label, for humans ──────────────────────────
     # The rewrites above are invisible in `kubectl get agent`. Two plain rules

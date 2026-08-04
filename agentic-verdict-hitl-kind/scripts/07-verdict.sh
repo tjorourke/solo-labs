@@ -28,27 +28,37 @@ source "$SCRIPT_DIR/lib.sh"
 
 require_secrets     # the gateway needs the upstream model key for the AI backend
 [[ -n "${LB:-}" ]] || die "LB not set — run ./scripts/02-agentgateway.sh first"
-VERDICT_RED="${VERDICT_RED-$RED_AGENT}"
+VERDICT_RED="${VERDICT_RED-$RED_AGENT,$NATIVE_AGENT}"
 VERDICT_DEFAULT="${VERDICT_DEFAULT:-green}"
 
 # ── 1. the external review's output ───────────────────────────────────────────
 step "Writing the risk register"
 log "red list: ${VERDICT_RED:-(empty)}"
 log "default posture: ${VERDICT_DEFAULT}"
-# Three keys:
-#   red      comma-separated agent names to gate by name
-#   default  posture for everything not named. `red` gates every agent unless
-#            explicitly cleared, which is the correct direction for a control.
-#            Set VERDICT_DEFAULT=red to demo a deny-by-default platform.
-#   lb       the ingress IP, so the policy can build redirect URLs without a
-#            templating pass over the policy file itself.
+# The register holds the DECISION and nothing else. Two keys:
+#   red      comma-separated agent names that need a human
+#   default  posture for everything not named. `red` means every agent needs
+#            approval unless explicitly cleared, which is the correct direction
+#            for a control. Set VERDICT_DEFAULT=red to demo that.
+#
+# Addresses deliberately live in a SEPARATE ConfigMap (below). An earlier version
+# put the cluster's ingress IP in here so the policy could build URLs, which mixed
+# a security decision with a deployment detail and meant every cluster had to edit
+# the register.
 kc -n kyverno create configmap agent-risk-register \
   --from-literal=red="$VERDICT_RED" \
   --from-literal=default="$VERDICT_DEFAULT" \
-  --from-literal=lb="$LB" \
   --dry-run=client -o yaml | kc apply -f - >/dev/null
-ok "configmap/agent-risk-register written"
+ok "configmap/agent-risk-register written (the decision)"
 log "this is the ONLY place the verdict is recorded — no agent was modified"
+
+# Platform addresses: where a gated agent's tools and model calls should point.
+# Same on every agent; changes only when the cluster's ingress changes.
+kc -n kyverno create configmap agent-platform-config \
+  --from-literal=gatedMcpUrl="http://mcp.${LB}.sslip.io/mcp-gated" \
+  --from-literal=restrictedLlmUrl="http://llm.${LB}.sslip.io" \
+  --dry-run=client -o yaml | kc apply -f - >/dev/null
+ok "configmap/agent-platform-config written (the addresses)"
 
 # ── 2. the restricted AI backend ──────────────────────────────────────────────
 step "Creating the restricted AI backend (prompt injection at the gateway)"
@@ -75,7 +85,18 @@ done
 kc get clusterpolicy verdict-hitl-enrolment >/dev/null 2>&1 \
   || die "verdict policy failed to apply: ${KPOL_ERR}"
 kc wait --for=condition=Ready clusterpolicy/verdict-hitl-enrolment --timeout=60s >/dev/null 2>&1 || true
-ok "clusterpolicy/verdict-hitl-enrolment active"
+ok "clusterpolicy/verdict-hitl-enrolment active (BYO agents -> gateway gate)"
+
+# The native path: for Declarative agents, add requireApproval so the approval
+# appears in the kagent UI instead of a separate queue.
+for _ in $(seq 1 12); do
+  KPOL_ERR="$(kc apply -f "$LAB_ROOT/yaml/kyverno/30-native-approval.yaml" 2>&1)" && break
+  sleep 5
+done
+kc get clusterpolicy verdict-native-approval >/dev/null 2>&1 \
+  || die "native approval policy failed to apply: ${KPOL_ERR}"
+kc wait --for=condition=Ready clusterpolicy/verdict-native-approval --timeout=60s >/dev/null 2>&1 || true
+ok "clusterpolicy/verdict-native-approval active (Declarative agents -> kagent UI)"
 
 # ── 4. re-admit the two agents ────────────────────────────────────────────────
 # The mutation runs at admission. Both Agent CRs already exist, so they need to
@@ -87,7 +108,7 @@ ok "clusterpolicy/verdict-hitl-enrolment active"
 # only so the lab can show a before and an after on the same cluster.
 step "Re-admitting both Agent CRs so the webhook re-evaluates them"
 STAMP="$(date +%s)"
-for a in "$GREEN_AGENT" "$RED_AGENT"; do
+for a in "$GREEN_AGENT" "$RED_AGENT" "$NATIVE_AGENT"; do
   kc -n "$KAGENT_NS" annotate agent "$a" \
     "risk.platform.solo.io/reviewed-at=$STAMP" --overwrite >/dev/null 2>&1 \
     && ok "re-admitted $a" || warn "could not annotate agent/$a"
@@ -111,6 +132,12 @@ for a in "$GREEN_AGENT" "$RED_AGENT"; do
     | python3 -c 'import sys,json;d=sys.stdin.read().strip();print(json.loads(d)[0]["url"] if d else "(unset)")' 2>/dev/null || echo "(unreadable)")"
   printf '  %-14s %-8s %s\n' "$a" "${verdict:-none}" "$url" >&2
 done
+
+printf '\n  %-14s %s\n' "AGENT" "kagent requireApproval (declarative path)" >&2
+printf '  %-14s %s\n' "──────────────" "─────────────────────────────────────────" >&2
+RA="$(kc -n "$KAGENT_NS" get agent "$NATIVE_AGENT" \
+  -o jsonpath='{.spec.declarative.tools[0].mcpServer.requireApproval}' 2>/dev/null)"
+printf '  %-14s %s\n' "$NATIVE_AGENT" "${RA:-(none)}" >&2
 
 printf '\n  %-14s %s\n' "AGENT" "MODEL ENDPOINT IN THE RUNNING POD" >&2
 printf '  %-14s %s\n' "──────────────" "─────────────────────────────────" >&2

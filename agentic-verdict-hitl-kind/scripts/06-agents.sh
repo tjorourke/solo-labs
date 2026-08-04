@@ -95,8 +95,20 @@ sed "s/__LB__/${LB}/g" "$LAB_ROOT/yaml/agents/deployments.yaml" \
   | arctl apply -f - >/dev/null 2>&1 \
   && ok "both deployments applied" || die "arctl apply of the deployments failed"
 
-step "Waiting for both agents to reconcile onto kagent"
-for a in "$GREEN_AGENT" "$RED_AGENT"; do
+# ── the third agent: same job, written the kagent-native way ──────────────────
+# A Declarative agent instead of a BYO container. Still an ADK agent
+# (declarative.runtime: python), but because kagent can see its tool list, kagent's
+# own approval flow becomes available — which is the surface most people should
+# actually use. Applied with kubectl rather than through AgentRegistry because a
+# declarative agent has no image to publish.
+#
+# The developer's file contains NO requireApproval. Phase 07 adds it.
+step "Deploying the declarative (kagent-native) variant"
+kc apply -f "$LAB_ROOT/yaml/agents/declarative-native.yaml" >/dev/null
+ok "RemoteMCPServer + Agent/srenative applied"
+
+step "Waiting for the agents to reconcile onto kagent"
+for a in "$GREEN_AGENT" "$RED_AGENT" "$NATIVE_AGENT"; do
   end=$(( $(date +%s) + 300 ))
   cr=""
   until cr="$(kc -n "$KAGENT_NS" get agents.kagent.dev -o name 2>/dev/null \

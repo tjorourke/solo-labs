@@ -37,3 +37,22 @@ spec:
     - backendRefs:
         - name: agentregistry-enterprise-server
           port: 12121
+---
+# The kagent UI. This is where the NATIVE approval card appears for declarative
+# agents, so it is the surface a customer actually clicks — worth having on a real
+# hostname rather than behind a port-forward.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kagent-ui
+  namespace: kagent
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "kagent.__LB__.sslip.io"
+  rules:
+    - backendRefs:
+        - name: kagent-ui
+          port: 8080   # the chart's Service listens on 8080, not 80

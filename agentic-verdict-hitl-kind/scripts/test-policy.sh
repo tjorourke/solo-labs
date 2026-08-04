@@ -61,7 +61,8 @@ write_values() {
       echo "        values:"
       echo "          register.data.red: \"$red\""
       echo "          register.data.default: \"$def\""
-      echo "          register.data.lb: \"172.18.255.200\""
+      echo "          platform.data.gatedMcpUrl: \"http://mcp.test.example/mcp-gated\""
+      echo "          platform.data.restrictedLlmUrl: \"http://llm.test.example\""
     done
   } > "$WORK/values.yaml"
 }

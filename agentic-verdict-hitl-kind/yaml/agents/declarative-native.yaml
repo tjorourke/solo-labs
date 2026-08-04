@@ -1,0 +1,82 @@
+# The NATIVE kagent HITL path.
+#
+# This is the same SRE agent again, written as a kagent Declarative agent instead
+# of a BYO container. It is still an ADK agent — `declarative.runtime: python` is
+# literally "which ADK implementation to use" — but because kagent knows what tools
+# it has, `requireApproval` becomes available and approvals surface in the kagent
+# chat UI. No custom approval service, no separate queue to build.
+#
+# The developer writes this file WITHOUT requireApproval. Kyverno adds it when the
+# risk register says this agent is red (yaml/kyverno/30-native-approval.yaml), so
+# the platform team still imposes the control and the developer still cannot remove
+# it. Compare the deployed resource with this file to see the difference.
+#
+# Declarative vs BYO decides which HITL surface you get:
+#   Declarative  kagent sees the tools -> requireApproval -> native approval card
+#   BYO          kagent sees a pod     -> no tool list    -> gate at the gateway
+---
+# The MCP server, registered so kagent can enumerate its tools. Pointed straight at
+# the Service, not through the gateway: on this path the gate is kagent's, so there
+# is no reason to send tool traffic via an ext-auth route.
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: sre-tools
+  namespace: kagent
+spec:
+  description: SRE tools — pod triage plus restart/scale on a mock cluster.
+  protocol: STREAMABLE_HTTP
+  url: http://sre-tools.sre-tools.svc.cluster.local:8080/mcp
+  # The MCP server is stateless, so the client must not try to terminate a session.
+  terminateOnClose: false
+  timeout: 30s
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: srenative
+  namespace: kagent
+spec:
+  type: Declarative
+  description: SRE assistant (declarative) — triage and remediate unhealthy workloads.
+  declarative:
+    # python = the Python ADK. This IS an ADK agent; the difference from the BYO
+    # ones is who runs it, not what it is.
+    runtime: python
+    modelConfig: default-model-config
+    systemMessage: |
+      You are an SRE assistant for a small Kubernetes estate. You have tools from
+      the sre-tools MCP server to inspect and repair workloads.
+
+      Work in this order:
+
+      1. Look before you touch. Use list_pods to find unhealthy pods, get_pod_logs
+         to read why they are failing, and describe_deployment to check replica
+         counts and images.
+      2. Say what you found. State the diagnosis in one or two sentences, citing
+         the specific evidence from the logs or the restart counts.
+      3. Then act, if acting is warranted. restart_deployment and scale_deployment
+         change the running system. Before calling either, say in one sentence what
+         you are about to change and why it follows from the diagnosis.
+      4. Report what changed. After a tool returns, summarise the new state.
+
+      If a tool call comes back refused or denied, report the reason you were
+      given, verbatim, and stop. Do not retry it and do not work around it.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: sre-tools
+          # toolNames must list every tool the agent may use. It also has to be
+          # present for requireApproval to be addable at all: a CEL rule on the CRD
+          # requires every requireApproval entry to appear in toolNames, so a
+          # webhook cannot add approval to an agent that left this empty.
+          toolNames:
+            - list_pods
+            - get_pod_logs
+            - describe_deployment
+            - restart_deployment
+            - scale_deployment
+          # NOTE: no requireApproval here. The developer did not add one.
+          # Kyverno adds it at admission when the register says this agent is red.

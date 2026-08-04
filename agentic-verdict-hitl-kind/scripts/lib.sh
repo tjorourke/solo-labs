@@ -104,6 +104,9 @@ export AR_SERVER_PORT="${AR_SERVER_PORT:-12121}"
 # digits only, so sre-triage is not a legal agent name.
 export GREEN_AGENT="${GREEN_AGENT:-sretriage}"
 export RED_AGENT="${RED_AGENT:-sreremediate}"
+# The kagent-native variant: a Declarative ADK agent, gated by kagent's own
+# requireApproval rather than at the gateway.
+export NATIVE_AGENT="${NATIVE_AGENT:-srenative}"
 export VERDICT_LABEL="${VERDICT_LABEL:-risk.platform.solo.io/verdict}"
 
 # ── local image registry the arctl scaffolds push to ──────────────────────────
