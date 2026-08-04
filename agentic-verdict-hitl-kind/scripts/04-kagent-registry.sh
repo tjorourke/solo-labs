@@ -174,8 +174,13 @@ kc wait --for=condition=Established crd/clusterpolicies.kyverno.io --timeout=60s
 #
 # Only the DECISION lives here. Addresses are discovered from the HTTPRoutes at
 # admission time, so there is no address config to bootstrap.
+#
+# `gated` is bootstrapped empty too. The policy reads it to decide which tools need
+# approval, and an empty list means the mutation is skipped rather than an empty
+# requireApproval being written.
 kc -n kyverno create configmap agent-risk-register \
   --from-literal=red="" --from-literal=default="green" \
+  --from-literal=gated="[]" \
   --dry-run=client -o yaml | kc apply -f - >/dev/null
 ok "risk register bootstrapped, empty (nothing gated yet)"
 
@@ -200,4 +205,4 @@ fi
 
 step "Platform ready"
 echo "  AgentRegistry: ${ARCTL_API_BASE_URL}" >&2
-echo "  Next:          ./scripts/05-mcp-and-hitl.sh" >&2
+echo "  Next:          ./scripts/05-mcp.sh" >&2

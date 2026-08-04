@@ -5,16 +5,14 @@ Five tools over a mock cluster: three read-only, two that change things.
   read       list_pods, get_pod_logs, describe_deployment
   mutating   restart_deployment, scale_deployment
 
-Unlike the two-endpoint split in agentic-hitl-kind, this server exposes ONE
-MCP endpoint at /mcp with ONE tool set. That is deliberate. In this lab the
-gating decision is not "which tools exist" — both agents get identical tools,
-because they are the same agent built twice. The decision is which gateway
-ROUTE the agent's MCP traffic is pointed at, and the platform team makes that
-decision from the verdict, behind the agent's back.
+This server exposes ONE MCP endpoint at /mcp with ONE tool set, and knows
+nothing about approval. That is deliberate. Every agent gets identical tools,
+because they are the same agent built twice, and the tool server does not get a
+vote on which of its tools are dangerous — that judgement is the platform
+team's, recorded in the risk register and enforced inside kagent.
 
-So: same server, same tools, two routes in front of it. /mcp is ungated and
-/mcp-gated parks every mutating call at a human. See
-yaml/agentgateway/10-mcp-routes.yaml.
+So there is nothing here to configure per agent, and no gate in front of the
+server. A call that arrives has already been approved.
 
 Cluster state is in-memory; a restart resets it. The point is that a mutation
 is observable, not that it is durable.

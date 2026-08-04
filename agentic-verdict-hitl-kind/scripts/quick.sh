@@ -4,14 +4,11 @@
 #
 #   ./scripts/quick.sh up         stand the whole thing up (~15-20 min cold)
 #   ./scripts/quick.sh status     what is running, and which agent is gated
-#   ./scripts/quick.sh pending    what is parked in the BYO approval queue
-#   ./scripts/quick.sh approve    approve everything currently parked
-#   ./scripts/quick.sh reject     reject everything currently parked
-#   ./scripts/quick.sh reset      reset the mock cluster + clear the queue
+#   ./scripts/quick.sh reset      reset the mock cluster
 #   ./scripts/quick.sh down       delete the kind cluster and the registry
 #
-# pending/approve/reject act on a BYO agent's call parked at the GATEWAY. A
-# DECLARATIVE agent's approval lives in kagent instead, so use the kagent UI, or:
+# Approvals are kagent's own, for both agent types, so they are decided in the
+# Solo Enterprise UI or over kagent's API:
 #   ./scripts/approve.sh srenative "restart checkout" [approve|reject]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +21,7 @@ PHASES=(
   02-agentgateway.sh
   03-keycloak.sh
   04-kagent-registry.sh
-  05-mcp-and-hitl.sh
+  05-mcp.sh
   06-agents.sh
   07-verdict.sh
 )
@@ -47,7 +44,7 @@ cmd_status() {
   step "Control planes"
   for nsdep in "$AGW_NS:enterprise-agentgateway" "$KAGENT_NS:kagent-controller" \
                "$AR_NS:$AR_SERVER_SVC" "kyverno:kyverno-admission-controller" \
-               "$SRE_NS:sre-tools" "$HITL_NS:hitl-extauth" "$HITL_NS:hitl-ui"; do
+               "$SRE_NS:sre-tools" "solo-mgmt:solo-enterprise-ui"; do
     ns="${nsdep%%:*}"; dep="${nsdep##*:}"
     ready="$(kc -n "$ns" get deploy "$dep" -o jsonpath='{.status.readyReplicas}/{.status.replicas}' 2>/dev/null)"
     printf '  %-46s %s\n' "$ns/$dep" "${ready:-absent}" >&2
@@ -65,6 +62,10 @@ import sys, json
 d = json.load(sys.stdin).get("data", {})
 print("  red     = %s" % (d.get("red") or "(none)"))
 print("  default = %s" % (d.get("default") or "green"))
+g = (d.get("gated") or "").strip()
+print("  gated   =")
+for line in (g.splitlines() or ["(nothing)"]):
+    print("    %s" % line)
 ' >&2 2>/dev/null || true
   else
     log "no register yet — run ./scripts/07-verdict.sh"
@@ -83,58 +84,26 @@ print("  default = %s" % (d.get("default") or "green"))
       how="${ra:-not gated}"
       [[ -n "$ra" ]] && how="kagent requireApproval $ra"
     else
-      url="$(kc -n "$KAGENT_NS" get agent "$a" -o jsonpath='{.spec.byo.deployment.env[?(@.name=="MCP_SERVERS_CONFIG")].value}' 2>/dev/null \
-        | python3 -c 'import sys,json;d=sys.stdin.read().strip();print(json.loads(d)[0]["url"] if d else "(unset)")' 2>/dev/null || echo "?")"
-      case "$url" in
-        *"/mcp-gated") how="gateway gate  $url" ;;
-        *)             how="ungated       $url" ;;
-      esac
+      # A BYO agent carries its gating in an env var, because kagent cannot see
+      # its tools. Same approval card either way.
+      ra="$(kc -n "$KAGENT_NS" get agent "$a" -o jsonpath='{.spec.byo.deployment.env[?(@.name=="KAGENT_REQUIRE_APPROVAL")].value}' 2>/dev/null)"
+      how="not gated"
+      [[ -n "$ra" ]] && how="KAGENT_REQUIRE_APPROVAL=$ra"
     fi
     printf '  %-14s %-12s %-8s %-7s %s\n' "$a" "${typ:-?}" "${verdict:-none}" "${ready:-0/0}" "$how" >&2
   done
 
-  step "Gateway policy"
-  kc -n "$SRE_NS" get enterpriseagentgatewaypolicy mcp-hitl-gate \
-    -o custom-columns='NAME:.metadata.name,ACCEPTED:.status.ancestors[*].conditions[?(@.type=="Accepted")].status' \
-    --no-headers 2>/dev/null | sed 's/^/  /' >&2 || log "HITL policy not applied"
+  step "The verdict policy"
+  kc get clusterpolicy verdict-hitl-enrolment \
+    -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status' \
+    --no-headers 2>/dev/null | sed 's/^/  /' >&2 || log "verdict policy not applied"
 
   [[ -n "${LB:-}" ]] && cat >&2 <<EOF
 
-  kagent UI         http://kagent.${LB}.sslip.io      (declarative approvals)
-  BYO approvals     http://hitl.${LB}.sslip.io        (gateway-gated calls)
+  Enterprise UI     http://kagent.${LB}.sslip.io      (approvals, both agent types)
   AgentRegistry     http://${AR_HOST}
-  MCP (open/gated)  http://${MCP_HOST}/mcp  ·  /mcp-gated
+  MCP               http://${MCP_HOST}/mcp
 EOF
-}
-
-cmd_pending() {
-  step "Parked in the approval queue"
-  local out; out="$(pending_list)"
-  if [[ "$out" == "[]" ]]; then
-    log "nothing parked"
-    return 0
-  fi
-  printf '%s' "$out" | python3 -c '
-import sys, json
-for p in json.load(sys.stdin):
-    tool = p.get("toolName") or p.get("rpcMethod") or "?"
-    args = p.get("toolArgs") or {}
-    a = ", ".join("%s=%s" % (k, v) for k, v in args.items()) if isinstance(args, dict) else ""
-    print("  %s  %s(%s)  path=%s" % (p.get("id"), tool, a, p.get("path", "")))
-' 2>/dev/null >&2 || printf '  %s\n' "$out" >&2
-}
-
-# Decide every parked request. `approve` is what you would click in the UI; this
-# is the scripted equivalent for a runbook or an E2E test.
-cmd_decide() {
-  local approved="$1" reason="$2"
-  local ids
-  ids="$(pending_ids)"
-  [[ -n "${ids// /}" ]] || { log "nothing parked to decide"; return 0; }
-  for id in $ids; do
-    extauth_admin "/decide/$id" POST "{\"approved\":$approved,\"reason\":\"$reason\"}" >/dev/null
-    ok "$([[ "$approved" == "true" ]] && echo approved || echo rejected) $id"
-  done
 }
 
 cmd_reset() {
@@ -144,7 +113,6 @@ cmd_reset() {
   kc -n "$SRE_NS" exec -i deploy/sre-tools -- python3 -c \
     "import urllib.request;urllib.request.urlopen(urllib.request.Request('http://localhost:8080/reset',b''),timeout=5)" \
     >/dev/null 2>&1 && ok "sre-tools state reset" || warn "could not reset sre-tools"
-  cmd_decide false "reset"
 }
 
 cmd_down() {
@@ -163,12 +131,9 @@ cmd_down() {
 case "${1:-up}" in
   up)      cmd_up ;;
   status)  cmd_status ;;
-  pending) cmd_pending ;;
-  approve) cmd_decide true  "approved via quick.sh" ;;
-  reject)  cmd_decide false "rejected via quick.sh" ;;
   reset)   cmd_reset ;;
   # `teardown` is the verb labs.manifest.json defaults to; `down` is the one
   # that reads naturally at a prompt. Both, so the E2E runner and a human agree.
   down|teardown) cmd_down ;;
-  *) die "usage: $0 {up|status|pending|approve|reject|reset|down}" ;;
+  *) die "usage: $0 {up|status|reset|down}" ;;
 esac

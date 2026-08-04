@@ -30,7 +30,7 @@
 #
 # BYO agents cannot use this. kagent knows nothing about a call parked at the
 # gateway, so there is no task in input-required state to respond to — use
-# ./scripts/quick.sh approve, which posts to the ext-auth admin API instead.
+# the Solo Enterprise UI, which sends exactly the same A2A message.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh

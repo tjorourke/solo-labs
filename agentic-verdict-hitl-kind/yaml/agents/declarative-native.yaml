@@ -17,7 +17,7 @@
 ---
 # The MCP server, registered so kagent can enumerate its tools. Pointed straight at
 # the Service, not through the gateway: on this path the gate is kagent's, so there
-# is no reason to send tool traffic via an ext-auth route.
+# is no reason to put anything in front of the MCP server.
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata:

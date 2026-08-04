@@ -5,6 +5,16 @@
 # on kagent's own approval flow. The approval then appears in the kagent UI. No
 # gateway, no approval service, nothing extra to run.
 #
+# NOTHING IN THIS FILE NAMES A TOOL. The register answers both questions:
+#
+#   red      which agents need a human
+#   gated    which tools need approval, per MCP server
+#
+# So adding the hundredth tool, or a whole new MCP server, is a ConfigMap edit and
+# the policy never changes. That matters because the policy is cluster-wide
+# admission control: editing it is a change-managed event, editing a register entry
+# is not.
+#
 # Both kinds of kagent agent are covered, because the field to set differs:
 #
 #   spec.type: Declarative   kagent knows the tool list, so add requireApproval to
@@ -26,18 +36,21 @@ metadata:
     policies.kyverno.io/category: Platform
     policies.kyverno.io/description: >-
       Agents named on the red list of the agent-risk-register ConfigMap have human
-      approval turned on for their state-changing tools, surfaced in the kagent UI.
-      Applied at admission, so it is in force before the agent serves a request.
+      approval turned on, for the tools that same register marks as needing it,
+      surfaced in the kagent UI. Applied at admission, so it is in force before the
+      agent serves a request. No tool name appears in the policy.
 spec:
   background: false            # admission-time only; this policy mutates
   rules:
 
     # ── Declarative agents: add requireApproval to the tool stanza ─────────────
     #
-    # Only fires when both tools are ALREADY in toolNames. A CEL rule on the Agent
-    # CRD requires every requireApproval entry to appear in toolNames, so patching
-    # an agent that left it empty would produce a resource the API server rejects —
-    # the deploy would fail rather than the agent being gated.
+    # The register's tool list is intersected with the agent's own toolNames, which
+    # is not cosmetic. A CEL rule on the Agent CRD requires every requireApproval
+    # entry to appear in toolNames, so naming a tool this agent does not have would
+    # produce a resource the API server REJECTS — the deploy fails instead of the
+    # agent being gated. Intersecting lets one register cover a whole fleet of
+    # agents with different tool sets, each getting only the entries that apply.
     - name: approval-declarative
       match:
         any:
@@ -62,27 +75,48 @@ spec:
       mutate:
         foreach:
           - list: "request.object.spec.declarative.tools"
+            context:
+              # What the register says about THIS stanza's MCP server.
+              # `{{ element.mcpServer.name }}` is substituted before the JMESPath
+              # runs, so this stays an ordinary filter rather than a dynamic map
+              # key — dynamic ConfigMap keys need nested interpolation and are
+              # fragile across Kyverno releases.
+              - name: want
+                variable:
+                  jmesPath: "parse_yaml(register.data.gated || '[]')[?server=='{{ element.mcpServer.name }}'].tools | [0] || `[]`"
+              # `tools: ['*']` gates every tool the server exposes; otherwise take
+              # the intersection. The backtick literal is what makes the match
+              # exact — contains() against a raw CSV string would let an entry
+              # named `scale` match `scale_deployment`.
+              - name: gated
+                variable:
+                  jmesPath: "contains(`{{ want }}`, '*') && element.mcpServer.toolNames || element.mcpServer.toolNames[?contains(`{{ want }}`, @)]"
             preconditions:
               all:
                 - key: "{{ element.type || '' }}"
                   operator: Equals
                   value: McpServer
+                # Servers the register says nothing about are left exactly as the
+                # developer wrote them.
+                - key: "{{ length(gated) }}"
+                  operator: GreaterThan
+                  value: 0
                 # Idempotence: re-applies arrive as admission UPDATEs.
                 - key: "{{ element.mcpServer.requireApproval || `[]` | length(@) }}"
                   operator: Equals
                   value: 0
-                - key: restart_deployment
-                  operator: AnyIn
-                  value: "{{ element.mcpServer.toolNames || `[]` }}"
-                - key: scale_deployment
-                  operator: AnyIn
-                  value: "{{ element.mcpServer.toolNames || `[]` }}"
             patchesJson6902: |-
               - op: add
                 path: "/spec/declarative/tools/{{ elementIndex }}/mcpServer/requireApproval"
-                value: ["restart_deployment", "scale_deployment"]
+                value: {{ gated }}
 
     # ── BYO agents: set the env var its ADK toolsets read ──────────────────────
+    #
+    # kagent cannot see a BYO agent's tools, but the agent's own MCP wiring is right
+    # there in its env: MCP_SERVERS_CONFIG lists the servers it connects to, by
+    # name. That is the same key the register is written against, so this is the
+    # same lookup as the declarative rule — the policy reads which servers this
+    # agent actually uses and gates only those.
     #
     # patchesJson6902, never patchStrategicMerge: the Agent CRD has no merge key for
     # spec.byo.deployment.env, so a strategic merge replaces the WHOLE list and
@@ -96,11 +130,24 @@ spec:
       context:
         - name: register
           configMap: { name: agent-risk-register, namespace: kyverno }
+        # The MCP servers this agent connects to, by name.
+        - name: mine
+          variable:
+            jmesPath: "parse_json(request.object.spec.byo.deployment.env[?name=='MCP_SERVERS_CONFIG'].value | [0] || '[]')[].name"
+        # Every gated tool across those servers, flattened, because one agent can
+        # connect to more than one.
+        - name: gated
+          variable:
+            jmesPath: "parse_yaml(register.data.gated || '[]')[?contains(`{{ mine }}`, server)].tools[]"
       preconditions:
         all:
           - key: "{{ request.object.spec.type || '' }}"
             operator: Equals
             value: BYO
+          # Nothing in the register covers this agent's servers — leave it alone.
+          - key: "{{ length(gated) }}"
+            operator: GreaterThan
+            value: 0
           # Idempotence: without this, every reconcile appends a duplicate.
           - key: "{{ request.object.spec.byo.deployment.env[?name=='KAGENT_REQUIRE_APPROVAL'] | length(@) }}"
             operator: Equals
@@ -118,7 +165,7 @@ spec:
             path: "/spec/byo/deployment/env/-"
             value:
               name: KAGENT_REQUIRE_APPROVAL
-              value: "restart_deployment,scale_deployment"
+              value: "{{ join(',', gated) }}"
 
     # ── Record the decision, for humans reading the cluster ────────────────────
     # The label is a record, not the mechanism. Do not key enforcement off it.

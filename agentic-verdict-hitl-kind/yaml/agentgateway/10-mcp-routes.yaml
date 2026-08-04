@@ -1,24 +1,17 @@
-# The two routes the verdict chooses between.
+# The route to the MCP server the agents share.
 #
-# Both point at the SAME MCP server with the SAME tools. The only difference is
-# that /mcp-gated has an extAuth policy attached (20-hitl-policy.yaml), so every
-# call across it parks until a human decides.
+# One route, one endpoint, one tool set. All three agents ask for the same URL and
+# get it. Nothing about the approval decision is expressed here, because approval is
+# enforced inside kagent and the agent's own toolsets, not in front of the server.
 #
-# The developer's agent asks for /mcp. A green agent gets it. For a red agent,
-# Kyverno rewrites MCP_SERVERS_CONFIG at admission so the pod comes up pointed
-# at /mcp-gated instead. Nothing inside the agent changes, and nothing in the
-# agent's source or its registry record records which route it ended up on.
+# __LB__ is substituted with the ingress LoadBalancer IP by 05-mcp.sh.
 #
-# __LB__ is substituted with the ingress LoadBalancer IP by 05-mcp-and-hitl.sh.
-#
-# Paths: FastMCP's streamable_http_app() serves at /mcp INSIDE whatever it is
-# mounted under, and the server mounts it at "/". So the real upstream endpoint is
-# /mcp — verified in-pod: / returns 404, /mcp returns 200.
-#
-# That means the open route must NOT rewrite (it already matches /mcp), and the
-# gated route rewrites /mcp-gated -> /mcp. Rewriting either one to "/" makes the
-# server 404, which reaches the agent as an opaque MCP connection failure with no
-# hint that the path is wrong.
+# Path: FastMCP's streamable_http_app() serves at /mcp INSIDE whatever it is mounted
+# under, and the server mounts it at "/". So the real upstream endpoint is /mcp —
+# verified in-pod: / returns 404, /mcp returns 200. The route therefore must NOT
+# rewrite, since the match path and the upstream path are already the same.
+# Rewriting to "/" makes the server 404, which reaches the agent as an opaque MCP
+# connection failure with no hint that the path is wrong.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -33,36 +26,6 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /mcp }
-      # No rewrite: the match path and the upstream path are the same.
-      backendRefs:
-        - name: sre-tools
-          port: 8080
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: mcp-gated
-  namespace: sre-tools
-  labels:
-    # This label is what the HITL policy selects on. Attaching by label rather
-    # than by name means the platform team can bring more routes under the same
-    # gate without editing the policy.
-    hitl.platform.solo.io/gated: "true"
-spec:
-  parentRefs:
-    - name: verdict-ingress
-      namespace: agentgateway-system
-  hostnames:
-    - "mcp.__LB__.sslip.io"
-  rules:
-    - matches:
-        - path: { type: PathPrefix, value: /mcp-gated }
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            # /mcp-gated -> /mcp, so both routes land on the same upstream
-            # endpoint and the ONLY difference between them is the policy.
-            path: { type: ReplacePrefixMatch, replacePrefixMatch: /mcp }
       backendRefs:
         - name: sre-tools
           port: 8080

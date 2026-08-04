@@ -14,28 +14,27 @@ Single kind cluster, Solo Enterprise throughout: **agentgateway 2026.7.1**,
 > Without trusting the developer to add human-in-the-loop, how does a platform
 > team add it, based on a decision made somewhere else?
 
-One verdict in a ConfigMap, imposed by one Kyverno policy at admission. **How** it
-is imposed depends on one field on the agent, `spec.type`:
+One verdict in a ConfigMap, imposed by one Kyverno policy at admission. Both agent
+types end up at **kagent's own approval flow** — the same card, the same API. What
+differs is only the field the policy has to set, which follows from `spec.type`:
 
-| Agent type | kagent sees | Gate | Approve via |
+| Agent type | kagent sees | What the policy sets | Approve via |
 |---|---|---|---|
-| **Declarative** (ADK on kagent's runtime) | the tool list | `requireApproval` | **kagent UI**, or the kagent A2A API |
-| **BYO** (`arctl init agent`) | a pod | `extAuth` on a gateway route | the approval service's API |
+| **Declarative** (ADK on kagent's runtime) | the tool list | `requireApproval` on the tool stanza | Solo Enterprise UI, or the kagent A2A API |
+| **BYO** (`arctl init agent`) | a pod | `KAGENT_REQUIRE_APPROVAL` in the pod env | the same UI, the same API |
 
-**Prefer Declarative.** It is the native surface, there is nothing extra to run, and
-the approver is the person already in the conversation. `declarative.runtime` is
-"which ADK implementation to use", so this is still an ADK agent — you give up
-owning the image, not the framework.
+`requireApproval` lives on the tool list and `spec.byo` has no tool list — just
+`deployment`. So for a BYO agent the policy sets an environment variable instead, and
+the agent's own ADK toolsets turn it into `require_confirmation`. ADK then emits the
+same `adk_request_confirmation` that kagent renders. **Nothing extra runs**: no
+gateway gate, no approval service, no second MCP route.
 
-The BYO path exists because `requireApproval` lives on the tool list and `spec.byo`
-has no tool list — just `deployment`. Nothing to annotate means the pause cannot
-happen inside kagent, so it moves to the gateway. Use it for opaque containers, or
-when the approver deliberately must not be the requester.
+`declarative.runtime` is "which ADK implementation to use", so a Declarative agent is
+still an ADK agent — you give up owning the image, not the framework. Prefer it when
+you can; use BYO for opaque containers or an image you must build yourself.
 
-A third, optional layer injects a system prompt at the gateway
-(`ai.prompt.prepend`) so the agent explains itself before acting. It is **advisory**:
-it improves what the reviewer reads and prevents nothing. In the lab specifically so
-you can watch it not be a control.
+Neither the agents nor the MCP server know which tools are sensitive. That judgement
+is the platform team's, and it lives in the register.
 
 ## Topology
 
@@ -49,25 +48,36 @@ you can watch it not be a control.
                                        │
                        Kyverno admission webhook
                      reads configmap/agent-risk-register
+                       red / default  +  gated (per MCP server)
+                                       │
+                       matched against THIS agent's own servers
+                    Declarative: mcpServer.toolNames
+                    BYO:         MCP_SERVERS_CONFIG
                                        │
         ┌──────────────────────────────┼──────────────────────────────┐
         │ Declarative + red            │ BYO + red                    │ green
         ▼                              ▼                              ▼
-  + requireApproval            MCP_SERVERS_CONFIG                untouched
-  [restart, scale]               .../mcp-gated
-        │                     + ANTHROPIC_API_BASE                     │
+  + requireApproval          + KAGENT_REQUIRE_APPROVAL            untouched
+  (from the register)          (from the register)                     │
         │                              │                              │
-        ▼                              ▼                              ▼
-  ┌───────────┐   ┌──────────── agentgateway ─────────────┐    (direct to /mcp)
-  │  kagent   │   │ /mcp        no policy                 │
-  │  pauses   │   │ /mcp-gated  extAuth ──────────────────┼──► hitl-extauth :9001
-  │  the tool │   │ llm.<LB>    ai.prompt.prepend         │      parks Check()
-  └─────┬─────┘   └──────────────────┬───────────────────┘            │
-        │                            ▼                                │
-  approve in the           sre-tools MCP server            hitl-ui ◄── poll
-  kagent UI, or via        (one tool set, no idea          approve / reject
-  the A2A API              who is calling)
+        └──────────────┬───────────────┘                              │
+                       ▼                                              ▼
+                kagent pauses the tool                     tools run straight through
+                       │
+        ┌──────────────┴───────────────┐
+        ▼                              ▼
+  Solo Enterprise UI            kagent A2A API
+  Approve / Reject              message/send + function_response
+                       │
+                       ▼
+              sre-tools MCP server
+              (one endpoint, one tool set,
+               no idea who is calling)
 ```
+
+Everything the agents reach goes through agentgateway: the MCP route, Keycloak, the
+AgentRegistry API and the Enterprise UI. No policy sits in front of the MCP server —
+a call that arrives there has already been approved.
 
 ## The verdict
 
@@ -77,29 +87,34 @@ review process you already trust:
 ```bash
 kubectl -n kyverno create configmap agent-risk-register \
   --from-literal=red="sreremediate,srenative" \
-  --from-literal=default="green"
+  --from-literal=default="green" \
+  --from-literal=gated='- server: sre-tools
+  tools:
+    - restart_deployment
+    - scale_deployment'
 ```
 
-Only the decision. Addresses are not in here: the policy discovers the gated route's
-URL from the route itself with an `apiCall`, so there is nothing to keep in sync and
-the same policy works on any cluster.
+Three keys, and between them the whole decision:
+
+| key | what it answers |
+| --- | --- |
+| `red` | which agents need a human |
+| `default` | the answer for anything not named; set `red` for deny-by-default |
+| `gated` | which tools need approval, per MCP server. `tools: ["*"]` gates every tool a server exposes, including ones it has not shipped yet |
+
+**No tool name appears in the policy.** Adding the hundredth tool, or a whole new MCP
+server, is a ConfigMap edit. That separation is the point: the policy is cluster-wide
+admission control, so editing it is a change-managed event, while adding a register
+entry is not.
+
+Addresses are not in here either. There is one MCP route and every agent uses it, so
+there is nothing to keep in sync and the same policy works on any cluster.
 
 Keyed by a `red` list rather than per-agent keys because Kyverno ConfigMap lookups
 with a dynamic key need nested `{{ }}` interpolation, which is fragile.
-`contains(split(...))` is exact-match and stable.
-
-`default` sets the posture for anything not named. `default: red` gates every agent
-unless it has been explicitly cleared, which is the correct direction for a
-control:
-
-```bash
-VERDICT_DEFAULT=red ./scripts/07-verdict.sh    # deny-by-default platform
-```
-
-It is a ConfigMap and not a label on the Agent CR for one reason: **the policy has
-to fire on CREATE.** If the verdict were a label stamped after AgentRegistry
-created the CR, the red agent would be live and completely ungated for the seconds
-between creation and labelling. For a security control that is a hole.
+`contains(split(...))` is exact-match and stable. The `gated` lookup avoids the same
+trap by being a **list filtered by a substituted value**, not a map indexed by one:
+`{{ element.mcpServer.name }}` is resolved before the JMESPath runs.
 
 ## The policy has tests
 
@@ -111,9 +126,22 @@ brew install kyverno
 ./scripts/test-policy.sh
 ```
 
-Four postures plus an idempotence check, covering the decision logic — who gets
-gated, under which posture. Run it after any edit to
-`yaml/kyverno/20-verdict-hitl.yaml`.
+Two matrices plus an idempotence check, over both agent types:
+
+- **posture** — who gets gated, under which `red`/`default` combination
+- **register** — *which* tools get gated, including the wildcard, a register entry
+  naming a tool the agent does not have, a server the agent does not use, and an
+  empty register
+
+The second matrix matters most, because the policy names no tool. If the register
+lookup breaks, the policy still applies cleanly and still labels every agent red, and
+gates nothing — a silent fail-open. So it is asserted directly rather than inferred
+from the policy applying without error.
+
+Run it after any edit to `yaml/kyverno/20-verdict-hitl.yaml`. The harness also checks
+its own rule names against the policy: a stale name there is not a test failure, it is
+an untested policy, because Kyverno leaves the stubbed context unresolved and every
+assertion then fails for the wrong reason.
 
 It earned its keep on the first run: with the register absent, every agent resolved
 to green, so a missing ConfigMap silently ungated the whole cluster. That is what the
@@ -184,22 +212,20 @@ In a real pipeline the register is read at first deploy and there is no extra st
 | `scripts/02-agentgateway.sh` | agentgateway 2026.7.1 + ingress Gateway, writes `.env.verdict` |
 | `scripts/03-keycloak.sh` | Keycloak + the `agentregistry` realm, scrapes client secrets |
 | `scripts/04-kagent-registry.sh` | kagent Enterprise + AgentRegistry + Kyverno |
-| `scripts/05-mcp-and-hitl.sh` | MCP server, approval gate, both routes, the HITL policy |
+| `scripts/05-mcp.sh` | the sre-tools MCP server and its route |
 | `scripts/06-agents.sh` | **the developer's phase** — build, publish, deploy both agents |
 | `scripts/07-verdict.sh` | **the platform team's phase** — the verdict lands |
 | `scripts/ask.sh` | talk to any agent over kagent's OIDC-protected A2A endpoint |
-| `scripts/approve.sh` | approve/reject a **declarative** agent's pending call over the kagent A2A API — the same call the UI makes |
-| `scripts/quick.sh` | `up` / `status` / `pending` / `approve` / `reject` / `reset` / `down` |
+| `scripts/approve.sh` | approve/reject a pending call over the kagent A2A API — the same call the UI makes |
+| `scripts/quick.sh` | `up` / `status` / `reset` / `down` |
 | `artifacts/AGENT_TEMPLATE.py` | the single source for BOTH agents — do not edit the copies |
 | `artifacts/sretriage/`, `artifacts/sreremediate/` | the two `arctl init` projects |
 | `src/sre-tools/` | Python MCP server, mock cluster with one OOM-looping workload |
-| `src/hitl-extauth/` | Go ext-auth gRPC service that parks `Check()` |
-| `src/hitl-ui/` | Go HTMX approval queue |
-| `yaml/kyverno/05-rbac.yaml` | lets Kyverno read HTTPRoutes, so the policy discovers addresses |
-| `yaml/kyverno/20-verdict-hitl.yaml` | **the control** — one policy, both HITL paths |
+| `yaml/kyverno/05-rbac.yaml` | lets Kyverno read Gateway API resources |
+| `yaml/kyverno/20-verdict-hitl.yaml` | **the control** — one policy, both agent types, no tool names |
 | `yaml/agents/declarative-native.yaml` | the kagent-native variant (Declarative + `requireApproval`) |
-| `yaml/agentgateway/20-hitl-policy.yaml` | the gate — `extAuth`, attached by label |
-| `yaml/agentgateway/30-restricted-llm.yaml` | the advisory layer — `ai.prompt.prepend` |
+| `yaml/agentgateway/10-mcp-routes.yaml` | the one MCP route every agent uses |
+| `scripts/test-policy.sh` | the policy's offline test matrix (Kyverno CLI) |
 
 ## Things worth knowing before you change it
 
@@ -211,23 +237,34 @@ Full detail in [CLAUDE.md](./CLAUDE.md). The short list:
   merge key for `spec.byo.deployment.env`, so a strategic merge replaces the whole
   list and silently wipes the registry-injected MCP wiring and the model key. Use
   `patchesJson6902`. Labels are a map, so a strategic merge is fine there.
-- **`phase: PreRouting` cannot target an HTTPRoute.** A CEL rule on the CRD limits
-  it to Gateway, ListenerSet, Service and ServiceEntry. Route-scoped extAuth runs
-  at the default `PostRouting`, which still gates before the backend call.
 - **`ANTHROPIC_API_BASE` is not enough on its own.** LiteLLM honours it on the
   text-completion and `/models` paths but not on the `/v1/messages` chat path that
   ADK uses, so the template reads it and passes `api_base` explicitly. Relying on
   env discovery alone sends traffic to `api.anthropic.com` while looking correct.
-- **`failureMode: FailClosed`** on the gate is not optional. A HITL gate that fails
-  open when the approver is down is not a gate.
-- **Gate mutating tools only, via `GATED_TOOLS`.** Gating every `tools/call` sounds
-  safer and is worse: the agent cannot run `list_pods` without an approval, the
-  reviewer is buried in read-only requests, and the ones that matter get
-  rubber-stamped along with the rest. Gating reads trains the reviewer to click yes.
-- **The AI backend needs `policies.ai.routes`.** Without `"/v1/messages": Messages`
-  the gateway cannot parse the body and the agent dies with
-  `AnthropicException - processing failed: failed to marshal request: missing field
-  type`. No ai policy applies either, so `prompt.prepend` silently does nothing.
+- **Gate the tools that change state, not the reads.** Gating everything sounds safer
+  and is worse: the agent cannot run `list_pods` without an approval, the reviewer is
+  buried in read-only requests, and the ones that matter get rubber-stamped along with
+  the rest. Gating reads trains the reviewer to click yes. This is why the register is
+  a per-server tool list and not a per-agent boolean.
+- **Intersect the register's tools with the agent's own `toolNames`.** A CEL rule on
+  the Agent CRD requires every `requireApproval` entry to appear in `toolNames`, so a
+  register naming a tool this agent lacks makes the API server reject the whole
+  resource and the deploy fails. Intersecting is also what lets one register cover a
+  fleet with different tool sets.
+- **Match tool names exactly.** `contains()` against a comma-joined string lets an
+  entry called `scale` gate `scale_deployment` — the same class of bug as matching
+  `sre` against `sreremediate` in the red list. The policy compares against a JMESPath
+  list literal instead.
+- **`require_confirmation` gets the tool's ARGUMENTS, not its name.** ADK invokes the
+  callable form with the tool's own arguments plus `tool_context`, so one callable
+  cannot tell which tool it is being asked about. The template splits each server into
+  a gated and an ungated `MCPToolset` and uses `tool_filter` for membership, which is
+  where the tool name is actually available.
+- **Never leave `ANTHROPIC_API_BASE` pointing at a route that no longer exists.**
+  The agent dies with `AnthropicException - route not found`, which reads as a model
+  or credentials problem and says nothing about a missing HTTPRoute. Nothing in the
+  lab sets this variable; if a pod has it, that is drift from an older policy and the
+  agent will fail every prompt until it is removed.
 - **The chart's licence path is `licensing.licenseKey`**, and agentgateway wants
   `AGENTGATEWAY_LICENSE_KEY` rather than the generic gloo-mesh `SOLO_LICENSE_KEY`.
 - **Do not set `providers.anthropic.apiKey` on the kagent chart** if you pre-create
@@ -237,9 +274,6 @@ Full detail in [CLAUDE.md](./CLAUDE.md). The short list:
 - **Read HTTPRoute acceptance from `status.parents[].conditions`.** There is no
   top-level `Accepted` condition, so `kubectl wait --for=condition=Accepted` always
   times out on a route that is perfectly healthy.
-- **`GET /pending` returns `{"pending":[...]}`, not a bare array.** Treating it as a
-  list fails on a dict, and under `set -e` that kills the script one line after it
-  reported success.
 
 ## Status
 
@@ -249,28 +283,31 @@ Gateway API `v1.5.1`, Kubernetes `v1.35.0`.
 
 What was actually observed, not inferred:
 
-- Both agents deploy from the catalogue pointing at `/mcp`. AgentRegistry does not
-  overwrite the literal `MCP_SERVERS_CONFIG`.
-- After the verdict, the red agent's pod reads `/mcp-gated` and carries
-  `ANTHROPIC_API_BASE`; the green agent's pod is untouched. Neither agent was
-  rebuilt or republished.
-- The red agent reads freely and pauses only where it acts:
-  ```
-  [passthrough] rpc="initialize"
-  [passthrough] rpc="tools/list"
-  [not-gated]   tool=list_pods (not in GATED_TOOLS)
-  [not-gated]   tool=describe_deployment (not in GATED_TOOLS)
-  [not-gated]   tool=get_pod_logs (not in GATED_TOOLS)
-  [parked]      tool=restart_deployment args=map[name:checkout namespace:shop]
-  ```
-- Approve → the tool runs, the agent reports `ready: 3/3` and goes on to explain the
-  underlying OOM.
-- Reject → `checkout` stays at 3 replicas and the MCP server's audit log stays
-  empty. The call never reached the tool server.
-- The green agent, given the identical prompt, restarts immediately. `extauth` has
-  never seen a single request on `/mcp` — only `/mcp-gated`.
-- `prompt.prepend` genuinely reaches the model. Asked what restrictions it is under,
-  the red agent recites the platform text ("I have not been cleared for unattended
-  changes... reviewed by a human before it executes") which appears nowhere in its
-  own instruction. The green agent, same code and same question, cites only its own
-  system prompt. That is the injection working, and the pair is the proof.
+- Both agents deploy from the catalogue pointing at `/mcp`, and keep it.
+  AgentRegistry does not overwrite the literal `MCP_SERVERS_CONFIG`.
+- After the verdict, the red BYO agent's pod carries
+  `KAGENT_REQUIRE_APPROVAL=restart_deployment,scale_deployment` and the red
+  declarative agent's CR carries the matching `requireApproval`. The green agent is
+  untouched. Neither agent was rebuilt or republished.
+- Both lists come from the register, not the policy. Rewriting `gated` to name only
+  `scale_deployment` and re-admitting produced exactly `["scale_deployment"]` on the
+  declarative agent and `scale_deployment` on the BYO one.
+- `tools: ["*"]` expanded to all five of the server's tools on the declarative agent
+  (`list_pods, get_pod_logs, describe_deployment, restart_deployment,
+  scale_deployment`) and to `*` on the BYO agent, which its toolsets read as
+  gate-everything.
+- The red agent reads freely and pauses only where it acts. Asked to restart
+  `checkout`, the task comes back `input-required` with an
+  `adk_request_confirmation`, and the MCP server's audit log is empty at that moment.
+- Approve → the task moves to `completed`, the tool runs, the agent reports
+  `ready: 3/3` and goes on to explain the underlying OOM. The audit log gains its
+  one entry.
+- Reject → `checkout` stays as it was and the audit log stays empty. The call never
+  reached the tool server.
+- The green agent, given the identical prompt, restarts immediately with no pause.
+- Approving over the API works with nothing but `curl`: a Keycloak password-grant
+  token, one `message/send` to get the pause, and a second carrying a
+  `function_response` part on the same `taskId`/`contextId`.
+- The reject path is proven against the tool server, not just the transcript: after
+  a reject the audit log is still empty and `checkout` is untouched. After an
+  approve it has exactly one entry.

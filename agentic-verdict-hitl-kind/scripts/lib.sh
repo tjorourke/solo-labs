@@ -82,7 +82,6 @@ export AR_NS="${AR_NS:-agentregistry-system}"
 export KEYCLOAK_NS="${KEYCLOAK_NS:-ar-keycloak}"
 export KEYCLOAK_REALM="${KEYCLOAK_REALM:-agentregistry}"
 export SRE_NS="${SRE_NS:-sre-tools}"
-export HITL_NS="${HITL_NS:-hitl}"
 # The Solo Enterprise UI lives in its own chart and namespace. This is the product a
 # customer runs — the OSS kagent dashboard is a different thing and is NOT used here.
 export SOLO_MGMT_NS="${SOLO_MGMT_NS:-solo-mgmt}"
@@ -120,8 +119,6 @@ export REG_PORT="${REG_PORT:-5001}"
 
 # Image tags for the services we build + kind-load
 export SRE_TOOLS_IMAGE="${SRE_TOOLS_IMAGE:-sre-tools:dev}"
-export HITL_EXTAUTH_IMAGE="${HITL_EXTAUTH_IMAGE:-hitl-extauth:dev}"
-export HITL_UI_IMAGE="${HITL_UI_IMAGE:-hitl-ui:dev}"
 
 # where `arctl init agent` scaffolds — the lab's artifacts/ dir
 LAB_ROOT_DEFAULT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
@@ -214,61 +211,6 @@ wait_deploy() {
 
 check_docker() {
   docker info >/dev/null 2>&1 || die "docker daemon not reachable — start Docker Desktop / OrbStack"
-}
-
-# extauth_admin <path> [method] [json-body] — call the approval service's admin API.
-#
-# Goes through a short-lived port-forward rather than `kubectl exec ... curl`: the
-# hitl-extauth image is distroless, with no shell, no curl and no wget, so exec-ing
-# a client into it fails with `exec: "sh": executable file not found`. That failure
-# is silent when the output is piped, which makes the queue look permanently empty
-# while the gate is actually working.
-# Reaches the approval API through the gateway, on hitl-admin.<LB>.sslip.io.
-#
-# This used to port-forward. Don't go back to that: forwards leaked between calls,
-# a leaked process kept the local port bound, and the next call either failed to
-# bind or silently talked to whatever else was listening — at one point returning an
-# AgentRegistry error body from the approval API, which made a perfectly good gate
-# look broken. A plain HTTPRoute has none of those failure modes and behaves the
-# same in a terminal, a script and a notebook.
-extauth_admin() {
-  local path="$1" method="${2:-GET}" data="${3:-}" base
-  base="http://hitl-admin.${LB:?LB not set — run ./scripts/02-agentgateway.sh}.sslip.io"
-  if [[ -n "$data" ]]; then
-    curl -s -m 15 -X "$method" "${base}${path}" \
-      -H 'Content-Type: application/json' -d "$data" 2>/dev/null || true
-  else
-    curl -s -m 15 -X "$method" "${base}${path}" 2>/dev/null || true
-  fi
-}
-
-# pending_list — the parked queue as a JSON ARRAY on stdout, or [] if empty.
-#
-# GET /pending returns an OBJECT, {"pending":[...]}, not a bare array. Treating it
-# as a list makes every consumer fail on a dict, and under `set -e` that kills the
-# script right after reporting success. Normalise in one place.
-pending_list() {
-  extauth_admin /pending | python3 -c '
-import sys, json
-raw = sys.stdin.read().strip()
-if not raw:
-    print("[]"); raise SystemExit
-try:
-    d = json.loads(raw)
-except ValueError:
-    print("[]"); raise SystemExit
-# Accept either {"pending":[...]} or a bare [...] so this survives a shape change.
-items = d.get("pending", []) if isinstance(d, dict) else d
-print(json.dumps(items or []))
-' 2>/dev/null || printf '[]'
-}
-
-# pending_ids — space-separated ids of everything currently parked.
-pending_ids() {
-  pending_list | python3 -c '
-import sys, json
-print(" ".join(p.get("id","") for p in json.load(sys.stdin) if p.get("id")))
-' 2>/dev/null || true
 }
 
 # build_and_load — build an image on the host and load it onto the kind nodes.

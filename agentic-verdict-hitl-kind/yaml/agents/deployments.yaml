@@ -1,14 +1,14 @@
 # The developer's two deployments. Read them side by side: they are the same
 # request, twice, with a different name.
 #
-# Both point MCP_SERVERS_CONFIG at /mcp — the open route. The developer asked for
-# ungated tool access for both agents, because as far as they know there is only
-# one way to reach the tool server, and nobody told them otherwise.
+# Both point MCP_SERVERS_CONFIG at the same /mcp endpoint, and both keep it. There
+# is one route and one tool set; nothing is redirected.
 #
-# For sreremediate, that is not what ends up in the pod. Kyverno rewrites the URL
-# to /mcp-gated at admission (yaml/kyverno/20-verdict-hitl.yaml), keyed off the
-# verdict label. Compare this file with the running pod env in phase 07 and the
-# rewrite is the only difference.
+# What differs is what ends up in sreremediate's pod. Kyverno appends
+# KAGENT_REQUIRE_APPROVAL at admission (yaml/kyverno/20-verdict-hitl.yaml), naming
+# the tools the risk register marks as needing a human on the MCP servers this
+# agent connects to. Compare this file with the running pod env in phase 07 and
+# that one variable is the only difference.
 #
 # MCP_SERVERS_CONFIG is a literal here because the AgentRegistry Deployment API
 # accepts literal env values only — no secretKeyRef, no valueFrom. That is also
