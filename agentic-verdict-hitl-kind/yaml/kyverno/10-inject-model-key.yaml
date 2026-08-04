@@ -1,0 +1,56 @@
+# Infrastructure, not part of the verdict story: give every kagent BYO agent its
+# model key from the kagent-anthropic Secret, so nobody puts a key in a deploy
+# manifest.
+#
+# Why it is needed: a BYO agent reads ANTHROPIC_API_KEY from its pod env, but the
+# AgentRegistry Deployment API only accepts literal env values — no secretKeyRef.
+# Rather than ship the key in cleartext through the registry, the agents deploy
+# keyless and this policy injects a secretKeyRef when the kagent controller
+# creates the Agent CR. The key never lands in the registry record, the Agent CR
+# spec, or the pod spec.
+#
+# It APPENDS via a JSON patch, it does NOT patchStrategicMerge. On the kagent
+# Agent CRD there is no merge key for spec.byo.deployment.env, so a strategic
+# merge REPLACES the whole env list with just this one entry — silently wiping
+# the registry-injected MCP_SERVERS_CONFIG and with it every MCP tool the agent
+# should have. The same constraint applies to the verdict policy in
+# 20-verdict-hitl.yaml, which rewrites that env var rather than replacing it.
+#
+# The precondition makes it inject once: re-applies arrive as admission UPDATEs
+# and would otherwise append a duplicate entry.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-agent-model-key
+  annotations:
+    policies.kyverno.io/title: Inject agent model key from Secret
+    policies.kyverno.io/category: Platform
+spec:
+  background: false            # mutate on admission only (the registry creates the CR)
+  rules:
+    - name: add-anthropic-secretref
+      match:
+        any:
+          - resources:
+              kinds:
+                - kagent.dev/v1alpha2/Agent
+              namespaces:
+                - kagent
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: BYO
+          - key: "{{ request.object.spec.byo.deployment.env[?name=='ANTHROPIC_API_KEY'] | length(@) }}"
+            operator: Equals
+            value: 0
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/byo/deployment/env/-"
+            value:
+              name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-anthropic
+                  key: ANTHROPIC_API_KEY

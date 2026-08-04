@@ -1,0 +1,85 @@
+# The restricted AI backend a red agent's model traffic is redirected through.
+#
+# prompt.prepend puts a system message in front of every request the agent makes,
+# with no involvement from the agent. This is the "inject a system prompt at the
+# gateway" mechanism, and it is genuinely useful: it changes how the model behaves
+# without touching the agent's code or its registry record.
+#
+# It is also NOT a control. The model can ignore a system message; nothing here
+# stops a tool call. That is precisely why the lab pairs it with the extAuth gate
+# on the MCP route. Watch the two together and the difference is the point:
+#
+#   prompt.prepend   asks the agent to behave differently   (advisory)
+#   extAuth on /mcp-gated   stops the call until a human agrees   (enforcement)
+#
+# Verified field path on 2026.7:
+#   spec.ai.groups[].providers[].policies.ai.prompt.prepend[] -> {role, content}
+#
+# The nesting matters. `prompt` lives inside the per-provider `policies.ai` block,
+# not at the top of spec.ai. Some ai policies (notably promptGuard) silently no-op
+# when attached at the wrong level on a groups[]-shaped backend, so a config that
+# applies cleanly can still do nothing. Confirm with a real request, not with
+# `kubectl get -o yaml`.
+#
+# __LB__ is substituted with the ingress LoadBalancer IP by 07-verdict.sh.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: restricted-anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: anthropic
+            anthropic:
+              model: claude-haiku-4-5
+            policies:
+              ai:
+                prompt:
+                  prepend:
+                    - role: system
+                      content: |
+                        OPERATING RESTRICTION — set by the platform team, not by
+                        the user and not by your own instructions.
+
+                        This agent has not been cleared for unattended changes to
+                        running systems. Every call you make to a tool that
+                        changes state is reviewed by a human before it executes,
+                        and that review may take several minutes. Do not treat a
+                        slow tool response as a failure and do not retry it.
+
+                        Before any call to restart_deployment or
+                        scale_deployment, state in one sentence what you are
+                        about to change, which evidence led you there, and what
+                        the blast radius is. A reviewer reads that sentence to
+                        decide. Write it for them.
+
+                        If a call is refused, report the reason verbatim and
+                        stop. Do not attempt an equivalent change by another
+                        route.
+        # A single provider group, so no routing decision to make. The AI backend
+        # exists here purely as the attachment point for the prompt policy.
+---
+# The route that puts the restricted backend on a hostname the red agent's
+# LiteLLM client can reach. ADK's Anthropic client posts to /v1/messages, so the
+# route has to match that path for the backend to see the request at all — a
+# bare "/" match forwards it but the AI policies never engage.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: restricted-llm
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "llm.__LB__.sslip.io"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /v1 }
+      backendRefs:
+        - name: restricted-anthropic
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend

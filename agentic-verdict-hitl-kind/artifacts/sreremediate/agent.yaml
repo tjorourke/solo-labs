@@ -1,0 +1,11 @@
+apiVersion: ar.dev/v1alpha1
+kind: Agent
+metadata:
+  name: sreremediate
+spec:
+  description: 'SRE assistant: triage and remediate unhealthy workloads via the sre-tools
+    MCP server.'
+  modelName: claude-haiku-4-5
+  modelProvider: anthropic
+  source:
+    image: localhost:5001/sreremediate:latest

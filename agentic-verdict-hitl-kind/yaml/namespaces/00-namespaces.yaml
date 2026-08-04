@@ -1,0 +1,40 @@
+# Namespaces, one per role in the story.
+#
+#   agentgateway-system  the gateway the platform team owns
+#   ar-keycloak          the OIDC issuer for AgentRegistry + kagent
+#   agentregistry-system the Enterprise AgentRegistry catalog
+#   kagent               where the developer's agents land
+#   sre-tools            the MCP server the agents call
+#   hitl                 the approval queue the platform reviewer watches
+#
+# The split matters: the developer owns nothing in agentgateway-system or hitl,
+# which is the whole point of the lab. HITL is imposed from outside the agent.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentgateway-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ar-keycloak
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentregistry-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kagent
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sre-tools
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hitl

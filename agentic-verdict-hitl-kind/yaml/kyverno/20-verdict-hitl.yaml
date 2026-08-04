@@ -1,0 +1,187 @@
+# The control. This is the policy that imposes HITL on an agent whose developer
+# never agreed to it, never implemented it, and cannot remove it.
+#
+# It reads the risk register (a ConfigMap the external review process writes) and,
+# for any agent on the red list, rewrites two things in the Agent CR at admission:
+#
+#   1. MCP_SERVERS_CONFIG   /mcp  ->  /mcp-gated
+#      The agent's tool traffic now crosses a route carrying an extAuth policy, so
+#      every call parks until a human decides. This is real enforcement: the agent
+#      cannot route around it, because it never learns the ungated URL exists.
+#
+#   2. ANTHROPIC_API_BASE   (added)
+#      The agent's model traffic now goes through agentgateway's restricted AI
+#      backend, which prepends a system message. This is ADVISORY: a system prompt
+#      changes what the model tends to do, it does not gate anything. It is in the
+#      lab to show the contrast with (1), not as a substitute for it.
+#
+# Why a ConfigMap register rather than a label on the Agent CR:
+#
+# The register lets the policy fire on CREATE, before the agent has ever run. If
+# the verdict were a label stamped on the CR after AgentRegistry created it, the
+# red agent would be live and completely ungated for the seconds between creation
+# and labelling. For a security control that window is a hole, so the decision has
+# to be available at admission time. It also means an agent can be red before it
+# is ever deployed a first time.
+#
+# The register uses a single `red` list rather than per-agent keys because Kyverno
+# ConfigMap lookups with a dynamic key need nested {{ }} interpolation, which is
+# fragile across releases. split() + contains() is exact-match and stable.
+# contains() on the raw string would be wrong: an agent named "sre" would match
+# "sreremediate".
+#
+# patchesJson6902, NOT patchStrategicMerge, for anything touching env: the kagent
+# Agent CRD has no merge key for spec.byo.deployment.env, so a strategic merge
+# REPLACES the whole env list and silently drops the registry-injected wiring and
+# the model key. Same trap as 10-inject-model-key.yaml. Labels are a map, so a
+# strategic merge is safe there.
+#
+# The MCP rewrite uses foreach + {{ elementIndex }} rather than a hardcoded env
+# index. The env list order is set by AgentRegistry and Kyverno's own injection,
+# so patching /env/0/value would eventually patch the wrong variable.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verdict-hitl-enrolment
+  annotations:
+    policies.kyverno.io/title: Enrol red-verdict agents in gateway HITL
+    policies.kyverno.io/category: Platform
+    policies.kyverno.io/description: >-
+      Agents named on the red list of the agent-risk-register ConfigMap have their
+      MCP traffic redirected onto the HITL-gated gateway route and their model
+      traffic redirected through the restricted AI backend. Applied at admission,
+      so it takes effect before the agent serves a single request.
+spec:
+  background: false            # admission-time only; the registry creates the CR
+  rules:
+    # ── 1. redirect tool traffic onto the gated route ─────────────────────────
+    - name: gate-mcp-traffic
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap:
+            name: agent-risk-register
+            namespace: kyverno
+      preconditions:
+        all:
+          # BYO only: a Declarative agent has no spec.byo.deployment.env to patch.
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: BYO
+        # `all` and `any` are both evaluated and ANDed, so: must be BYO, AND
+        # either named red or covered by a red default posture.
+        any:
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: true
+          # Fail-closed posture. With default=red every agent is gated unless it
+          # is explicitly cleared, which is the right way round for a control.
+          - key: "{{ register.data.default || 'green' }}"
+            operator: Equals
+            value: red
+      mutate:
+        foreach:
+          - list: "request.object.spec.byo.deployment.env"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: Equals
+                  value: MCP_SERVERS_CONFIG
+            patchesJson6902: |-
+              - op: replace
+                path: "/spec/byo/deployment/env/{{ elementIndex }}/value"
+                value: '[{"name":"sre-tools","type":"remote","url":"http://mcp.{{ register.data.lb }}.sslip.io/mcp-gated"}]'
+
+    # ── 2. redirect model traffic through the restricted AI backend ───────────
+    - name: restrict-model-traffic
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap:
+            name: agent-risk-register
+            namespace: kyverno
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || '' }}"
+            operator: Equals
+            value: BYO
+          # Idempotence: re-applies arrive as admission UPDATEs, and without this
+          # the rule appends a duplicate on every reconcile.
+          - key: "{{ request.object.spec.byo.deployment.env[?name=='ANTHROPIC_API_BASE'] | length(@) }}"
+            operator: Equals
+            value: 0
+        any:
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: true
+          - key: "{{ register.data.default || 'green' }}"
+            operator: Equals
+            value: red
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/byo/deployment/env/-"
+            value:
+              name: ANTHROPIC_API_BASE
+              value: "http://llm.{{ register.data.lb }}.sslip.io"
+
+    # ── 3. record the verdict as a label, for humans ──────────────────────────
+    # The rewrites above are invisible in `kubectl get agent`. Two plain rules
+    # rather than one clever conditional expression, so the intent is obvious.
+    - name: label-red
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap:
+            name: agent-risk-register
+            namespace: kyverno
+      preconditions:
+        any:
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: true
+          - key: "{{ register.data.default || 'green' }}"
+            operator: Equals
+            value: red
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              risk.platform.solo.io/verdict: red
+
+    - name: label-green
+      match:
+        any:
+          - resources:
+              kinds: [kagent.dev/v1alpha2/Agent]
+              namespaces: [kagent]
+      context:
+        - name: register
+          configMap:
+            name: agent-risk-register
+            namespace: kyverno
+      preconditions:
+        all:
+          - key: "{{ contains(split(register.data.red || '', ','), request.object.metadata.name) }}"
+            operator: Equals
+            value: false
+          - key: "{{ register.data.default || 'green' }}"
+            operator: NotEquals
+            value: red
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              risk.platform.solo.io/verdict: green

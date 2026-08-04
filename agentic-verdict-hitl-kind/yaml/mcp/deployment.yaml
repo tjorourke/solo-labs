@@ -1,0 +1,43 @@
+# The MCP server both agents call. One deployment, one tool set, no notion of
+# which caller is trusted — that judgement lives at the gateway.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-tools
+  namespace: sre-tools
+  labels: { app: sre-tools }
+spec:
+  replicas: 1   # in-memory cluster state; a second replica would diverge
+  selector:
+    matchLabels: { app: sre-tools }
+  template:
+    metadata:
+      labels: { app: sre-tools }
+    spec:
+      containers:
+        - name: sre-tools
+          image: sre-tools:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-tools
+  namespace: sre-tools
+  labels: { app: sre-tools }
+spec:
+  selector: { app: sre-tools }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

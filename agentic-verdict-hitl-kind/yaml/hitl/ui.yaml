@@ -1,0 +1,68 @@
+# hitl-ui — the platform reviewer's approval queue. A plain sample web server
+# (HTMX, polls the ext-auth admin API), deliberately separate from the ext-auth
+# service: the gRPC gate is the narrow, Solo-supported piece; this is the bit a
+# customer would replace with their own change-management tooling.
+#
+# Single replica: it holds no state of its own, but the queue it reads lives
+# in-process in hitl-extauth, which is also single-replica.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hitl-ui
+  namespace: hitl
+  labels: { app: hitl-ui }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: hitl-ui }
+  template:
+    metadata:
+      labels: { app: hitl-ui }
+    spec:
+      containers:
+        - name: ui
+          image: hitl-ui:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: HTTP_PORT, value: "8080" }
+            - { name: HITL_EXTAUTH_ADMIN_URL, value: "http://hitl-extauth-admin.hitl.svc.cluster.local:8081" }
+          ports:
+            - { containerPort: 8080, name: http }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hitl-ui
+  namespace: hitl
+  labels: { app: hitl-ui }
+spec:
+  selector: { app: hitl-ui }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      appProtocol: http
+---
+# Reachable from the host as http://hitl.<LB>.sslip.io — the platform reviewer's
+# tab. __LB__ is substituted by 05-mcp-and-hitl.sh.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hitl-ui
+  namespace: hitl
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "hitl.__LB__.sslip.io"
+  rules:
+    - backendRefs:
+        - name: hitl-ui
+          port: 80

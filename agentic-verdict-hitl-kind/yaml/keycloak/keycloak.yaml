@@ -1,0 +1,71 @@
+# Upstream Keycloak (dev mode, in-memory H2, --import-realm) in ar-keycloak.
+#
+# Realm `agentregistry` (admin-user in group `admins`; clients ar-* + kagent-*)
+# is imported from the keycloak-realm-import ConfigMap that 03-keycloak.sh
+# renders from agentregistry-realm.json. Dev posture only, not production.
+#
+# __KEYCLOAK_HOST__ is substituted by 03-keycloak.sh with the sslip hostname
+# derived from the ingress LoadBalancer IP.
+#
+# KC_HOSTNAME_BACKCHANNEL_DYNAMIC is forced to "false" on purpose. The
+# agentgateway ingress rewrites the Host header to the upstream service
+# authority, so a dynamic backchannel would advertise a token_endpoint of
+# keycloak.ar-keycloak.svc.cluster.local — unreachable from the host that runs
+# arctl. Forcing it off pins every published endpoint to KC_HOSTNAME; in-cluster
+# clients reach that same hostname through the hostAlias that lib.sh's bridge()
+# adds to the kagent controller and the AgentRegistry server.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: ar-keycloak
+spec:
+  selector: { app: keycloak }
+  ports:
+    # 80: what the browser and the host reach through the ingress, and what the
+    # in-cluster hostAlias points at.
+    - { name: http, port: 80, targetPort: 8080 }
+    # 8080: direct in-cluster mint URL, for scripted token grabs.
+    - { name: http-8080, port: 8080, targetPort: 8080 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak
+  namespace: ar-keycloak
+spec:
+  serviceName: keycloak
+  replicas: 1
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.3
+          args: [start-dev, --import-realm]
+          env:
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
+            - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: admin }
+            - { name: KC_HTTP_RELATIVE_PATH, value: / }
+            - { name: KC_HOSTNAME, value: "http://__KEYCLOAK_HOST__" }
+            - { name: KC_HOSTNAME_STRICT, value: "false" }
+            - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "false" }
+            - { name: KC_PROXY_HEADERS, value: "xforwarded" }
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+          ports:
+            - { containerPort: 8080, name: http }
+          readinessProbe:
+            httpGet: { path: /realms/master, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits:   { cpu: 1,    memory: 1Gi }
+          volumeMounts:
+            - { name: realm-import, mountPath: /opt/keycloak/data/import, readOnly: true }
+      volumes:
+        - name: realm-import
+          configMap: { name: keycloak-realm-import }

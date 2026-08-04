@@ -1,0 +1,39 @@
+# HTTPRoutes for the two platform services the host needs to reach by name:
+# Keycloak (OIDC issuer) and the AgentRegistry API (what arctl talks to).
+#
+# __LB__ is substituted with the ingress LoadBalancer IP by 03-keycloak.sh.
+#
+# The MCP routes are NOT here. They live in yaml/agentgateway/10-mcp-routes.yaml
+# because they are the ones the verdict decides between, and keeping them
+# separate makes it obvious which routes are part of the control story.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak
+  namespace: ar-keycloak
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "keycloak.__LB__.sslip.io"
+  rules:
+    - backendRefs:
+        - name: keycloak
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentregistry
+  namespace: agentregistry-system
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "agentregistry.__LB__.sslip.io"
+  rules:
+    - backendRefs:
+        - name: agentregistry-enterprise-server
+          port: 12121

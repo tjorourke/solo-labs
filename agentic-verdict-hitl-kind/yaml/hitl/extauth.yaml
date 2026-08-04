@@ -1,0 +1,73 @@
+# hitl-extauth — the approval gate. An Envoy ext-auth gRPC service that parks
+# every Check() call on a Go channel until a decision arrives on its admin API.
+#
+# The Envoy ext-auth contract allows Check() to take arbitrarily long, so the
+# gateway simply waits on the gRPC call. From the agent's point of view its tool
+# call is just slow. No retries, no error to handle, no code change.
+#
+# PARK_TIMEOUT_SEC bounds that wait: if nobody decides within 10 minutes the
+# service returns Denied with reason "timed out", so a forgotten approval fails
+# the call rather than hanging the agent run forever.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hitl-extauth
+  namespace: hitl
+  labels: { app: hitl-extauth }
+spec:
+  replicas: 1   # the pending-decision map is in-process; multi-replica needs Redis
+  selector:
+    matchLabels: { app: hitl-extauth }
+  template:
+    metadata:
+      labels: { app: hitl-extauth }
+    spec:
+      containers:
+        - name: extauth
+          image: hitl-extauth:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: GRPC_PORT,        value: "9001" }
+            - { name: HTTP_PORT,        value: "8081" }
+            - { name: PARK_TIMEOUT_SEC, value: "600" }
+          ports:
+            - { containerPort: 9001, name: grpc }
+            - { containerPort: 8081, name: http }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8081 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8081 }
+            periodSeconds: 10
+---
+# The gRPC service agentgateway calls. appProtocol kubernetes.io/h2c is required:
+# Envoy ext-auth is gRPC over HTTP/2 with no TLS, and without this hint the
+# gateway speaks HTTP/1.1 and every Check() fails.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hitl-extauth
+  namespace: hitl
+  labels: { app: hitl-extauth }
+spec:
+  selector: { app: hitl-extauth }
+  ports:
+    - name: grpc
+      port: 9001
+      targetPort: 9001
+      appProtocol: kubernetes.io/h2c
+---
+# The HTTP admin API hitl-ui reads (and curl, for the scripted checks).
+apiVersion: v1
+kind: Service
+metadata:
+  name: hitl-extauth-admin
+  namespace: hitl
+  labels: { app: hitl-extauth }
+spec:
+  selector: { app: hitl-extauth }
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      appProtocol: http

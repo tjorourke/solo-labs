@@ -1,0 +1,55 @@
+# The developer's two deployments. Read them side by side: they are the same
+# request, twice, with a different name.
+#
+# Both point MCP_SERVERS_CONFIG at /mcp — the open route. The developer asked for
+# ungated tool access for both agents, because as far as they know there is only
+# one way to reach the tool server, and nobody told them otherwise.
+#
+# For sreremediate, that is not what ends up in the pod. Kyverno rewrites the URL
+# to /mcp-gated at admission (yaml/kyverno/20-verdict-hitl.yaml), keyed off the
+# verdict label. Compare this file with the running pod env in phase 07 and the
+# rewrite is the only difference.
+#
+# MCP_SERVERS_CONFIG is a literal here because the AgentRegistry Deployment API
+# accepts literal env values only — no secretKeyRef, no valueFrom. That is also
+# why the model key is absent: the agents deploy keyless and Kyverno injects the
+# key as a secretKeyRef (yaml/kyverno/10-inject-model-key.yaml).
+#
+# __LB__ is substituted with the ingress LoadBalancer IP by 06-agents.sh.
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: sretriage
+spec:
+  targetRef:
+    kind: Agent
+    name: sretriage
+  runtimeRef:
+    kind: Runtime
+    name: kind-kagent
+  env:
+    MCP_SERVERS_CONFIG: '[{"name":"sre-tools","type":"remote","url":"http://mcp.__LB__.sslip.io/mcp"}]'
+    # The MCP server is stateless streamable-HTTP behind a gateway, so the ADK
+    # client must not try to terminate a session on close.
+    MCP_TERMINATE_ON_CLOSE: "false"
+    # A parked approval holds the HTTP request open. The ADK default (and even
+    # the scaffold's raised 60s) would give up long before a human decides, and
+    # the agent would report a tool failure instead of waiting. This is the one
+    # agent-side setting the platform team has to care about.
+    MCP_CONNECT_TIMEOUT: "900"
+---
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: sreremediate
+spec:
+  targetRef:
+    kind: Agent
+    name: sreremediate
+  runtimeRef:
+    kind: Runtime
+    name: kind-kagent
+  env:
+    MCP_SERVERS_CONFIG: '[{"name":"sre-tools","type":"remote","url":"http://mcp.__LB__.sslip.io/mcp"}]'
+    MCP_TERMINATE_ON_CLOSE: "false"
+    MCP_CONNECT_TIMEOUT: "900"

@@ -1,0 +1,65 @@
+# The two routes the verdict chooses between.
+#
+# Both point at the SAME MCP server with the SAME tools. The only difference is
+# that /mcp-gated has an extAuth policy attached (20-hitl-policy.yaml), so every
+# call across it parks until a human decides.
+#
+# The developer's agent asks for /mcp. A green agent gets it. For a red agent,
+# Kyverno rewrites MCP_SERVERS_CONFIG at admission so the pod comes up pointed
+# at /mcp-gated instead. Nothing inside the agent changes, and nothing in the
+# agent's source or its registry record records which route it ended up on.
+#
+# __LB__ is substituted with the ingress LoadBalancer IP by 05-mcp-and-hitl.sh.
+#
+# Path rewrite: both routes rewrite to / because the MCP server mounts its
+# streamable-HTTP app at the root. Without the rewrite the server sees
+# /mcp-gated as an unknown path and 404s, which surfaces as an opaque MCP
+# connection failure in the agent.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-open
+  namespace: sre-tools
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "mcp.__LB__.sslip.io"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mcp }
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+      backendRefs:
+        - name: sre-tools
+          port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-gated
+  namespace: sre-tools
+  labels:
+    # This label is what the HITL policy selects on. Attaching by label rather
+    # than by name means the platform team can bring more routes under the same
+    # gate without editing the policy.
+    hitl.platform.solo.io/gated: "true"
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "mcp.__LB__.sslip.io"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mcp-gated }
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+      backendRefs:
+        - name: sre-tools
+          port: 8080

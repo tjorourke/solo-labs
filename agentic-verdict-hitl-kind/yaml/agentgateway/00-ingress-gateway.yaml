@@ -1,0 +1,22 @@
+# The one ingress Gateway for the lab, on a MetalLB LoadBalancer IP.
+#
+# This Gateway belongs to the PLATFORM team. The developer never writes to this
+# namespace, which is exactly why it is the right place to impose HITL: the
+# agent's tool traffic has to cross it, and the agent cannot opt out.
+#
+# allowedRoutes.from: All so the routes for Keycloak, AgentRegistry and the MCP
+# server can live in their own namespaces next to the workloads they front.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: verdict-ingress
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All
