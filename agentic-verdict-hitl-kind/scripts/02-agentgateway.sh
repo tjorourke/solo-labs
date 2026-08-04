@@ -26,10 +26,13 @@ ok "CRDs installed"
 
 step "Installing agentgateway control plane $AGW_VERSION"
 log "Enterprise images pull from GAR — progress every 15s below"
+# The chart's licence path is licensing.licenseKey (confirmed with
+# `helm show values` on v2026.7.1). It is NOT license.value — that shape belongs
+# to other Solo charts and silently leaves the gateway unlicensed here.
 helm_install_with_progress enterprise-agentgateway \
   "$AGW_CHARTS/enterprise-agentgateway" "$AGW_NS" \
   --version "$AGW_VERSION" \
-  --set license.value="$SOLO_LICENSE_KEY" \
+  --set licensing.licenseKey="$AGW_LICENSE_KEY" \
   --wait --timeout 10m
 ok "control plane installed"
 

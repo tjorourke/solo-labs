@@ -23,7 +23,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -147,6 +149,20 @@ func parseMCP(body string) (string, string, map[string]any) {
 type extAuthServer struct {
 	auth_v3.UnimplementedAuthorizationServer
 	q *Queue
+	// Tool names that require human approval. Empty means gate every tools/call
+	// (fail-closed default). Populated from the GATED_TOOLS env var.
+	gatedTools map[string]bool
+}
+
+// parseGatedTools reads a comma-separated tool list from GATED_TOOLS.
+func parseGatedTools(raw string) map[string]bool {
+	out := map[string]bool{}
+	for _, t := range strings.Split(raw, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			out[t] = true
+		}
+	}
+	return out
 }
 
 func (e *extAuthServer) Check(ctx context.Context, req *auth_v3.CheckRequest) (*auth_v3.CheckResponse, error) {
@@ -163,6 +179,28 @@ func (e *extAuthServer) Check(ctx context.Context, req *auth_v3.CheckRequest) (*
 	if toolName == "" {
 		log.Printf("[passthrough] id=%s method=%s path=%s rpc=%q",
 			id, httpReq.GetMethod(), httpReq.GetPath(), rpcMethod)
+		return &auth_v3.CheckResponse{
+			Status: &status.Status{Code: int32(codes.OK)},
+			HttpResponse: &auth_v3.CheckResponse_OkResponse{
+				OkResponse: &auth_v3.OkHttpResponse{},
+			},
+		}, nil
+	}
+
+	// Park only the tools the platform team has declared sensitive (GATED_TOOLS).
+	//
+	// Without this, EVERY tools/call parks — including list_pods and
+	// get_pod_logs. A gated agent then cannot even diagnose without a human
+	// clicking approve on each read, the reviewer is buried in noise, and the
+	// approvals that matter get rubber-stamped along with the rest. Gating reads
+	// is worse than not gating: it trains the reviewer to click yes.
+	//
+	// The list lives HERE, in platform config, not in the agent and not in the
+	// MCP server. Neither of them gets a say in what counts as dangerous.
+	// GATED_TOOLS unset means gate everything, so a misconfigured deploy fails
+	// closed rather than silently letting mutations through.
+	if len(e.gatedTools) > 0 && !e.gatedTools[toolName] {
+		log.Printf("[not-gated] id=%s tool=%s (not in GATED_TOOLS)", id, toolName)
 		return &auth_v3.CheckResponse{
 			Status: &status.Status{Code: int32(codes.OK)},
 			HttpResponse: &auth_v3.CheckResponse_OkResponse{
@@ -268,7 +306,18 @@ func main() {
 		log.Fatalf("listen %s: %v", grpcAddr, err)
 	}
 	s := grpc.NewServer()
-	auth_v3.RegisterAuthorizationServer(s, &extAuthServer{q: q})
+	gated := parseGatedTools(getenv("GATED_TOOLS", ""))
+	if len(gated) == 0 {
+		log.Printf("GATED_TOOLS empty — gating EVERY tools/call (fail-closed)")
+	} else {
+		names := make([]string, 0, len(gated))
+		for n := range gated {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		log.Printf("gating %d tool(s): %s", len(names), strings.Join(names, ", "))
+	}
+	auth_v3.RegisterAuthorizationServer(s, &extAuthServer{q: q, gatedTools: gated})
 
 	log.Printf("ext-auth gRPC=%s admin HTTP=%s parkTTL=%s",
 		grpcAddr, httpAddr, q.parkTTL)

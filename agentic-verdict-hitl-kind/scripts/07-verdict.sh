@@ -26,6 +26,7 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
+require_secrets     # the gateway needs the upstream model key for the AI backend
 [[ -n "${LB:-}" ]] || die "LB not set — run ./scripts/02-agentgateway.sh first"
 VERDICT_RED="${VERDICT_RED-$RED_AGENT}"
 VERDICT_DEFAULT="${VERDICT_DEFAULT:-green}"
@@ -101,7 +102,7 @@ done
 # ── 5. show the difference ────────────────────────────────────────────────────
 step "What the platform team changed, without touching either agent"
 printf '\n  %-14s %-8s %s\n' "AGENT" "VERDICT" "MCP URL IN THE RUNNING POD" >&2
-printf '  %-14s %-8s %s\n' "─────" "───────" "──────────────────────────" >&2
+printf '  %-14s %-8s %s\n' "──────────────" "───────" "──────────────────────────" >&2
 for a in "$GREEN_AGENT" "$RED_AGENT"; do
   verdict="$(kc -n "$KAGENT_NS" get agent "$a" \
     -o jsonpath="{.metadata.labels.risk\.platform\.solo\.io/verdict}" 2>/dev/null)"
@@ -112,7 +113,7 @@ for a in "$GREEN_AGENT" "$RED_AGENT"; do
 done
 
 printf '\n  %-14s %s\n' "AGENT" "MODEL ENDPOINT IN THE RUNNING POD" >&2
-printf '  %-14s %s\n' "─────" "─────────────────────────────────" >&2
+printf '  %-14s %s\n' "──────────────" "─────────────────────────────────" >&2
 for a in "$GREEN_AGENT" "$RED_AGENT"; do
   base="$(kc -n "$KAGENT_NS" get agent "$a" \
     -o jsonpath='{.spec.byo.deployment.env[?(@.name=="ANTHROPIC_API_BASE")].value}' 2>/dev/null)"
@@ -122,13 +123,20 @@ done
 # Prove the developer's source is untouched. If this ever fails, the lab is
 # claiming something it is not doing.
 step "Confirming the developer's artefacts are unchanged"
-DEV_URL="$(grep -o 'url\\":\\"[^\\]*' "$LAB_ROOT/yaml/agents/deployments.yaml" 2>/dev/null | head -1 || true)"
 grep -q '/mcp"' "$LAB_ROOT/yaml/agents/deployments.yaml" \
   && ok "the developer's deployment still asks for /mcp — unmodified" \
   || warn "the developer's deployment no longer reads /mcp; did something edit it?"
-grep -qi "approval\|hitl\|gated" "$LAB_ROOT/artifacts/$RED_AGENT/$RED_AGENT/agent.py" \
-  && warn "the red agent's source mentions approval — it should not" \
-  || ok "the red agent's source contains no approval logic at all"
+
+# The meaningful assertion is that the agent has no knowledge of the gated path or
+# the restricted model endpoint — not that the word "approval" is absent. The
+# template's own comments discuss approval precisely to explain that none is
+# implemented, so a naive keyword grep flags the documentation and reads as a
+# failure when nothing is wrong.
+if grep -qE "mcp-gated|llm\.[0-9]|ANTHROPIC_API_BASE *=" "$LAB_ROOT/artifacts/$RED_AGENT/$RED_AGENT/agent.py"; then
+  warn "the red agent's source references the gated path or a hardcoded endpoint"
+else
+  ok "the red agent's source has no knowledge of the gated route or the restricted backend"
+fi
 
 step "Verdict applied"
 cat >&2 <<EOF

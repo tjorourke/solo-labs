@@ -30,6 +30,20 @@ spec:
             - { name: GRPC_PORT,        value: "9001" }
             - { name: HTTP_PORT,        value: "8081" }
             - { name: PARK_TIMEOUT_SEC, value: "600" }
+            # Which tools need a human. The PLATFORM team decides this, not the
+            # agent and not the MCP server.
+            #
+            # Leaving it empty gates every tools/call, which sounds safer and is
+            # actually worse: the gated agent cannot even run list_pods without an
+            # approval, so a reviewer faces a stream of read-only requests and
+            # learns to click approve without reading. The mutations then get
+            # waved through with everything else.
+            #
+            # Only the two tools that change the running system are listed. Reads
+            # (list_pods, get_pod_logs, describe_deployment) pass straight through,
+            # so a red agent can still diagnose freely and only pauses at the point
+            # where it wants to act.
+            - { name: GATED_TOOLS, value: "restart_deployment,scale_deployment" }
           ports:
             - { containerPort: 9001, name: grpc }
             - { containerPort: 8081, name: http }

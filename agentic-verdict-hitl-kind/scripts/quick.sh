@@ -25,15 +25,6 @@ PHASES=(
   07-verdict.sh
 )
 
-# extauth_admin — run a curl against the ext-auth admin API from inside the pod,
-# so no port-forward is needed.
-extauth_admin() {
-  local path="$1" method="${2:-GET}" data="${3:-}"
-  local args=(-s -X "$method" "http://localhost:8081${path}")
-  [[ -n "$data" ]] && args+=(-H 'Content-Type: application/json' -d "$data")
-  kc -n "$HITL_NS" exec -i deploy/hitl-extauth -- curl "${args[@]}" 2>/dev/null
-}
-
 cmd_up() {
   require_secrets
   local start; start=$(date +%s)
@@ -89,8 +80,8 @@ EOF
 
 cmd_pending() {
   step "Parked in the approval queue"
-  local out; out="$(extauth_admin /pending)"
-  if [[ -z "$out" || "$out" == "[]" ]]; then
+  local out; out="$(pending_list)"
+  if [[ "$out" == "[]" ]]; then
     log "nothing parked"
     return 0
   fi
@@ -109,8 +100,8 @@ for p in json.load(sys.stdin):
 cmd_decide() {
   local approved="$1" reason="$2"
   local ids
-  ids="$(extauth_admin /pending | python3 -c 'import sys,json;print(" ".join(p["id"] for p in json.load(sys.stdin)))' 2>/dev/null)"
-  [[ -n "$ids" ]] || { log "nothing parked to decide"; return 0; }
+  ids="$(pending_ids)"
+  [[ -n "${ids// /}" ]] || { log "nothing parked to decide"; return 0; }
   for id in $ids; do
     extauth_admin "/decide/$id" POST "{\"approved\":$approved,\"reason\":\"$reason\"}" >/dev/null
     ok "$([[ "$approved" == "true" ]] && echo approved || echo rejected) $id"
@@ -119,9 +110,11 @@ cmd_decide() {
 
 cmd_reset() {
   step "Resetting the mock cluster state"
-  kc -n "$SRE_NS" exec -i deploy/sre-tools -- \
-    curl -s -X POST http://localhost:8080/reset >/dev/null 2>&1 \
-    && ok "sre-tools state reset" || warn "could not reset sre-tools"
+  # The sre-tools image is python:slim so it does have a shell, but it has no curl.
+  # Use the interpreter that is definitely there.
+  kc -n "$SRE_NS" exec -i deploy/sre-tools -- python3 -c \
+    "import urllib.request;urllib.request.urlopen(urllib.request.Request('http://localhost:8080/reset',b''),timeout=5)" \
+    >/dev/null 2>&1 && ok "sre-tools state reset" || warn "could not reset sre-tools"
   cmd_decide false "reset"
 }
 

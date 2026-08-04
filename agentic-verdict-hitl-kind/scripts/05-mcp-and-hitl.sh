@@ -37,9 +37,19 @@ wait_deploy "$HITL_NS" hitl-ui      && ok "hitl-ui Ready"
 step "Applying the two MCP routes (/mcp open, /mcp-gated gated)"
 sed "s/__LB__/${LB}/g" "$LAB_ROOT/yaml/agentgateway/10-mcp-routes.yaml" \
   | kc apply -f - >/dev/null
+# An HTTPRoute's Accepted condition lives under status.parents[].conditions, NOT
+# at the top level, so `kubectl wait --for=condition=Accepted` can never see it and
+# always times out. Read the nested condition instead.
 for r in mcp-open mcp-gated; do
-  kc -n "$SRE_NS" wait --for=condition=Accepted "httproute/$r" --timeout=60s >/dev/null 2>&1 \
-    && ok "HTTPRoute $r accepted" || warn "HTTPRoute $r not accepted yet"
+  acc=""
+  for _ in $(seq 1 20); do
+    acc="$(kc -n "$SRE_NS" get httproute "$r" \
+      -o jsonpath='{.status.parents[*].conditions[?(@.type=="Accepted")].status}' 2>/dev/null)"
+    [[ "$acc" == *"True"* ]] && break
+    sleep 3
+  done
+  [[ "$acc" == *"True"* ]] && ok "HTTPRoute $r Accepted" \
+    || warn "HTTPRoute $r not Accepted (${acc:-no status}) — check: kc -n $SRE_NS describe httproute $r"
 done
 
 # ── the gate policy ───────────────────────────────────────────────────────────
@@ -59,8 +69,13 @@ log "policy status: Accepted=${ACC:-?} Attached=${ATT:-?}"
 step "Proving both routes with curl (no agent involved)"
 MCP_URL="http://${MCP_HOST}"
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+# The gate only parks tools/call frames. initialize and tools/list pass straight
+# through on purpose: parking the handshake would deadlock the MCP session before
+# the agent ever got a tool list. So the proof has to be a real tool call, and a
+# MUTATING one, since that is what a reviewer is there to decide on.
+CALL='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"restart_deployment","arguments":{"name":"checkout","namespace":"shop"}}}'
 
-log "open route  → POST ${MCP_URL}/mcp"
+log "open route  → POST ${MCP_URL}/mcp (initialize)"
 if curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "${MCP_URL}/mcp" \
      -H 'Content-Type: application/json' \
      -H 'Accept: application/json, text/event-stream' \
@@ -70,21 +85,45 @@ else
   warn "open route did not answer 2xx — check the gateway and the MCP pod"
 fi
 
-log "gated route → POST ${MCP_URL}/mcp-gated (expect it to PARK, so this times out)"
-GATED_CODE="$(curl -s -m 8 -o /dev/null -w '%{http_code}' -X POST "${MCP_URL}/mcp-gated" \
+log "gated route → POST ${MCP_URL}/mcp-gated (tools/call — expect it to PARK)"
+# Fire it in the background: a parked call does not return, which is the point.
+curl -s -m 20 -o /dev/null -X POST "${MCP_URL}/mcp-gated" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  -d "$INIT" 2>/dev/null || echo "timeout")"
-PENDING="$(kc -n "$HITL_NS" exec deploy/hitl-extauth -- \
-  wget -qO- http://localhost:8081/pending 2>/dev/null | tr -d '\n' || echo '')"
-if [[ "$GATED_CODE" == "timeout" || "$GATED_CODE" == "000" ]]; then
-  ok "gated route parked the call (curl timed out, which is the expected result)"
+  -d "$CALL" >/dev/null 2>&1 &
+GATED_PID=$!
+sleep 6
+
+PENDING="$(pending_list)"
+if [[ "$PENDING" != "[]" ]]; then
+  ok "the call is parked and visible in the approval queue"
+  printf '%s' "$PENDING" | python3 -c '
+import sys, json
+for p in json.load(sys.stdin):
+    args = p.get("toolArgs") or {}
+    a = ", ".join("%s=%s" % (k, v) for k, v in args.items())
+    print("      %s  %s(%s)" % (p.get("id"), p.get("toolName"), a))
+' >&2 2>/dev/null || true
+
+  # Reject it, to prove a denial never reaches the MCP server. The mock cluster's
+  # audit log is the evidence: a rejected restart leaves no entry.
+  for id in $(pending_ids); do
+    extauth_admin "/decide/$id" POST '{"approved":false,"reason":"phase 05 proof — rejected"}' >/dev/null
+  done
+  ok "rejected it, so the mutation never reached the tool server"
 else
-  warn "gated route returned ${GATED_CODE} instead of parking — is the policy Attached?"
+  warn "nothing parked — the gate did not fire. Check: kc -n $HITL_NS logs deploy/hitl-extauth"
 fi
-[[ -n "$PENDING" && "$PENDING" != "[]" ]] \
-  && ok "the parked call is visible in the approval queue" \
-  || log "queue now empty (the parked call was released when curl gave up)"
+wait "$GATED_PID" 2>/dev/null || true
+
+# Confirm the rejected restart left no trace upstream.
+AUDIT="$(kc -n "$SRE_NS" exec deploy/sre-tools -- python3 -c \
+  "import urllib.request,json;print(len(json.load(urllib.request.urlopen('http://localhost:8080/state',timeout=5))['audit']))" 2>/dev/null || echo '?')"
+if [[ "$AUDIT" == "0" ]]; then
+  ok "MCP server audit log is empty — the rejected call never landed"
+else
+  log "MCP server audit entries: ${AUDIT} (expected 0 on a clean run)"
+fi
 
 step "Platform side ready"
 echo "  MCP open   : http://${MCP_HOST}/mcp" >&2

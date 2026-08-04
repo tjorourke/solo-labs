@@ -40,9 +40,15 @@ kc -n "$KAGENT_NS" create secret generic kagent-enterprise-oidc-secret \
   --from-literal=clientSecret="$KAGENT_BACKEND_SECRET" \
   --dry-run=client -o yaml | kc apply -f - >/dev/null
 
-# The model key both agents use. They are deployed keyless and Kyverno injects
-# a secretKeyRef at admission (see yaml/kyverno/10-inject-model-key.yaml), so the
-# key never lands in a registry record or an Agent CR spec.
+# The model key both agents use, and the same Secret the chart's default
+# ModelConfig references.
+#
+# The chart defaults are already providers.anthropic.apiKeySecretRef=kagent-anthropic
+# and apiKeySecretKey=ANTHROPIC_API_KEY, so creating the Secret here is all that is
+# needed. Do NOT also pass --set providers.anthropic.apiKey: that makes the chart
+# try to CREATE this Secret, and Helm then refuses the whole install with
+# "exists and cannot be imported into the current release: invalid ownership
+# metadata". One Secret, created here, referenced by both the chart and Kyverno.
 kc -n "$KAGENT_NS" create secret generic kagent-anthropic \
   --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
   --dry-run=client -o yaml | kc apply -f - >/dev/null
@@ -61,7 +67,6 @@ helm --kube-context "$CTX" upgrade --install kagent "$KENT_CHART" \
   -n "$KAGENT_NS" --version "$KAGENT_ENT_VERSION" \
   --set global.licensing.licenseKey="$SOLO_LICENSE_KEY" \
   --set providers.default=anthropic \
-  --set providers.anthropic.apiKey="$ANTHROPIC_API_KEY" \
   --set oidc.issuer="$KEYCLOAK_ISSUER" \
   --set oidc.clientId="$KAGENT_BACKEND_CLIENT" \
   --set oidc.secretRef=kagent-enterprise-oidc-secret \

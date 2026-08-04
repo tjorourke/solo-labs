@@ -84,25 +84,56 @@ kc -n metallb-system wait \
 ok "MetalLB controller ready"
 
 # Hand out a small slice of the kind docker network as LoadBalancer IPs.
+#
+# The prefix has to come from the actual mask, not a guess. A kind network can be
+# a /16 (172.18.0.0/16) or a /24 (192.168.97.0/24), and assuming /16 on a /24
+# network produces a pool OUTSIDE the subnet — MetalLB assigns an address the host
+# can never route to, and the Gateway sits Programmed with an unreachable IP.
 KIND_CIDR="$(docker network inspect kind \
   --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' 2>/dev/null \
   | grep -v ':' | head -1)"
 [[ -n "$KIND_CIDR" ]] || die "kind docker network not found"
-BASE="$(echo "$KIND_CIDR" | cut -d. -f1,2)"
-log "kind network: $KIND_CIDR (base: $BASE)"
+KIND_MASK="${KIND_CIDR##*/}"
+if (( KIND_MASK >= 24 )); then
+  # /24 or narrower: the third octet is fixed by the subnet.
+  PREFIX="$(echo "${KIND_CIDR%%/*}" | cut -d. -f1-3)"
+else
+  # Wider than /24: pick a high third octet inside the range.
+  PREFIX="$(echo "${KIND_CIDR%%/*}" | cut -d. -f1,2).255"
+fi
+
+# Other kind clusters commonly share this docker network and have their own pools
+# (the istio-ambient-demo-kind clusters take .140-.150 and .160-.170). Overlapping
+# pools mean two clusters hand out the same IP and traffic lands on whichever ARPs
+# last, which looks like random gateway failures. Default well clear of those, and
+# allow an override.
+LB_START="${LB_POOL_START:-${PREFIX}.180}"
+LB_END="${LB_POOL_END:-${PREFIX}.190}"
+log "kind network: $KIND_CIDR  (pool prefix: $PREFIX)"
+
+# Warn on a real overlap rather than failing: the other cluster may be stopped.
+for other in $(kind get clusters 2>/dev/null | grep -vx "$CLUSTER_NAME"); do
+  existing="$(kubectl --context "kind-${other}" get ipaddresspool -A \
+    -o jsonpath='{range .items[*]}{.spec.addresses[*]}{" "}{end}' 2>/dev/null || true)"
+  [[ -n "$existing" ]] && log "cluster '$other' holds: $existing"
+  case "$existing" in
+    *"${LB_START}"*|*"${LB_END}"*)
+      warn "pool ${LB_START}-${LB_END} overlaps cluster '$other' — set LB_POOL_START/LB_POOL_END" ;;
+  esac
+done
 
 kc apply -f - >/dev/null <<EOF
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata: { name: kind-pool, namespace: metallb-system }
 spec:
-  addresses: ["${BASE}.255.200-${BASE}.255.220"]
+  addresses: ["${LB_START}-${LB_END}"]
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata: { name: kind-l2, namespace: metallb-system }
 EOF
-ok "MetalLB pool: ${BASE}.255.200-${BASE}.255.220"
+ok "MetalLB pool: ${LB_START}-${LB_END}"
 
 # ── Gateway API CRDs ──────────────────────────────────────────────────────────
 step "Installing Gateway API CRDs $GATEWAY_API_VERSION"

@@ -11,10 +11,14 @@
 #
 # __LB__ is substituted with the ingress LoadBalancer IP by 05-mcp-and-hitl.sh.
 #
-# Path rewrite: both routes rewrite to / because the MCP server mounts its
-# streamable-HTTP app at the root. Without the rewrite the server sees
-# /mcp-gated as an unknown path and 404s, which surfaces as an opaque MCP
-# connection failure in the agent.
+# Paths: FastMCP's streamable_http_app() serves at /mcp INSIDE whatever it is
+# mounted under, and the server mounts it at "/". So the real upstream endpoint is
+# /mcp — verified in-pod: / returns 404, /mcp returns 200.
+#
+# That means the open route must NOT rewrite (it already matches /mcp), and the
+# gated route rewrites /mcp-gated -> /mcp. Rewriting either one to "/" makes the
+# server 404, which reaches the agent as an opaque MCP connection failure with no
+# hint that the path is wrong.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -29,10 +33,7 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /mcp }
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+      # No rewrite: the match path and the upstream path are the same.
       backendRefs:
         - name: sre-tools
           port: 8080
@@ -59,7 +60,9 @@ spec:
       filters:
         - type: URLRewrite
           urlRewrite:
-            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+            # /mcp-gated -> /mcp, so both routes land on the same upstream
+            # endpoint and the ONLY difference between them is the policy.
+            path: { type: ReplacePrefixMatch, replacePrefixMatch: /mcp }
       backendRefs:
         - name: sre-tools
           port: 8080

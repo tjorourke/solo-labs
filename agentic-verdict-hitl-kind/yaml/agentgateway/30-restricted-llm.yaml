@@ -36,6 +36,18 @@ spec:
               model: claude-haiku-4-5
             policies:
               ai:
+                # Declare the API shape per path, or the gateway cannot parse the
+                # body and the agent gets:
+                #   litellm.ServiceUnavailableError: AnthropicException -
+                #   processing failed: failed to marshal request: missing field `type`
+                #
+                # ADK's LiteLLM client POSTs the Anthropic Messages API to
+                # /v1/messages. Without this map the gateway does not know that is
+                # what it is looking at, so it cannot apply any ai policy to it —
+                # including the prompt.prepend below, which is the whole point of
+                # this backend.
+                routes:
+                  "/v1/messages": Messages
                 prompt:
                   prepend:
                     - role: system

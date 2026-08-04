@@ -66,3 +66,31 @@ spec:
     - backendRefs:
         - name: hitl-ui
           port: 80
+---
+# The ext-auth admin API, exposed on its own hostname so the scripts can read the
+# queue and post decisions straight from the host.
+#
+# This replaces a `kubectl port-forward` in the helper functions. Port-forwarding
+# turned out to be genuinely unreliable here: forwards leaked between calls, the
+# leaked process kept the local port bound, and the next call then either failed to
+# bind or silently talked to whatever else was listening — which made a working
+# gate look broken. A route has no such failure mode.
+#
+# It is unauthenticated, which is fine for a single-cluster lab on a private kind
+# network and would not be in production: this is the API that decides whether a
+# mutation runs, so it belongs behind the same auth as the UI.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hitl-admin
+  namespace: hitl
+spec:
+  parentRefs:
+    - name: verdict-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "hitl-admin.__LB__.sslip.io"
+  rules:
+    - backendRefs:
+        - name: hitl-extauth-admin
+          port: 8081

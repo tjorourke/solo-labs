@@ -202,14 +202,57 @@ Full detail in [CLAUDE.md](./CLAUDE.md). The short list:
   env discovery alone sends traffic to `api.anthropic.com` while looking correct.
 - **`failureMode: FailClosed`** on the gate is not optional. A HITL gate that fails
   open when the approver is down is not a gate.
+- **Gate mutating tools only, via `GATED_TOOLS`.** Gating every `tools/call` sounds
+  safer and is worse: the agent cannot run `list_pods` without an approval, the
+  reviewer is buried in read-only requests, and the ones that matter get
+  rubber-stamped along with the rest. Gating reads trains the reviewer to click yes.
+- **The AI backend needs `policies.ai.routes`.** Without `"/v1/messages": Messages`
+  the gateway cannot parse the body and the agent dies with
+  `AnthropicException - processing failed: failed to marshal request: missing field
+  type`. No ai policy applies either, so `prompt.prepend` silently does nothing.
+- **The chart's licence path is `licensing.licenseKey`**, and agentgateway wants
+  `AGENTGATEWAY_LICENSE_KEY` rather than the generic gloo-mesh `SOLO_LICENSE_KEY`.
+- **Do not set `providers.anthropic.apiKey` on the kagent chart** if you pre-create
+  `kagent-anthropic` yourself. The chart then tries to own the Secret and Helm
+  refuses the whole install with `invalid ownership metadata`. The chart already
+  defaults to `apiKeySecretRef: kagent-anthropic`, so creating the Secret is enough.
+- **Read HTTPRoute acceptance from `status.parents[].conditions`.** There is no
+  top-level `Accepted` condition, so `kubectl wait --for=condition=Accepted` always
+  times out on a route that is perfectly healthy.
+- **`GET /pending` returns `{"pending":[...]}`, not a bare array.** Treating it as a
+  list fails on a dict, and under `set -e` that kills the script one line after it
+  reported success.
 
 ## Status
 
-Built and statically validated: every script passes `bash -n`, every manifest
-parses, every Python file compiles, and all CRD blocks pass the repo's
-`lint-crd-blocks.py` against the cached agentgateway schemas.
+**Run end to end on kind, 2026-08-04.** agentgateway `v2026.7.1`, kagent Enterprise
+`0.5.3`, Enterprise AgentRegistry `2026.6.1`, arctl `v2026.6.1`, Kyverno `v1.13.4`,
+Gateway API `v1.5.1`, Kubernetes `v1.35.0`.
 
-**Not yet run end to end on a live cluster.** The Enterprise install needs a
-licence and GAR access, so the run is a separate step; `lab-tested-versions.json`
-carries no entry for this lab until it has actually been driven. Treat the version
-pins as intended, not as validated.
+What was actually observed, not inferred:
+
+- Both agents deploy from the catalogue pointing at `/mcp`. AgentRegistry does not
+  overwrite the literal `MCP_SERVERS_CONFIG`.
+- After the verdict, the red agent's pod reads `/mcp-gated` and carries
+  `ANTHROPIC_API_BASE`; the green agent's pod is untouched. Neither agent was
+  rebuilt or republished.
+- The red agent reads freely and pauses only where it acts:
+  ```
+  [passthrough] rpc="initialize"
+  [passthrough] rpc="tools/list"
+  [not-gated]   tool=list_pods (not in GATED_TOOLS)
+  [not-gated]   tool=describe_deployment (not in GATED_TOOLS)
+  [not-gated]   tool=get_pod_logs (not in GATED_TOOLS)
+  [parked]      tool=restart_deployment args=map[name:checkout namespace:shop]
+  ```
+- Approve → the tool runs, the agent reports `ready: 3/3` and goes on to explain the
+  underlying OOM.
+- Reject → `checkout` stays at 3 replicas and the MCP server's audit log stays
+  empty. The call never reached the tool server.
+- The green agent, given the identical prompt, restarts immediately. `extauth` has
+  never seen a single request on `/mcp` — only `/mcp-gated`.
+- `prompt.prepend` genuinely reaches the model. Asked what restrictions it is under,
+  the red agent recites the platform text ("I have not been cleared for unattended
+  changes... reviewed by a human before it executes") which appears nowhere in its
+  own instruction. The green agent, same code and same question, cites only its own
+  system prompt. That is the injection working, and the pair is the proof.

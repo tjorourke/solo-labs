@@ -11,6 +11,16 @@ set -Eeuo pipefail
 # lets a version bump in one place flow to every lab; runtime env still wins.
 # The := fallbacks keep the lab runnable if versions.env is absent (e.g. a dir
 # copied out standalone, or the solo-labs mirror).
+# Capture genuine runtime overrides BEFORE sourcing the matrix. versions.env uses
+# ${VAR:-value}, so once it has run the variable is set and a later ${VAR:-mypin}
+# in this file can never win. That silently installed kagent 0.4.3 (the matrix
+# value) instead of the 0.5.3 this lab pins. Precedence must be:
+#   runtime env  >  this lab's pin  >  the repo-wide matrix
+__rt_kagent_ent="${KAGENT_ENT_VERSION:-}"
+__rt_agw="${AGW_VERSION:-}"
+__rt_ar="${AR_VERSION:-}"
+__rt_gwapi="${GATEWAY_API_VERSION:-}"
+
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
 
@@ -52,15 +62,17 @@ export CTX="kind-${CLUSTER_NAME}"
 #                     per-agent YAML. Do not drop below 2026.7.0.
 #   kagent-ent 0.5.3  latest (2026-07-28), wraps kagent OSS 0.10.0-beta.
 #   AR 2026.6.1       Enterprise AgentRegistry, matches the local arctl build.
-export AGW_VERSION="${AGW_VERSION:-v2026.7.1}"
+# Assigned unconditionally from the captured runtime value, so the lab's pin beats
+# the matrix but an explicit `AGW_VERSION=... ./scripts/quick.sh up` still wins.
+export AGW_VERSION="${__rt_agw:-v2026.7.1}"
 export AGW_CHARTS="${AGW_CHARTS:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
-export KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.3}"
+export KAGENT_ENT_VERSION="${__rt_kagent_ent:-0.5.3}"
 export KENT_CRDS_CHART="${KENT_CRDS_CHART:-oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds}"
 export KENT_CHART="${KENT_CHART:-oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise}"
-export AR_VERSION="${AR_VERSION:-2026.6.1}"
+export AR_VERSION="${__rt_ar:-2026.6.1}"
 export AR_CHART="${AR_CHART:-oci://us-docker.pkg.dev/solo-public/agentregistry-enterprise/helm/agentregistry-enterprise}"
 export METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"
-export GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.5.1}"
+export GATEWAY_API_VERSION="${__rt_gwapi:-v1.5.1}"
 export KYVERNO_VERSION="${KYVERNO_VERSION:-v1.13.4}"
 
 # ── namespaces ────────────────────────────────────────────────────────────────
@@ -88,8 +100,10 @@ export AR_SERVER_PORT="${AR_SERVER_PORT:-12121}"
 # ── the two agents this lab is about ──────────────────────────────────────────
 # Same code, same tools, same MCP server. The ONLY difference is the verdict an
 # external review process stamps on each one.
-export GREEN_AGENT="${GREEN_AGENT:-sre-triage}"
-export RED_AGENT="${RED_AGENT:-sre-remediate}"
+# No hyphens: `arctl init agent` rejects them. Names must be lowercase letters and
+# digits only, so sre-triage is not a legal agent name.
+export GREEN_AGENT="${GREEN_AGENT:-sretriage}"
+export RED_AGENT="${RED_AGENT:-sreremediate}"
 export VERDICT_LABEL="${VERDICT_LABEL:-risk.platform.solo.io/verdict}"
 
 # ── local image registry the arctl scaffolds push to ──────────────────────────
@@ -131,6 +145,10 @@ load_secrets() {
   fi
   export SOLO_LICENSE_KEY="${SOLO_LICENSE_KEY:-${KAGENT_ENT_LICENSE_KEY:-${SOLO_ISTIO_LICENSE_KEY:-}}}"
   export KAGENT_ENT_LICENSE_KEY="${KAGENT_ENT_LICENSE_KEY:-$SOLO_LICENSE_KEY}"
+  # agentgateway takes its own licence when one is issued. The generic
+  # SOLO_LICENSE_KEY in most secrets files is a gloo-mesh-gateway licence, which
+  # the agentgateway chart may reject, so prefer the product-specific key.
+  export AGW_LICENSE_KEY="${AGW_LICENSE_KEY:-${AGENTGATEWAY_LICENSE_KEY:-$SOLO_LICENSE_KEY}}"
   return 0
 }
 
@@ -188,6 +206,61 @@ wait_deploy() {
 
 check_docker() {
   docker info >/dev/null 2>&1 || die "docker daemon not reachable — start Docker Desktop / OrbStack"
+}
+
+# extauth_admin <path> [method] [json-body] — call the approval service's admin API.
+#
+# Goes through a short-lived port-forward rather than `kubectl exec ... curl`: the
+# hitl-extauth image is distroless, with no shell, no curl and no wget, so exec-ing
+# a client into it fails with `exec: "sh": executable file not found`. That failure
+# is silent when the output is piped, which makes the queue look permanently empty
+# while the gate is actually working.
+# Reaches the approval API through the gateway, on hitl-admin.<LB>.sslip.io.
+#
+# This used to port-forward. Don't go back to that: forwards leaked between calls,
+# a leaked process kept the local port bound, and the next call either failed to
+# bind or silently talked to whatever else was listening — at one point returning an
+# AgentRegistry error body from the approval API, which made a perfectly good gate
+# look broken. A plain HTTPRoute has none of those failure modes and behaves the
+# same in a terminal, a script and a notebook.
+extauth_admin() {
+  local path="$1" method="${2:-GET}" data="${3:-}" base
+  base="http://hitl-admin.${LB:?LB not set — run ./scripts/02-agentgateway.sh}.sslip.io"
+  if [[ -n "$data" ]]; then
+    curl -s -m 15 -X "$method" "${base}${path}" \
+      -H 'Content-Type: application/json' -d "$data" 2>/dev/null || true
+  else
+    curl -s -m 15 -X "$method" "${base}${path}" 2>/dev/null || true
+  fi
+}
+
+# pending_list — the parked queue as a JSON ARRAY on stdout, or [] if empty.
+#
+# GET /pending returns an OBJECT, {"pending":[...]}, not a bare array. Treating it
+# as a list makes every consumer fail on a dict, and under `set -e` that kills the
+# script right after reporting success. Normalise in one place.
+pending_list() {
+  extauth_admin /pending | python3 -c '
+import sys, json
+raw = sys.stdin.read().strip()
+if not raw:
+    print("[]"); raise SystemExit
+try:
+    d = json.loads(raw)
+except ValueError:
+    print("[]"); raise SystemExit
+# Accept either {"pending":[...]} or a bare [...] so this survives a shape change.
+items = d.get("pending", []) if isinstance(d, dict) else d
+print(json.dumps(items or []))
+' 2>/dev/null || printf '[]'
+}
+
+# pending_ids — space-separated ids of everything currently parked.
+pending_ids() {
+  pending_list | python3 -c '
+import sys, json
+print(" ".join(p.get("id","") for p in json.load(sys.stdin) if p.get("id")))
+' 2>/dev/null || true
 }
 
 # build_and_load — build an image on the host and load it onto the kind nodes.
