@@ -24,6 +24,24 @@ export AR_NS="${AR_NS:-agentregistry-system}"
 export KEYCLOAK_NS="${KEYCLOAK_NS:-ar-keycloak}"
 export KEYCLOAK_REALM="${KEYCLOAK_REALM:-agentregistry}"
 
+# .env.mesh1 is written by setup-mesh1.sh and gitignored, so a fresh clone (or the
+# mirrored all-labs-combined bundle) has no platform facts at all and every host
+# below would expand empty. Recover them from the live cluster: the ar-ingress
+# Gateway address is the one fact the sslip hostnames are built from. Silent no-op
+# when the cluster isn't up yet — the caller reports the failed login.
+if [ -z "${LB:-}" ]; then
+  _lb="$(kubectl --context "$CTX" -n agentgateway-system get gateway ar-ingress \
+           -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)"
+  [ -n "$_lb" ] && export LB="$_lb"
+  unset _lb
+fi
+if [ -z "${KEYCLOAK_HOST:-}" ] && [ -n "${LB:-}" ]; then
+  export KEYCLOAK_HOST="keycloak.${LB}.sslip.io"
+fi
+if [ -z "${AR_HOST:-}" ] && [ -n "${LB:-}" ]; then
+  export AR_HOST="agentregistry.${LB}.sslip.io"
+fi
+
 # OIDC: the browser-facing issuer (sslip host) is what kagent + AR validate. In-cluster
 # clients mint from the Service URL but KC_HOSTNAME stamps the same sslip `iss`.
 export KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-http://${KEYCLOAK_HOST}/realms/${KEYCLOAK_REALM}}"
