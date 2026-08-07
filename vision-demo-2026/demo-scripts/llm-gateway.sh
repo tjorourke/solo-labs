@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# ai-gateway.sh — stand up the Part 7 (AI gateway) platform on mesh1, on top of
+# llm-gateway.sh — stand up the Part 7 (AI gateway) platform on mesh1, on top of
 # the base ./demo-scripts/setup.sh standup:
 #
 #   - ai-models ns: two local OpenAI-compatible model servers (built from
-#     demo-scripts/ai-gateway-mock/) named azure-openai and bedrock — they play
+#     demo-scripts/llm-gateway-mock/) named azure-openai and bedrock — they play
 #     Azure OpenAI and AWS Bedrock in the notebook, so the routing/failover/
 #     budget demos need no cloud accounts and cost nothing. The notebook
 #     presents them as the real providers; keep that in mind when presenting
@@ -18,9 +18,9 @@
 #   - demo IdP: an RS256 keypair in demo-scripts/.jwt/ for minting persona
 #     JWTs (alice/bob/carol) — stands in for a corporate IdP
 #
-#   SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/ai-gateway.sh
+#   SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/llm-gateway.sh
 #
-# Idempotent — re-run freely. Remove with:  ./demo-scripts/ai-gateway.sh teardown
+# Idempotent — re-run freely. Remove with:  ./demo-scripts/llm-gateway.sh teardown
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CTX="${CTX:-kind-mesh1}"
@@ -30,8 +30,8 @@ SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
 
 # The model servers run a small local OpenAI-compatible mock (keyword-aware
 # answers + real usage counts, so token limits, budgets and cost all behave).
-# Built from demo-scripts/ai-gateway-mock/ into the suite's local registry.
-MOCK_IMAGE="localhost:5001/ai-gateway-mock:latest"
+# Built from demo-scripts/llm-gateway-mock/ into the suite's local registry.
+MOCK_IMAGE="localhost:5001/llm-gateway-mock:latest"
 
 if [ "${1:-}" = "teardown" ]; then
   kubectl --context "$CTX" delete ns ai-models mcp-servers --ignore-not-found
@@ -71,7 +71,7 @@ fi
 # ── 2. model servers (ai-models ns) ───────────────────────────────────────────
 echo "→ building + deploying the model servers (×2) ..."
 if ! docker image inspect "$MOCK_IMAGE" >/dev/null 2>&1 || [ "${REBUILD_MOCK:-}" = "true" ]; then
-  docker build -q -t "$MOCK_IMAGE" "$SCRIPT_DIR/ai-gateway-mock" >/dev/null
+  docker build -q -t "$MOCK_IMAGE" "$SCRIPT_DIR/llm-gateway-mock" >/dev/null
 fi
 docker push -q "$MOCK_IMAGE" >/dev/null
 kubectl --context "$CTX" create ns ai-models --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null
@@ -246,4 +246,4 @@ kubectl --context "$CTX" -n mcp-servers rollout status deploy/server-everything 
 kubectl --context "$CTX" -n "$GW_NS" wait gateway/ai-gateway --for=condition=Programmed --timeout=120s >/dev/null
 GW_IP=$(kubectl --context "$CTX" -n "$GW_NS" get gateway ai-gateway -o jsonpath='{.status.addresses[0].value}')
 echo "✔ AI gateway platform up.  GATEWAY=$GW_IP"
-echo "  open demo-7-ai-gateway.ipynb → run its Connect cell"
+echo "  open demo-7-llm-gateway.ipynb → run its Connect cell"

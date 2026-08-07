@@ -1,4 +1,4 @@
-# ai-gateway-helpers.sh — small curl wrappers the demo-7 notebook reuses.
+# llm-gateway-helpers.sh — small curl wrappers the demo-7 notebook reuses.
 # Sourced by the notebook's Connect cell (needs $GATEWAY exported).
 #
 #   try_model <token|""> <model> [prompt]   one chat completion, prints HTTP code

@@ -63,8 +63,8 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/agentregistry/se
 **Part 7 only** needs a light standup on `mesh1` (two local model servers, the MCP everything-server, the `ai-gateway` Gateway + cost catalog, and a demo IdP keypair). It reads `ANTHROPIC_API_KEY` from the secrets file for the one live provider:
 
 ```bash
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/ai-gateway.sh   # ~1 min
-# open demo-7-ai-gateway.ipynb → run its Connect cell
+SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/llm-gateway.sh   # ~1 min
+# open demo-7-llm-gateway.ipynb → run its Connect cell
 ```
 
 ### All seven at once

@@ -84,10 +84,10 @@ case "$DEMO" in
     kubectl config use-context kind-mesh1 >/dev/null 2>&1 || echo "kind-mesh1 context not found: run ./demo-scripts/setup.sh"
     export NS=agentgateway-system
     export GATEWAY=$(kubectl -n $NS get gateway ai-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
-    source "$LAB_ROOT/demo-scripts/scripts/ai-gateway-helpers.sh"
+    source "$LAB_ROOT/demo-scripts/scripts/llm-gateway-helpers.sh"
     echo "demo-7 · kubectl context: kind-mesh1 · GATEWAY=${GATEWAY:-<not up>} · helpers: try_model | status | mcp_tools | mcp_call"
     [ -n "$GATEWAY" ] \
-      || echo "ai-gateway not found: run SECRETS_FILE=\$SECRETS_FILE ./demo-scripts/ai-gateway.sh"
+      || echo "ai-gateway not found: run SECRETS_FILE=\$SECRETS_FILE ./demo-scripts/llm-gateway.sh"
     ;;
   6)
     # demo-6 is a symlink to the standalone inference lab; its cells run from there

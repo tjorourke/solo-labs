@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# ai-gateway-reset.sh — put Part 7 back to a clean demo state.
+# llm-gateway-reset.sh — put Part 7 back to a clean demo state.
 #
 # Removes everything the demo-7 notebook creates (backends, routes, policies,
 # rate limits, budgets, virtual keys) and restarts the gateway and the rate
 # limiter, which clears provider evictions, token buckets and budget counters.
-# The platform from ai-gateway.sh (gateway, model servers, MCP server, cost
+# The platform from llm-gateway.sh (gateway, model servers, MCP server, cost
 # catalog) stays up.
 #
-#   ./demo-scripts/ai-gateway-reset.sh
+#   ./demo-scripts/llm-gateway-reset.sh
 set -Eeuo pipefail
 CTX="${CTX:-kind-mesh1}"
 NS="${NS:-agentgateway-system}"
