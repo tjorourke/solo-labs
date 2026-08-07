@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # setup-mesh1.sh — stand up the AgentRegistry demo platform ON mesh1, reusing the
-# istio-ambient-demo-kind base (istio ambient + enterprise-agentgateway already
+# vision-demo-2026 base (istio ambient + enterprise-agentgateway already
 # installed by ../setup.sh). Adapted from agentregistry-agentcore-kind (source
 # lab untouched): instead of localtest.me on host :80 + a NodePort ingress, we use
 # mesh1's MetalLB LoadBalancer IP + *.<LB-IP>.sslip.io, so this never fights another

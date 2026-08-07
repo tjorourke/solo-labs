@@ -1,4 +1,4 @@
-# istio-ambient-demo-kind
+# vision-demo-2026
 
 **Customer demo suite for Solo Enterprise for Istio (ambient), one self-contained notebook per demo.** A mash-up of `agentgw-multi-cluster-kind` (the multicluster story, per the "Solo Enterprise for Istio" deck from slide 24) and `istio-ambient-cert-identity-kind` (the L4/L7 workload-identity story), with **one** setup script, inline architecture and state diagrams, and no per-part helm plumbing in the demo itself.
 

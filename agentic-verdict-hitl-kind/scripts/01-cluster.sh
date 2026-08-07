@@ -103,7 +103,7 @@ else
 fi
 
 # Other kind clusters commonly share this docker network and have their own pools
-# (the istio-ambient-demo-kind clusters take .140-.150 and .160-.170). Overlapping
+# (the vision-demo-2026 clusters take .140-.150 and .160-.170). Overlapping
 # pools mean two clusters hand out the same IP and traffic lands on whichever ARPs
 # last, which looks like random gateway failures. Default well clear of those, and
 # allow an override.

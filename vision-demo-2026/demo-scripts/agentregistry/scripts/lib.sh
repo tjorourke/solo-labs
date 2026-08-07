@@ -6,7 +6,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"      # the agentregistry/ dir
-# where `arctl init agent` scaffolds: the SUITE root (istio-ambient-demo-kind),
+# where `arctl init agent` scaffolds: the SUITE root (vision-demo-2026),
 # so agentdemo/ appears in the editor next to the demo notebooks
 export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$LAB_ROOT/../.." && pwd)}"
 
@@ -25,7 +25,7 @@ export KEYCLOAK_NS="${KEYCLOAK_NS:-ar-keycloak}"
 export KEYCLOAK_REALM="${KEYCLOAK_REALM:-agentregistry}"
 
 # .env.mesh1 is written by setup-mesh1.sh and gitignored, so a fresh clone (or the
-# mirrored all-labs-combined bundle) has no platform facts at all and every host
+# mirrored vision-demo-2026 bundle) has no platform facts at all and every host
 # below would expand empty. Recover them from the live cluster: the ar-ingress
 # Gateway address is the one fact the sslip hostnames are built from. Silent no-op
 # when the cluster isn't up yet — the caller reports the failed login.

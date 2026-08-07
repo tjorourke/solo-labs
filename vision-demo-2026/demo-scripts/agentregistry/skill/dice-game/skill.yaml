@@ -10,4 +10,4 @@ spec:
       # the public mirror of this lab — `arctl pull skill dice-game` clones from here
       url: https://github.com/tjorourke/solo-labs.git
       branch: main
-      subfolder: all-labs-combined/demo-scripts/agentregistry/skill/dice-game
+      subfolder: vision-demo-2026/demo-scripts/agentregistry/skill/dice-game

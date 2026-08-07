@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib.sh — shared helpers for istio-ambient-demo-kind.
+# lib.sh — shared helpers for vision-demo-2026.
 #
 # TWO kind clusters (mesh1 + mesh2) running the Solo distribution of Istio in
 # AMBIENT mode, installed from the Helm charts (no operator), peered into one
