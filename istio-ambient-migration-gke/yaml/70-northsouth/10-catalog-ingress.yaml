@@ -1,0 +1,52 @@
+# North-south: how client traffic actually reaches the app on the new cluster,
+# and the label that decides whether your L7 policy still applies to it.
+#
+# THE HOLE. An HTTPRoute on the ingress sends traffic straight to the backend
+# pods. Once those pods are ambient behind a waypoint, that bypasses the
+# waypoint completely, so the waypoint's AuthorizationPolicy does not apply to
+# anything arriving from outside the cluster. Measured on this lab's cluster:
+#
+#   without istio.io/ingress-use-waypoint   GET 200   DELETE 200   waypoint saw 0 requests
+#   with    istio.io/ingress-use-waypoint   GET 200   DELETE 403   waypoint saw both
+#
+# East-west callers inside the mesh are enforced either way, so this hole is
+# invisible from in-cluster testing. It only shows up from the internet, which
+# is exactly where you least want to find it.
+#
+# ORDERING TRAP: if you also apply an L4 lockdown that only allows the waypoint's
+# identity to reach the pods, set the label on the Service FIRST. Do it the other
+# way round and the ingress, which is still reaching pods directly, gets denied
+# and north-south traffic breaks.
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: petstore
+  labels:
+    app: catalog
+    istio.io/ingress-use-waypoint: "true"   # <-- the whole fix
+spec:
+  selector:
+    app: catalog
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5678
+---
+# The route itself. Nothing ambient-specific about it: this is the same
+# HTTPRoute you would write for a sidecar or a non-mesh backend.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: catalog-ingress
+  namespace: petstore
+spec:
+  parentRefs:
+    - name: agw-ingress
+      namespace: agentgateway-system
+  hostnames:
+    - "petstore.example.com"
+  rules:
+    - backendRefs:
+        - name: catalog
+          port: 80
