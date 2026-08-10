@@ -1,0 +1,76 @@
+# The east-west listener on the NEW cluster, served by the Enterprise
+# agentgateway that is already installed as the ingress. No second gateway
+# stack, no Istio `gateway` Helm release, no extra namespace.
+#
+# The internal LoadBalancer comes from Gateway API's own
+# spec.infrastructure.annotations, so the annotation is present on the very
+# first apply and the Service provisions internal from the start.
+#
+# TWO PREREQUISITES, both of which fail in ways that point elsewhere:
+#
+#  1. The gateway's namespace must be enrolled in ambient:
+#        kubectl label ns agentgateway-system istio.io/dataplane-mode=ambient
+#     Without it the gateway sends plaintext straight to the backend pod IPs and
+#     ztunnel refuses them under STRICT. The gateway reports
+#        503  upstream call failed: SendRequest: connection error:
+#             Connection reset by peer (os error 104)
+#     and ztunnel logs
+#        connection closed due to policy rejection:
+#        explicitly denied by: istio-system/istio_converted_static_strict
+#
+#  2. Once the namespace IS ambient, the gateway needs a PERMISSIVE carve-out
+#     (60-pki has nothing to do with this; see below). Traffic arriving from a
+#     LoadBalancer is plaintext by definition, and mesh-wide STRICT now applies
+#     to the gateway pod itself, so it rejects its own ingress. Symptom: the
+#     north-south Gateway stops answering entirely, curl returns 000.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agw-eastwest
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  infrastructure:
+    annotations:
+      networking.gke.io/load-balancer-type: "Internal"
+  listeners:
+    - name: http
+      port: 8080
+      protocol: HTTP
+      hostname: "catalog.crosscluster.svc"
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+# One HTTPRoute per service exposed across the boundary. It lives in the
+# workload's own namespace and targets its own Service, so the team that owns
+# the service owns the route.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: catalog-crosscluster
+  namespace: petstore
+spec:
+  parentRefs:
+    - name: agw-eastwest
+      namespace: agentgateway-system
+  hostnames:
+    - "catalog.crosscluster.svc"
+  rules:
+    - backendRefs:
+        - name: catalog
+          port: 80
+---
+# Prerequisite 2. Gateways terminate traffic that originates outside the mesh,
+# so their inbound is plaintext and mesh-wide STRICT has to be relaxed for the
+# namespace that holds them. This is the standard carve-out for any ingress
+# under STRICT; it does not weaken anything east of the gateway, where the
+# gateway re-originates over HBONE with its own identity.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: gateway-permissive
+  namespace: agentgateway-system
+spec:
+  mtls:
+    mode: PERMISSIVE

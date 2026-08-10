@@ -1,4 +1,20 @@
-# Helm values for the east-west gateway, on BOTH clusters.
+# Helm values for the east-west gateway on the ASM CLUSTER ONLY.
+#
+# On the new cluster you do not need this at all: the Enterprise agentgateway
+# that is already installed as the ingress serves the east-west listener too,
+# via a second Gateway on the same GatewayClass. See 40-agentgateway-eastwest.yaml.
+#
+# On the ASM side it has to be an Istio gateway, for two reasons that are easy
+# to confirm on any managed cluster:
+#   - the ASM cluster has no Gateway API CRDs at all
+#     (`kubectl get gatewayclass` -> the server doesn't have a resource type),
+#     so a Gateway-API gateway cannot even be expressed there without adding
+#     CRDs and a controller;
+#   - an Istio gateway is programmed by the control plane that is ALREADY there.
+#     Its logs read `connected to upstream XDS server: meshconfig.googleapis.com:443`.
+#     No new control plane, no new software to own, nothing installed into the
+#     cluster you promised not to touch. That is also exactly why the bridge
+#     needs no remote secret: the gateway talks to its own local control plane.
 #
 # This is Istio's own `gateway` chart — the same chart used for ingress. There is
 # no special east-west build: what makes it an east-west gateway is the label the

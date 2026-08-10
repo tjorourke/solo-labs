@@ -16,8 +16,10 @@ diagrams and the migration checklist is at
   namespace (Redis + identity authorization), and a legacy namespace that never migrates and holds
   both the sidecar caller and the load generator.
 - A second, identical cluster on community Istio, used purely as an A/B control.
-- An east-west bridge back to the ASM cluster, built from a plain Istio Gateway, VirtualService,
-  ServiceEntry and an internal GCP LoadBalancer.
+- An east-west bridge back to the ASM cluster over internal GCP LoadBalancers. On the new cluster the
+  Enterprise agentgateway already serving north-south takes a second `Gateway` for it; on the ASM cluster it
+  has to be an Istio gateway, because that cluster has no Gateway API CRDs and an Istio gateway is programmed
+  by the managed control plane already running there.
 
 ## Layout
 
