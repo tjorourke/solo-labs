@@ -2,11 +2,22 @@
 # hostname and pointing it at the other cluster's east-west gateway, plus the
 # client's DNS-capture annotation.
 #
-# One ServiceEntry per cross-cluster call you actually need. That is the whole
-# design: during a migration the set of calls that cross the boundary is a known,
-# finite, changing list — not "every service in the other cluster, automatically,
-# forever". Declaring them explicitly is why this pattern needs no remote secret
-# and never touches the other cluster's Kubernetes API.
+# ONE ServiceEntry per cluster pair, listing every hostname that has to cross.
+# Not one object per call: the hosts field is a list, so adding a service to the
+# bridge is a one-line edit here plus an HTTPRoute on the exposing side.
+#
+# Declaring the crossings explicitly is why this pattern needs no remote secret
+# and never touches the other cluster's Kubernetes API. During a migration the
+# set of calls that cross is a known, finite, changing list, not "every service
+# in the other cluster, automatically, forever".
+#
+# Tested: a hostname listed here with no HTTPRoute on the far side returns 404
+# from the gateway, so a name you have declared but not yet exposed fails
+# obviously rather than hanging.
+#
+# Do NOT try to collapse this to a wildcard. `hosts: ["*.crosscluster.svc"]` with
+# resolution: STATIC does not work with DNS auto-allocation: the client cannot
+# resolve the name at all and curl exits 6. List the hostnames.
 #
 # Replace the endpoint address with the east-west gateway's INTERNAL LoadBalancer
 # IP on the other cluster:
@@ -15,11 +26,12 @@
 apiVersion: networking.istio.io/v1
 kind: ServiceEntry
 metadata:
-  name: hop-a-remote
+  name: crosscluster-services
   namespace: cross-cluster-test
 spec:
   hosts:
     - "hop-a.crosscluster.svc"
+    # add each further crossing hostname here, one line each
   location: MESH_EXTERNAL
   resolution: STATIC
   ports:
