@@ -1,7 +1,8 @@
-# Sidecar to Ambient on GKE, off a Managed Mesh
+# Anthos Service Mesh to Enterprise Istio Ambient, on GKE
 
-Migrate off a Google-managed service mesh onto Solo Enterprise Istio in ambient mode, on real
-GKE, without touching the managed control plane. The full write-up with the measurements,
+Migrate off Google Anthos Service Mesh (ASM, rebranded Cloud Service Mesh, still `asm-managed`
+everywhere in the cluster) onto Solo Enterprise Istio in ambient mode, on real GKE, without
+touching the ASM control plane. The full write-up with the measurements,
 diagrams and the migration checklist is at
 [masterthemesh.com/solo/istio-ambient-migration-gke/](https://www.masterthemesh.com/solo/istio-ambient-migration-gke/).
 
@@ -15,8 +16,8 @@ diagrams and the migration checklist is at
   namespace (Redis + identity authorization), and a legacy namespace that never migrates and holds
   both the sidecar caller and the load generator.
 - A second, identical cluster on community Istio, used purely as an A/B control.
-- An east-west bridge to the managed-mesh source cluster, built from a plain Istio Gateway,
-  VirtualService, ServiceEntry and an internal GCP LoadBalancer.
+- An east-west bridge back to the ASM cluster, built from a plain Istio Gateway, VirtualService,
+  ServiceEntry and an internal GCP LoadBalancer.
 
 ## Layout
 
