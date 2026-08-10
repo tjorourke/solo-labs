@@ -1,0 +1,48 @@
+# The EXPOSING side of one cross-cluster call: a plain Istio Gateway plus a
+# VirtualService, deployed into the cluster that owns the backend service.
+#
+# Nothing here is multi-cluster machinery. It is the same Gateway+VirtualService
+# pair every ingress in the estate already uses, pointed at a synthetic hostname
+# instead of a public one. That is the point: the east-west bridge needs no
+# remote secret, no watch on the other cluster's Kubernetes API, and therefore
+# no dependency on which CRD versions that cluster serves. A gateway talks to its
+# own LOCAL control plane over xDS, exactly like every sidecar already does.
+#
+# Apply this on the cluster that OWNS the backend. On the managed-mesh source
+# cluster this Gateway/VirtualService may have to be applied at v1beta1 rather
+# than v1 — a managed control plane usually serves older networking.istio.io
+# versions than a current Istio does. Check with:
+#   kubectl get crd virtualservices.networking.istio.io \
+#     -o jsonpath='{.spec.versions[*].name}'
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: crosscluster-http-gateway
+  namespace: istio-gateways
+spec:
+  selector:
+    istio: eastwestgateway
+  servers:
+    - port:
+        number: 8080
+        name: http
+        protocol: HTTP
+      hosts:
+        - "hop-a.crosscluster.svc"      # the synthetic name the other side calls
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: hop-a-crosscluster
+  namespace: istio-gateways
+spec:
+  hosts:
+    - "hop-a.crosscluster.svc"
+  gateways:
+    - crosscluster-http-gateway
+  http:
+    - route:
+        - destination:
+            host: hop.hop-a.svc.cluster.local   # the real, local Service
+            port:
+              number: 80

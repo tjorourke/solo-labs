@@ -1,0 +1,75 @@
+# The catalog service — the L7 workload in the petstore namespace.
+# One Service (app: catalog) fronts two versioned Deployments, v1 and v2. This
+# is the classic subset pattern: the DestinationRule declares subsets by the
+# `version` label and the VirtualService splits traffic across them. Each
+# replica is http-echo returning a fixed JSON body naming its version, so a
+# caller can see which version served it, and the mesh proxy's L7 decisions
+# (routing, retries, authz) are observable regardless of the trivial backend.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: catalog
+  namespace: petstore
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: petstore
+  labels:
+    app: catalog
+spec:
+  selector:
+    app: catalog
+  ports:
+    - name: http            # port name MUST start with http for Istio L7
+      port: 80
+      targetPort: 5678
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-v1
+  namespace: petstore
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: catalog, version: v1 }
+  template:
+    metadata:
+      labels: { app: catalog, version: v1 }
+    spec:
+      serviceAccountName: catalog
+      containers:
+        - name: catalog
+          image: hashicorp/http-echo:1.0
+          args: ["-listen=:5678", "-text={\"app\":\"catalog\",\"version\":\"v1\"}"]
+          ports:
+            - containerPort: 5678
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-v2
+  namespace: petstore
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: catalog, version: v2 }
+  template:
+    metadata:
+      labels: { app: catalog, version: v2 }
+    spec:
+      serviceAccountName: catalog
+      containers:
+        - name: catalog
+          image: hashicorp/http-echo:1.0
+          args: ["-listen=:5678", "-text={\"app\":\"catalog\",\"version\":\"v2\"}"]
+          ports:
+            - containerPort: 5678
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

@@ -1,0 +1,30 @@
+# Helm values for the east-west gateway, on BOTH clusters.
+#
+# This is Istio's own `gateway` chart — the same chart used for ingress. There is
+# no special east-west build: what makes it an east-west gateway is the label the
+# Gateway resource selects on (istio: eastwestgateway) and the fact it is exposed
+# on the VPC rather than the internet.
+#
+# The one thing that must be right on the FIRST apply is the internal
+# LoadBalancer annotation. GCP's legacy target-pool Network Load Balancers have a
+# hairpin limitation for traffic that originates inside the same VPC as the LB,
+# which is exactly the shape of cross-cluster mesh traffic. Annotating an
+# already-provisioning external LB afterwards does not cleanly switch it — the
+# finalizer stays with the external-LB controller and you have to delete and
+# recreate the Service.
+#
+#   helm install istio-eastwestgateway istio/gateway \
+#     -n istio-gateways --create-namespace -f 10-eastwest-gateway-values.yaml
+labels:
+  istio: eastwestgateway
+  app: istio-eastwestgateway
+
+service:
+  type: LoadBalancer
+  annotations:
+    networking.gke.io/load-balancer-type: "Internal"
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

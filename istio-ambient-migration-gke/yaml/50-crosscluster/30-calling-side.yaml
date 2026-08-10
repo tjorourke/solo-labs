@@ -1,0 +1,63 @@
+# The CALLING side of one cross-cluster call: a ServiceEntry naming the synthetic
+# hostname and pointing it at the other cluster's east-west gateway, plus the
+# client's DNS-capture annotation.
+#
+# One ServiceEntry per cross-cluster call you actually need. That is the whole
+# design: during a migration the set of calls that cross the boundary is a known,
+# finite, changing list — not "every service in the other cluster, automatically,
+# forever". Declaring them explicitly is why this pattern needs no remote secret
+# and never touches the other cluster's Kubernetes API.
+#
+# Replace the endpoint address with the east-west gateway's INTERNAL LoadBalancer
+# IP on the other cluster:
+#   kubectl --context <other> -n istio-gateways get svc istio-eastwestgateway \
+#     -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: hop-a-remote
+  namespace: cross-cluster-test
+spec:
+  hosts:
+    - "hop-a.crosscluster.svc"
+  location: MESH_EXTERNAL
+  resolution: STATIC
+  ports:
+    - name: http
+      number: 80
+      protocol: HTTP
+  endpoints:
+    - address: 10.128.0.26          # <-- other cluster's internal east-west LB IP
+      ports:
+        http: 8080
+---
+# The client. A synthetic hostname has no real DNS record anywhere, so without
+# Istio's DNS proxy the pod cannot resolve it at all and curl fails before any
+# mesh routing happens. The annotation turns on DNS capture for this pod only —
+# deliberately per-pod rather than a mesh-wide meshConfig edit, because a managed
+# control plane is entitled to ignore meshConfig changes you make locally.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  namespace: cross-cluster-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: client }
+  template:
+    metadata:
+      labels: { app: client }
+      annotations:
+        proxy.istio.io/config: |
+          proxyMetadata:
+            ISTIO_META_DNS_CAPTURE: "true"
+            ISTIO_META_DNS_AUTO_ALLOCATE: "true"
+    spec:
+      containers:
+        - name: client
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c", "sleep infinity"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

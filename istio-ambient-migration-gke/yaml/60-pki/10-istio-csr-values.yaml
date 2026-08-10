@@ -1,0 +1,41 @@
+# cert-manager-istio-csr values — the mesh CA moves from istiod's built-in CA to
+# Vault, via cert-manager. This is the shape an estate with a long-standing
+# corporate PKI already has, and it is the part of an ambient migration most
+# likely to bite: sidecars send RSA CSRs, ztunnel sends ECDSA ones.
+#
+#   helm install cert-manager-istio-csr jetstack/cert-manager-istio-csr \
+#     -n cert-manager -f 10-istio-csr-values.yaml
+#
+# caTrustedNodeAccounts is the ambient-specific line. ztunnel asks the CA for
+# certificates on behalf of every pod on its node, so the CA has to accept that
+# one ServiceAccount vouching for identities that are not its own. Set it before
+# you install ztunnel, not after.
+replicaCount: 1
+
+app:
+  logLevel: 2
+  certmanager:
+    namespace: istio-system
+    preserveCertificateRequests: true      # keeps failed CSRs visible for diagnosis
+    issuer:
+      group: cert-manager.io
+      kind: Issuer
+      name: istio-ca
+  istio:
+    revisions: ["default"]
+  server:
+    clusterID: Kubernetes
+    caTrustedNodeAccounts: istio-system/ztunnel
+  tls:
+    trustDomain: cluster.local
+    certificateDNSNames:
+      - cert-manager-istio-csr.cert-manager.svc
+    rootCAFile: /var/run/secrets/istio-csr/ca.pem
+
+volumes:
+  - name: root-ca
+    secret:
+      secretName: istio-root-ca
+volumeMounts:
+  - name: root-ca
+    mountPath: /var/run/secrets/istio-csr

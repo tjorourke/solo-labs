@@ -1,0 +1,28 @@
+# The cert-manager Issuer that points at Vault's intermediate PKI, and the
+# ServiceAccount it authenticates with.
+#
+# The Vault policy behind the `vault-issuer` role is deliberately narrow: it
+# grants pki_int/sign/istio-ca and nothing else. That matters for the
+# conversation with whoever owns the corporate PKI — relaxing the signing role's
+# key type later on is bounded to this one Vault path, not to the CA as a whole.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-issuer
+  namespace: istio-system
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: istio-ca
+  namespace: istio-system
+spec:
+  vault:
+    server: http://vault.vault.svc:8200
+    path: pki_int/sign/istio-ca
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: vault-issuer
+        serviceAccountRef:
+          name: vault-issuer

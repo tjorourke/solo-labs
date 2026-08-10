@@ -1,0 +1,25 @@
+# The catalog L7 AuthorizationPolicy, translated from selector to targetRefs.
+# Same rule (GET/HEAD only), but now it targets the catalog Service and is
+# enforced on the waypoint instead of in a per-pod sidecar. This is the
+# mechanical selector→targetRefs transform every L7 policy needs when its
+# workload moves behind a waypoint:
+#
+#   selector.matchLabels: {app: catalog}   →   targetRefs: [{kind: Service, name: catalog}]
+#
+# Apply this BEFORE deleting the sidecar version (30-l7-authz-catalog.yaml) so
+# the rule is never absent.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog-get-only-waypoint
+  namespace: petstore
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: catalog
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            methods: ["GET", "HEAD"]

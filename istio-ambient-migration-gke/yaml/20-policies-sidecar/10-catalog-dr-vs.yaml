@@ -1,0 +1,58 @@
+# The DestinationRule + VirtualService pair that does the catalog canary in
+# sidecar mode. Two jobs are bundled here, and they behave differently under
+# ambient — which is the whole point of the migration:
+#
+#   - DestinationRule TRAFFIC POLICY (connection pool, outlier detection):
+#     carries over to a waypoint unchanged.
+#   - VirtualService L7 ROUTING (retries, timeout, weighted split): the retries
+#     and timeout carry over to a waypoint; the weighted split here is done by
+#     SUBSET, and subset routing is the one piece the Solo/Istio docs say ambient
+#     does not support even with a waypoint. We test that live in the lab, and
+#     either way it is the thing we move to an HTTPRoute (yaml/50-httproute).
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: catalog
+  namespace: petstore
+spec:
+  host: catalog.petstore.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 100
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+  subsets:
+    - name: v1
+      labels: { version: v1 }
+    - name: v2
+      labels: { version: v2 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: catalog
+  namespace: petstore
+spec:
+  hosts:
+    - catalog.petstore.svc.cluster.local
+  http:
+    - timeout: 3s
+      retries:
+        attempts: 3
+        perTryTimeout: 1s
+        retryOn: "5xx,reset,connect-failure"
+      route:
+        - destination:
+            host: catalog.petstore.svc.cluster.local
+            subset: v1
+          weight: 100        # canary starts 100% v1 …
+        - destination:
+            host: catalog.petstore.svc.cluster.local
+            subset: v2
+          weight: 0          # … shift weight to v2 to canary

@@ -1,0 +1,24 @@
+# The three app namespaces, all starting in SIDECAR mode.
+# istio-injection=enabled is the classic sidecar label — every pod that starts
+# here gets an Envoy sidecar injected. The migration later swaps this for
+# istio.io/dataplane-mode=ambient, namespace by namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petstore
+  labels:
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petstore-data
+  labels:
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petstore-legacy
+  labels:
+    istio-injection: enabled
