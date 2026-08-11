@@ -30,6 +30,11 @@ del() { # del <kind> <name>
 step "Removing incident-tools demo artifacts"
 del deployment incident-tools-virtual
 del deployment incident-tools-kagent
+# The UI auto-generates deployment names (inci-kage-<hash>) unless renamed, so
+# also sweep any deployment whose target is an incident-tools catalogue entry.
+arctl get deployments 2>/dev/null | awk 'NR>1 && $2 ~ /^incident-tools/ {print $1}' | sed 's#^.*/##' | while read -r d; do
+  [ -n "$d" ] && del deployment "$d"
+done
 del mcpserver  incident-tools-remote
 del mcpserver  incident-tools
 del runtime    kagent-demo
