@@ -1,0 +1,94 @@
+# A small MCP tool server for the per-tool authorization demo. Four tools, two read-only
+# and two dangerous, at a single /mcp endpoint. The gateway is what filters them per
+# caller identity; the server itself does no authorization and never sees the JWT.
+#
+# The server is its own namespace, NOT egress-locked, because it pip-installs the mcp
+# package at start. In production this would be a pre-built, pinned image; installing at
+# runtime keeps the lab self-contained and is called out rather than hidden.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-tools
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sovereign-tools-src
+  namespace: mcp-tools
+data:
+  server.py: |
+    from fastmcp import FastMCP
+
+    # stateless so any gateway replica can serve any request; the gateway is the
+    # session and policy layer, the server is just the tools.
+    mcp = FastMCP("sovereign-tools")
+
+    @mcp.tool()
+    def read_metrics() -> str:
+        """Read platform metrics. Safe, read-only."""
+        return "cpu=12% mem=41% inflight=8 model=mistral-small-3.2-24b"
+
+    @mcp.tool()
+    def list_agents() -> str:
+        """List registered agents. Safe, read-only."""
+        return "sre-agent, triage-agent, docs-agent"
+
+    @mcp.tool()
+    def rotate_keys() -> str:
+        """Rotate the platform signing keys. Privileged."""
+        return "signing keys rotated; previous keys revoked"
+
+    @mcp.tool()
+    def wipe_audit_log() -> str:
+        """Delete the audit log. Dangerous, admin only."""
+        return "audit log deleted"
+
+    if __name__ == "__main__":
+        mcp.run(transport="http", host="0.0.0.0", port=8080, path="/mcp")
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sovereign-tools
+  namespace: mcp-tools
+  labels: { app: sovereign-tools }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: sovereign-tools } }
+  template:
+    metadata: { labels: { app: sovereign-tools } }
+    spec:
+      containers:
+        - name: mcp
+          image: python:3.12-slim
+          command: ["/bin/sh","-ec"]
+          args:
+            - |
+              pip install --quiet --no-cache-dir fastmcp >/dev/null
+              python /src/server.py
+          ports:
+            - { name: mcp, containerPort: 8080 }
+          volumeMounts:
+            - { name: src, mountPath: /src }
+          readinessProbe:
+            tcpSocket: { port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+      volumes:
+        - name: src
+          configMap: { name: sovereign-tools-src }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sovereign-tools
+  namespace: mcp-tools
+  labels: { app: sovereign-tools }
+spec:
+  selector: { app: sovereign-tools }
+  ports:
+    - { name: mcp, port: 8080, targetPort: 8080 }

@@ -1,0 +1,65 @@
+# Per-tool authorization for the MCP server, at the gateway, keyed on the caller's JWT.
+#
+# The gateway speaks MCP: it terminates the MCP session, so it can filter tools/list and
+# short-circuit tools/call per identity BEFORE the request reaches the tool server. The
+# server never sees the JWT and does no authorization of its own. This is the control the
+# KB's per-tool story needs: not "this agent may reach that server", but "this agent may
+# call that tool, and nothing else".
+#
+# The realm's users carry a groups claim: alice=[platform], bob=[research], carol=[admin].
+# The policy below maps those to tool sets.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: sovereign-tools-mcp
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: sovereign-tools
+        static:
+          host: sovereign-tools.mcp-tools.svc.cluster.local
+          port: 8080
+          path: /mcp
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sovereign-tools-mcp
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: sovereign-gateway
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - name: sovereign-tools-mcp
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: mcp-tool-authz
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: sovereign-tools-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # admins (carol) may call everything, including the dangerous tools
+            - 'has(jwt.groups) && "admin" in jwt.groups'
+            # platform (alice) may read and rotate keys, but NOT wipe the audit log
+            - 'has(jwt.groups) && "platform" in jwt.groups && mcp.tool.name in ["read_metrics","list_agents","rotate_keys"]'
+            # research (bob) is read-only: metrics and the agent list, nothing that changes state
+            - 'has(jwt.groups) && "research" in jwt.groups && mcp.tool.name in ["read_metrics","list_agents"]'

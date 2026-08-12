@@ -108,16 +108,23 @@ spec:
           volumeMounts:
             - {name: models, mountPath: /models, readOnly: true}
             - {name: shm, mountPath: /dev/shm}
+          # timeoutSeconds matters here and the default of 1s is wrong. On the RTX PRO
+          # 6000, /health can take several seconds while the engine is busy, so a 1s
+          # probe times out, the liveness probe kills a healthy server, and it drops into
+          # a restart loop that re-pays the multi-minute Blackwell JIT every cycle. Give
+          # /health real time to answer.
           readinessProbe:
             httpGet: {path: /health, port: 8000}
             initialDelaySeconds: 90
             periodSeconds: 10
+            timeoutSeconds: 15
             failureThreshold: 60      # allow ~10 min for first load
           livenessProbe:
             httpGet: {path: /health, port: 8000}
             initialDelaySeconds: 600
-            periodSeconds: 30
-            failureThreshold: 5
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 8
       volumes:
         - name: models
           persistentVolumeClaim:
