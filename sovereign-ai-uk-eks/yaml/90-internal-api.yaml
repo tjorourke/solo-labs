@@ -1,0 +1,65 @@
+# The SSRF victim: an internal-only service with no authentication.
+#
+# This stands in for the kind of thing every cluster has, an internal admin or billing
+# API, a metrics endpoint, a config service, reachable from inside the cluster and never
+# exposed outside it. It has no ingress from the internet and no authentication, because
+# it was "only ever reachable internally". SSRF is exactly what defeats that assumption:
+# an attacker who cannot reach it directly makes another server (Artifactory) fetch it for
+# them. The content below is obviously fake; the point is the reachability.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: internal
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: internal-api-content
+  namespace: internal
+data:
+  secrets.json: |
+    {
+      "service": "internal-billing-api",
+      "note": "INTERNAL ONLY - never exposed outside the cluster, no authentication",
+      "db_dsn": "postgres://svc:REDACTED-demo-value@billing-db.internal:5432/billing",
+      "api_keys": ["demo-not-a-real-key-0001", "demo-not-a-real-key-0002"]
+    }
+  index.html: |
+    internal-billing-api: internal only. if you can read this from outside, something proxied you in.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: internal-api
+  namespace: internal
+  labels: { app: internal-api }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: internal-api } }
+  template:
+    metadata: { labels: { app: internal-api } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 101, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          ports: [{ containerPort: 8080 }]
+          volumeMounts:
+            - { name: content, mountPath: /usr/share/nginx/html/secrets, subPath: secrets.json }
+            - { name: content, mountPath: /usr/share/nginx/html/index.html, subPath: index.html }
+          resources:
+            requests: { cpu: 10m, memory: 24Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+      volumes:
+        - name: content
+          configMap: { name: internal-api-content }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: internal-api
+  namespace: internal
+spec:
+  selector: { app: internal-api }
+  ports: [{ port: 8080, targetPort: 8080 }]

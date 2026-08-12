@@ -1,0 +1,92 @@
+# The sanctioned egress path, through agentgateway, GET/HEAD only.
+#
+# After the NetworkPolicy (91-) the only route off the artifactory namespace is the
+# gateway. A repository proxy legitimately only ever issues GET and HEAD (fetch an
+# artifact, check it exists), so the gateway route for its approved upstreams matches
+# only those methods. Anything else, the POST an exfiltration or an SSRF write would use,
+# matches no route and is refused with a 404, and the gateway logs the method and host it
+# rejected. So even the one allowed way out cannot be turned into a data-exfiltration or
+# write-SSRF channel.
+#
+# The upstream here is an in-region "approved mirror" Service; in a real deployment it is
+# the sanctioned package registries, reached in-region.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: approved-mirror
+  namespace: agentgateway-system
+  labels: { app: approved-mirror }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: approved-mirror } }
+  template:
+    metadata: { labels: { app: approved-mirror } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 101, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          ports: [{ containerPort: 8080 }]
+          resources:
+            requests: { cpu: 10m, memory: 24Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: approved-mirror
+  namespace: agentgateway-system
+spec:
+  selector: { app: approved-mirror }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+# Only GET and HEAD are routed to the approved upstream. A POST/PUT/DELETE matches no rule
+# on this hostname and gets a 404, so it never reaches the upstream.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: egress-mirror
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: sovereign-gateway
+      sectionName: https
+  hostnames: ["mirror.sovereign.local"]
+  rules:
+    - matches:
+        - { method: GET }
+        - { method: HEAD }
+      backendRefs:
+        - { name: approved-mirror, port: 8080 }
+---
+# The gateway-wide JWT policy (32-) is Strict, so it would 401 even a legitimate GET on
+# this egress route. The model must stay Strict, but the egress broker is a different job:
+# it gates on method, not on a model token. Scope this route to Optional so a sanctioned
+# GET/HEAD passes, while the model route keeps Strict.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: egress-mirror-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: egress-mirror
+  traffic:
+    jwtAuthentication:
+      mode: Optional
+      providers:
+        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+          audiences: ["sovereign-ai"]
+          jwks:
+            remote:
+              jwksPath: "/realms/sovereign/protocol/openid-connect/certs"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: keycloak
+                namespace: keycloak
+                port: 80

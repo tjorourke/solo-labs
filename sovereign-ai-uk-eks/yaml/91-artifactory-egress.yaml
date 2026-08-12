@@ -1,0 +1,36 @@
+# Brokered egress for Artifactory, applied AFTER the SSRF is demonstrated.
+#
+# Artifactory's server-side fetches are the SSRF primitive: left open, it can reach the
+# public internet (data leaving eu-west-2) and internal services (lateral movement). This
+# closes that down to the only routes it legitimately needs: DNS, its own database in the
+# namespace, and the gateway. Everything else, github.com, the internal API, the metadata
+# endpoint, the model, has no route out. The sanctioned upstreams are reached only through
+# agentgateway, which allows GET/HEAD to an allowlist and refuses the rest.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: artifactory-egress-brokered
+  namespace: artifactory
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # its own database and services, inside the namespace
+    - to:
+        - podSelector: {}
+    # the gateway, the one sanctioned route off the namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentgateway-system
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }

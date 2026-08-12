@@ -37,6 +37,7 @@ GROUPS = [
         ("35-tracing.yaml",        "OTel tracing"),
         ("60-mcp-tools.yaml",      "MCP tool server"),
         ("61-mcp-authz.yaml",      "Per-tool MCP authz"),
+        ("92-artifactory-egress-gateway.yaml", "Egress broker (GET/HEAD)"),
     ]),
     ("mesh", "Istio mesh", [
         P("ztunnel (L4) + access logs", "Solo Enterprise ztunnel runs as a per-node L4 proxy, installed via Helm values in scripts/ambient.sh: profile ambient, LOG_FORMAT json and L7_ENABLED true. The Enterprise build adds structured L4 and L7 HTTP access logs and request metrics on top of upstream ztunnel, so every hop is logged with source and destination SPIFFE identity. These values move into their own tab here once extracted from the script."),
@@ -56,8 +57,11 @@ GROUPS = [
     ]),
     ("network", "Network (L4)", [
         ("33-models-networkpolicy.yaml", "Model ingress lock"),
-        ("36-egress-lockdown.yaml",      "Egress default-deny"),
+        ("36-egress-lockdown.yaml",      "Egress default-deny (apps)"),
         ("70-rogue-agent.yaml",          "Rogue agent + brokered egress"),
+        ("90-internal-api.yaml",         "Internal SSRF target"),
+        ("91-artifactory-egress.yaml",   "Brokered egress: Artifactory"),
+        ("99-default-deny-egress.yaml",  "Default-deny egress baseline"),
     ]),
     ("policy", "Kyverno + PSA", [
         ("40-policies.yaml", "Admission policies"),

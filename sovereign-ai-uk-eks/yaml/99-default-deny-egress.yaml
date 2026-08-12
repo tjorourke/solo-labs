@@ -1,0 +1,66 @@
+# Default-deny egress, the posture the whole lab assumes.
+#
+# Kubernetes egress is default-ALLOW: a namespace can reach the internet unless a
+# NetworkPolicy says otherwise. So a namespace you forget to lock down is an open door,
+# and the SSRF story is exactly what happens when one workload keeps that door open. The
+# fix is to make deny the default and allow the exceptions, not the other way round.
+#
+# Each workload namespace gets a baseline that permits only DNS, traffic inside its own
+# namespace, and the gateway. Nothing reaches the internet directly. The one component
+# that does reach out is agentgateway, the sanctioned egress broker, which is deliberately
+# NOT given a deny policy.
+#
+# Applied to the app/data namespaces. Control-plane namespaces (kube-system, istio-system,
+# cert-manager, vault, monitoring) are left to their own policies: they have their own
+# egress needs (Vault reaches AWS KMS to auto-unseal, for one) and locking them here would
+# break the platform.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to: [{ podSelector: {} }]
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+      ports: [{ protocol: TCP, port: 443 }, { protocol: TCP, port: 80 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: internal
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to: [{ podSelector: {} }]
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+      ports: [{ protocol: TCP, port: 443 }, { protocol: TCP, port: 80 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: models
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to: [{ podSelector: {} }]
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+      ports: [{ protocol: TCP, port: 443 }, { protocol: TCP, port: 80 }]
