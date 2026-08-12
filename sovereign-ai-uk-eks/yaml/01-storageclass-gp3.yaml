@@ -14,6 +14,13 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: gp3
+  annotations:
+    # The cluster default. A cluster with no default StorageClass leaves any PVC that
+    # omits storageClassName (kagent's postgres, and many vendor charts) Pending forever
+    # with nothing in its events naming the cause. gp3 is the right default: Delete
+    # reclaim and no provisioned IOPS premium. gp3-fast stays non-default because its
+    # Retain policy and 750 MiB/s are tuned for the model weights, not general use.
+    storageclass.kubernetes.io/is-default-class: "true"
 provisioner: ebs.csi.aws.com
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true

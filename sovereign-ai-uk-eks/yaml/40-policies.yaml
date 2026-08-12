@@ -85,12 +85,17 @@ spec:
   validationFailureAction: Enforce
   background: true
   rules:
+    # Scoped to the namespaces whose manifests we own. kagent is excluded on purpose:
+    # the kagent-enterprise chart legitimately injects its OIDC and licence secrets via
+    # secretKeyRef, which is a vendor decision, not our application code. The policy's
+    # job is to stop OUR workloads leaking secrets into env, not to break a platform
+    # chart. This exclusion is the honest, documented call rather than a silent hole.
     - name: no-secretkeyref-in-env
       match:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [models, apps, kagent]
+              namespaces: [models, apps]
       validate:
         message: "Secrets must not be injected via env vars (secretKeyRef/envFrom); mount them as files."
         pattern:
