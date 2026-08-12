@@ -1,0 +1,59 @@
+# PodDisruptionBudgets for the platform control plane.
+#
+# A PDB is the availability guardrail for VOLUNTARY disruption: node drains,
+# cluster upgrades, autoscaler compaction. It tells Kubernetes how much of a workload may
+# be down at once so an upgrade cannot take the last replica of istiod or the gateway with
+# it. It does nothing for involuntary loss (a node dying), which is what replicas are for.
+#
+# NOTE ON REPLICAS. A PDB with minAvailable: 1 on a single-replica Deployment BLOCKS node
+# drains, because there is no second pod to keep the one available. These budgets therefore
+# belong with a production posture of two or more replicas per control-plane component; at
+# one replica they are documentation of intent rather than a working guard. Scale istiod,
+# the gateway and Keycloak to >= 2 before relying on them.
+#
+# Not PodSecurityPolicy. PSP was removed in Kubernetes 1.25 and this cluster is 1.34; its
+# replacement, Pod Security Admission, is applied as namespace labels (see policy.sh) and
+# enforced alongside Kyverno.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: istiod
+  namespace: istio-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: istiod
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: enterprise-agentgateway
+  namespace: agentgateway-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-agentgateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sovereign-gateway
+  namespace: agentgateway-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: sovereign-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keycloak
