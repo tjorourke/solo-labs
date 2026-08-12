@@ -95,6 +95,9 @@ case "${1:-status}" in
     echo "==> Gateway + LLM backend + route"
     kubectl apply -f "$LAB_ROOT/yaml/30-gateway.yaml"
     kubectl apply -f "$LAB_ROOT/yaml/31-vllm-backend.yaml"
+    echo "==> MCP tool server + per-tool authorization (keyed on JWT groups)"
+    kubectl apply -f "$LAB_ROOT/yaml/60-mcp-tools.yaml"
+    kubectl apply -f "$LAB_ROOT/yaml/61-mcp-authz.yaml"
     echo
     echo "==> waiting for the NLB to get a hostname (AWS takes 2-4 min)"
     for _ in $(seq 1 40); do

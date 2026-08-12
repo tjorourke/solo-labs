@@ -1,0 +1,64 @@
+# A rogue agent, for the attack narrative. This stands in for a compromised or
+# prompt-injected agent workload: it tries to do the things such an agent does, and every
+# layer refuses it. Nothing here is privileged; it is an ordinary pod, which is the point.
+# The controls do not depend on the agent being well behaved.
+#
+# It lives in the agents namespace, which is brokered-egress only: DNS and the gateway,
+# nothing else. Its only route to anything is through agentgateway, which authenticates,
+# allowlists and logs. So when it tries to reach the internet directly, or read the node's
+# cloud credentials, the network simply refuses it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+---
+# Brokered egress: the agent may reach DNS and the gateway, and nothing else. No route to
+# the internet, no route to the metadata endpoint, no route to the model except through
+# the gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agents-egress-brokered
+  namespace: agents
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentgateway-system
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rogue-agent
+  namespace: agents
+  labels: { app: rogue-agent }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: rogue-agent } }
+  template:
+    metadata: { labels: { app: rogue-agent } }
+    spec:
+      # ordinary, unprivileged, restricted-profile pod. The isolation is the network and
+      # the gateway, not any special sandboxing of the agent itself.
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: agent
+          image: curlimages/curl:8.11.1
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          command: ["sleep", "infinity"]
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 64Mi }

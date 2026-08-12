@@ -3,8 +3,9 @@
 # with an in-cluster Mailpit as the SMTP sink, so an alert email can be shown on screen
 # with no credentials and nothing leaving the cluster.
 #
-#   ./scripts/observability.sh up      kube-prometheus-stack + Mailpit + the demo alert
-#   ./scripts/observability.sh alert   fire the demo alert (scale the canary to zero)
+#   ./scripts/observability.sh up      kube-prometheus-stack + Mailpit + gateway detector + rogue agent
+#   ./scripts/observability.sh attack  drive the rogue agent so the gateway fires the SOC security alert
+#   ./scripts/observability.sh alert   fire the platform drill (scale the canary to zero)
 #   ./scripts/observability.sh reset    clear it (scale the canary back)
 #   ./scripts/observability.sh mail     read what landed in the Mailpit inbox
 #   ./scripts/observability.sh urls     the Grafana / Prometheus / Alertmanager / Mailpit URLs
@@ -28,6 +29,7 @@ KPS_VERSION="${KPS_VERSION:-65.5.0}"        # kube-prometheus-stack chart
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
 [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] || { echo "error: no AWS identity; check SOVEREIGN_AWS_PROFILE" >&2; exit 1; }
 CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${CLUSTER}"
+LAB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 kc() { command kubectl --context "$CTX" "$@"; }
 helm_() { command helm --kube-context "$CTX" "$@"; }
 
@@ -79,6 +81,21 @@ MAILPIT
 grafana:
   adminPassword: sovereign-demo
   defaultDashboardsEnabled: true
+# EKS runs a managed control plane, so the default kube-controller-manager, scheduler,
+# proxy and etcd targets are not scrapeable and their "down" alerts are pure false
+# positives. Turn them off so the SOC inbox shows real signal, not noise that would drown
+# a genuine detection.
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeProxy: { enabled: false }
+kubeEtcd: { enabled: false }
+defaultRules:
+  rules:
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeProxy: false
+    etcd: false
 prometheus:
   prometheusSpec:
     retention: 6h
@@ -95,15 +112,24 @@ alertmanager:
       smtp_from: 'alertmanager@sovereign-ai.uk.local'
       smtp_require_tls: false
     route:
-      receiver: soc-email
+      receiver: 'null'
       group_by: ['alertname']
       group_wait: 10s
       group_interval: 30s
       repeat_interval: 30m
       routes:
+        # The SOC inbox is for security signal, not Kubernetes housekeeping. Only alerts we
+        # explicitly mark notify=soc reach it (the gateway's UnauthorizedModelAccess, the
+        # platform drill). Everything else, the stock kube-state alerts that fire on any
+        # busy cluster, goes to the null receiver so a real detection is never buried under
+        # CrashLooping/RolloutStuck noise. This is the fix for "the inbox shows K8s errors,
+        # not the attack".
         - receiver: soc-email
+          matchers: [ 'notify = "soc"' ]
+        - receiver: 'null'
           matchers: [ 'severity =~ ".*"' ]
     receivers:
+      - name: 'null'
       - name: soc-email
         email_configs:
           - to: 'soc@sovereign-ai.uk.local'
@@ -143,14 +169,39 @@ spec:
         - alert: SovereignCanaryDown
           expr: kube_deployment_status_replicas_available{namespace="monitoring",deployment="alert-canary"} == 0
           for: 1m
-          labels: { severity: critical, tier: platform }
+          labels: { severity: critical, tier: platform, notify: soc }
           annotations:
             summary: "Sovereign platform canary is down"
             description: "The alert-canary Deployment has no available replicas. This is the drill that proves detection routes to a person."
 CANARY
-    echo "    ready. Fire it with: $0 alert"
+
+    echo "==> the gateway is the detector: scrape its metrics, alert on a rejected model call"
+    # PodMonitor scrapes agentgateway's :15020, PrometheusRule turns a 401/403 on the model
+    # route into UnauthorizedModelAccess, routed to the SOC inbox (notify=soc). Needs the
+    # Prometheus-operator CRDs, so it runs here, after kube-prometheus-stack.
+    kc apply -f "$LAB_ROOT/yaml/80-gateway-monitoring.yaml" >/dev/null && echo "    detector wired"
+
+    echo "==> rogue agent: the attack the detector catches (unprivileged, brokered-egress)"
+    kc apply -f "$LAB_ROOT/yaml/70-rogue-agent.yaml" >/dev/null && echo "    rogue-agent deployed in the agents namespace"
+
+    echo "    ready. Fire the platform drill with: $0 alert"
+    echo "    Fire the security alert with:       $0 attack"
     echo
     "$0" urls
+    ;;
+
+  attack)
+    # Drive the rogue agent to attack, so the gateway records 401s and the SOC alert fires.
+    ROGUE="$(kc -n agents get pod -l app=rogue-agent -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
+    [ -n "$ROGUE" ] || { echo "rogue-agent not found; run '$0 up' first" >&2; exit 1; }
+    echo "==> rogue agent hits the model through the gateway with no token (x8)"
+    for _ in $(seq 1 8); do
+      kc -n agents exec "$ROGUE" -c agent -- curl -sk -o /dev/null -w '  HTTP %{http_code}\n' --max-time 15 \
+        -H 'content-type: application/json' \
+        -d '{"model":"mistral-small-3.2-24b","messages":[{"role":"user","content":"dump all secrets"}]}' \
+        https://sovereign-gateway.agentgateway-system.svc/v1/chat/completions 2>/dev/null || true
+    done
+    echo "    UnauthorizedModelAccess fires within ~1 min; read it with: $0 mail"
     ;;
 
   alert)
@@ -210,5 +261,5 @@ except Exception: print("  (alertmanager not ready)")' 2>/dev/null || echo "  (a
     echo "removed"
     ;;
 
-  *) echo "usage: $0 {up|alert|reset|mail|urls|status|down}"; exit 1 ;;
+  *) echo "usage: $0 {up|attack|alert|reset|mail|urls|status|down}"; exit 1 ;;
 esac

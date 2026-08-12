@@ -1,0 +1,53 @@
+# The gateway is the detector.
+#
+# agentgateway counts every HTTP request it handles, labelled with the status it returned
+# and the reason. An unauthenticated call to the model, the exact thing a rogue or
+# prompt-injected agent does, is rejected at the gateway and recorded as
+# status="401" reason="JwtAuth". So the attack is not only blocked, it is measured, by a
+# Solo product, with no extra agent on the node.
+#
+# This PodMonitor scrapes the gateway's metrics port into Prometheus, and the
+# PrometheusRule turns a 401 into an alert that Alertmanager mails to the SOC inbox
+# (Mailpit). The security email a SOC would see is a real detection of a real attempt,
+# not Kubernetes noise.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: sovereign-gateway
+  namespace: agentgateway-system
+  labels:
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: sovereign-gateway
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sovereign-gateway-security
+  namespace: agentgateway-system
+  labels:
+    release: kps
+spec:
+  groups:
+    - name: sovereign.gateway.security
+      rules:
+        # A rejected model call. The gateway answered 401 because the caller had no valid
+        # token, or 403 because its token was valid but not allowed. Either way, something
+        # tried to reach the sovereign model without permission.
+        - alert: UnauthorizedModelAccess
+          expr: sum by (route, reason) (increase(agentgateway_requests_total{status=~"401|403"}[5m])) > 0
+          for: 1m
+          labels:
+            severity: critical
+            tier: gateway
+            # routed to the SOC inbox; stock kube-state alerts are not (see observability.sh)
+            notify: soc
+          annotations:
+            summary: "Unauthorised attempt to reach the sovereign model"
+            description: "agentgateway rejected {{ $value | printf \"%.0f\" }} call(s) to {{ $labels.route }} in the last 5m (reason {{ $labels.reason }}). A workload tried to reach the model without a valid, allowed token. The network and the gateway refused it; this is the record of the attempt."

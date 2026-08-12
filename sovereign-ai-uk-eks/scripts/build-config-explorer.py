@@ -35,6 +35,8 @@ GROUPS = [
         ("32-jwt-policy.yaml",     "JWT auth"),
         ("34-uk-pii-guard.yaml",   "PII guard"),
         ("35-tracing.yaml",        "OTel tracing"),
+        ("60-mcp-tools.yaml",      "MCP tool server"),
+        ("61-mcp-authz.yaml",      "Per-tool MCP authz"),
     ]),
     ("mesh", "Istio mesh", [
         P("ztunnel (L4) + access logs", "Solo Enterprise ztunnel runs as a per-node L4 proxy, installed via Helm values in scripts/ambient.sh: profile ambient, LOG_FORMAT json and L7_ENABLED true. The Enterprise build adds structured L4 and L7 HTTP access logs and request metrics on top of upstream ztunnel, so every hop is logged with source and destination SPIFFE identity. These values move into their own tab here once extracted from the script."),
@@ -55,6 +57,7 @@ GROUPS = [
     ("network", "Network (L4)", [
         ("33-models-networkpolicy.yaml", "Model ingress lock"),
         ("36-egress-lockdown.yaml",      "Egress default-deny"),
+        ("70-rogue-agent.yaml",          "Rogue agent + brokered egress"),
     ]),
     ("policy", "Kyverno + PSA", [
         ("40-policies.yaml", "Admission policies"),
@@ -74,7 +77,8 @@ GROUPS = [
         ("50-pdb.yaml",               "PodDisruptionBudgets"),
     ]),
     ("observability", "Observability", [
-        P("Prometheus + Alertmanager", "The metrics and alerting stack lands here when deployed: kube-prometheus-stack, the alert rules over mesh, gateway and policy-denial signals, and Alertmanager routing to an in-cluster inbox so an alert email can be shown live."),
+        ("80-gateway-monitoring.yaml", "Gateway detector + SOC alert"),
+        P("Prometheus + Alertmanager", "kube-prometheus-stack provides Prometheus, Grafana and Alertmanager, installed as Helm values in scripts/observability.sh. Alertmanager routes to an in-cluster inbox, and only alerts marked notify=soc reach the SOC inbox, so a real detection is never buried under stock Kubernetes noise. The concrete detection rule, the gateway PodMonitor and the UnauthorizedModelAccess alert, is the file on the left tab."),
         P("Loki + Grafana + OTel", "Loki for logs, Grafana to view them, and the OpenTelemetry collector the gateway tracing points at. Coming with the observability layer."),
     ]),
 ]
