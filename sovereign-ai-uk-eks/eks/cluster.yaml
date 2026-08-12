@@ -126,6 +126,32 @@ managedNodeGroups:
       Project: solo-demo
       k8s.io/cluster-autoscaler/node-template/label/role: gpu
 
+  # Sandbox nodes for gVisor-isolated agents. A separate, tainted node group so a
+  # sandboxed agent shares no kernel and no node with the model or the gateway: that
+  # separation is the physical trust boundary, not just a runtime setting. gVisor
+  # (runsc) is installed here by scripts/substrate.sh through a privileged installer
+  # DaemonSet that reconfigures containerd, so it touches only these nodes and never the
+  # platform or GPU fleet. m6i.large because it is plentiful in eu-west-2 and the agents
+  # are light; the isolation is the point, not the horsepower.
+  - name: sandbox
+    instanceType: m6i.large
+    desiredCapacity: 1
+    minSize: 0
+    maxSize: 2
+    volumeSize: 40
+    volumeType: gp3
+    privateNetworking: true
+    labels:
+      role: sandbox
+      sandbox.solo.io/runtime: gvisor
+    taints:
+      - key: sandbox.solo.io/gvisor
+        value: "true"
+        effect: NoSchedule
+    tags:
+      Owner: torourke
+      Project: solo-demo
+
 addons:
   - name: vpc-cni
     version: latest
