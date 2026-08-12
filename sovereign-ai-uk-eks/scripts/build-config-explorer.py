@@ -61,6 +61,7 @@ GROUPS = [
         ("70-rogue-agent.yaml",          "Rogue agent + brokered egress"),
         ("90-internal-api.yaml",         "Internal SSRF target"),
         ("91-artifactory-egress.yaml",   "Brokered egress: Artifactory"),
+        ("93-registry-readonly.yaml",    "Registry read-only (L7)"),
         ("99-default-deny-egress.yaml",  "Default-deny egress baseline"),
     ]),
     ("policy", "Kyverno + PSA", [
