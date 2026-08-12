@@ -51,3 +51,29 @@ spec:
           annotations:
             summary: "Unauthorised attempt to reach the sovereign model"
             description: "agentgateway rejected {{ $value | printf \"%.0f\" }} call(s) to {{ $labels.route }} in the last 5m (reason {{ $labels.reason }}). A workload tried to reach the model without a valid, allowed token. The network and the gateway refused it; this is the record of the attempt."
+        # The EARLIEST signal in the incident write-up: "a write verb from an identity that
+        # should only read". The gateway's own metric carries the HTTP method, so a refused
+        # write, a PUT/POST/DELETE that came back 4xx, is a one-line alert. This is the alert
+        # the article says would have ended the incident on 8 May.
+        - alert: WriteVerbRefused
+          expr: sum by (route, method) (increase(agentgateway_requests_total{method=~"PUT|POST|DELETE|PATCH", status=~"40[0-9]|41[0-9]|42[0-9]"}[5m])) > 0
+          for: 0m
+          labels:
+            severity: critical
+            tier: gateway
+            notify: soc
+          annotations:
+            summary: "A write verb was refused at the gateway"
+            description: "agentgateway refused {{ $value | printf \"%.0f\" }} {{ $labels.method }} call(s) on {{ $labels.route }} in the last 5m. A read-only client using a write verb is either a bug or an attacker probing; either way, someone should know on the day."
+        # "Denials are where probing shows up... the chart nobody builds." A spike in 4xx
+        # from a single route is the tell of an identity testing the edges of its permissions.
+        - alert: GatewayDenialRateSpike
+          expr: sum by (route, reason) (rate(agentgateway_requests_total{status=~"4.."}[5m])) > 0.2
+          for: 2m
+          labels:
+            severity: warning
+            tier: gateway
+            notify: soc
+          annotations:
+            summary: "Denial rate spiking on {{ $labels.route }}"
+            description: "agentgateway is denying {{ $value | printf \"%.2f\" }} req/s on {{ $labels.route }} (reason {{ $labels.reason }}). Probing looks exactly like a burst of 4xx from one source."
