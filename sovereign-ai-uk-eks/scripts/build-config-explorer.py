@@ -22,12 +22,46 @@ PAGE = LAB / "index.html"
 def P(label, note):
     return {"placeholder": True, "tab": label, "note": note}
 
+# A shell-heredoc tab: the config is applied by a deploy script through a heredoc (helm
+# values, kubectl apply, a Vault policy). Extract that block verbatim so the page shows the
+# real thing the cluster runs, not a paraphrase. (script-path, heredoc-marker, tab, nth).
+# nth picks which block when a script opens several heredocs with the same marker (e.g.
+# ambient.sh opens EOF for istiod, then cni, then ztunnel).
+def SH(script, marker, label, nth=1):
+    return {"sh": script, "marker": marker, "tab": label, "nth": nth}
+
+def extract_heredoc(text: str, marker: str, nth: int = 1):
+    """Return the body between the nth `<<MARKER` opener and its closing `MARKER` line.
+
+    Handles `<<MARKER`, `<<'MARKER'`, `<<"MARKER"` and `<<-MARKER`, and openers that are
+    not at end of line (e.g. `... <<'SCRIPT' | kubectl apply -f -`). Returns None if the
+    nth block is not found.
+    """
+    lines = text.split("\n")
+    opener = re.compile(r"<<-?\s*(['\"]?)" + re.escape(marker) + r"\1(?![A-Za-z0-9_])")
+    found = 0
+    i, n = 0, len(lines)
+    while i < n:
+        if opener.search(lines[i]):
+            found += 1
+            body, j = [], i + 1
+            while j < n and lines[j].strip() != marker:
+                body.append(lines[j])
+                j += 1
+            if found == nth:
+                return "\n".join(body)
+            i = j + 1
+            continue
+        i += 1
+    return None
+
 # category -> (key, label, items). An item is either (filename, tab) read from yaml/, a
-# special ("@eks", tab) for eks/cluster.yaml, or a P(...) placeholder.
+# special ("@eks", tab) for eks/cluster.yaml, an SH(...) heredoc block from a deploy
+# script, or a P(...) placeholder.
 GROUPS = [
     ("aws", "AWS (eksctl)", [
         ("@eks", "Cluster, VPC, node groups"),
-        P("NLB, security groups", "The public Network Load Balancer is provisioned by the gateway's LoadBalancer Service, and the VPC security groups are managed by EKS. Neither is a standalone file: the NLB shape follows the Gateway (see agentgateway → Gateway), and the security-group posture follows the eksctl cluster definition on the left tab. IMDSv2 with hop-limit 1 is set on the nodes by the model-up step."),
+        P("NLB, security groups", "There is no standalone NLB or security-group file. The public Network Load Balancer is provisioned by the gateway's LoadBalancer Service (an L4 passthrough that terminates TLS at the agentgateway pod, not at the NLB, see agentgateway → Gateway), and the VPC, subnets, private-networking node groups and security groups all come from the eksctl cluster definition on the left tab. Control-plane audit and authenticator logs go to CloudWatch (see the cloudWatch block there)."),
     ]),
     ("agentgateway", "agentgateway", [
         ("30-gateway.yaml",        "Gateway (one door, TLS)"),
@@ -40,20 +74,21 @@ GROUPS = [
         ("92-artifactory-egress-gateway.yaml", "Egress broker (GET/HEAD)"),
     ]),
     ("mesh", "Istio mesh", [
-        P("ztunnel (L4) + access logs", "Solo Enterprise ztunnel runs as a per-node L4 proxy, installed via Helm values in scripts/ambient.sh: profile ambient, LOG_FORMAT json and L7_ENABLED true. The Enterprise build adds structured L4 and L7 HTTP access logs and request metrics on top of upstream ztunnel, so every hop is logged with source and destination SPIFFE identity. These values move into their own tab here once extracted from the script."),
-        P("waypoint (L7)", "The L7 waypoint is an enterprise-agentgateway waypoint that carries HTTP-level policy for the mesh: JWT, CEL authorization and per-tool MCP authorization. Applied through the agentgateway install; its config lands here as the layer is finalised."),
-        P("istiod values", "istiod runs the ambient profile with its CA delegated to Vault via istio-csr (ENABLE_CA_SERVER off). Installed as Helm values in scripts/istio-csr.sh."),
+        SH("scripts/ambient.sh",   "EOF", "ztunnel (L4) + logs", nth=3),
+        SH("scripts/istio-csr.sh", "EOF", "istiod (CA → Vault)", nth=1),
     ]),
     ("vault", "Vault / CA", [
-        P("PKI role + Issuer", "The mesh CA is Vault: a root and intermediate PKI, a signing role keyed for both ECDSA (ztunnel) and RSA (istiod), and a cert-manager Issuer that fronts it. Applied by scripts/vault.sh; the rendered objects land here once extracted."),
-        P("KMS auto-unseal", "Vault runs raft-backed and auto-unseals from an AWS KMS key in eu-west-2, reached with an IRSA role, so no unseal key or AWS credential lives in the cluster. Configured in the Vault Helm values in scripts/vault.sh."),
+        SH("scripts/vault.sh", "POLICY", "Signing policy"),
+        SH("scripts/vault.sh", "ISSUER", "cert-manager Issuer"),
+        SH("scripts/vault.sh", "EOF",    "KMS auto-unseal"),
     ]),
     ("kagent", "kagent", [
-        P("Agent + Substrate", "kagent config lands here when the runtime is deployed: the Agent and ModelConfig objects, and the Agent Substrate settings that sandbox agents under gVisor on the isolated node group."),
-        P("gVisor RuntimeClass", "The RuntimeClass and the tainted sandbox node group that gVisor agents schedule onto. Coming with the kagent layer."),
+        SH("scripts/kagent.sh",    "EOF",  "kagent install (OIDC → Keycloak)"),
+        SH("scripts/substrate.sh", "YAML", "gVisor RuntimeClass", nth=1),
+        SH("scripts/substrate.sh", "YAML", "gVisor installer",    nth=2),
     ]),
     ("agentregistry", "agentregistry", [
-        P("Catalogue + governance", "agentregistry config lands here when it is deployed: the registry install, the catalogue of agents and MCP servers, and the governance policy over what may be registered and deployed."),
+        P("Catalogue + governance", "agentregistry is not part of this deployment. It is the governance layer that sits on top of this stack, the catalogue of agents and MCP servers plus policy over what may be registered and deployed, and it is out of scope for this sovereignty lab. No script here installs it."),
     ]),
     ("network", "Network (L4)", [
         ("33-models-networkpolicy.yaml", "Model ingress lock"),
@@ -83,16 +118,18 @@ GROUPS = [
     ]),
     ("observability", "Observability", [
         ("80-gateway-monitoring.yaml", "Gateway detector + SOC alert"),
-        P("Prometheus + Alertmanager", "kube-prometheus-stack provides Prometheus, Grafana and Alertmanager, installed as Helm values in scripts/observability.sh. Alertmanager routes to an in-cluster inbox, and only alerts marked notify=soc reach the SOC inbox, so a real detection is never buried under stock Kubernetes noise. The concrete detection rule, the gateway PodMonitor and the UnauthorizedModelAccess alert, is the file on the left tab."),
-        P("Loki + Grafana + OTel", "Loki for logs, Grafana to view them, and the OpenTelemetry collector the gateway tracing points at. Coming with the observability layer."),
+        SH("scripts/observability.sh", "VALUES", "Prometheus + Grafana + Alertmanager"),
     ]),
 ]
 
 # 12-digit AWS account ids -> placeholder (belt and braces; yaml already uses one).
 ACCT = re.compile(r"\b\d{12}\b")
-# redact secret-shaped values: key: value where key looks sensitive.
+# redact secret-shaped values: key: value where key looks sensitive. The whitespace
+# classes are horizontal-only ([^\S\n]) on purpose: a plain `\s*` would match the newline
+# after a bare mapping key (e.g. `secret:`) and swallow the following line, dropping its
+# key. A key and its scalar value live on one line, so keep the match on one line.
 SECRET_KEY = re.compile(
-    r"(?im)^(\s*[\"']?(?:[a-z0-9_.-]*(?:password|secret|licensekey|license_key|token|apikey|api_key|clientsecret)[a-z0-9_.-]*)[\"']?\s*[:=]\s*)(.+)$"
+    r"(?im)^([^\S\n]*[\"']?(?:[a-z0-9_.-]*(?:password|secret|licensekey|license_key|token|apikey|api_key|clientsecret)[a-z0-9_.-]*)[\"']?[^\S\n]*[:=][^\S\n]*)(.+)$"
 )
 
 def sanitise(text: str) -> str:
@@ -111,8 +148,18 @@ def main() -> int:
     for cat, label, files in GROUPS:
         items = []
         for entry in files:
-            if isinstance(entry, dict):          # placeholder
+            if isinstance(entry, dict) and entry.get("placeholder"):
                 items.append({"tab": entry["tab"], "placeholder": True, "note": entry["note"]})
+                continue
+            if isinstance(entry, dict) and entry.get("sh"):   # heredoc block from a deploy script
+                sp = LAB / entry["sh"]
+                shown = f"{entry['sh']} ({entry['marker']})"
+                if not sp.exists():
+                    missing.append(entry["sh"]); continue
+                block = extract_heredoc(sp.read_text(), entry["marker"], entry.get("nth", 1))
+                if block is None:
+                    missing.append(shown); continue
+                items.append({"tab": entry["tab"], "file": shown, "yaml": sanitise(block)})
                 continue
             fname, tab = entry
             if fname == "@eks":                  # eks/cluster.yaml lives outside yaml/
