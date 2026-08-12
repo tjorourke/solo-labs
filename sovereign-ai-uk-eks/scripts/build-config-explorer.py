@@ -88,7 +88,9 @@ GROUPS = [
         SH("scripts/substrate.sh", "YAML", "gVisor installer",    nth=2),
     ]),
     ("agentregistry", "agentregistry", [
-        P("Catalogue + governance", "agentregistry is not part of this deployment. It is the governance layer that sits on top of this stack, the catalogue of agents and MCP servers plus policy over what may be registered and deployed, and it is out of scope for this sovereignty lab. No script here installs it."),
+        SH("scripts/ar-agent.sh", "AGENT",  "Agent (catalogue entry)"),
+        SH("scripts/ar-agent.sh", "DEPLOY", "Runtime + Deployment (kagent)"),
+        SH("scripts/ar-agent.sh", "ROGUE",  "The agent admission refuses"),
     ]),
     ("network", "Network (L4)", [
         ("33-models-networkpolicy.yaml", "Model ingress lock"),
@@ -102,6 +104,7 @@ GROUPS = [
     ("policy", "Kyverno + PSA", [
         ("40-policies.yaml", "Admission policies"),
         ("41-hardening.yaml", "Restricted-subset + supply chain + RBAC"),
+        ("42-agent-admission.yaml", "Agents only from the registry"),
     ]),
     ("keycloak", "Keycloak (JWT issuer)", [
         ("37-keycloak.yaml",       "Keycloak deploy"),

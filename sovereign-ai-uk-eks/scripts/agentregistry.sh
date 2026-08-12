@@ -66,7 +66,7 @@ case "${1:-status}" in
       --set oidc.issuer="http://keycloak.keycloak.svc.cluster.local/realms/${REALM}" \
       --set oidc.clientId=ar-backend --set oidc.clientSecret="$AR_BACKEND_SECRET" \
       --set oidc.publicClientId=ar-ui \
-      --set oidc.roleClaim=Groups --set oidc.superuserRole=admins \
+      --set oidc.roleClaim=Groups --set oidc.superuserRole=admin \
       --set kagent.outboundAuth.oidc.clientId=kagent-enterprise \
       --set kagent.outboundAuth.oidc.clientSecret="${KAGENT_SECRET:-unset}" \
       --set database.postgres.type=bundled \

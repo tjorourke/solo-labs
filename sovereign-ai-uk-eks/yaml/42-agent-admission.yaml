@@ -1,0 +1,55 @@
+# Agents may only be born through the control plane.
+#
+# agentregistry is the front door: a developer registers an agent in AR, AR calls the
+# kagent API, and the kagent controller writes the Agent CR into the cluster. Every agent
+# that reaches the cluster that way is authored by the kagent controller's service account.
+#
+# A developer who skips the registry and runs `kubectl apply -f my-agent.yaml` authors that
+# CR as themselves, not as the controller. This policy refuses exactly that: a kagent Agent
+# or SandboxAgent may only be created by the kagent controller. The identity is taken from
+# request.userInfo, which the API server signs and a client cannot forge, so a hand-rolled
+# agent, an agent from a personal laptop, or an agent from any tool other than the governed
+# registry path is rejected at admission.
+#
+# This is the "AR is the only place agents deploy from" control, enforced by the cluster
+# rather than by convention.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: agents-only-from-control-plane
+  annotations:
+    policies.kyverno.io/description: >-
+      A kagent Agent or SandboxAgent may only be created by the kagent controller service
+      account, the identity every registry-driven deployment is authored by. Hand-applied
+      agents, the ones that never passed through agentregistry, are refused at admission.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: agent-create-must-be-control-plane
+      match:
+        any:
+          - resources:
+              kinds:
+                - Agent
+                - SandboxAgent
+              operations: [CREATE, UPDATE]
+      # kagent's own controllers are the only writers allowed. The garbage collector and
+      # other system controllers act with different verbs and are excluded by Kyverno's
+      # default filters, so this list is the whole allowlist.
+      exclude:
+        any:
+          - subjects:
+              - kind: ServiceAccount
+                namespace: kagent
+                name: kagent-controller
+          - subjects:
+              - kind: ServiceAccount
+                namespace: kagent
+                name: kmcp-enterprise
+      validate:
+        message: >-
+          Agents may only be deployed through agentregistry. This Agent was applied
+          directly (by {{ request.userInfo.username }}), bypassing the registry, and is
+          refused. Register it in AR and deploy it from there.
+        deny: {}
