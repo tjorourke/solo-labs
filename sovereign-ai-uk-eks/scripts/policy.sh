@@ -114,6 +114,21 @@ case "${1:-status}" in
     kc get ns apps >/dev/null 2>&1 || kc create ns apps >/dev/null 2>&1
     probe env-probe apps 'disallow-secrets-in-env' \
       "{\"spec\":{$hardened,\"containers\":[{\"name\":\"x\",\"image\":\"busybox:1.36\",\"command\":[\"sleep\",\"1\"],$csec,\"env\":[{\"name\":\"K\",\"valueFrom\":{\"secretKeyRef\":{\"name\":\"s\",\"key\":\"k\"}}}]}]}}"
+    echo
+    echo "=== 5. a pod with no cpu/memory limits in models -> Kyverno require-resource-limits"
+    probe limit-probe models 'require-resource-limits' \
+      "{\"spec\":{$hardened,\"containers\":[{\"name\":\"x\",\"image\":\"busybox:1.36\",\"command\":[\"sleep\",\"1\"],$csec}]}}"
+    echo
+    # Not a refusal but a MUTATION: the automounted API token is the incident's inherited
+    # credential, so the default is flipped. A compliant pod is admitted, then its
+    # automountServiceAccountToken is read back to show Kyverno set it to false without the
+    # author asking. PSA can validate, only a mutate can do this.
+    echo "=== 6. automounted API token in models -> Kyverno disable-token-automount (mutate)"
+    kc -n models run automount-probe --image=busybox:1.36 --restart=Never \
+      --overrides="{\"spec\":{$hardened,\"containers\":[{\"name\":\"x\",\"image\":\"busybox:1.36\",\"command\":[\"sleep\",\"5\"],$csec,\"resources\":{\"limits\":{\"cpu\":\"50m\",\"memory\":\"32Mi\"}}}]}}" \
+      --command -- sleep 5 >/dev/null 2>&1 && sleep 2
+    echo "    automountServiceAccountToken -> $(kc -n models get pod automount-probe -o jsonpath='{.spec.automountServiceAccountToken}' 2>/dev/null) (mutated from the default of true)"
+    kc -n models delete pod automount-probe --ignore-not-found >/dev/null 2>&1
     ;;
 
   status)
