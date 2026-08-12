@@ -1,0 +1,125 @@
+# The Kyverno policy set: the rules PSA cannot express, each one lifted from a
+# hardening item in the zero-trust KB.
+#
+# All four policies are scoped to the WORKLOAD namespaces rather than cluster-wide.
+# That is deliberate, not caution: kube-system runs EKS-managed images from Amazon's
+# ECR, istio-system needs ztunnel and istio-cni with privilege, and blocking either
+# from starting turns the policy layer into a cluster outage. The trust boundary this
+# lab defends is the workload tier.
+#
+# validationFailureAction: Enforce, not Audit. An Audit policy applies cleanly, reports
+# healthy, and refuses nothing, which is the same silent no-op failure mode this repo
+# has hit with dry-run authz policies. If a policy is worth having it is worth having
+# it say no.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/description: >-
+      An image with no tag or :latest cannot be traced back to a build, which makes
+      the running cluster impossible to audit. Every image in the lab is pinned,
+      the model server to a digest.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-pinned-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [models, agentgateway-system, keycloak, apps, kagent]
+      validate:
+        message: "Pin images to a version or digest; ':latest' and untagged images are refused."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-registries
+  annotations:
+    policies.kyverno.io/description: >-
+      Supply-chain floor: workloads may only run images from registries this lab
+      actually uses. An image from anywhere else is refused at admission, which is
+      the cheapest possible place to stop it.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: allowlisted-registries-only
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [models, agentgateway-system, keycloak, apps, kagent]
+      validate:
+        message: >-
+          Images must come from an allowlisted registry: docker.io, quay.io, ghcr.io,
+          registry.k8s.io, public.ecr.aws or us-docker.pkg.dev (Solo).
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                all:
+                  - key: >-
+                      {{ regex_match('^(docker\.io/|quay\.io/|ghcr\.io/|registry\.k8s\.io/|public\.ecr\.aws/|us-docker\.pkg\.dev/|[a-z0-9-]+(:[0-9]+)?/)?[a-zA-Z0-9._/-]+(@sha256:[a-f0-9]{64}|:[a-zA-Z0-9._-]+)$', '{{ element.image }}') && (starts_with('{{ element.image }}', 'docker.io/') || starts_with('{{ element.image }}', 'quay.io/') || starts_with('{{ element.image }}', 'ghcr.io/') || starts_with('{{ element.image }}', 'registry.k8s.io/') || starts_with('{{ element.image }}', 'public.ecr.aws/') || starts_with('{{ element.image }}', 'us-docker.pkg.dev/') || (!contains('{{ element.image }}', '/')) || (!contains(split('{{ element.image }}', '/')[0], '.')) ) }}
+                    operator: Equals
+                    value: false
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-secrets-in-env
+  annotations:
+    policies.kyverno.io/description: >-
+      A secret in an environment variable is readable by anything that can read the
+      pod spec, leaks into crash dumps and child processes, and cannot be rotated
+      without a restart. Mount secrets as files, or better, let the platform hold
+      them: this lab's model server has no credential at all because the network and
+      the gateway are what protect it.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-secretkeyref-in-env
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [models, apps, kagent]
+      validate:
+        message: "Secrets must not be injected via env vars (secretKeyRef/envFrom); mount them as files."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                =(env):
+                  - =(valueFrom):
+                      X(secretKeyRef): "null"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disable-token-automount
+  annotations:
+    policies.kyverno.io/description: >-
+      Every pod gets a Kubernetes API token mounted by default, and almost nothing
+      needs one. A stolen token is a stolen identity, so the default is flipped:
+      pods must opt IN to an API token rather than receiving one silently. This is
+      a mutate rule, the one thing PSA can never do.
+spec:
+  rules:
+    - name: default-automount-false
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [models, apps]
+      mutate:
+        patchStrategicMerge:
+          spec:
+            +(automountServiceAccountToken): false

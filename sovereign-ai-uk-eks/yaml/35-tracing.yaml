@@ -1,0 +1,36 @@
+# Act 7 is the evidence pack: every call from the last twenty minutes, who made it,
+# which model answered, token counts, cost, latency, and what was refused.
+#
+# None of that appears without this policy. The gateway exports nothing by default,
+# the Solo Enterprise UI dashboard shows "No Data Available", and there is no way to
+# tell from the UI whether the problem is the policy, the collector or ClickHouse.
+# Finding that out on the day costs you the closing act, so apply this early and
+# check the dashboard has rows in it well before rehearsal.
+#
+# The collector Service name below is the one the management chart installs. Confirm
+# it rather than assuming:
+#
+#   kubectl --context $EKS -n agentgateway-system get svc | grep -i collector
+#
+# and fix the backendRef if your install named it differently. A wrong name here
+# fails exactly like no policy at all.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: tracing
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway
+  frontend:
+    tracing:
+      backendRef:
+        name: solo-enterprise-telemetry-collector
+        namespace: agentgateway-system
+        port: 4317
+      protocol: GRPC
+      # Sample everything. This is a demo with a handful of requests, and act 7
+      # falls apart if the one request you want to point at got sampled out.
+      randomSampling: "true"

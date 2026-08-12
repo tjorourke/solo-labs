@@ -1,0 +1,144 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: uk-sovereign-ai
+  region: eu-west-2
+  # 1.34 is deliberate, not the newest. Istio 1.28 supports Kubernetes 1.29-1.34
+  # and phase 3 needs Solo ambient for the kagent AccessPolicy waypoint.
+  version: "1.34"
+  tags:
+    Owner: torourke
+    Project: solo-demo
+    Purpose: emea-sovereign-ai-webinar
+
+# Dedicated VPC. Not reusing the two idle cluster-2aotp-vpc leftovers in this
+# shared account, and a distinct CIDR so nothing collides if they ever peer.
+vpc:
+  cidr: 10.42.0.0/16
+  nat:
+    # Single, not HighlyAvailable. Region EIP quota is 5 and three NATs would
+    # eat most of it in a shared account.
+    gateway: Single
+  clusterEndpoints:
+    publicAccess: true
+    privateAccess: true
+
+availabilityZones:
+  - eu-west-2a
+  - eu-west-2b
+  - eu-west-2c
+
+iam:
+  withOIDC: true
+
+managedNodeGroups:
+  # Sized for the full Solo stack, not just coredns. m6i.large gives 1930m
+  # allocatable, and two of them cannot hold Istio ambient, agentgateway,
+  # agentregistry, kagent and Keycloak at once: that is roughly 6-7 vCPU of
+  # requests against 3.9 available. The pods sit Pending, which reads as a broken
+  # install rather than as a sizing problem, so it is worth being explicit.
+  #
+  # m6i.xlarge is also the smallest size where a single pod requesting 2 CPU can
+  # schedule at all, which m6i.large cannot do at any node count.
+  #
+  # 3x m6i.xlarge is 12 vCPU / 48 GiB for about $466/mo, up from $162. That is the
+  # cost of the full stack living next to the real model, and it is the reason the
+  # GPU scale-to-zero discipline matters more, not less.
+  - name: platform
+    instanceType: m6i.xlarge
+    desiredCapacity: 3
+    minSize: 3
+    maxSize: 4
+    volumeSize: 80
+    volumeType: gp3
+    privateNetworking: true
+    labels:
+      role: system
+    tags:
+      Owner: torourke
+      Project: solo-demo
+
+  - name: gpu-od
+    # ON-DEMAND, and g7e, and one GPU. All three are measured, not chosen.
+    #
+    # WHY NOT g6.12xlarge, which this lab used until 2026-08-12. London ran out of
+    # it. Not "was tight": a scale-up from zero failed eight times across 2a, 2b and
+    # 2c, and a create-capacity-reservation probe (the only honest test of on-demand
+    # capacity) returned InsufficientInstanceCapacity in ALL THREE AZs. The AWS error
+    # helpfully names other AZs as having capacity and it is not reliable: it named 2b
+    # while 2b was failing. Same probe on the same morning: g6.24xlarge, g5.12xlarge
+    # and p5.4xlarge were also dry, and g6e is not offered in eu-west-2 at all.
+    #
+    # Spot remains unusable, and for the same reason it always was: a flat, cheap spot
+    # price history means nobody is bidding it up, not that there is capacity to sell.
+    # Check placement scores, never the price chart.
+    #
+    # WHY g7e.2xlarge IS BETTER, not just available. One RTX PRO 6000 Server with
+    # 96 GB, against four L4s with 24 GB each. Mistral-24B in bf16 is ~48 GB of
+    # weights, so it fits on the single card with ~48 GB left for KV cache. That
+    # deletes the entire class of problem this lab spent its first build fighting:
+    # no tensor parallelism, so no NCCL and no NCCL_P2P_DISABLE, and no 0.85
+    # gpu-memory-utilization tightrope where the sampler OOMs after the weights have
+    # already loaded. It is also $5.845/hr against $5.841, which is the same money.
+    #
+    # The trade is host resources: 8 vCPU and 64 GiB, down from 48 and 192. That is
+    # ample for one model, but yaml/20-vllm.yaml had to drop its requests to fit, and
+    # a pod requesting the old 96Gi will sit Pending forever on this node.
+    #
+    # Always check nodegroup HEALTH after `gpu.sh up`, not just the node list. An ASG
+    # that cannot launch reports DEGRADED with AsgInstanceLaunchFailures, while
+    # `kubectl get nodes` shows nothing at all and reads as ordinary slowness. Worse,
+    # nodegroup health lags: it read [] while the ASG had already failed twice.
+    instanceType: g7e.2xlarge
+    # ONE AZ, deliberately. The weights PVC is gp3 and therefore AZ-bound, so once it
+    # has bound, a scale-up landing in a different AZ leaves the pod Pending forever.
+    # Moving this pin is only free while the PVC is still unbound.
+    #
+    # Because London GPU capacity moves hour to hour, hold it with an On-Demand
+    # Capacity Reservation in THIS AZ before a rehearsal rather than hoping:
+    #   aws ec2 create-capacity-reservation --instance-type g7e.2xlarge \
+    #     --instance-platform Linux/UNIX --availability-zone eu-west-2a \
+    #     --instance-count 1 --instance-match-criteria open \
+    #     --end-date-type limited --end-date <when you are done>
+    # instance-match-criteria=open means the nodegroup consumes it with no extra
+    # config. ALWAYS set a limited end date: a forgotten reservation bills the full
+    # hourly rate with nothing running in it.
+    availabilityZones:
+      - eu-west-2a
+    desiredCapacity: 0
+    minSize: 0
+    maxSize: 1
+    # g7e.2xlarge has 1900GB NVMe. 300GB gp3 root is for the container images;
+    # model weights land on a separate PVC.
+    volumeSize: 300
+    volumeType: gp3
+    privateNetworking: true
+    labels:
+      role: gpu
+      nvidia.com/gpu: "true"
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+    tags:
+      Owner: torourke
+      Project: solo-demo
+      k8s.io/cluster-autoscaler/node-template/label/role: gpu
+
+addons:
+  - name: vpc-cni
+    version: latest
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
+  - name: aws-ebs-csi-driver
+    version: latest
+    wellKnownPolicies:
+      ebsCSIController: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["audit", "authenticator"]
+    logRetentionInDays: 7

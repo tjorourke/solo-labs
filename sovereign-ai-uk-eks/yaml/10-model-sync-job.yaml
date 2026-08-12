@@ -1,0 +1,105 @@
+# One-off: pull the weights into the UK once, deliberately, then mirror them to
+# S3 in eu-west-2. After this runs, nothing in the demo ever talks to Hugging
+# Face again. That is the sovereignty claim, and it is worth being able to say
+# out loud that it is literally true.
+#
+# APPLY IT THROUGH sed, NOT DIRECTLY. The S3 bucket name contains the AWS account id,
+# and this file is served publicly from the site, so the id is an <AWS_ACCOUNT_ID>
+# placeholder rather than a literal. Substitute it at apply time from whichever identity
+# is in effect, which also stops a stale id being carried between accounts:
+#
+#   sed "s/<AWS_ACCOUNT_ID>/$(aws sts get-caller-identity --query Account --output text)/" \
+#     yaml/10-model-sync-job.yaml | kubectl --context $EKS apply -f -
+#
+# Applied unsubstituted it targets a bucket named ...-<AWS_ACCOUNT_ID> and fails on a
+# 404, which is at least loud rather than subtle.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-sync
+  namespace: models
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: model-sync
+    spec:
+      restartPolicy: Never
+      serviceAccountName: model-sync
+      # Runs on the GPU node because that is where the AZ-pinned PVC lives.
+      # Spot at ~$1.38/hr and roughly 30 minutes of work, so about 70p.
+      nodeSelector:
+        role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: sync
+          image: python:3.12-slim
+          env:
+            - name: MODEL_ID
+              value: mistralai/Mistral-Small-3.2-24B-Instruct-2506
+            - name: S3_URI
+              value: s3://solo-sovereign-ai-models-euw2-<AWS_ACCOUNT_ID>/mistral-small-3.2-24b
+            # NOT HF_HUB_ENABLE_HF_TRANSFER. huggingface-hub 1.x dropped the
+            # hf_transfer extra (pip warns "does not provide the extra") and
+            # moved fast transfer to Xet. The old var is accepted and ignored,
+            # so you get a deprecation warning and a slow download.
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+            - name: AWS_REGION
+              value: eu-west-2
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null
+              pip install -q "huggingface_hub[hf_transfer]"
+              # g6 and g5 are both x86_64, so no arch detection dance. Use -f so a
+              # 404 fails loudly instead of saving an HTML error page as a tarball.
+              curl -fsSL https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_Linux-64bit.tar.gz \
+                -o /tmp/s5.tgz
+              tar -xzf /tmp/s5.tgz -C /usr/local/bin s5cmd
+
+              DEST=/models/mistral-small-3.2-24b
+
+              echo "==> downloading Mistral-native weights only (48 GB, not the 96 GB full repo)"
+              # Excluding the HF sharded copy halves the transfer. vLLM reads
+              # consolidated.safetensors + params.json + tekken.json when it is
+              # started with --load-format/--config-format/--tokenizer-mode mistral.
+              # Python API rather than the CLI: huggingface_hub renamed
+              # huggingface-cli to hf, and snapshot_download is stable across both.
+              python - <<'PY'
+              import os
+              from huggingface_hub import snapshot_download
+              p = snapshot_download(
+                  repo_id=os.environ["MODEL_ID"],
+                  local_dir="/models/mistral-small-3.2-24b",
+                  ignore_patterns=["model-*.safetensors", "*.index.json"],
+                  max_workers=8,
+              )
+              print("downloaded to", p)
+              PY
+
+              # snapshot_download leaves a .cache dir of blob symlinks. It is dead
+              # weight on the PVC and s5cmd chokes on it, so drop it before upload.
+              rm -rf "$DEST/.cache"
+
+              echo "==> on-disk contents"
+              du -sh "$DEST"; ls -la "$DEST"
+
+              echo "==> mirroring to S3 in eu-west-2"
+              s5cmd --numworkers 32 cp "$DEST/*" "$S3_URI/"
+
+              echo "==> done. weights are now resident in the UK in two places."
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            requests: {cpu: "4", memory: 8Gi}
+            limits: {cpu: "8", memory: 16Gi}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: model-weights

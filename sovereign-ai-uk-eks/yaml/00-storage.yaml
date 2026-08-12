@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: models
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-fast
+provisioner: ebs.csi.aws.com
+# WaitForFirstConsumer matters: the volume must be created in whichever AZ the
+# GPU pod lands in. The gpu-od nodegroup is pinned to a single AZ (eu-west-2b as
+# of 2026-08-12, moved from 2a when London ran out of g6 capacity there), so it
+# binds in that AZ and the node comes back to the same volume on every scale-up.
+#
+# That pinning is why the nodegroup must never be widened to a second AZ. Once
+# this volume has bound in 2a, a scale-up that lands in 2b leaves the pod Pending
+# forever, and the events do not say why.
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+parameters:
+  type: gp3
+  # Default gp3 is 125 MiB/s, which makes a 48 GB model load take ~6.5 minutes
+  # every pod start. 750 MiB/s brings that under 90 seconds. Throughput must be
+  # <= 0.25 MiB/s per provisioned IOPS, so 6000 IOPS covers it.
+  throughput: "750"
+  iops: "6000"
+  encrypted: "true"
+  csi.storage.k8s.io/fstype: ext4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-weights
+  namespace: models
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: gp3-fast
+  resources:
+    requests:
+      # 48 GB model plus room for a second copy during any future swap.
+      storage: 120Gi

@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: models
+  labels: {app: vllm}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # single RWO volume, no rolling second pod
+  selector:
+    matchLabels: {app: vllm}
+  template:
+    metadata:
+      labels: {app: vllm}
+    spec:
+      # MUST be false. Kubernetes injects legacy docker-link env vars for every
+      # Service in the namespace, so a Service named "vllm" produces
+      # VLLM_PORT=tcp://10.x.x.x:8000. vLLM reads VLLM_PORT as its own config
+      # and expects an integer, so the engine dies in _get_open_port() with a
+      # traceback that says nothing about environment variables.
+      # The alternative fix is renaming the Service, but the gateway lane
+      # already targets vllm.models.svc.cluster.local, so kill the injection
+      # instead of the name.
+      enableServiceLinks: false
+      nodeSelector:
+        role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      # 48 GB off gp3 at 750 MiB/s is ~90s, then CUDA graph capture on top.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: vllm
+          # Pinned to the digest that was actually validated, not :latest. This is
+          # vLLM 0.27.1, and it is the build proven to have Blackwell kernels for the
+          # RTX PRO 6000 in this node. :latest moving under the demo would break the
+          # model on the one day it matters, and a GPU this new is exactly where a
+          # rebuilt image is most likely to change behaviour.
+          image: vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967
+          args:
+            - --model=/models/mistral-small-3.2-24b
+            - --served-model-name=mistral-small-3.2-24b
+            # ONE GPU, not four. The node is g7e.2xlarge: a single RTX PRO 6000
+            # Server with 96 GB. Weights are ~48 GB in bf16, so the whole model sits
+            # on one card with ~48 GB left for KV cache, and there is no tensor
+            # parallelism to configure.
+            #
+            # This is the setting that removes most of this lab's original pain. TP=4
+            # across L4s is what needed NCCL over PCIe, NCCL_P2P_DISABLE to stop the
+            # init hanging, and a 0.85 memory ceiling to stop the sampler OOMing after
+            # a successful weight load. None of that applies to a single card.
+            - --tensor-parallel-size=1
+            # These three are not optional. vLLM will start without them and
+            # produce subtly wrong output against the Mistral-native weights.
+            - --tokenizer-mode=mistral
+            - --config-format=mistral
+            - --load-format=mistral
+            # Act 6 has agents calling MCP tools. Without these the model does
+            # not emit tool calls in a shape agentgateway can route.
+            - --tool-call-parser=mistral
+            - --enable-auto-tool-choice
+            # 16k is conservative on this card, not a limit. 48 GB of KV headroom
+            # would carry far more; raise it once the model is known good rather
+            # than changing two things at once on a first boot.
+            - --max-model-len=16384
+            # 0.90 is safe here, where 0.85 was mandatory on the L4s. The old note is
+            # worth keeping because it explains the shape of the failure: on a 22 GiB
+            # card the weights took ~12 GB, the KV cache ate the rest, and the sampler
+            # OOMed asking for 128 MiB AFTER the weights had loaded successfully,
+            # which reads as a runtime fault rather than a sizing one. On 96 GB with
+            # ~48 GB free after weights, that margin is no longer thin.
+            - --gpu-memory-utilization=0.90
+            - --port=8000
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            - {name: VLLM_LOGGING_LEVEL, value: INFO}
+            # NCCL_P2P_DISABLE is deliberately gone. It existed to stop TP=4 init
+            # hanging over PCIe with no NVLink, and there is no longer any
+            # cross-GPU communication to configure at tensor-parallel-size 1.
+            #
+            # VLLM_USE_FLASHINFER_SAMPLER=0 is kept for now. It was set because the
+            # FlashInfer sampler is what actually OOMed on the 24 GB cards, and that
+            # pressure is gone on 96 GB, so this can probably come out. Left in place
+            # deliberately: it is known-good, the throughput difference is invisible
+            # at demo concurrency, and changing the GPU family and the sampler in one
+            # step would make any failure ambiguous.
+            - {name: VLLM_USE_FLASHINFER_SAMPLER, value: "0"}
+            # Headroom on a card this full is mostly lost to fragmentation.
+            - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+          # Sized for g7e.2xlarge: 8 vCPU and 64 GiB, of which roughly 7.6 and 60 GiB
+          # are allocatable. The previous values (4 GPUs, 16 CPU requested, 96Gi)
+          # cannot be satisfied on this node and the pod would sit Pending with an
+          # Insufficient cpu/memory event that says nothing about the node change.
+          #
+          # The 48 GB of weights stream from the PVC to the GPU, so host memory is for
+          # the runtime and page cache rather than a second copy of the model.
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 48Gi
+              cpu: "7"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: 24Gi
+              cpu: "4"
+          volumeMounts:
+            - {name: models, mountPath: /models, readOnly: true}
+            - {name: shm, mountPath: /dev/shm}
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            failureThreshold: 60      # allow ~10 min for first load
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 600
+            periodSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: model-weights
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 16Gi}   # NCCL needs real /dev/shm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: models
+  labels: {app: vllm}
+spec:
+  type: ClusterIP
+  selector: {app: vllm}
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}

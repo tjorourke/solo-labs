@@ -1,0 +1,36 @@
+# The single door into the model. A zero-trust edge does not serve the model over
+# plaintext, so this terminates TLS at the gateway on :443 and downgrades :80 to a
+# redirect. The certificate lives in the secret `gateway-tls`, issued by the dedicated
+# edge CA in scripts/tls.sh (kept separate from the mesh PKI in Vault, which secures
+# workload-to-workload identity rather than this public listener).
+#
+# TLS terminates at the agentgateway pod, not at the NLB: the NLB is an L4 passthrough,
+# so the connection is encrypted all the way to the gateway. A real deployment swaps the
+# certificateRef for an ACM or public-CA certificate on a real domain and changes nothing
+# else.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: sovereign-gateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    # Plaintext, kept only to bounce callers to HTTPS. No route serves a model here.
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All
+    # The real door. TLS terminated here with the edge certificate.
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: gateway-tls
+      allowedRoutes:
+        namespaces:
+          from: All

@@ -1,0 +1,147 @@
+# Disaster recovery for the weights, deliberately kept out of the vLLM startup path.
+#
+# The reasoning is worth keeping written down. The S3 copy in eu-west-2 exists for
+# two reasons: it is the recovery path if the PVC is lost, and it is the thing that
+# makes the sovereignty claim literally true rather than nearly true. Neither of
+# those needs to run when a pod starts. An init container that checks S3 on every
+# vLLM start would add a failure mode to the component most likely to be restarting
+# live on camera, in exchange for nothing you need during the demo.
+#
+# So: run this Job on demand, only when the PVC is empty or has been recreated.
+# Rehearse it once so the recovery path is real, then leave it alone.
+#
+# APPLY IT THROUGH sed, NOT DIRECTLY. The S3 bucket name contains the AWS account id,
+# and this file is served publicly from the site, so the id is a <AWS_ACCOUNT_ID>
+# placeholder rather than a literal. Substitute it at apply time from whichever identity
+# is actually in effect, which also stops a stale id being carried between accounts:
+#
+#   sed "s/<AWS_ACCOUNT_ID>/$(aws sts get-caller-identity --query Account --output text)/" \
+#     yaml/39-model-restore-job.yaml | kubectl --context $EKS apply -f -
+#   kubectl --context $EKS -n models logs -f job/model-restore
+#
+# Applying the file unsubstituted creates a Job that tries to read a bucket named
+# ...-<AWS_ACCOUNT_ID> and fails on a 404, which is at least loud rather than subtle.
+#
+# It expects vLLM to be scaled to zero, because the PVC is ReadWriteOnce and a
+# running vLLM pod holds it:
+#
+#   kubectl --context $EKS -n models scale deploy/vllm --replicas=0
+#
+# ---------------------------------------------------------------------------
+# BEFORE FIRST USE: the read-only service account does not exist yet.
+# Cluster and IAM writes are not mine in this split, so these two commands are for
+# whoever owns the cluster. Read-only on purpose: the restore path has no business
+# being able to overwrite or delete the master copy of the weights.
+#
+#   B=solo-sovereign-ai-models-euw2-<AWS_ACCOUNT_ID>
+#   cat > /tmp/model-restore-ro.json <<JSON
+#   {
+#     "Version": "2012-10-17",
+#     "Statement": [
+#       {"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],
+#        "Resource":"arn:aws:s3:::$B"},
+#       {"Effect":"Allow","Action":["s3:GetObject"],
+#        "Resource":"arn:aws:s3:::$B/*"}
+#     ]
+#   }
+#   JSON
+#   aws iam create-policy --policy-name uk-sovereign-ai-model-s3-readonly \
+#     --policy-document file:///tmp/model-restore-ro.json
+#
+#   eksctl create iamserviceaccount --cluster uk-sovereign-ai --region eu-west-2 \
+#     --namespace models --name model-restore \
+#     --attach-policy-arn arn:aws:iam::<AWS_ACCOUNT_ID>:policy/uk-sovereign-ai-model-s3-readonly \
+#     --approve
+# ---------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-restore
+  namespace: models
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: model-restore
+    spec:
+      restartPolicy: Never
+      serviceAccountName: model-restore
+      # The PVC is gp3 and therefore AZ-bound, and the gpu-od nodegroup is pinned to
+      # eu-west-2a, so this has to land on the GPU node to reach the volume. That
+      # means paying on-demand for a 4-GPU node for the length of a restore, around
+      # $5.84/hr, so call it a pound or two. Still the correct trade: restores are
+      # rare and a stalled restore an hour before the webinar is worse.
+      #
+      # Selecting on the role=gpu label rather than the nodegroup name, so this
+      # survives the nodegroup being rebuilt or renamed. It was gpu-spot until spot
+      # turned out to be unobtainable for 4-GPU nodes in London.
+      nodeSelector:
+        role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: restore
+          image: python:3.12-slim
+          env:
+            - name: S3_URI
+              value: s3://solo-sovereign-ai-models-euw2-<AWS_ACCOUNT_ID>/mistral-small-3.2-24b
+            - name: DEST
+              value: /models/mistral-small-3.2-24b
+            - name: AWS_REGION
+              value: eu-west-2
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null
+              # g6 and g5 are both x86_64. -f so a 404 fails loudly instead of
+              # saving an HTML error page as a tarball.
+              curl -fsSL https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_Linux-64bit.tar.gz \
+                -o /tmp/s5.tgz
+              tar -xzf /tmp/s5.tgz -C /usr/local/bin s5cmd
+
+              # Refuse to run if the weights are already there. A restore that
+              # silently re-pulls 48 GB over a healthy PVC is a waste and a way to
+              # corrupt a working demo an hour before it starts. Delete the
+              # directory yourself if you really mean to replace it.
+              if [ -f "$DEST/consolidated.safetensors" ]; then
+                echo "==> $DEST already holds consolidated.safetensors, nothing to do"
+                du -sh "$DEST"
+                echo "==> to force a replacement: rm -rf $DEST and re-run this Job"
+                exit 0
+              fi
+
+              echo "==> restoring weights from S3 in eu-west-2 (no Hugging Face involved)"
+              mkdir -p "$DEST"
+              s5cmd --numworkers 32 cp "$S3_URI/*" "$DEST/"
+
+              echo "==> verifying"
+              # vLLM needs all three of these with the mistral loader. Missing any
+              # one of them fails at model load, several minutes in, with an error
+              # that does not obviously point at a missing file.
+              missing=0
+              for f in consolidated.safetensors params.json tekken.json; do
+                if [ -s "$DEST/$f" ]; then
+                  echo "    ok      $f"
+                else
+                  echo "    MISSING $f"; missing=1
+                fi
+              done
+              du -sh "$DEST"
+              if [ "$missing" = "1" ]; then
+                echo "==> restore incomplete, do not start vLLM against this volume"
+                exit 1
+              fi
+              echo "==> restore complete. scale vLLM back up."
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            requests: {cpu: "4", memory: 8Gi}
+            limits: {cpu: "8", memory: 16Gi}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: model-weights

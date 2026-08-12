@@ -1,0 +1,49 @@
+# Act 2, second half: with a token you get an answer, without one you get a 401.
+#
+# Strict mode means every request through this Gateway must carry a valid token.
+# There is no per-route opt-out here, which is what you want for the demo: the
+# gateway is the only door, and the door is locked.
+#
+# The issuer string has to equal the token's `iss` claim byte for byte. This is the
+# single most common way this policy fails, and it fails as a 401 that looks exactly
+# like a missing token. Do not eyeball it, prove it:
+#
+#   ./scripts/keycloak.sh check
+#
+# which mints a real token, decodes it, and compares its iss and aud against this
+# file. Run it before every rehearsal.
+#
+# Note there is no port in the issuer. yaml/37-keycloak.yaml pins KC_HOSTNAME to
+# http://keycloak.keycloak.svc.cluster.local and the Service listens on 80, so the
+# issuer carries no :8080. An earlier version of this file had one and it was wrong.
+#
+# JWKS is fetched from Keycloak in-cluster over the Service, not through any public
+# ingress, so the gateway does not depend on its own data path to validate tokens.
+# Keycloak is not exposed publicly at all, which suits the story: the IdP is in the UK
+# and unreachable from outside the cluster.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: jwt-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+          audiences: ["sovereign-ai"]
+          jwks:
+            remote:
+              jwksPath: "/realms/sovereign/protocol/openid-connect/certs"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: keycloak
+                namespace: keycloak
+                port: 80

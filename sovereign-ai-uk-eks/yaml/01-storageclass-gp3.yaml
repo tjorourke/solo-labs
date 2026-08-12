@@ -1,0 +1,24 @@
+# A general-purpose gp3 class for platform components (Vault raft, Prometheus, Loki).
+#
+# The cluster ships a `gp2` StorageClass whose provisioner is the IN-TREE
+# kubernetes.io/aws-ebs plugin. That plugin was REMOVED in Kubernetes 1.31, and this
+# cluster is 1.34, so any PVC using gp2 stays Pending forever with nothing in its events
+# that mentions a missing provisioner. Do not use gp2 here.
+#
+# Separate from gp3-fast in yaml/00-storage.yaml, deliberately. gp3-fast is tuned for
+# streaming 48 GB of model weights (6000 IOPS, 750 MiB/s) and carries reclaimPolicy
+# Retain so a deleted PVC never destroys the weights. Neither is wanted for a 10 GiB
+# Vault volume: the provisioned IOPS and throughput are most of the cost of a gp3
+# volume, and Retain would leave orphans behind on every teardown.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+  encrypted: "true"
+  csi.storage.k8s.io/fstype: ext4

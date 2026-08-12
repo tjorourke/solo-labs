@@ -1,0 +1,77 @@
+# Act 4: the prompt containing personal data is refused before the model sees it.
+#
+# The five built-in detectors are CaSin, CreditCard, Email, PhoneNumber and Ssn.
+# Ssn and CaSin are North American, and demoing a US Social Security Number at an
+# EMEA audience is the fastest way to lose that audience. So the built-ins are kept
+# for the genuinely universal patterns and the UK identifiers are added below as
+# custom regexes. Say out loud on the call that you added them, because it is the
+# difference between a product demo and a demo that speaks to their regulator.
+#
+# The two UK patterns were tested against specimen values rather than eyeballed.
+# See scripts/test-pii-regex.py, which is a runnable proof, not a comment. What the
+# obvious version of these patterns gets wrong:
+#
+#   NI number, obvious version   [A-CEGHJ-PR-TW-Z]{2}[0-9]{6}[A-D]
+#     - misses "JM 50 13 45 D", which is exactly how it is printed on an HMRC letter
+#     - misses "jm501345d", which is how a person actually types it into a chat box
+#     - wrongly accepts O in the second position, which HMRC excludes
+#     - matches inside a longer token, so XJM501345DX trips it
+#
+#   NHS number, obvious version  [0-9]{3} ?[0-9]{3} ?[0-9]{4}
+#     - misses the hyphenated form
+#     - matches a 10-digit run inside an 11-digit number, so it fires on things
+#       that are not NHS numbers at all
+#
+# Both patterns below pass all of that. Rust regex syntax, which is what the gateway
+# runs: no lookahead or lookbehind is available, so do not add any.
+#
+# This policy targets the HTTPRoute, and it only enforces because
+# yaml/31-vllm-backend.yaml uses the ai.provider singular shape. On a groups-form
+# backend it would attach, report green, and do nothing.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: uk-pii-guard
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: vllm-mistral
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - regex:
+              action: Reject
+              builtins:
+                - CreditCard
+                - Email
+                - PhoneNumber
+              matches:
+                # UK National Insurance number. Two letters, six digits, an A-D
+                # suffix, optionally spaced in 2-2-2 groups. Excludes D, F, I, Q,
+                # U and V in the first position and additionally O in the second,
+                # which is what HMRC actually allocates.
+                - "(?i)\\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?[0-9]{2} ?[0-9]{2} ?[0-9]{2} ?[A-D]\\b"
+                # NHS number. Ten digits in 3-3-4, optionally separated by a space
+                # or a hyphen. Word boundaries stop it matching a 10-digit run
+                # inside a longer number.
+                - "\\b[0-9]{3}[ -]?[0-9]{3}[ -]?[0-9]{4}\\b"
+            response:
+              statusCode: 403
+              message: "Blocked: the prompt contained personal data. It was not sent to the model."
+        response:
+          # If someone asks the model to repeat back what was redacted, mask it on
+          # the way out too. Mask rather than Reject here: a refused response mid
+          # demo looks like the model broke, a masked one looks like the control
+          # working.
+          - regex:
+              action: Mask
+              builtins:
+                - CreditCard
+                - Email
+                - PhoneNumber
+              matches:
+                - "(?i)\\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?[0-9]{2} ?[0-9]{2} ?[0-9]{2} ?[A-D]\\b"
+                - "\\b[0-9]{3}[ -]?[0-9]{3}[ -]?[0-9]{4}\\b"

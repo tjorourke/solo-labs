@@ -1,0 +1,81 @@
+# The in-region model, as an LLM backend behind the gateway.
+#
+# READ THIS BEFORE YOU EDIT THE SHAPE BELOW.
+#
+# `ai.provider` is singular on purpose. Prompt guards bind to the single-provider
+# shape only. With the `ai.groups[]`/`providers[]` failover shape the guard policy
+# still applies cleanly, still reports Accepted and Attached, still shows up in the
+# proxy config dump, and enforces nothing at all. That failure is completely silent,
+# and it would turn demo act 4 into a live demonstration of a model happily
+# swallowing an NHS number in front of a room of security people. Do not "tidy"
+# this into the groups form to add a fallback provider.
+#
+# `openai` is the provider name because vLLM serves an OpenAI-compatible API, not
+# because anything here talks to OpenAI. The host/port below is a ClusterIP Service
+# in this cluster, in eu-west-2. That is the whole point of the demo.
+#
+# The CRD requires host and port to be set together, and path and pathPrefix are
+# mutually exclusive. `model` must match vLLM's --served-model-name exactly.
+#
+# There is no auth stanza: vLLM is started without an API key, and the reason it is
+# safe to have no key is act 2: the NetworkPolicy in 33- means nothing but the
+# gateway can reach it. Say that out loud rather than letting someone spot the
+# missing credential and assume it is an oversight.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: vllm-mistral
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: mistral-small-3.2-24b
+      host: vllm.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+---
+# Routes /v1/chat/completions on the gateway to the in-region model.
+#
+# The path is kept identical to the OpenAI API path so an existing client can be
+# repointed with a base-URL change and nothing else. That is worth demonstrating in
+# act 3: the application does not get rewritten to become sovereign, it gets
+# repointed.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vllm-mistral
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    # Bound to the HTTPS listener only. The model is never served over plaintext.
+    - name: sovereign-gateway
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/chat/completions
+      backendRefs:
+        - name: vllm-mistral
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+---
+# Everything arriving on :80 is bounced to https with a 301. No plaintext request ever
+# reaches the model; the only thing the HTTP listener does is tell the caller to come
+# back over TLS.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: sovereign-gateway
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

@@ -1,0 +1,42 @@
+# Act 2, first half, and the act the platform half of the audience cares about most:
+# the gateway is not the recommended way to the model, it is the only way.
+#
+#   kubectl run probe --rm -it --image=curlimages/curl -- \
+#     curl -s -m 5 http://vllm.models.svc.cluster.local:8000/v1/models
+#
+# times out, because that pod is not in agentgateway-system.
+#
+# THIS DOES NOTHING ON EKS UNTIL NETWORK POLICY ENFORCEMENT IS TURNED ON.
+# The AWS VPC CNI ignores NetworkPolicy objects unless the aws-node addon is
+# configured with network policy enabled. The object applies, `kubectl get netpol`
+# looks healthy, and every connection still succeeds. That failure mode is silent
+# and it lands squarely on the most important act in the demo, so verify with the
+# probe above every single rehearsal rather than by reading this file.
+#
+# Ingress-only on purpose. The model-sync and model-restore Jobs need egress to
+# Hugging Face and to S3, and adding an Egress rule here is an easy way to break the
+# weight pull for no security gain that matters to this story.
+#
+# Note that kubelet's readiness and liveness probes reach vLLM from the node rather
+# than from a pod, so they are not covered by the ingress rule below. Confirm the
+# vLLM pod still goes Ready after this is applied, because if probes do get caught
+# the deployment will crashloop and it will look like a vLLM problem.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: models-gateway-only
+  namespace: models
+spec:
+  # Every pod in the namespace, not just vLLM. If someone adds a sidecar debug pod
+  # or a second model later, it is covered by default rather than by remembering.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentgateway-system
+      ports:
+        - protocol: TCP
+          port: 8000

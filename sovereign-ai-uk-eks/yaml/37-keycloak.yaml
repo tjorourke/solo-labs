@@ -1,0 +1,99 @@
+# Keycloak, the identity behind acts 2 and 3.
+#
+# Lifted from agentgateway-quickstart-kind/yaml/keycloak/ rather than written fresh,
+# so this is the same posture that already works in that lab: upstream Keycloak in dev
+# mode, in-memory H2, realm imported at start. Dev posture on purpose. It is an IdP
+# for a demo, not an IdP for anything real, and the realm re-imports on restart which
+# is exactly what you want when rehearsing.
+#
+# Deploy with scripts/keycloak.sh rather than kubectl apply, because the realm has to
+# reach the pod as a ConfigMap built from yaml/37-keycloak-realm.json:
+#
+#   ./scripts/keycloak.sh up
+#   ./scripts/keycloak.sh token alice        # mint a token
+#   ./scripts/keycloak.sh claims alice       # mint one and show its claims
+#
+# THE ISSUER IS THE WHOLE GAME HERE.
+#
+# KC_HOSTNAME pins the issuer to the in-cluster Service hostname, so the `iss` claim
+# is the same string whether a token was minted through a port-forward from a laptop
+# or by something inside the cluster. Without that pin, a token minted over
+# localhost:18080 carries iss=http://localhost:18080/realms/sovereign, the gateway
+# compares it to the configured issuer, and every request 401s in a way that looks
+# exactly like a missing token.
+#
+# There is no port in KC_HOSTNAME and the Service listens on 80, so the issuer is
+# http://keycloak.keycloak.svc.cluster.local/realms/sovereign with no :8080. That is
+# what yaml/32-jwt-policy.yaml must say, character for character.
+#
+# KC_HOSTNAME_BACKCHANNEL_DYNAMIC lets the token endpoint keep answering on
+# localhost through the port-forward while still stamping the in-cluster issuer.
+#
+# Nothing about this is exposed publicly, which suits the story: the IdP is in the UK
+# and unreachable from outside the cluster. Tokens are minted over a port-forward.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  selector: { app: keycloak }
+  ports:
+    - { name: http, port: 80, targetPort: 8080 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  serviceName: keycloak
+  replicas: 1
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      # Required by the PSA restricted profile on this namespace. Without it the
+      # RUNNING pod keeps working and the next restart is refused at admission,
+      # which is an outage on a delay. Keycloak's image runs as uid 1000 already,
+      # so this only states what is true and drops what it never needed.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.3
+          args: [start-dev, --import-realm]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          env:
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
+            - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: admin }
+            - { name: KC_HTTP_RELATIVE_PATH, value: / }
+            - { name: KC_HOSTNAME, value: "http://keycloak.keycloak.svc.cluster.local" }
+            - { name: KC_HOSTNAME_STRICT, value: "false" }
+            - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true" }
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+          ports:
+            - { containerPort: 8080, name: http }
+          readinessProbe:
+            httpGet: { path: /realms/master, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits:   { cpu: 1,    memory: 1Gi }
+          volumeMounts:
+            - { name: realm-import, mountPath: /opt/keycloak/data/import, readOnly: true }
+      volumes:
+        - name: realm-import
+          configMap: { name: keycloak-realm-import }

@@ -1,0 +1,115 @@
+# Act 3: the cloud model is refused.
+#
+# This is the act the plan doc calls the control the buyer actually wants. Not a
+# policy document telling developers not to call a US API, a network that will not
+# let them. So it has to be enforced by the network, not by the gateway politely
+# declining, and the audience has to see the refusal happen to a real client.
+#
+# The shape: an `apps` namespace standing in for an existing application, with egress
+# locked to DNS and the gateway. Nothing else. The same client then gets a normal
+# answer through the gateway, from the model in London.
+#
+# Run it:
+#
+#   # 1. the US API, from inside the app namespace. Expect a timeout, curl exit 28.
+#   kubectl --context $EKS -n apps exec deploy/demo-client -- \
+#     curl -s -m 5 -o /dev/null -w 'http=%{http_code}\n' https://api.openai.com/v1/models
+#
+#   # 2. the same client, repointed at the gateway. Expect a 200 and an answer.
+#   TOKEN=$(./scripts/keycloak.sh token alice)
+#   kubectl --context $EKS -n apps exec deploy/demo-client -- \
+#     curl -sN -m 60 http://sovereign-gateway.agentgateway-system/v1/chat/completions \
+#       -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+#       -d '{"model":"mistral-small-3.2-24b","stream":true,"max_tokens":40,
+#            "messages":[{"role":"user","content":"Which city are you running in? Answer in five words."}]}'
+#
+# Note the stream:true, the max_tokens and the curl -N. Generation measured 21 tok/s on
+# 4x L4, so a 300-token answer is 15 seconds of silence on camera. Streaming makes the
+# first token the moment the audience sees it work, and max_tokens stops the model
+# writing an essay nobody will read out. Every prompt in this demo asks for a short
+# answer for the same reason.
+#
+# Confirm the Gateway's Service name before rehearsing, because agentgateway names it
+# after the Gateway and that is easy to get wrong:
+#
+#   kubectl --context $EKS -n agentgateway-system get svc
+#
+# Three things about this that are worth knowing before you rely on it.
+#
+# DNS is deliberately allowed. If you block it, act 3 shows "Could not resolve host"
+# and the story becomes "we broke DNS". Allowing it means api.openai.com resolves to a
+# real public IP and then the connection goes nowhere, which is the point: the
+# application is correctly configured, the network refuses it anyway.
+#
+# This does not break image pulls. Pulls are done by containerd on the node, not by
+# the pod, so NetworkPolicy never sees them. Everyone assumes otherwise and then
+# "fixes" the policy by opening 443 to the world, which quietly removes the act.
+#
+# Like yaml/33-, this enforces nothing until the vpc-cni addon has network policy
+# enabled. Verify with the timeout in step 1, not by reading the object.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+---
+# Stands in for the application everyone has and nobody has inventoried: something
+# that talks to a model endpoint. A long-lived pod rather than `kubectl run` per act,
+# so the demo is re-runnable in seconds and there is no image pull on camera.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-client
+  namespace: apps
+  labels: {app: demo-client}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: demo-client}
+  template:
+    metadata:
+      labels: {app: demo-client}
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.1
+          command: ["sleep", "infinity"]
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 100
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apps-egress-gateway-only
+  namespace: apps
+spec:
+  # Every pod in the namespace. A second client added later is covered by default
+  # rather than by someone remembering to come back here.
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS. Required, and required to be a real resolution rather than a failure, or
+    # act 3 stops being about egress control.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    # The gateway, on the listener port from yaml/30-gateway.yaml. This is the only
+    # route to a model that this namespace has.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentgateway-system
+      ports:
+        - {protocol: TCP, port: 80}
+  # Note what is absent: no rule for 443 to anywhere. That absence is the demo.
