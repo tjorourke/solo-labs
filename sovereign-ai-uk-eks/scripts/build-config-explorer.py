@@ -67,6 +67,7 @@ GROUPS = [
         ("30-gateway.yaml",        "Gateway (one door, TLS)"),
         ("31-vllm-backend.yaml",   "Backend → Mistral + route"),
         ("32-jwt-policy.yaml",     "JWT auth"),
+        ("38-rate-limit.yaml",     "Per-identity rate limit"),
         ("34-uk-pii-guard.yaml",   "PII guard"),
         ("35-tracing.yaml",        "OTel tracing"),
         ("60-mcp-tools.yaml",      "MCP tool server"),

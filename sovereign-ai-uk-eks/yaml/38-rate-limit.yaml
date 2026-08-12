@@ -1,0 +1,54 @@
+# Cap the tempo, per identity.
+#
+# The incident this lab recreates was defined by speed: an agent, or a swarm of them, taking
+# thousands of actions faster than any human could review. A per-identity request limit at
+# the gateway is the ceiling on that tempo. Each caller's own JWT subject is the key, so one
+# runaway identity is throttled without touching everyone else.
+#
+# The counter lives in the enterprise rate-limiter that ships with agentgateway (already
+# running in agentgateway-system), so the limit is shared across gateway replicas rather
+# than multiplied by them. This is the entRateLimit.global path, not a per-pod local bucket.
+#
+# The limit is set deliberately tight for the demo so the 429 is easy to show; a production
+# value would be higher. It sits on the model route, so it caps calls to the sovereign model
+# specifically, which is the resource a swarm would burn through.
+apiVersion: ratelimit.solo.io/v1alpha1
+kind: RateLimitConfig
+metadata:
+  name: request-per-identity
+  namespace: agentgateway-system
+spec:
+  raw:
+    descriptors:
+      - key: sub
+        rateLimit:
+          requestsPerUnit: 10   # 10 model calls per minute per identity
+          unit: MINUTE
+    rateLimits:
+      - actions:
+          - cel:
+              expression: 'jwt.sub'   # the caller's own subject, from the validated JWT
+              key: sub
+        type: REQUEST
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: per-identity-rate-limit
+  namespace: agentgateway-system
+spec:
+  # Scoped to the model route, so the cap is on calls to the sovereign model. JWT auth is
+  # already Strict on the Gateway (yaml/32-jwt-policy.yaml), so jwt.sub is always populated.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: vllm-mistral
+  traffic:
+    entRateLimit:
+      global:
+        rateLimitConfigRefs:
+          - name: request-per-identity
+        backendRef:
+          name: rate-limiter-enterprise-agentgateway
+          namespace: agentgateway-system
+          port: 8083
