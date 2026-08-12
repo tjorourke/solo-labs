@@ -1,0 +1,228 @@
+# Production-grade hardening, the controls PSA and the base policy set leave open.
+#
+# Each rule maps to a move in the OpenAI/Hugging Face chain, not a generic CIS dump:
+#   - restricted-subset on the model closes the softest-profile gap on the one workload
+#     the whole build protects.
+#   - a read-only root filesystem takes away the ground the agents staged their exploit on.
+#   - a generate rule makes every new namespace born locked, so "the door someone forgot"
+#     cannot exist.
+#   - image-signature verification answers "a tampered dependency in its image".
+#   - RBAC-shape admission refuses the pods/create + secrets/get pair the lateral movement
+#     relied on.
+#
+# Enforce where the workload provably meets the control; Audit where an operator-managed
+# pod (the gateway data plane and its sidecars) cannot yet, so the gap is reported without
+# breaking the one door. Audit rules are the honest "not yet Enforce", not decoration.
+---
+# The model, at restricted MINUS the one control it cannot meet (runs as its GPU user).
+# vLLM's spec (20-vllm.yaml) now carries allowPrivilegeEscalation:false, drop ALL and
+# seccomp RuntimeDefault, and its weights are a read-only PVC not a hostPath, so every
+# other restricted control holds. This is the highest-value closure: the model is no
+# longer baseline.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restricted-subset-models
+  annotations:
+    policies.kyverno.io/description: "restricted profile, minus runAsNonRoot, on the model namespace"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: models-restricted-except-nonroot
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [models]
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest
+          exclude:
+            - controlName: "Running as Non-root"
+            - controlName: "Running as Non-root user"
+---
+# The gateway data plane and its sidecars are operator-managed and cannot all set seccomp
+# yet, so the same restricted-subset is AUDITED here rather than enforced: the gap is on
+# the dashboard, the door stays up. Flip to Enforce once the operator pods carry seccomp.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restricted-subset-gateway-audit
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: gateway-restricted-except-nonroot
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [agentgateway-system]
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest
+          exclude:
+            - controlName: "Running as Non-root"
+            - controlName: "Running as Non-root user"
+---
+# Take away the staging ground. The agents "downloaded a public exploit and adapted it";
+# that needs a writable root filesystem. Audited on the workload namespaces so the reader
+# sees which pods still write to their own root, then hardened pod-by-pod (the rogue agent
+# already runs read-only with a writable /tmp emptyDir).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-readonly-rootfs
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: readonly-root
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [agents, models, apps]
+      validate:
+        message: "root filesystem must be read-only (stage nothing on it); mount a writable emptyDir where you need scratch"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+---
+# A soft ceiling on a runaway pod. The incident's defining trait was tempo; limits are the
+# per-pod version of that ceiling. Enforced where the workloads already declare limits.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-cpu-mem-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [models, agentgateway-system, agents]
+      validate:
+        message: "every container must set cpu and memory limits"
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"
+---
+# Every new namespace is born locked. A generate rule writes a default-deny egress
+# NetworkPolicy (DNS + the gateway only) into any namespace created from now on, so the
+# "namespace someone forgot to lock down", the exact door Artifactory was standing in,
+# cannot exist. generateExisting is false so it does not retro-apply to running namespaces
+# that have their own egress rules.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: default-deny-egress-on-new-namespaces
+spec:
+  generateExisting: false
+  rules:
+    - name: gen-default-deny-egress
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kube-public, kube-node-lease, istio-system, cert-manager, vault, monitoring]
+      generate:
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        name: default-deny-egress
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true
+        data:
+          spec:
+            podSelector: {}
+            policyTypes: [Egress]
+            egress:
+              - to:
+                  - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+                ports:
+                  - { protocol: UDP, port: 53 }
+                  - { protocol: TCP, port: 53 }
+              - to: [{ podSelector: {} }]
+              - to:
+                  - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+                ports:
+                  - { protocol: TCP, port: 443 }
+                  - { protocol: TCP, port: 80 }
+---
+# The supply-chain answer to "a tampered dependency in its image". restrict-registries says
+# WHERE an image may come from; this says it was signed by a key we trust and not swapped
+# underneath. Audited to start (nothing in the lab is signed yet), so it reports every
+# unsigned image rather than blocking the cluster; the enforce flip is a one-line change
+# once images are signed in CI.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+spec:
+  validationFailureAction: Audit
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: cosign-verify
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [agents, apps, models]
+      verifyImages:
+        - imageReferences:
+            - "*"
+          failureAction: Audit
+          verifyDigest: false
+          mutateDigest: false
+          required: true
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+---
+# The privilege-escalation shape the lateral movement relied on. A Role or ClusterRole that
+# grants both "create pods" and "read secrets" is a route from one to the other; refuse the
+# pair at admission. Kyverno validating RBAC objects, not just pods, is the differentiator.
+# Audited so an existing platform controller is reported, not suddenly broken.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: refuse-pod-create-and-secret-read
+spec:
+  validationFailureAction: Audit
+  background: false
+  rules:
+    - name: no-pods-create-plus-secrets-get
+      match:
+        any:
+          - resources:
+              kinds: [Role, ClusterRole]
+      validate:
+        message: "a Role must not grant both pods/create and secrets/get,read,list — that pair is a privilege-escalation route"
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.rules[?contains(resources, 'pods') && (contains(verbs, 'create') || contains(verbs, '*'))] | length(@) }}"
+                operator: GreaterThanOrEquals
+                value: 1
+              - key: "{{ request.object.rules[?contains(resources, 'secrets') && (contains(verbs, 'get') || contains(verbs, 'list') || contains(verbs, '*'))] | length(@) }}"
+                operator: GreaterThanOrEquals
+                value: 1

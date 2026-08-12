@@ -95,7 +95,10 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [models, apps]
+              # keycloak added: its pods carry no secretKeyRef in env, so it enforces
+              # cleanly. agentgateway-system is deliberately excluded, one sidecar there
+              # does use a secretKeyRef (the same reason kagent is not on this list).
+              namespaces: [models, apps, keycloak]
       validate:
         message: "Secrets must not be injected via env vars (secretKeyRef/envFrom); mount them as files."
         pattern:
@@ -123,7 +126,10 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [models, apps]
+              # extended to keycloak and agentgateway-system: the automounted token is the
+              # article's "inherited credential", and it is a mutate (no secretKeyRef
+              # conflict), so it is safe on both.
+              namespaces: [models, apps, keycloak, agentgateway-system]
       mutate:
         patchStrategicMerge:
           spec:

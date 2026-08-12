@@ -101,6 +101,7 @@ GROUPS = [
     ]),
     ("policy", "Kyverno + PSA", [
         ("40-policies.yaml", "Admission policies"),
+        ("41-hardening.yaml", "Restricted-subset + supply chain + RBAC"),
     ]),
     ("keycloak", "Keycloak (JWT issuer)", [
         ("37-keycloak.yaml",       "Keycloak deploy"),

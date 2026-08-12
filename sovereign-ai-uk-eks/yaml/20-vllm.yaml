@@ -38,6 +38,16 @@ spec:
           # model on the one day it matters, and a GPU this new is exactly where a
           # rebuilt image is most likely to change behaviour.
           image: vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967
+          # Restricted-subset hardening: every control the restricted PSS profile requires
+          # EXCEPT runAsNonRoot, which vLLM cannot meet (it runs as its GPU user). Kyverno
+          # enforces exactly this subset on the models namespace (41-hardening.yaml), so the
+          # model, one of the two workloads the whole build protects, is no longer the
+          # softest-profiled thing in the cluster. No hostPath (weights are a read-only PVC),
+          # no privilege escalation, all capabilities dropped, seccomp on.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
           args:
             - --model=/models/mistral-small-3.2-24b
             - --served-model-name=mistral-small-3.2-24b
