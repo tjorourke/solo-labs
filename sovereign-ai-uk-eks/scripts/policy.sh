@@ -37,20 +37,27 @@ case "${1:-status}" in
     # warn+audit at restricted, enforce at baseline for agentgateway-system: the
     # gateway data plane needs NET_BIND_SERVICE for :80, which restricted refuses.
     # Everything else enforces restricted outright.
+    # agentgateway-system and models enforce BASELINE, everything else RESTRICTED. The two
+    # exceptions are honest, not lazy: the gateway data plane needs NET_BIND_SERVICE for
+    # :80, and the vLLM GPU server cannot meet the full restricted profile (it does not run
+    # non-root and needs more than a dropped-ALL capability set to drive the device). Both
+    # still warn+audit at restricted, so the gap is visible, and every OTHER namespace,
+    # keycloak and apps included, enforces restricted outright.
     for ns in "${WORKLOAD_NS[@]}"; do
       kc get ns "$ns" >/dev/null 2>&1 || { echo "    skip $ns (absent)"; continue; }
-      if [ "$ns" = "agentgateway-system" ]; then
-        kc label ns "$ns" \
-          pod-security.kubernetes.io/enforce=baseline \
-          pod-security.kubernetes.io/warn=restricted \
-          pod-security.kubernetes.io/audit=restricted --overwrite >/dev/null
-        echo "    $ns -> enforce=baseline, warn+audit=restricted"
-      else
-        kc label ns "$ns" \
-          pod-security.kubernetes.io/enforce=restricted \
-          pod-security.kubernetes.io/warn=restricted --overwrite >/dev/null
-        echo "    $ns -> enforce=restricted"
-      fi
+      case "$ns" in
+        agentgateway-system|models)
+          kc label ns "$ns" \
+            pod-security.kubernetes.io/enforce=baseline \
+            pod-security.kubernetes.io/warn=restricted \
+            pod-security.kubernetes.io/audit=restricted --overwrite >/dev/null
+          echo "    $ns -> enforce=baseline, warn+audit=restricted" ;;
+        *)
+          kc label ns "$ns" \
+            pod-security.kubernetes.io/enforce=restricted \
+            pod-security.kubernetes.io/warn=restricted --overwrite >/dev/null
+          echo "    $ns -> enforce=restricted" ;;
+      esac
     done
 
     echo "==> Kyverno $KYVERNO_VERSION"
