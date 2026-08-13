@@ -103,6 +103,7 @@ GROUPS = [
         ("93-registry-readonly.yaml",    "Registry read-only (L7)"),
         ("99-default-deny-egress.yaml",  "Default-deny egress baseline"),
         SH("scripts/dns.sh", "DOMAINS",  "DNS firewall allowlist"),
+        SH("scripts/registry-mirror.sh", "DS", "Containerd → in-region ECR mirror"),
     ]),
     ("policy", "Kyverno + PSA", [
         ("40-policies.yaml", "Admission policies"),

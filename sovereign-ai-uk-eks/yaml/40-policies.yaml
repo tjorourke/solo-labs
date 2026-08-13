@@ -58,15 +58,19 @@ spec:
               namespaces: [models, agentgateway-system, keycloak, apps, kagent]
       validate:
         message: >-
-          Images must come from an allowlisted registry: docker.io, quay.io, ghcr.io,
-          registry.k8s.io, public.ecr.aws or us-docker.pkg.dev (Solo).
+          Images must come from the in-region ECR mirror (*.dkr.ecr.eu-west-2.amazonaws.com),
+          or, during the transition to it, one of the upstreams it caches: docker.io, quay.io,
+          ghcr.io, registry.k8s.io, public.ecr.aws or us-docker.pkg.dev.
         foreach:
           - list: request.object.spec.containers
             deny:
               conditions:
                 all:
+                  # The in-region ECR mirror is the target end state; the upstreams stay on the
+                  # list only until containerd redirects every pull through it (scripts/
+                  # registry-mirror.sh), at which point they can be removed for an ECR-only floor.
                   - key: >-
-                      {{ regex_match('^(docker\.io/|quay\.io/|ghcr\.io/|registry\.k8s\.io/|public\.ecr\.aws/|us-docker\.pkg\.dev/|[a-z0-9-]+(:[0-9]+)?/)?[a-zA-Z0-9._/-]+(@sha256:[a-f0-9]{64}|:[a-zA-Z0-9._-]+)$', '{{ element.image }}') && (starts_with('{{ element.image }}', 'docker.io/') || starts_with('{{ element.image }}', 'quay.io/') || starts_with('{{ element.image }}', 'ghcr.io/') || starts_with('{{ element.image }}', 'registry.k8s.io/') || starts_with('{{ element.image }}', 'public.ecr.aws/') || starts_with('{{ element.image }}', 'us-docker.pkg.dev/') || (!contains('{{ element.image }}', '/')) || (!contains(split('{{ element.image }}', '/')[0], '.')) ) }}
+                      {{ regex_match('^(docker\.io/|quay\.io/|ghcr\.io/|registry\.k8s\.io/|public\.ecr\.aws/|us-docker\.pkg\.dev/|[a-z0-9-]+(:[0-9]+)?/)?[a-zA-Z0-9._/-]+(@sha256:[a-f0-9]{64}|:[a-zA-Z0-9._-]+)$', '{{ element.image }}') && (contains('{{ element.image }}', '.dkr.ecr.eu-west-2.amazonaws.com/') || starts_with('{{ element.image }}', 'docker.io/') || starts_with('{{ element.image }}', 'quay.io/') || starts_with('{{ element.image }}', 'ghcr.io/') || starts_with('{{ element.image }}', 'registry.k8s.io/') || starts_with('{{ element.image }}', 'public.ecr.aws/') || starts_with('{{ element.image }}', 'us-docker.pkg.dev/') || (!contains('{{ element.image }}', '/')) || (!contains(split('{{ element.image }}', '/')[0], '.')) ) }}
                     operator: Equals
                     value: false
 ---
