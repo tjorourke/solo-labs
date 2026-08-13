@@ -71,10 +71,17 @@ case "${1:-status}" in
     echo "    installed"
 
     echo "==> Enterprise agentgateway control plane $AGW_VERSION"
+    # istio.caAddress must point at istio-csr, not the chart default (istiod:15012).
+    # This mesh runs istio-csr in front of Vault as the CA, and istiod's own CA gRPC is
+    # off, so a waypoint that asks istiod for a cert gets "unknown service
+    # IstioCertificateService" and never comes up (its HBONE mTLS fails, and any L7 call
+    # to an agent behind it resets). ztunnel already points here; the agentgateway
+    # waypoints must too, or every kagent agent waypoint is dead on arrival.
     helm upgrade --install enterprise-agentgateway "${AGW_REG}/enterprise-agentgateway" \
       --kube-context "$CTX" --namespace "$GW_NS" \
       --version "$AGW_VERSION" \
       --set licensing.licenseKey="$AGENTGATEWAY_LICENSE_KEY" \
+      --set istio.caAddress="https://cert-manager-istio-csr.cert-manager.svc:443" \
       --wait --timeout 5m >/dev/null
     echo "    installed"
 

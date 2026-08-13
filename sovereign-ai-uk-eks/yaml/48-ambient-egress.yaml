@@ -1,0 +1,41 @@
+# Egress control for the ambient namespaces, done at the mesh layer because NetworkPolicy
+# cannot do it here.
+#
+# The workload NetworkPolicies (36-egress-lockdown, 99-default-deny-egress) enforce for
+# NON-ambient namespaces like apps: measured, a demo-client pod cannot open api.openai.com.
+# But models and kagent are ambient, and ambient re-originates a pod's traffic from ztunnel,
+# so it never crosses the pod veth where the VPC CNI NetworkPolicy agent hooks. Measured, a
+# vLLM pod CAN reach api.openai.com even with a default-deny NetworkPolicy in place. ztunnel
+# is L4 and does transparent passthrough for a destination that is not a mesh service, so
+# there is no ztunnel-only "block that host" knob either.
+#
+# The enforcement point for ambient egress is an egress waypoint. DNS capture (already on:
+# AMBIENT_DNS_CAPTURE=true) sends an enmeshed pod's outbound traffic to the waypoint, and an
+# AuthorizationPolicy on the waypoint decides allow or deny. The ambient workloads here need
+# no external egress at all (an agent reaches the model through the in-cluster gateway, which
+# is in-mesh, not out over the internet), so the policy is a clean default-deny with no
+# ServiceEntry exceptions. Legitimate outbound, the Artifactory mirror, still goes through
+# agentgateway as the one sanctioned broker, exactly as before.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-egress
+  labels:
+    istio.io/use-waypoint: egress-waypoint
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: egress-waypoint
+  namespace: istio-egress
+  labels:
+    # A service-scoped waypoint: it fronts ServiceEntry/Service destinations, which is what
+    # egress traffic resolves to once DNS capture and IP autoallocation place an external
+    # host in the registry.
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
