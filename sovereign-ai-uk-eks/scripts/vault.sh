@@ -406,6 +406,25 @@ EOF
       || echo "  PKI unreachable"
     ;;
 
+  snapshot)
+    # Raft snapshot of the CA to in-region S3. The CA is the crown jewel, and Velero
+    # snapshots the persistent volume but not Vault's internal raft consistency, so this is
+    # the disaster-recovery step that matters for Vault specifically. The bucket is the same
+    # in-region, versioned Velero bucket, so nothing leaves the region and each run keeps a
+    # restorable copy. Run it from CI or cron; restore with `vault operator raft snapshot
+    # restore`.
+    SNAP_ACCT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
+    SNAP_BUCKET="${VELERO_BUCKET:-uk-sovereign-ai-velero-${SNAP_ACCT}}"
+    SNAP_TMP="$(mktemp)"
+    echo "==> raft snapshot -> s3://${SNAP_BUCKET}/vault-raft/"
+    vexec operator raft snapshot save /tmp/vault-raft.snap >/dev/null
+    kc -n "$VAULT_NS" cp vault-0:/tmp/vault-raft.snap "$SNAP_TMP" >/dev/null 2>&1
+    kc -n "$VAULT_NS" exec vault-0 -- rm -f /tmp/vault-raft.snap >/dev/null 2>&1 || true
+    aws s3 cp "$SNAP_TMP" "s3://${SNAP_BUCKET}/vault-raft/vault-raft.snap" --region "$REGION" >/dev/null
+    rm -f "$SNAP_TMP"
+    echo "    uploaded (bucket is versioned, so each run keeps a restorable history)"
+    ;;
+
   status)
     echo "=== pods"
     kc -n "$VAULT_NS" get pods --no-headers 2>/dev/null || echo "  not installed"

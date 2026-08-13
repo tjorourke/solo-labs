@@ -136,10 +136,15 @@ spec:
         any:
           - resources:
               kinds: [Namespace]
+      # Infrastructure namespaces are excluded: their controllers need egress to the API
+      # server and to AWS APIs, which a default-deny egress policy (DNS + gateway only)
+      # would cut off. velero is the clearest example, its backup controller talks to the
+      # Kubernetes API and to S3/EC2. The lock is for WORKLOAD namespaces, where a pod has
+      # no business reaching the API or the internet directly.
       exclude:
         any:
           - resources:
-              namespaces: [kube-system, kube-public, kube-node-lease, istio-system, cert-manager, vault, monitoring]
+              namespaces: [kube-system, kube-public, kube-node-lease, istio-system, cert-manager, vault, monitoring, velero]
       generate:
         apiVersion: networking.k8s.io/v1
         kind: NetworkPolicy

@@ -122,6 +122,11 @@ GROUPS = [
         ("01-storageclass-gp3.yaml",  "gp3 StorageClass"),
         ("50-pdb.yaml",               "PodDisruptionBudgets"),
     ]),
+    ("backups", "Backups (Velero + Vault)", [
+        SH("scripts/velero.sh", "YAML", "On-demand backup", 1),
+        SH("scripts/velero.sh", "YAML", "Daily schedule", 2),
+        SH("scripts/velero.sh", "JSON", "Velero IAM policy"),
+    ]),
     ("observability", "Observability", [
         ("80-gateway-monitoring.yaml", "Gateway detector + SOC alert"),
         SH("scripts/observability.sh", "VALUES", "Prometheus + Grafana + Alertmanager"),
