@@ -39,3 +39,41 @@ spec:
     - name: mesh
       port: 15008
       protocol: HBONE
+---
+# The external LLM providers, declared as mesh services so an enmeshed pod's traffic to them
+# is captured through the egress waypoint (DNS capture resolves each host to an auto-allocated
+# VIP, which routes via the waypoint). Declaring them is what lets the AuthorizationPolicy
+# below see and deny the traffic; without a ServiceEntry the host is not in the registry and
+# ztunnel would pass it straight through. This is the sovereignty claim made enforceable at
+# the mesh layer: a self-hosted model and its agents have no path to a hosted LLM.
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata: { name: ext-llm-providers, namespace: istio-egress }
+spec:
+  hosts:
+    - api.openai.com
+    - api.anthropic.com
+    - generativelanguage.googleapis.com
+  ports:
+    - { number: 443, name: tls, protocol: TLS }
+  resolution: DNS
+---
+# Default-deny at the egress waypoint. targetRefs to the Gateway is mandatory: an
+# AuthorizationPolicy WITH a targetRef is enforced at the waypoint (L7); one without a
+# targetRef is pushed to ztunnel and silently reduced to L4 (host/path rules stripped). So
+# every captured external-LLM connection from an enmeshed pod is denied here. In-cluster
+# traffic (an agent reaching the gateway) never touches this waypoint and is unaffected.
+# This is the mesh-layer half of egress control; the Route 53 DNS Firewall (scripts/dns.sh)
+# is the network-layer half, together a defence-in-depth seal that NetworkPolicy cannot
+# provide for ambient namespaces.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: egress-default-deny, namespace: istio-egress }
+spec:
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: egress-waypoint
+  action: DENY
+  rules:
+    - {}
