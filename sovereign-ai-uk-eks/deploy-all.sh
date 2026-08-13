@@ -50,16 +50,70 @@ ya()     { echo "  apply yaml/$1"; kc apply -f "yaml/$1"; }               # appl
 ensure_ns() { kc create namespace "$1" --dry-run=client -o yaml | kc apply -f - >/dev/null; }
 
 # ---- phases, in order ----
+# The three KMS keys the lab pins to: the EKS secrets envelope, the Vault auto-unseal key,
+# and the cosign provenance key. They are account-level, so they survive a cluster teardown;
+# on a fresh account they do not exist yet, so create them here (idempotent). vault.sh and
+# yaml/41 reference the unseal and cosign keys BY ALIAS, so those resolve on their own; only
+# the secrets key ARN has to be substituted into the eksctl config, which has a placeholder
+# so the account id and key id never live in the repo.
+ensure_kms() {
+  for a in uk-sovereign-ai-secrets uk-sovereign-ai-vault-unseal uk-sovereign-ai-cosign; do
+    if aws kms describe-key --key-id "alias/$a" --region "$REGION" >/dev/null 2>&1; then
+      echo "  KMS alias/$a exists"
+    else
+      echo "  creating KMS key alias/$a"
+      local kid; kid=$(aws kms create-key --region "$REGION" --description "sovereign-ai $a" \
+        --query 'KeyMetadata.KeyId' --output text)
+      aws kms create-alias --region "$REGION" --alias-name "alias/$a" --target-key-id "$kid"
+    fi
+  done
+}
+
+# Render eks/cluster.yaml with the real, in-region secrets-CMK ARN in place of the
+# placeholder, to a temp file eksctl consumes. The repo copy keeps the placeholder.
+render_cluster_yaml() {
+  local skey; skey=$(aws kms describe-key --key-id alias/uk-sovereign-ai-secrets \
+    --region "$REGION" --query 'KeyMetadata.Arn' --output text)
+  [ -n "$skey" ] || { echo "error: cannot resolve alias/uk-sovereign-ai-secrets" >&2; return 1; }
+  sed "s|arn:aws:kms:eu-west-2:<AWS_ACCOUNT_ID>:key/<secrets-cmk>|${skey}|" \
+    eks/cluster.yaml > /tmp/sovereign-cluster.yaml
+  echo /tmp/sovereign-cluster.yaml
+}
+
 p_cluster() {
-  banner "cluster: VPC, and all three node groups (platform, gpu-od, sandbox)"
-  if aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
-    echo "cluster exists; ensuring node groups"
+  banner "cluster: KMS keys, VPC, and all three node groups (platform, gpu-od, sandbox)"
+  ensure_kms
+  local cfg; cfg="$(render_cluster_yaml)"
+  # Read the STATUS, not just existence: right after a teardown the cluster lingers in
+  # DELETING and a bare describe still succeeds, which would wrongly take the "exists" branch
+  # and run `create nodegroup` (which rejects cluster-level fields like publicAccessCIDRs).
+  local status
+  status="$(aws eks describe-cluster --region "$REGION" --name "$CLUSTER" --query 'cluster.status' --output text 2>/dev/null || echo NONE)"
+  while [ "$status" = "DELETING" ]; do
+    echo "  a cluster of this name is still DELETING; waiting 30s..."
+    sleep 30
+    status="$(aws eks describe-cluster --region "$REGION" --name "$CLUSTER" --query 'cluster.status' --output text 2>/dev/null || echo NONE)"
+  done
+  # The EKS cluster leaves the EKS API before its CloudFormation stack (VPC, subnets, NAT)
+  # finishes deleting; eksctl create then fails with AlreadyExists on that stack. If we are
+  # about to create, wait for the old stack to be fully gone first.
+  if [ "$status" != "ACTIVE" ]; then
+    local st
+    st="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "eksctl-${CLUSTER}-cluster" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)"
+    while [ "$st" = "DELETE_IN_PROGRESS" ]; do
+      echo "  the previous cluster's CloudFormation stack is still deleting; waiting 30s..."
+      sleep 30
+      st="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "eksctl-${CLUSTER}-cluster" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)"
+    done
+  fi
+  if [ "$status" = "ACTIVE" ]; then
+    echo "cluster exists and is ACTIVE; ensuring node groups"
     for ng in platform gpu-od sandbox; do
       aws eks describe-nodegroup --region "$REGION" --cluster-name "$CLUSTER" --nodegroup-name "$ng" >/dev/null 2>&1 \
-        || eksctl create nodegroup -f eks/cluster.yaml --include="$ng"
+        || eksctl create nodegroup -f "$cfg" --include="$ng"
     done
   else
-    eksctl create cluster -f eks/cluster.yaml
+    eksctl create cluster -f "$cfg"
   fi
 }
 

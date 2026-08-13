@@ -35,6 +35,7 @@ ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null
 BUCKET="solo-sovereign-ai-models-euw2-${ACCOUNT}"
 PREFIX="mistral-small-3.2-24b"
 CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${CLUSTER}"
+kc() { command kubectl --context "$CTX" "$@"; }
 
 # The weights are 8 objects totalling 48,042,223,575 bytes. Anything much smaller means
 # an interrupted sync, not a finished one.
@@ -114,6 +115,24 @@ case "${1:-check}" in
     vols="$(weights_volumes | awk '{print $1}')"
     echo "=== weights volumes to remove after the cluster is gone:"
     echo "${vols:-  none}" | sed 's/^/  /'
+    echo
+
+    # Delete LoadBalancer Services FIRST, while the cluster is still up, so the AWS cloud
+    # controller removes the ELBs they created (the gateway's NLB/ELB, any console LBs).
+    # eksctl delete cluster does NOT clean up k8s-created load balancers, and their leftover
+    # ENIs hold the public subnets, so the VPC cannot delete and the CloudFormation stack ends
+    # in DELETE_FAILED. Removing the Services first is the graceful fix.
+    echo "=== removing LoadBalancer Services so their ELBs and ENIs go before the VPC"
+    lbsvcs="$(kc get svc -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+    if [[ -n "$lbsvcs" ]]; then
+      echo "$lbsvcs" | while IFS=/ read -r ns name; do
+        [[ -n "$name" ]] && { echo "  deleting svc $ns/$name"; kc -n "$ns" delete svc "$name" --wait=false >/dev/null 2>&1 || true; }
+      done
+      echo "  waiting 60s for the cloud controller to delete the ELBs..."
+      sleep 60
+    else
+      echo "  none found (or cluster already unreachable)"
+    fi
     echo
 
     echo "=== deleting the cluster (this takes 15-20 minutes)"

@@ -23,12 +23,13 @@ vpc:
   clusterEndpoints:
     publicAccess: true
     privateAccess: true
-    # Lock the public API endpoint to known admin CIDRs. Left as a placeholder here
-    # because a wrong value locks you out; set it to your office/VPN egress CIDR before
-    # applying, or drop publicAccess entirely and reach the private endpoint through a
-    # bastion. A sovereign production cluster does not leave 0.0.0.0/0 on the API server.
-    publicAccessCIDRs:
-      - 0.0.0.0/0   # REPLACE with your admin CIDR (e.g. 203.0.113.10/32) before a real run
+  # Lock the public API endpoint to known admin CIDRs. This is a vpc-level field in the
+  # eksctl schema (a sibling of clusterEndpoints, not a child of it). Left as 0.0.0.0/0
+  # here because a wrong value locks you out; set it to your office/VPN egress CIDR before
+  # applying, or drop publicAccess entirely and reach the private endpoint through a
+  # bastion. A sovereign production cluster does not leave 0.0.0.0/0 on the API server.
+  publicAccessCIDRs:
+    - 0.0.0.0/0   # REPLACE with your admin CIDR (e.g. 203.0.113.10/32) before a real run
 
 availabilityZones:
   - eu-west-2a
