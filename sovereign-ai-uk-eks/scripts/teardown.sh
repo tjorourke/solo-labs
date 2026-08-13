@@ -128,8 +128,21 @@ case "${1:-check}" in
       echo "$lbsvcs" | while IFS=/ read -r ns name; do
         [[ -n "$name" ]] && { echo "  deleting svc $ns/$name"; kc -n "$ns" delete svc "$name" --wait=false >/dev/null 2>&1 || true; }
       done
-      echo "  waiting 60s for the cloud controller to delete the ELBs..."
-      sleep 60
+      # Poll until the ELBs are actually gone from the cluster VPC, rather than a fixed sleep:
+      # a fixed wait can end before the cloud controller finishes, leaving an orphan ELB whose
+      # ENIs and security group then block the subnet/VPC delete (DELETE_FAILED).
+      vpc="$(aws eks describe-cluster --region "$REGION" --name "$CLUSTER" --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null)"
+      if [[ -n "$vpc" && "$vpc" != "None" ]]; then
+        echo "  waiting for the cloud controller to remove the ELBs from $vpc..."
+        for _ in $(seq 1 30); do
+          n="$(aws elb describe-load-balancers --region "$REGION" --query "length(LoadBalancerDescriptions[?VPCId=='$vpc'])" --output text 2>/dev/null || echo 0)"
+          m="$(aws elbv2 describe-load-balancers --region "$REGION" --query "length(LoadBalancers[?VpcId=='$vpc'])" --output text 2>/dev/null || echo 0)"
+          [[ "${n:-0}" == "0" && "${m:-0}" == "0" ]] && { echo "    ELBs gone"; break; }
+          sleep 10
+        done
+      else
+        sleep 60
+      fi
     else
       echo "  none found (or cluster already unreachable)"
     fi
