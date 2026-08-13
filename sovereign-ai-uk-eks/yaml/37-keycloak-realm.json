@@ -7,9 +7,15 @@
   "duplicateEmailsAllowed": false,
   "accessTokenLifespan": 1800,
   "groups": [
-    { "name": "platform" },
-    { "name": "research" },
-    { "name": "admin" }
+    {
+      "name": "platform"
+    },
+    {
+      "name": "research"
+    },
+    {
+      "name": "admin"
+    }
   ],
   "users": [
     {
@@ -20,10 +26,20 @@
       "firstName": "Alice",
       "lastName": "Platform",
       "credentials": [
-        { "type": "password", "value": "alice", "temporary": false }
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
       ],
-      "groups": ["platform"],
-      "attributes": { "group": ["platform"] }
+      "groups": [
+        "platform"
+      ],
+      "attributes": {
+        "group": [
+          "platform"
+        ]
+      }
     },
     {
       "username": "bob",
@@ -33,10 +49,20 @@
       "firstName": "Bob",
       "lastName": "Research",
       "credentials": [
-        { "type": "password", "value": "bob", "temporary": false }
+        {
+          "type": "password",
+          "value": "bob",
+          "temporary": false
+        }
       ],
-      "groups": ["research"],
-      "attributes": { "group": ["research"] }
+      "groups": [
+        "research"
+      ],
+      "attributes": {
+        "group": [
+          "research"
+        ]
+      }
     },
     {
       "username": "carol",
@@ -46,10 +72,20 @@
       "firstName": "Carol",
       "lastName": "Admin",
       "credentials": [
-        { "type": "password", "value": "carol", "temporary": false }
+        {
+          "type": "password",
+          "value": "carol",
+          "temporary": false
+        }
       ],
-      "groups": ["admin"],
-      "attributes": { "group": ["admin"] }
+      "groups": [
+        "admin"
+      ],
+      "attributes": {
+        "group": [
+          "admin"
+        ]
+      }
     }
   ],
   "clients": [
@@ -106,6 +142,72 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "ar-ui",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://*.sovereign.local/*",
+        "http://localhost:*",
+        "*"
+      ],
+      "webOrigins": [
+        "+",
+        "*"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "+",
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "ar-backend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [
+        "https://*.sovereign.local/*",
+        "http://localhost:*",
+        "*"
+      ],
+      "webOrigins": [
+        "+",
+        "*"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "secret": "CQU7XW4O9t52RNeuF0c8HpDcGit7elHX"
+    },
+    {
+      "clientId": "kagent-enterprise",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [
+        "https://*.sovereign.local/*",
+        "http://localhost:*",
+        "*"
+      ],
+      "webOrigins": [
+        "+",
+        "*"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "secret": "Q966Hmc9qpJrDKXTcug070s7tL8pWTB8"
     }
   ]
 }

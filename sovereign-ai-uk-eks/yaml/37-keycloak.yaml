@@ -15,22 +15,25 @@
 #
 # THE ISSUER IS THE WHOLE GAME HERE.
 #
-# KC_HOSTNAME pins the issuer to the in-cluster Service hostname, so the `iss` claim
-# is the same string whether a token was minted through a port-forward from a laptop
-# or by something inside the cluster. Without that pin, a token minted over
-# localhost:18080 carries iss=http://localhost:18080/realms/sovereign, the gateway
-# compares it to the configured issuer, and every request 401s in a way that looks
-# exactly like a missing token.
+# KC_HOSTNAME is the external frontend URL https://keycloak.sovereign.local, so the `iss`
+# claim and the browser authorization endpoint are that URL, and a token minted over a
+# port-forward carries the same iss (KC_HOSTNAME pins it regardless of the mint path). That
+# string must equal yaml/32-jwt-policy.yaml's issuer character for character, or every
+# request 401s in a way that looks exactly like a missing token. Run keycloak.sh check.
 #
-# There is no port in KC_HOSTNAME and the Service listens on 80, so the issuer is
-# http://keycloak.keycloak.svc.cluster.local/realms/sovereign with no :8080. That is
-# what yaml/32-jwt-policy.yaml must say, character for character.
+# Reachability: the gateway routes keycloak.sovereign.local to this Service (yaml/46) and a
+# CoreDNS rewrite (keycloak.sh) resolves the same name in-cluster to the gateway, so browser
+# and in-cluster OIDC both use the one https issuer. The IdP is still not on the public
+# internet; the name only resolves through the sovereign gateway.
 #
-# KC_HOSTNAME_BACKCHANNEL_DYNAMIC lets the token endpoint keep answering on
-# localhost through the port-forward while still stamping the in-cluster issuer.
+# KC_HOSTNAME_BACKCHANNEL_DYNAMIC is false on purpose: with it true the discovery token/JWKS
+# endpoints reflect the internal http request and the browser hits mixed-content over https.
+# With it false every advertised endpoint is the https frontend, which the browser needs.
 #
-# Nothing about this is exposed publicly, which suits the story: the IdP is in the UK
-# and unreachable from outside the cluster. Tokens are minted over a port-forward.
+# The OIDC clients (ar-ui, ar-backend, kagent-enterprise) live in the realm JSON with fixed
+# demo secrets, NOT created dynamically, because this dev Keycloak keeps its realm in an
+# ephemeral H2 database: any pod restart re-imports the realm and would otherwise wipe any
+# client an install script had POSTed in.
 ---
 apiVersion: v1
 kind: Namespace
@@ -86,7 +89,7 @@ spec:
             # Keycloak honour the X-Forwarded-* the gateway sets when it terminates TLS.
             - { name: KC_HOSTNAME, value: "https://keycloak.sovereign.local" }
             - { name: KC_HOSTNAME_STRICT, value: "false" }
-            - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true" }
+            - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "false" }
             - { name: KC_PROXY_HEADERS, value: "xforwarded" }
             - { name: KC_HEALTH_ENABLED, value: "true" }
           ports:

@@ -2,36 +2,20 @@
 #
 # The security standard for this build is that every UI gets its own DNS name and is
 # reached through the gateway, never a kubectl port-forward. These HTTPRoutes attach the
-# kagent UI and the agentregistry UI to the same sovereign-gateway that fronts the model,
-# so a console is behind the same door, the same TLS and the same audit path as everything
-# else. The gateway terminates TLS and proxies to each console's in-cluster Service.
+# Enterprise consoles to the same sovereign-gateway that fronts the model, so a console is
+# behind the same door, the same TLS and the same audit path as everything else. The
+# gateway terminates TLS (the *.sovereign.local edge cert) and proxies to each in-cluster
+# Service.
+#
+# Two consoles here. The unified Solo Enterprise console (solo-enterprise-ui, from the
+# management chart) carries both the kagent agent views AND the agentgateway traffic /
+# distributed-trace / cost views, so it answers on BOTH kagent.sovereign.local and
+# age.sovereign.local. The OSS kagent chat UI is deliberately not deployed (kagent.sh sets
+# ui.enabled=false); the Enterprise experience is this console. agentregistry has its own
+# Enterprise UI on registry.sovereign.local.
 #
 # Login is OIDC to the sovereign Keycloak realm, the same realm the model and the APIs use,
 # so a console is not a second identity system bolted on the side.
-#
-# The agentgateway observability views (traffic, traces and cost) are surfaced inside the
-# kagent UI in this version, so kagent.sovereign.local is also where the gateway's own
-# telemetry is read. There is no separate agentgateway console to route.
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: kagent-ui
-  namespace: kagent
-spec:
-  parentRefs:
-    - name: sovereign-gateway
-      namespace: agentgateway-system
-      # Pin to the *.sovereign.local SNI listener only. Without this the route also binds
-      # to the catch-all https listener (the model door), and a browser coalescing HTTP/2
-      # connections across the console hostnames gets a 421 Misdirected Request.
-      sectionName: https-sovereign-local
-  hostnames:
-    - kagent.sovereign.local
-  rules:
-    - backendRefs:
-        - name: kagent-ui
-          port: 8080
----
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -69,7 +53,10 @@ spec:
       # connections across the console hostnames gets a 421 Misdirected Request.
       sectionName: https-sovereign-local
   hostnames:
+    # The unified Solo Enterprise console answers on both: age for the agentgateway view,
+    # kagent for the agent view. Same solo-enterprise-ui behind both.
     - age.sovereign.local
+    - kagent.sovereign.local
   rules:
     - backendRefs:
         - name: solo-enterprise-ui

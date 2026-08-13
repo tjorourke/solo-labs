@@ -10,32 +10,6 @@
 # wins). Permissive still validates a token if one is present, it just does not require one,
 # so the console loads and then runs its normal OIDC login. The model and MCP routes are
 # untouched and stay Strict: the door in front of the model is still locked.
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayPolicy
-metadata:
-  name: kagent-ui-auth-exempt
-  namespace: kagent
-spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: kagent-ui
-  traffic:
-    jwtAuthentication:
-      mode: Permissive
-      providers:
-        - issuer: "https://keycloak.sovereign.local/realms/sovereign"
-          audiences: ["sovereign-ai"]
-          jwks:
-            remote:
-              jwksPath: "/realms/sovereign/protocol/openid-connect/certs"
-              cacheDuration: "5m"
-              backendRef:
-                group: ""
-                kind: Service
-                name: keycloak
-                namespace: keycloak
-                port: 80
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy

@@ -59,6 +59,8 @@ case "${1:-status}" in
       --set products.agentgateway.namespace="$NS" \
       --set products.agentgateway.features.cost-management=true \
       --set products.agentgateway.features.cost-management-writes=true \
+      --set products.kagent.enabled=true \
+      --set products.kagent.namespace=kagent \
       --set licensing.licenseKey="$LIC" \
       --set istio.ambient.enabled=false \
       --set platform.multiCluster.enabled=false \

@@ -101,8 +101,6 @@ case "${1:-status}" in
       -n "$NS" --version "$KAGENT_ENT_VERSION" --wait >/dev/null
     echo "    installed"
 
-    mirror_ui_image
-
     echo "==> kagent-enterprise $KAGENT_ENT_VERSION (OIDC -> Keycloak, in-cluster issuer)"
     # In-cluster issuer for token validation. The UI browser login needs an external
     # Keycloak hostname, which arrives with the DNS pass; the controller and API validate
@@ -128,7 +126,7 @@ controller:
   env: [ { name: OIDC_INSECURE_SKIP_VERIFY, value: "true" } ]
   resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 1000m, memory: 512Mi } }
 ui:
-  enabled: true
+  enabled: false
   env: [ { name: OIDC_INSECURE_SKIP_VERIFY, value: "true" } ]
   image: { registry: "${ECR}", repository: kagent-dev/kagent, name: ui, tag: "${KAGENT_UI_TAG}" }
   resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
