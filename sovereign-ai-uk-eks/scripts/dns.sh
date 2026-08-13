@@ -37,6 +37,7 @@ r53() { aws route53resolver "$@" --region "$REGION"; }
 # small and central rather than per-workload.
 ALLOW="$(cat <<'DOMAINS'
 *.amazonaws.com amazonaws.com
+*.compute.internal compute.internal
 *.docker.io docker.io *.docker.com *.quay.io quay.io *.cloudfront.net
 ghcr.io github.com *.github.com *.githubusercontent.com
 registry.k8s.io *.k8s.io *.pkg.dev *.gcr.io *.googleapis.com

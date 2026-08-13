@@ -155,6 +155,10 @@ p_gwpolicy() {
   ya 32-jwt-policy.yaml       # Strict JWT: the model door lock (targets the Gateway; needs Keycloak JWKS)
   ya 34-uk-pii-guard.yaml     # UK PII guard on the model route
   ya 38-rate-limit.yaml       # per-identity rate limit on the model route
+  # yaml/46 and 47 declare HTTPRoutes/policies in the agentregistry namespace, which the
+  # platform phase does not create until later; create it now so the apply does not fail
+  # NotFound (and so management.sh's re-apply of 46/47 succeeds too).
+  ensure_ns agentregistry
   # UI routes + their Permissive-JWT exemptions, applied now so keycloak.sovereign.local is
   # reachable through the gateway before kagent / AR / management validate tokens against it.
   ya 46-ui-routes.yaml
@@ -165,6 +169,18 @@ p_gwpolicy() {
 p_enrol() {
   banner "enrol workloads in the mesh, then the mesh-dependent policies"
   ./scripts/ambient.sh enrol
+  # A namespace's ambient label only captures a pod on its next start. vLLM and the gateway
+  # were created in earlier phases, so restart them now, BEFORE applying the mesh seals: else
+  # ztunnel never captures them (yaml/33/48/49 become no-ops) and the gateway has no SPIFFE
+  # identity to reach the model. The gateway data-plane deploys carry the gateway-name label.
+  kc -n models rollout restart deploy/vllm
+  for d in $(kc -n agentgateway-system get deploy -l gateway.networking.k8s.io/gateway-name -o name 2>/dev/null); do
+    kc -n agentgateway-system rollout restart "$d"
+  done
+  kc -n models rollout status deploy/vllm --timeout=600s
+  for d in $(kc -n agentgateway-system get deploy -l gateway.networking.k8s.io/gateway-name -o name 2>/dev/null); do
+    kc -n agentgateway-system rollout status "$d" --timeout=300s
+  done
   ya 33-models-networkpolicy.yaml   # only the gateway's SPIFFE identity reaches the model
   ya 48-ambient-egress.yaml         # egress waypoint + default-deny (needs ambient + DNS capture)
   ya 49-agent-model-access.yaml     # in-cluster tokenless model route + ztunnel L4 seal
@@ -211,8 +227,12 @@ p_seals() {
   # (the SSRF-demo namespace 'internal' is created here as base posture, empty until the demo).
   for ns in apps agents mcp-tools internal; do ensure_ns "$ns"; done
   ya 44-resource-quotas.yaml
-  ya 45-vault-secrets.yaml          # SecretProviderClass (consumed later; safe to apply now)
   ya 99-default-deny-egress.yaml    # baseline default-deny egress
+  # yaml/45-vault-secrets.yaml is intentionally NOT applied here: its SecretProviderClass
+  # needs the Secrets Store CSI driver (which no phase installs) plus a Vault role
+  # 'ar-secrets-reader' and a secret/data/agentregistry path (which vault.sh does not create),
+  # so applying it on a fresh cluster fails NotFound and would abort the phase. Install the
+  # CSI driver + Vault role first if you want to demo CSI-mounted secrets.
   # yaml/50-pdb.yaml is intentionally NOT applied: istiod, the gateway and Keycloak run a
   # single replica (Keycloak's dev-mode H2 cannot be scaled), so a minAvailable:1 PDB would
   # make those pods unevictable and wedge any node drain or roll. Apply it only after scaling

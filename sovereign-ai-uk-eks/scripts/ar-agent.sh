@@ -23,6 +23,9 @@ export AWS_PROFILE="${SOVEREIGN_AWS_PROFILE:?set SOVEREIGN_AWS_PROFILE to the sa
 REGION=eu-west-2; CLUSTER=uk-sovereign-ai
 AR_NS=agentregistry; KC_NS=keycloak; REALM=sovereign
 ARCTL="${ARCTL:-$HOME/.arctl/bin/arctl}"
+# arctl is a client-side binary and a prerequisite for publishing through AgentRegistry; no
+# phase installs it. Fail clearly rather than mid-apply if it is missing.
+[ -x "$ARCTL" ] || { echo "error: arctl not found at $ARCTL. Install it (arctl v2026.5.4+) before the register phase." >&2; exit 1; }
 # a realm user in the 'admin' group; AR's superuserRole is 'admin' (see agentregistry.sh).
 AR_USER="${AR_USER:-carol}"; AR_PASS="${AR_PASS:-carol}"
 IMAGE="${AGENT_IMAGE:-public.ecr.aws/j8r2p7b6/sovereign-analyst:v1}"

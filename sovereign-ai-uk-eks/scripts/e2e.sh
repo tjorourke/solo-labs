@@ -111,8 +111,15 @@ s_gpu_plugin() {
     skip "device plugin daemonset present"; return
   fi
   kubectl apply -f "https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/${NVIDIA_PLUGIN_VERSION}/deployments/static/nvidia-device-plugin.yml"
+  # Pin it to GPU nodes. The upstream manifest has only a toleration, no nodeSelector, so it
+  # would also schedule onto the CPU platform nodes and crashloop there (no NVML), and the
+  # rollout wait would hang for 5 min then abort. This stage runs before the GPU node exists,
+  # so with role=gpu the DaemonSet has zero desired pods and the rollout status returns at
+  # once; it schedules for real once the gpu stage brings the node up.
+  kubectl -n kube-system patch ds nvidia-device-plugin-daemonset --type merge \
+    -p '{"spec":{"template":{"spec":{"nodeSelector":{"role":"gpu"}}}}}'
   kubectl -n kube-system rollout status ds/nvidia-device-plugin-daemonset --timeout=300s
-  ok "device plugin $NVIDIA_PLUGIN_VERSION installed"
+  ok "device plugin $NVIDIA_PLUGIN_VERSION installed (pinned to role=gpu)"
 }
 
 s_storage() {
@@ -132,9 +139,17 @@ s_iam() {
   if kubectl -n "$MODELS_NS" get sa model-restore >/dev/null 2>&1; then
     skip "model-restore exists"; return
   fi
+  # The read-only S3 policy is account-level. Create it if a fresh account lacks it, so the
+  # iamserviceaccount below does not fail attaching a policy that does not exist.
+  POLICY_ARN="arn:aws:iam::${ACCOUNT}:policy/uk-sovereign-ai-model-s3-readonly"
+  if ! aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+    B="solo-sovereign-ai-models-euw2-${ACCOUNT}"
+    aws iam create-policy --policy-name uk-sovereign-ai-model-s3-readonly --policy-document \
+      "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":\"arn:aws:s3:::${B}\"},{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::${B}/*\"}]}" >/dev/null
+  fi
   eksctl create iamserviceaccount --cluster "$CLUSTER" --region "$REGION" \
     --namespace "$MODELS_NS" --name model-restore \
-    --attach-policy-arn "arn:aws:iam::${ACCOUNT}:policy/uk-sovereign-ai-model-s3-readonly" \
+    --attach-policy-arn "$POLICY_ARN" \
     --approve
   ok "model-restore created"
 }

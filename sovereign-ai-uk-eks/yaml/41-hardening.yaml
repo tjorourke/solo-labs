@@ -175,7 +175,7 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces: [kube-system, kube-public, kube-node-lease, istio-system, cert-manager, vault, monitoring, velero]
+              namespaces: [kube-system, kube-public, kube-node-lease, istio-system, cert-manager, vault, monitoring, velero, gvisor-system, kagent]
       generate:
         apiVersion: networking.k8s.io/v1
         kind: NetworkPolicy

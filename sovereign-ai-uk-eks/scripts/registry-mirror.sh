@@ -44,13 +44,19 @@ up() {
   #     --upstream-registry-url registry-1.docker.io --credential-arn <secret-arn>
   #   (and the same for ghcr.io -> ecr-repository-prefix ghcr)
 
-  echo "==> node role: permission to import upstream images and create the cache repos"
-  local role
-  role="$(aws eks describe-nodegroup --cluster-name "$CLUSTER" --nodegroup-name platform \
-    --region "$REGION" --query 'nodegroup.nodeRole' --output text | awk -F/ '{print $NF}')"
-  aws iam put-role-policy --role-name "$role" --policy-name ecr-pull-through --policy-document \
-    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ecr:CreateRepository","ecr:BatchImportUpstreamImage","ecr:TagResource"],"Resource":"*"}]}' >/dev/null
-  echo "    attached to $role"
+  echo "==> node roles: permission to import upstream images and create the cache repos"
+  # The containerd-redirect DaemonSet below runs on EVERY node (platform, gpu-od, sandbox),
+  # so EVERY node role needs import permission, or a mirrored pull on a GPU/sandbox node
+  # fails with an ECR auth error (ImagePullBackOff). Attach to all three, not just platform.
+  for ng in platform gpu-od sandbox; do
+    local role
+    role="$(aws eks describe-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$ng" \
+      --region "$REGION" --query 'nodegroup.nodeRole' --output text 2>/dev/null | awk -F/ '{print $NF}')"
+    [ -n "$role" ] && [ "$role" != "None" ] || { echo "    skip $ng (absent)"; continue; }
+    aws iam put-role-policy --role-name "$role" --policy-name ecr-pull-through --policy-document \
+      '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ecr:CreateRepository","ecr:BatchImportUpstreamImage","ecr:TagResource"],"Resource":"*"}]}' >/dev/null
+    echo "    attached to $role ($ng)"
+  done
 
   echo "==> containerd redirect: point each upstream at the ECR mirror on every node"
   # A DaemonSet that writes /etc/containerd/certs.d/<upstream>/hosts.toml on each node and

@@ -272,6 +272,21 @@ case "${1:-status}" in
       echo "error: KMS alias $KMS_ALIAS not found. Create the key and IAM policy first." >&2; exit 1; }
     echo "==> KMS unseal key: $KEY_ID ($KMS_ALIAS, $REGION)"
 
+    # On a fresh cluster the vault IRSA service account is gone (it is cluster-scoped and was
+    # destroyed with the old cluster), and nothing else recreates it. Create the KMS-unseal
+    # IAM policy (account-level, idempotent) and the IRSA service account (which also creates
+    # the vault namespace) if the annotated SA is not already present. serviceAccount.create
+    # stays false in the helm install below so the annotation survives.
+    if [ -z "$(kc -n "$VAULT_NS" get sa vault -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null)" ]; then
+      echo "==> creating the vault IRSA service account (KMS unseal on the in-region key)"
+      POLICY_ARN="arn:aws:iam::${ACCOUNT}:policy/uk-sovereign-ai-vault-unseal"
+      aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1 || \
+        aws iam create-policy --policy-name uk-sovereign-ai-vault-unseal --policy-document \
+          "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"kms:Encrypt\",\"kms:Decrypt\",\"kms:DescribeKey\"],\"Resource\":\"arn:aws:kms:${REGION}:${ACCOUNT}:key/${KEY_ID}\"}]}" >/dev/null
+      eksctl create iamserviceaccount --cluster "$CLUSTER" --region "$REGION" \
+        --namespace "$VAULT_NS" --name vault --attach-policy-arn "$POLICY_ARN" --approve
+    fi
+
     ROLE="$(kc -n "$VAULT_NS" get sa vault -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo '')"
     [ -n "$ROLE" ] || { echo "error: sa/vault has no IRSA role annotation" >&2; exit 1; }
     echo "==> Vault will assume $ROLE (no AWS credential in the cluster)"
