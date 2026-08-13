@@ -1,0 +1,45 @@
+# The Enterprise product consoles, each on its own hostname through the one gateway.
+#
+# The security standard for this build is that every UI gets its own DNS name and is
+# reached through the gateway, never a kubectl port-forward. These HTTPRoutes attach the
+# kagent UI and the agentregistry UI to the same sovereign-gateway that fronts the model,
+# so a console is behind the same door, the same TLS and the same audit path as everything
+# else. The gateway terminates TLS and proxies to each console's in-cluster Service.
+#
+# Login is OIDC to the sovereign Keycloak realm, the same realm the model and the APIs use,
+# so a console is not a second identity system bolted on the side.
+#
+# The agentgateway observability views (traffic, traces and cost) are surfaced inside the
+# kagent UI in this version, so kagent.sovereign.local is also where the gateway's own
+# telemetry is read. There is no separate agentgateway console to route.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kagent-ui
+  namespace: kagent
+spec:
+  parentRefs:
+    - name: sovereign-gateway
+      namespace: agentgateway-system
+  hostnames:
+    - kagent.sovereign.local
+  rules:
+    - backendRefs:
+        - name: kagent-ui
+          port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentregistry-ui
+  namespace: agentregistry
+spec:
+  parentRefs:
+    - name: sovereign-gateway
+      namespace: agentgateway-system
+  hostnames:
+    - registry.sovereign.local
+  rules:
+    - backendRefs:
+        - name: agentregistry-enterprise-server
+          port: 12121

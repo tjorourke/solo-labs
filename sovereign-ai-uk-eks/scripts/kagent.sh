@@ -19,10 +19,12 @@ NS=kagent
 REALM=sovereign
 KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.4.0}"
 KAGENT_ENT_REGISTRY="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts"
+KAGENT_UI_TAG="${KAGENT_UI_TAG:-0.9.1}"
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
 [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] || { echo "error: no AWS identity; check SOVEREIGN_AWS_PROFILE" >&2; exit 1; }
 CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${CLUSTER}"
+ECR="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
 kc() { command kubectl --context "$CTX" "$@"; }
 helm_() { command helm --kube-context "$CTX" "$@"; }
 
@@ -72,6 +74,22 @@ keycloak_client() {
   echo "    OIDC secret written to the $NS namespace"
 }
 
+# The kagent UI image ships from cr.kagent.dev, which restrict-registries does not allowlist.
+# Rather than punch a seventh foreign registry into the allowlist, mirror the one image into the
+# in-region ECR (which the policy already allows) and point the chart at it, so the console's
+# image is sovereign like everything else. buildx imagetools copies the multi-arch manifest
+# registry-to-registry, so the node still pulls its own architecture and there is no local pull.
+mirror_ui_image() {
+  echo "==> mirroring the kagent UI image into the in-region ECR (kagent-dev/kagent/ui:${KAGENT_UI_TAG})"
+  aws ecr describe-repositories --region "$REGION" --repository-names kagent-dev/kagent/ui >/dev/null 2>&1 \
+    || aws ecr create-repository --region "$REGION" --repository-name kagent-dev/kagent/ui \
+         --image-scanning-configuration scanOnPush=true >/dev/null
+  aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR" >/dev/null 2>&1
+  docker buildx imagetools create --tag "$ECR/kagent-dev/kagent/ui:${KAGENT_UI_TAG}" \
+    "cr.kagent.dev/kagent-dev/kagent/ui:${KAGENT_UI_TAG}" >/dev/null 2>&1
+  echo "    -> $ECR/kagent-dev/kagent/ui:${KAGENT_UI_TAG}"
+}
+
 case "${1:-status}" in
   up)
     license
@@ -83,10 +101,13 @@ case "${1:-status}" in
       -n "$NS" --version "$KAGENT_ENT_VERSION" --wait >/dev/null
     echo "    installed"
 
+    mirror_ui_image
+
     echo "==> kagent-enterprise $KAGENT_ENT_VERSION (OIDC -> Keycloak, in-cluster issuer)"
     # In-cluster issuer for token validation. The UI browser login needs an external
     # Keycloak hostname, which arrives with the DNS pass; the controller and API validate
-    # against the in-cluster issuer and come up without it.
+    # against the in-cluster issuer and come up without it. The UI image is pulled from the
+    # in-region ECR mirror set up just above, so admission's restrict-registries admits it.
     helm_ upgrade --install kagent-enterprise "$KAGENT_ENT_REGISTRY/kagent-enterprise" \
       -n "$NS" --version "$KAGENT_ENT_VERSION" --timeout 8m -f - >/dev/null <<EOF
 global:
@@ -102,6 +123,7 @@ controller:
   resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 1000m, memory: 512Mi } }
 ui:
   enabled: true
+  image: { registry: "${ECR}", repository: kagent-dev/kagent, name: ui, tag: "${KAGENT_UI_TAG}" }
   resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
 EOF
     echo "    waiting for postgres then the controller (controller retries until the DB is up)"

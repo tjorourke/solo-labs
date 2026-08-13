@@ -1,0 +1,65 @@
+# The consoles log in for themselves, so the gateway does not demand a bearer token on them.
+#
+# jwt-auth (yaml/32) is Strict on the whole Gateway: every request to the model or the tools
+# must carry a valid Keycloak token. A browser opening a console has no bearer token yet, it
+# has a session cookie and does its own PKCE OIDC login against the same sovereign realm, so
+# Strict would 401 the console's own HTML before the user could ever log in.
+#
+# These two route-scoped policies set jwtAuthentication to Permissive on the console routes
+# only, which overrides the gateway-level Strict for those routes (a more specific attachment
+# wins). Permissive still validates a token if one is present, it just does not require one,
+# so the console loads and then runs its normal OIDC login. The model and MCP routes are
+# untouched and stay Strict: the door in front of the model is still locked.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: kagent-ui-auth-exempt
+  namespace: kagent
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kagent-ui
+  traffic:
+    jwtAuthentication:
+      mode: Permissive
+      providers:
+        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+          audiences: ["sovereign-ai"]
+          jwks:
+            remote:
+              jwksPath: "/realms/sovereign/protocol/openid-connect/certs"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: keycloak
+                namespace: keycloak
+                port: 80
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: agentregistry-ui-auth-exempt
+  namespace: agentregistry
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: agentregistry-ui
+  traffic:
+    jwtAuthentication:
+      mode: Permissive
+      providers:
+        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+          audiences: ["sovereign-ai"]
+          jwks:
+            remote:
+              jwksPath: "/realms/sovereign/protocol/openid-connect/certs"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: keycloak
+                namespace: keycloak
+                port: 80

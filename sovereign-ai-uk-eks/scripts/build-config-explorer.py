@@ -73,6 +73,8 @@ GROUPS = [
         ("60-mcp-tools.yaml",      "MCP tool server"),
         ("61-mcp-authz.yaml",      "Per-tool MCP authz"),
         ("92-artifactory-egress-gateway.yaml", "Egress broker (GET/HEAD)"),
+        ("46-ui-routes.yaml",      "Console routes (own hostnames)"),
+        ("47-ui-auth-exempt.yaml", "Consoles: OIDC, not gateway JWT"),
     ]),
     ("mesh", "Istio mesh", [
         SH("scripts/ambient.sh",   "EOF", "ztunnel (L4) + logs", nth=3),
