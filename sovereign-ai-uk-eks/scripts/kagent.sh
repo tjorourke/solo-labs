@@ -122,6 +122,19 @@ oidc:
   secretKey: clientSecret
 rbac:
   roleMapping: { roleMapper: "['global.Admin']" }
+# Ship the controller's logs and every agent run's trace to the management plane's OTel
+# collector, which lands them in ClickHouse for the kagent console's Tracing view. The
+# collector is installed by the management phase (management.sh), which runs after this, so
+# the endpoint does not resolve yet at install time; the exporter retries until it does, and
+# agents only run once the whole stack is up. grpc + insecure because the hop is in-cluster
+# over ztunnel mTLS, not TLS at the app layer.
+otel:
+  logging:
+    enabled: true
+    exporter: { otlp: { endpoint: "solo-enterprise-telemetry-collector.agentgateway-system.svc.cluster.local:4317", insecure: true } }
+  tracing:
+    enabled: true
+    exporter: { otlp: { endpoint: "solo-enterprise-telemetry-collector.agentgateway-system.svc.cluster.local:4317", insecure: true, protocol: grpc } }
 controller:
   env: [ { name: OIDC_INSECURE_SKIP_VERIFY, value: "true" } ]
   resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 1000m, memory: 512Mi } }

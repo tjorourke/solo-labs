@@ -45,6 +45,18 @@ license() {
 case "${1:-status}" in
   up)
     license
+    # The unified console (solo-enterprise-ui + ui-backend) logs in against the same Keycloak
+    # realm as the other consoles. The ui-backend validates tokens as a confidential client;
+    # its secret is the realm's kagent-backend client secret, read from the committed realm
+    # source and written to the Secret the chart's ui.backend.oidc.secretRef points at. Keycloak
+    # (the idp phase) must be up first so the realm exists; the secret value itself is static.
+    echo "==> ui-backend OIDC secret (kagent-backend client) in $NS"
+    UI_SECRET="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(c["secret"] for c in d["clients"] if c["clientId"]=="kagent-backend"))' "$HERE/yaml/37-keycloak-realm.json")"
+    [ -n "$UI_SECRET" ] || { echo "error: no kagent-backend client secret in the realm JSON" >&2; exit 1; }
+    kc create namespace "$NS" --dry-run=client -o yaml | kc apply -f - >/dev/null
+    kc -n "$NS" create secret generic ui-backend-oidc-secret \
+      --from-literal=clientSecret="$UI_SECRET" --dry-run=client -o yaml | kc apply -f - >/dev/null
+
     echo "==> Solo Enterprise management plane $MGMT_VERSION (collector + ClickHouse + /age console)"
     # cost-management is a feature flag, off by default. istio.ambient + multiCluster default
     # ON in this chart; both are wrong here (we do not want the console pods enmeshed, and this
@@ -52,6 +64,13 @@ case "${1:-status}" in
     # Service; ClusterIP keeps every console behind the one sovereign-gateway on its own
     # hostname, per the lab's DNS convention. ClickHouse asks for 2 CPU by default, which does
     # not fit the platform nodes with the rest of the stack on them, so it is trimmed here.
+    #
+    # The oidc/rbac/ui block is what makes the console log in and show data: oidc.issuer is the
+    # external Keycloak hostname (matched character-for-character to yaml/32); roleMapping maps
+    # realm groups to console roles; ui.backend/frontend use the kagent-backend / kagent-ui
+    # clients; and the two extraEnvs let ui-backend trust the private edge cert on the OIDC hop
+    # (OIDC_INSECURE_SKIP_VERIFY) and validate agent SA tokens via TokenReview (K8S_TOKEN_REVIEW),
+    # without which the console shows "no bearer token" and the agents tab 401s.
     helm_ upgrade --install management "$MGMT_CHART" \
       -n "$NS" --version "$MGMT_VERSION" \
       --set cluster="$CLUSTER" \
@@ -65,6 +84,15 @@ case "${1:-status}" in
       --set istio.ambient.enabled=false \
       --set platform.multiCluster.enabled=false \
       --set service.type=ClusterIP \
+      --set oidc.issuer="https://keycloak.sovereign.local/realms/sovereign" \
+      --set-string oidc.roleMapping.roleMappings.admin=global.Admin \
+      --set-string oidc.roleMapping.roleMappings.platform=global.Writer \
+      --set-string oidc.roleMapping.roleMappings.research=global.Reader \
+      --set ui.backend.oidc.clientId=kagent-backend \
+      --set ui.backend.oidc.secretRef=ui-backend-oidc-secret \
+      --set ui.frontend.oidc.clientId=kagent-ui \
+      --set-string ui.backend.extraEnvs.OIDC_INSECURE_SKIP_VERIFY=true \
+      --set-string ui.backend.extraEnvs.K8S_TOKEN_REVIEW=true \
       --set clickhouse.persistentVolume.enabled=true \
       --set clickhouse.persistentVolume.storageClass=gp3-fast \
       --set clickhouse.resources.requests.cpu=750m \
