@@ -108,7 +108,7 @@ spec:
     kind: Runtime
     name: sovereign-kagent
   env:
-    SOVEREIGN_MODEL_BASE_URL: "http://sovereign-gateway.agentgateway-system.svc.cluster.local/v1"
+    SOVEREIGN_MODEL_BASE_URL: "http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local/v1"
     SOVEREIGN_MODEL_NAME: "mistral-small-3.2-24b"
 DEPLOY
 }

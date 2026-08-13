@@ -10,10 +10,20 @@
 # that does reach out is agentgateway, the sanctioned egress broker, which is deliberately
 # NOT given a deny policy.
 #
-# Applied to the app/data namespaces. Control-plane namespaces (kube-system, istio-system,
-# cert-manager, vault, monitoring) are left to their own policies: they have their own
-# egress needs (Vault reaches AWS KMS to auto-unseal, for one) and locking them here would
-# break the platform.
+# ONLY THE NON-AMBIENT NAMESPACES ARE LISTED HERE, and that is deliberate. On this cluster
+# the CNI is AWS VPC CNI, which enforces NetworkPolicy at the pod veth. An ambient-enrolled
+# pod has its egress re-originated out of ztunnel, past that veth hook, so a k8s NetworkPolicy
+# is a silent no-op for it. models, kagent and keycloak are ambient, so a NetworkPolicy in
+# those namespaces would enforce nothing and only mislead; their egress is sealed instead by
+# the mesh (the egress waypoint blocks the hosted-LLM providers, yaml/48; the model's L4
+# authorization admits only the gateway, yaml/33) and, at the network layer, by the Route 53
+# Resolver DNS firewall (scripts/dns.sh) and the VPC's single NAT. The namespaces below
+# (default, internal, mcp-tools, and the agents namespace via yaml/70) are NOT ambient, so
+# here NetworkPolicy is a real, enforced control.
+#
+# Control-plane namespaces (kube-system, istio-system, cert-manager, vault, monitoring) are
+# left to their own policies: they have their own egress needs (Vault reaches AWS KMS to
+# auto-unseal, for one) and locking them here would break the platform.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -51,8 +61,10 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  # mcp-tools is NOT ambient, so this genuinely enforces: the tool server may reach DNS, its
+  # own namespace and the gateway, and nothing else on the internet directly.
   name: default-deny-egress
-  namespace: models
+  namespace: mcp-tools
 spec:
   podSelector: {}
   policyTypes: [Egress]

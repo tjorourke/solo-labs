@@ -24,6 +24,11 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: sovereign-gateway
+    # The internal ClusterIP gateway the in-cluster agents use (yaml/49); target it too so an
+    # agent's model calls show up in the console traces alongside the public door's traffic.
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
   frontend:
     tracing:
       backendRef:

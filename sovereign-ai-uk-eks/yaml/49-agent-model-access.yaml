@@ -1,21 +1,58 @@
 # How an in-cluster agent reaches the model, without a bearer token it would have to mint,
-# expire and refresh.
+# expire and refresh — and without opening a second, unauthenticated door to the internet.
 #
-# External callers reach the model through the NLB on the :443 edge-TLS door, where jwt-auth
-# is Strict (yaml/32). An in-cluster agent is a mesh workload; it should be let in by being
-# in-cluster, not by carrying a human's Keycloak token. This adds a second, in-cluster-only
-# route to the same vLLM backend on the gateway's :80 listener, matched by the gateway's own
-# Service FQDN (which the sovereign-analyst agent already targets, so no agent change and no
-# token: SOVEREIGN_MODEL_TOKEN stays unset).
+# External callers reach the model through the NLB on the public gateway's :443 edge-TLS
+# door, where jwt-auth is Strict (yaml/32). An in-cluster agent is a mesh workload; it should
+# be let in by being in-cluster, not by carrying a human's Keycloak token.
 #
-# Why the restriction is at L4, not by SPIFFE at L7: in ambient, ztunnel terminates the HBONE
-# mTLS before the gateway's own listener sees it, so the peer's SPIFFE identity is NOT present
-# in the gateway's L7 authorization context (source.identity is empty). Measured: an
-# authorization policy keyed on source.identity denies even the agent. The workable enforcement
-# is the Istio AuthorizationPolicy below, enforced by ztunnel at L4: it denies the gateway's
-# :80 from any source outside the cluster pod/node network, so an external caller cannot reach
-# this route through the NLB even with the right Host header, while in-cluster workloads can.
-# The :443 model door is untouched and still Strict.
+# THE TRAP THIS AVOIDS. The obvious way to give the agent a tokenless path is a second route
+# on the PUBLIC gateway's :80 listener with a Permissive JWT, restricted to in-cluster source
+# IPs. That is bypassable from the internet: the public Service is externalTrafficPolicy:
+# Cluster, so the node SNATs an external client to a node IP inside the pod/node CIDR before
+# the packet reaches ztunnel. An IP allowlist keyed on that CIDR therefore matches the
+# attacker too, and anyone who knows the internal Service name reaches the model with no
+# token. The fix is not a better IP rule; it is to not put the route on a public Service at
+# all.
+#
+# So the internal route lives on its OWN agentgateway Gateway whose backing Service is
+# ClusterIP (no ELB, no public IP), created via EnterpriseAgentgatewayParameters below. It is
+# reachable only from inside the cluster, so it is fail-closed by construction — there is no
+# external path to bypass. The agent targets this gateway's in-cluster Service name; the
+# public :443 model door is untouched and still Strict.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayParameters
+metadata:
+  name: sovereign-gateway-internal-params
+  namespace: agentgateway-system
+spec:
+  # The agentgateway controller owns the Gateway's Service; this is the supported way to set
+  # its type. ClusterIP means no AWS load balancer is created, so the gateway has no public
+  # address at all.
+  service:
+    spec:
+      type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: sovereign-gateway-internal
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  infrastructure:
+    parametersRef:
+      group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayParameters
+      name: sovereign-gateway-internal-params
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        # Only routes from this namespace may attach; the internal model route is the only one.
+        namespaces:
+          from: Same
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -23,13 +60,11 @@ metadata:
   namespace: agentgateway-system
 spec:
   parentRefs:
-    - name: sovereign-gateway
+    - name: sovereign-gateway-internal
       sectionName: http
   hostnames:
-    # The gateway's own in-cluster Service name. A hostname-specific route on :80 wins over
-    # the catch-all http-to-https redirect, so the agent's plaintext in-mesh call is routed
-    # to the model instead of bounced to the edge-TLS door.
-    - sovereign-gateway.agentgateway-system.svc.cluster.local
+    # The internal gateway's own in-cluster Service name; this is what the agent calls.
+    - sovereign-gateway-internal.agentgateway-system.svc.cluster.local
   rules:
     - matches:
         - path: { type: PathPrefix, value: / }
@@ -38,9 +73,9 @@ spec:
           group: enterpriseagentgateway.solo.io
           kind: EnterpriseAgentgatewayBackend
 ---
-# Permissive on this route only: it overrides the gateway-wide Strict so the agent's tokenless
-# call is allowed through. It stays safe because the AuthorizationPolicy below already limits
-# this route to in-cluster sources.
+# Permissive on this route: the agent's in-cluster call carries no token and is allowed
+# through, while a token, if present, is still validated. It is safe because the gateway this
+# route lives on is ClusterIP and therefore unreachable from outside the cluster.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:
@@ -67,24 +102,3 @@ spec:
                 name: keycloak
                 namespace: keycloak
                 port: 80
----
-# The L4 seal: ztunnel denies the gateway's :80 listener to any source outside the cluster
-# network, so the in-cluster model route above is unreachable from the NLB / the internet.
-# In-cluster workloads (the agent) are unaffected; the :443 door is on a different port.
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: gateway-internal-route-inmesh-only
-  namespace: agentgateway-system
-spec:
-  selector:
-    matchLabels:
-      gateway.networking.k8s.io/gateway-name: sovereign-gateway
-  action: DENY
-  rules:
-    - to:
-        - operation:
-            ports: ["80"]
-      from:
-        - source:
-            notIpBlocks: ["10.0.0.0/8"]
