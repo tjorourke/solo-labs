@@ -63,3 +63,30 @@ spec:
                 name: keycloak
                 namespace: keycloak
                 port: 80
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: agentgateway-console-auth-exempt
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: agentgateway-console
+  traffic:
+    jwtAuthentication:
+      mode: Permissive
+      providers:
+        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+          audiences: ["sovereign-ai"]
+          jwks:
+            remote:
+              jwksPath: "/realms/sovereign/protocol/openid-connect/certs"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: keycloak
+                namespace: keycloak
+                port: 80

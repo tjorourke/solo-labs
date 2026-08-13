@@ -43,3 +43,22 @@ spec:
     - backendRefs:
         - name: agentregistry-enterprise-server
           port: 12121
+---
+# The agentgateway Enterprise console (the /age observability + cost UI), served by the
+# management plane's solo-enterprise-ui Service. This is where the gateway's own traffic,
+# distributed traces (OTel -> the collector -> ClickHouse) and cost views live.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentgateway-console
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: sovereign-gateway
+      namespace: agentgateway-system
+  hostnames:
+    - age.sovereign.local
+  rules:
+    - backendRefs:
+        - name: solo-enterprise-ui
+          port: 80
