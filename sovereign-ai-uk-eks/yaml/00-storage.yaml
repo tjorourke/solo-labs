@@ -9,9 +9,9 @@ metadata:
   name: gp3-fast
 provisioner: ebs.csi.aws.com
 # WaitForFirstConsumer matters: the volume must be created in whichever AZ the
-# GPU pod lands in. The gpu-od nodegroup is pinned to a single AZ (eu-west-2b as
-# of 2026-08-12, moved from 2a when London ran out of g6 capacity there), so it
-# binds in that AZ and the node comes back to the same volume on every scale-up.
+# GPU pod lands in. The gpu-od nodegroup is pinned to a single AZ (eu-west-2a, per
+# eks/cluster.yaml), so it binds in that AZ and the node comes back to the same
+# volume on every scale-up.
 #
 # That pinning is why the nodegroup must never be widened to a second AZ. Once
 # this volume has bound in 2a, a scale-up that lands in 2b leaves the pod Pending
