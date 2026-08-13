@@ -75,3 +75,19 @@ spec:
               matches:
                 - "(?i)\\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?[0-9]{2} ?[0-9]{2} ?[0-9]{2} ?[A-D]\\b"
                 - "\\b[0-9]{3}[ -]?[0-9]{3}[ -]?[0-9]{4}\\b"
+          # Response-side prompt-injection scanning. The lab's premise is that the text an
+          # agent reads can be poisoned, and the poison arrives in the MODEL RESPONSE and in
+          # TOOL OUTPUT, not the request, so the request-side guard above never sees it. This
+          # rejects a response carrying the obvious injection markers before the agent acts
+          # on it. Regex catches the blatant cases as defence in depth; the production control
+          # is a webhook from here to an in-region prompt-injection classifier (agentgateway
+          # supports a custom-webhook guard), so the response is judged by a model, in-region,
+          # not just pattern-matched. This is the one thing the incident turns on, now guarded
+          # on the way back, not only on the way in.
+          - regex:
+              action: Reject
+              matches:
+                - "(?i)ignore (all |any )?(previous|prior|above|earlier) (instructions|prompts|messages)"
+                - "(?i)disregard (the |all |any )?(above|previous|prior|system)"
+                - "(?i)(reveal|print|show|repeat|output) (me )?(your |the )?(system )?(prompt|instructions)"
+                - "(?i)you are now (a|an|the|in)"
