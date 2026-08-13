@@ -125,6 +125,10 @@ p_cluster() {
   else
     eksctl create cluster -f "$cfg"
   fi
+  # Always point the local kubeconfig at THIS cluster's API endpoint. On a rebuild the context
+  # can still carry a previous cluster's endpoint, which now NXDOMAINs, and then every kubectl
+  # in every later phase fails with "no such host" (not a transient a retry would fix).
+  aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" >/dev/null
 }
 
 p_model() {

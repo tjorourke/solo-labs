@@ -137,12 +137,38 @@ pilot:
   env:
     # istiod signs nothing from here on. Vault is the only CA in this mesh.
     ENABLE_CA_SERVER: "false"
+    # Do NOT let istiod manage the webhook caBundles. With its built-in CA off, istiod keeps
+    # stamping its stale self-signed root (O=cluster.local) onto the validation and injection
+    # webhook configs, which no longer matches its istio-csr (Vault) signed serving cert, so
+    # every Istio CR apply fails the validation webhook with "certificate signed by unknown
+    # authority". We point the caBundle at the Vault root ourselves, just after this install.
+    VALIDATION_WEBHOOK_CONFIG_NAME: ""
+    INJECTION_WEBHOOK_CONFIG_NAME: ""
 meshConfig:
   accessLogFile: /dev/stdout
   trustDomain: ${TRUST_DOMAIN}
 EOF
     kc -n "$ISTIO_NS" rollout status deploy/istiod --timeout=300s
     echo "    ok"
+
+    # Point the Istio webhooks at the Vault root, so the API server trusts istiod's
+    # istio-csr-signed serving cert. istiod no longer manages these (envs above), so it sticks.
+    # Without this, applying any Istio CR (yaml/33, 48, 49) fails the validation webhook.
+    echo "==> webhook caBundle -> Vault root (istio-ca-root-cert)"
+    for _ in $(seq 1 30); do
+      kc -n "$ISTIO_NS" get cm istio-ca-root-cert >/dev/null 2>&1 && break; sleep 2
+    done
+    cab="$(kc -n "$ISTIO_NS" get cm istio-ca-root-cert -o jsonpath='{.data.root-cert\.pem}' | base64 | tr -d '\n')"
+    for kind in validatingwebhookconfiguration mutatingwebhookconfiguration; do
+      for wc in $(kc get "$kind" -o name 2>/dev/null | grep -i istio | sed 's#.*/##'); do
+        n="$(kc get "$kind" "$wc" -o jsonpath='{.webhooks}' | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)"
+        for i in $(seq 0 $((n-1))); do
+          kc patch "$kind" "$wc" --type json \
+            -p "[{\"op\":\"replace\",\"path\":\"/webhooks/$i/clientConfig/caBundle\",\"value\":\"$cab\"}]" >/dev/null 2>&1 || true
+        done
+      done
+    done
+    echo "    webhooks trust the Vault root"
 
     # cert-manager and vault MUST stay out of the mesh. They are what issues the
     # certificates ztunnel needs, so capturing them creates a deadlock: no certs
