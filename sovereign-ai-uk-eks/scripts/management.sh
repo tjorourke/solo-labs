@@ -91,8 +91,8 @@ case "${1:-status}" in
       --set ui.backend.oidc.clientId=kagent-backend \
       --set ui.backend.oidc.secretRef=ui-backend-oidc-secret \
       --set ui.frontend.oidc.clientId=kagent-ui \
-      --set-string ui.backend.extraEnvs.OIDC_INSECURE_SKIP_VERIFY=true \
-      --set-string ui.backend.extraEnvs.K8S_TOKEN_REVIEW=true \
+      --set-string ui.backend.extraEnvs.OIDC_INSECURE_SKIP_VERIFY.value=true \
+      --set-string ui.backend.extraEnvs.K8S_TOKEN_REVIEW.value=true \
       --set clickhouse.persistentVolume.enabled=true \
       --set clickhouse.persistentVolume.storageClass=gp3 \
       --set clickhouse.resources.requests.cpu=750m \
