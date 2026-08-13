@@ -105,6 +105,16 @@ p_cluster() {
       sleep 30
       st="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "eksctl-${CLUSTER}-cluster" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)"
     done
+    # If it is stuck DELETE_FAILED (a VPC dependency a teardown missed — a k8s-created load
+    # balancer or security group), retry the delete once, then wait it out again.
+    if [ "$st" = "DELETE_FAILED" ]; then
+      echo "  previous cluster stack is DELETE_FAILED; retrying the delete once"
+      aws cloudformation delete-stack --region "$REGION" --stack-name "eksctl-${CLUSTER}-cluster" >/dev/null 2>&1 || true
+      sleep 15
+      st="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "eksctl-${CLUSTER}-cluster" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)"
+      while [ "$st" = "DELETE_IN_PROGRESS" ]; do sleep 30; st="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "eksctl-${CLUSTER}-cluster" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)"; done
+    fi
+    [ "$st" = "DELETE_FAILED" ] && { echo "error: cluster stack still DELETE_FAILED. Clear its leftover VPC dependencies (ELBs, non-default security groups) by hand, then re-run." >&2; exit 1; }
   fi
   if [ "$status" = "ACTIVE" ]; then
     echo "cluster exists and is ACTIVE; ensuring node groups"

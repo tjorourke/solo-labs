@@ -92,12 +92,24 @@ s_cni() {
     ok "NetworkPolicy enabled"
   fi
 
-  # Assert the thing that actually breaks, rather than trusting the update.
+  # Assert the thing that actually breaks, rather than trusting the update. On EKS 1.34 the
+  # addon update reliably drops the aws-node SA's IRSA annotation even when the role is passed,
+  # so REPAIR it (re-annotate with the role we already have, then roll aws-node to pick it up)
+  # rather than abort. ipamd needs the annotated SA or the CNI wedges with an IAM 403 that
+  # nothing in kubectl output points at.
   local ann
   ann="$(kubectl -n kube-system get sa aws-node \
     -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo '')"
-  [ -n "$ann" ] || { echo "   error: aws-node SA lost its role annotation, the CNI is about to break" >&2; exit 1; }
-  ok "aws-node still carries $ann"
+  if [ -z "$ann" ]; then
+    echo "   the addon update dropped the aws-node role annotation; re-applying $role and rolling aws-node"
+    kubectl -n kube-system annotate sa aws-node "eks.amazonaws.com/role-arn=$role" --overwrite >/dev/null
+    kubectl -n kube-system rollout restart ds/aws-node >/dev/null
+    kubectl -n kube-system rollout status ds/aws-node --timeout=180s >/dev/null 2>&1 || true
+    ann="$(kubectl -n kube-system get sa aws-node \
+      -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo '')"
+    [ -n "$ann" ] || { echo "   error: could not restore the aws-node role annotation, STOP" >&2; exit 1; }
+  fi
+  ok "aws-node carries $ann"
 }
 
 s_gpu_plugin() {
