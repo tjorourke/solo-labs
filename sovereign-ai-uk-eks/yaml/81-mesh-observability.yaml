@@ -1,0 +1,50 @@
+# Scrape the mesh into Prometheus. This is the gap the mesh leaves by default.
+#
+# meshConfig sets enablePrometheusMerge and defaultProviders.metrics: [prometheus], so
+# ztunnel and the waypoints EXPOSE their metrics on :15020. But the Prometheus Operator
+# (kube-prometheus-stack) scrapes only what a PodMonitor or ServiceMonitor selects; it
+# ignores the prometheus.io/scrape pod annotations the mesh sets. Without these two
+# PodMonitors, Prometheus holds zero ztunnel and zero waypoint series, so the L4 connection
+# metrics and the L7 request metrics that a mesh dashboard, Kiali, or an SLO alert needs are
+# simply not there. These close that.
+#
+# ztunnel is L4, so it emits connection and byte metrics and its structured access log
+# (meshConfig accessLogFile: /dev/stdout), not L7 request spans. The waypoints are where L7
+# request metrics and traces come from; their traces are exported through the agentgateway
+# tracing policy to the in-cluster OpenTelemetry collector, the same store the gateway uses.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ztunnel
+  namespace: istio-system
+  labels:
+    release: kps          # so kube-prometheus-stack's operator selects it
+spec:
+  selector:
+    matchLabels:
+      app: ztunnel
+  podMetricsEndpoints:
+    - port: ztunnel-stats  # :15020
+      path: /metrics
+      interval: 30s
+---
+# Every enterprise-agentgateway waypoint, wherever it lands. The waypoint=true label is set
+# on waypoint pods only, so this does not double-scrape the north-south gateway (which the
+# sovereign-gateway PodMonitor already covers under a different label).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: agentgateway-waypoints
+  namespace: istio-system
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      waypoint: "true"
+  podMetricsEndpoints:
+    - port: metrics        # :15020
+      path: /metrics
+      interval: 30s

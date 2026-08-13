@@ -129,6 +129,7 @@ GROUPS = [
     ]),
     ("observability", "Observability", [
         ("80-gateway-monitoring.yaml", "Gateway detector + SOC alert"),
+        ("81-mesh-observability.yaml", "Mesh metrics: ztunnel + waypoint"),
         SH("scripts/observability.sh", "VALUES", "Prometheus + Grafana + Alertmanager"),
     ]),
 ]

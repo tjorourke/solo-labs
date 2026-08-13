@@ -48,6 +48,15 @@ secretsEncryption:
   keyARN: arn:aws:kms:eu-west-2:<AWS_ACCOUNT_ID>:key/<secrets-cmk>   # customer-managed, in-region
 
 managedNodeGroups:
+  # Node OS: these groups run Amazon Linux 2023 (SELinux, IMDSv2-only, hop limit 1). The
+  # recommended next tier for a production sovereign build is Bottlerocket on the platform
+  # and sandbox groups: immutable root, no SSH, no shell, SELinux-enforcing, image-based
+  # atomic updates, and a smaller attack surface. It also reopens a supported host-runtime
+  # detection path (the eBPF probe this lab wanted was dead on the AL2023 6.12 kernel). It
+  # is deliberately NOT switched on here because moving amiFamily recreates the node groups
+  # and reschedules everything, and the gVisor installer path on the sandbox group would
+  # need re-checking. To adopt it, set `amiFamily: Bottlerocket` per node group and roll.
+  #
   # Sized for the full Solo stack, not just coredns. m6i.large gives 1930m
   # allocatable, and two of them cannot hold Istio ambient, agentgateway,
   # agentregistry, kagent and Keycloak at once: that is roughly 6-7 vCPU of
