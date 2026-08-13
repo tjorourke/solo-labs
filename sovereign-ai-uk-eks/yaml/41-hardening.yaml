@@ -12,7 +12,7 @@
 #
 # Enforce where the workload provably meets the control; Audit where an operator-managed
 # pod (the gateway data plane and its sidecars) cannot yet, so the gap is reported without
-# breaking the one door. Audit rules are the honest "not yet Enforce", not decoration.
+# breaking the one door. An Audit rule is a visible "not yet Enforce", not decoration.
 ---
 # The model, at restricted MINUS the one control it cannot meet (runs as its GPU user).
 # vLLM's spec (20-vllm.yaml) now carries allowPrivilegeEscalation:false, drop ALL and
@@ -164,10 +164,19 @@ spec:
                   - { protocol: TCP, port: 80 }
 ---
 # The supply-chain answer to "a tampered dependency in its image". restrict-registries says
-# WHERE an image may come from; this says it was signed by a key we trust and not swapped
-# underneath. Audited to start (nothing in the lab is signed yet), so it reports every
+# WHERE an image may come from; this says it was signed by a key we hold and not swapped
+# underneath.
+#
+# Sovereignty: this verifies against a cosign key whose private half lives in an AWS KMS
+# key in eu-west-2 (alias/uk-sovereign-ai-cosign), and it ignores the transparency log, so
+# admission makes NO call to the US-hosted Sigstore public good (fulcio/rekor.sigstore.dev).
+# The public key below is the one held in-region; verification is local. The earlier build
+# used keyless cosign, which contacted those US services on every check, and that thread is
+# now closed.
+#
+# Audited to start (nothing in the lab is signed with this key yet), so it reports every
 # unsigned image rather than blocking the cluster; the enforce flip is a one-line change
-# once images are signed in CI.
+# once images are signed in CI with the in-region key.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -192,11 +201,18 @@ spec:
           required: true
           attestors:
             - entries:
-                - keyless:
-                    subject: "https://github.com/*"
-                    issuer: "https://token.actions.githubusercontent.com"
+                - keys:
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEB4J2VKTSxJrQpFBnS4NftjIHFlX
+                      utzCE8lxYXEWfLOOXeS62527AVbSwMHx2BgaQDds0QlOqnpDnWzEuc//cQ==
+                      -----END PUBLIC KEY-----
+                    # No transparency log: do not contact rekor.sigstore.dev (US). The key
+                    # we hold in-region is the whole trust root for this check.
                     rekor:
-                      url: "https://rekor.sigstore.dev"
+                      ignoreTlog: true
+                    ctlog:
+                      ignoreSCT: true
 ---
 # The privilege-escalation shape the lateral movement relied on. A Role or ClusterRole that
 # grants both "create pods" and "read secrets" is a route from one to the other; refuse the
