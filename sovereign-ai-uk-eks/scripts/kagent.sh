@@ -131,6 +131,13 @@ ui:
   image: { registry: "${ECR}", repository: kagent-dev/kagent, name: ui, tag: "${KAGENT_UI_TAG}" }
   resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
 EOF
+    # TokenReview on: the controller authenticates an agent's A2A callbacks (the task store
+    # at /api/tasks) by the agent pod's Kubernetes ServiceAccount token via the TokenReview
+    # API. The chart does not expose this as a value, and without it the controller 401s the
+    # callback and every agent invocation hangs. Set it on the enterprise config ConfigMap,
+    # then the controller restart below picks it up.
+    kc -n "$NS" patch configmap kagent-enterprise-config --type merge \
+      -p '{"data":{"K8S_TOKEN_REVIEW":"true"}}' >/dev/null 2>&1 || true
     echo "    waiting for postgres then the controller (controller retries until the DB is up)"
     kc -n "$NS" wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql --timeout=180s >/dev/null 2>&1 || true
     kc -n "$NS" rollout restart deploy/kagent-controller >/dev/null 2>&1 || true
