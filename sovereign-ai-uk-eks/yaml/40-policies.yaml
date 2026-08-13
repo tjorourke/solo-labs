@@ -126,10 +126,11 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              # extended to keycloak and agentgateway-system: the automounted token is the
+              # extended across the workload namespaces: the automounted token is the
               # article's "inherited credential", and it is a mutate (no secretKeyRef
-              # conflict), so it is safe on both.
-              namespaces: [models, apps, keycloak, agentgateway-system]
+              # conflict), so it is safe everywhere. Paired with lock-default-serviceaccount
+              # (43-serviceaccount-hardening.yaml), which locks the default SA itself.
+              namespaces: [models, apps, keycloak, agentgateway-system, agents, kagent, mcp-tools, internal]
       mutate:
         patchStrategicMerge:
           spec:

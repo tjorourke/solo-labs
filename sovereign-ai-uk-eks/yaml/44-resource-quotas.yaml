@@ -1,0 +1,64 @@
+# A ResourceQuota per workload namespace, to complement require-resource-limits.
+#
+# require-resource-limits (41-hardening.yaml) makes each container declare cpu/memory
+# limits. That is the per-pod ceiling. A ResourceQuota is the per-namespace ceiling: it caps
+# the total a namespace can request and how many objects it can create, so a runaway or a
+# fork-bomb of pods in one namespace cannot starve the rest of the cluster. The two together
+# are the pod-level and namespace-level halves of the same "no unbounded workload" control.
+#
+# The numbers are generous, sized to hold each namespace's real workloads with headroom, not
+# to be tight. A quota that is too tight blocks legitimate scaling and reads as a bug; the
+# point here is a hard upper bound that a runaway hits long before it hurts a neighbour. The
+# model namespace is deliberately omitted: the single GPU pod is bounded by the node itself.
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ns-quota
+  namespace: apps
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    pods: "40"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ns-quota
+  namespace: agents
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    pods: "40"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ns-quota
+  namespace: mcp-tools
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ns-quota
+  namespace: internal
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    pods: "20"
