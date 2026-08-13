@@ -83,10 +83,11 @@ spec:
             - { name: KC_HTTP_RELATIVE_PATH, value: / }
             # The frontend hostname is the external one the browser is redirected to, so the
             # iss claim and the authorization endpoint are https://keycloak.sovereign.local.
-            # KC_HOSTNAME_BACKCHANNEL_DYNAMIC lets in-cluster callers that reach Keycloak via
-            # its Service still get backchannel (token/jwks) endpoints on that internal host,
-            # so nothing has to leave the cluster to validate a token. KC_PROXY_HEADERS makes
-            # Keycloak honour the X-Forwarded-* the gateway sets when it terminates TLS.
+            # KC_HOSTNAME_BACKCHANNEL_DYNAMIC is false so every advertised endpoint (token,
+            # JWKS, discovery) is that one https frontend rather than reflecting the internal
+            # http request; with it true a browser on https would hit mixed-content http
+            # endpoints. KC_PROXY_HEADERS makes Keycloak honour the X-Forwarded-* the gateway
+            # sets when it terminates TLS.
             - { name: KC_HOSTNAME, value: "https://keycloak.sovereign.local" }
             - { name: KC_HOSTNAME_STRICT, value: "false" }
             - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "false" }

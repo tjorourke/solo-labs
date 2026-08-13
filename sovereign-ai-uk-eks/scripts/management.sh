@@ -94,7 +94,7 @@ case "${1:-status}" in
       --set-string ui.backend.extraEnvs.OIDC_INSECURE_SKIP_VERIFY=true \
       --set-string ui.backend.extraEnvs.K8S_TOKEN_REVIEW=true \
       --set clickhouse.persistentVolume.enabled=true \
-      --set clickhouse.persistentVolume.storageClass=gp3-fast \
+      --set clickhouse.persistentVolume.storageClass=gp3 \
       --set clickhouse.resources.requests.cpu=750m \
       --set clickhouse.resources.requests.memory=2Gi \
       --set clickhouse.resources.limits.cpu=2 \

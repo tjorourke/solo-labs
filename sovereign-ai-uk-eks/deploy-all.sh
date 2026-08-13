@@ -157,9 +157,12 @@ p_seals() {
   # (the SSRF-demo namespace 'internal' is created here as base posture, empty until the demo).
   for ns in apps agents mcp-tools internal; do ensure_ns "$ns"; done
   ya 44-resource-quotas.yaml
-  ya 50-pdb.yaml
   ya 45-vault-secrets.yaml          # SecretProviderClass (consumed later; safe to apply now)
   ya 99-default-deny-egress.yaml    # baseline default-deny egress
+  # yaml/50-pdb.yaml is intentionally NOT applied: istiod, the gateway and Keycloak run a
+  # single replica (Keycloak's dev-mode H2 cannot be scaled), so a minAvailable:1 PDB would
+  # make those pods unevictable and wedge any node drain or roll. Apply it only after scaling
+  # those components to >=2 for an HA deployment.
 }
 
 p_verify() {

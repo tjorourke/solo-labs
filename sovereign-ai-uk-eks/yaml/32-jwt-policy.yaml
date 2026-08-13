@@ -13,14 +13,16 @@
 # which mints a real token, decodes it, and compares its iss and aud against this
 # file. Run it before every rehearsal.
 #
-# Note there is no port in the issuer. yaml/37-keycloak.yaml pins KC_HOSTNAME to
-# http://keycloak.keycloak.svc.cluster.local and the Service listens on 80, so the
-# issuer carries no :8080. An earlier version of this file had one and it was wrong.
+# The issuer is https://keycloak.sovereign.local/realms/sovereign, the external frontend
+# hostname yaml/37-keycloak.yaml pins KC_HOSTNAME to, so it matches the token's iss claim
+# whichever path the token was minted over. In-cluster that name resolves through a CoreDNS
+# rewrite to the gateway, which terminates TLS and forwards to Keycloak; it is not on the
+# public internet. The string must equal the token iss byte for byte or every request 401s.
 #
-# JWKS is fetched from Keycloak in-cluster over the Service, not through any public
-# ingress, so the gateway does not depend on its own data path to validate tokens.
-# Keycloak is not exposed publicly at all, which suits the story: the IdP is in the UK
-# and unreachable from outside the cluster.
+# JWKS, though, is fetched from Keycloak in-cluster over the Service (the backendRef below),
+# not through that hostname, so the gateway does not depend on its own data path to validate
+# tokens. Keycloak is not exposed publicly, which suits the story: the IdP is in the UK and
+# reachable only through the sovereign gateway.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:
