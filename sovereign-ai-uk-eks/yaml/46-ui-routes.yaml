@@ -21,6 +21,10 @@ spec:
   parentRefs:
     - name: sovereign-gateway
       namespace: agentgateway-system
+      # Pin to the *.sovereign.local SNI listener only. Without this the route also binds
+      # to the catch-all https listener (the model door), and a browser coalescing HTTP/2
+      # connections across the console hostnames gets a 421 Misdirected Request.
+      sectionName: https-sovereign-local
   hostnames:
     - kagent.sovereign.local
   rules:
@@ -37,6 +41,10 @@ spec:
   parentRefs:
     - name: sovereign-gateway
       namespace: agentgateway-system
+      # Pin to the *.sovereign.local SNI listener only. Without this the route also binds
+      # to the catch-all https listener (the model door), and a browser coalescing HTTP/2
+      # connections across the console hostnames gets a 421 Misdirected Request.
+      sectionName: https-sovereign-local
   hostnames:
     - registry.sovereign.local
   rules:
@@ -56,9 +64,38 @@ spec:
   parentRefs:
     - name: sovereign-gateway
       namespace: agentgateway-system
+      # Pin to the *.sovereign.local SNI listener only. Without this the route also binds
+      # to the catch-all https listener (the model door), and a browser coalescing HTTP/2
+      # connections across the console hostnames gets a 421 Misdirected Request.
+      sectionName: https-sovereign-local
   hostnames:
     - age.sovereign.local
   rules:
     - backendRefs:
         - name: solo-enterprise-ui
+          port: 80
+---
+# Keycloak on its own hostname through the gateway, so a browser can complete the OIDC
+# login the consoles redirect to. The frontend issuer becomes https://keycloak.sovereign.local
+# (KC_HOSTNAME, yaml/37-keycloak.yaml); the gateway terminates TLS with the *.sovereign.local
+# cert and forwards to Keycloak's plaintext Service. In-cluster callers reach the same name
+# via a CoreDNS rewrite to the gateway, so nothing leaves the cluster.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  parentRefs:
+    - name: sovereign-gateway
+      namespace: agentgateway-system
+      # Pin to the *.sovereign.local SNI listener only. Without this the route also binds
+      # to the catch-all https listener (the model door), and a browser coalescing HTTP/2
+      # connections across the console hostnames gets a 421 Misdirected Request.
+      sectionName: https-sovereign-local
+  hostnames:
+    - keycloak.sovereign.local
+  rules:
+    - backendRefs:
+        - name: keycloak
           port: 80

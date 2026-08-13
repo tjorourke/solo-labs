@@ -113,16 +113,23 @@ case "${1:-status}" in
 global:
   licensing: { createSecret: true, secretName: enterprise-kagent-license, licenseKey: "${LIC}" }
 oidc:
-  issuer: http://keycloak.keycloak.svc.cluster.local/realms/${REALM}
+  # The frontend issuer is the external hostname the browser is redirected to for login.
+  # In-cluster, a CoreDNS rewrite (added by 'keycloak.sh up') resolves this name to the
+  # gateway, which terminates TLS with the *.sovereign.local edge cert and forwards to
+  # Keycloak; OIDC_INSECURE_SKIP_VERIFY below lets the controller and UI trust that private
+  # edge cert on the discovery/JWKS hop, which itself rides ztunnel mTLS inside the cluster.
+  issuer: https://keycloak.sovereign.local/realms/${REALM}
   clientId: kagent-enterprise
   secretRef: kagent-enterprise-oidc-secret
   secretKey: clientSecret
 rbac:
   roleMapping: { roleMapper: "['global.Admin']" }
 controller:
+  env: [ { name: OIDC_INSECURE_SKIP_VERIFY, value: "true" } ]
   resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 1000m, memory: 512Mi } }
 ui:
   enabled: true
+  env: [ { name: OIDC_INSECURE_SKIP_VERIFY, value: "true" } ]
   image: { registry: "${ECR}", repository: kagent-dev/kagent, name: ui, tag: "${KAGENT_UI_TAG}" }
   resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
 EOF

@@ -70,9 +70,25 @@ spec:
   dnsNames: [ ${HOST} ]
   privateKey: { algorithm: RSA, size: 2048 }
   issuerRef: { name: gateway-edge-ca, kind: Issuer, group: cert-manager.io }
+---
+# A second edge cert for the *.sovereign.local console hostnames (kagent, registry, age,
+# keycloak). Signed by the SAME edge CA, so a laptop that trusts gateway-ca.crt validates
+# every console and Keycloak's external hostname. It rides its own SNI listener on the
+# Gateway (yaml/30-gateway.yaml, listener https-sovereign-local), leaving gateway-tls above
+# (the model door) untouched.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: sovereign-local-tls, namespace: ${GW_NS} }
+spec:
+  secretName: sovereign-local-tls
+  duration: 2160h
+  dnsNames: [ "*.sovereign.local" ]
+  privateKey: { algorithm: RSA, size: 2048 }
+  issuerRef: { name: gateway-edge-ca, kind: Issuer, group: cert-manager.io }
 TLS
     kc -n "$GW_NS" wait --for=condition=Ready certificate/gateway-tls --timeout=120s >/dev/null
-    echo "    cert issued into secret gateway-tls"
+    kc -n "$GW_NS" wait --for=condition=Ready certificate/sovereign-local-tls --timeout=120s >/dev/null
+    echo "    certs issued into secrets gateway-tls and sovereign-local-tls"
 
     echo "==> HTTPS listener on the Gateway, HTTP downgraded to a redirect"
     kc apply -f "$LAB_ROOT/yaml/30-gateway.yaml" >/dev/null

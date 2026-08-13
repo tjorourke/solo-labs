@@ -43,7 +43,22 @@ LOCAL_PORT=18080
 
 # Must match KC_HOSTNAME in yaml/37-keycloak.yaml, with no port, because the Service
 # listens on 80.
-ISSUER="http://keycloak.${NS}.svc.cluster.local/realms/${REALM}"
+ISSUER="https://keycloak.sovereign.local/realms/${REALM}"
+
+# In-cluster resolution for the external Keycloak hostname. The frontend issuer is
+# https://keycloak.sovereign.local so the browser can reach the login page; in-cluster OIDC
+# clients (the gateway JWKS fetch aside, which uses a fixed backendRef) resolve that same
+# name to the gateway via this CoreDNS rewrite, so discovery/token stay inside the cluster.
+# Idempotent: only adds the rewrite line if it is not already present.
+coredns_rewrite() {
+  local rw="rewrite name exact keycloak.sovereign.local sovereign-gateway.agentgateway-system.svc.cluster.local"
+  local core; core="$(kc -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' 2>/dev/null)"
+  echo "$core" | grep -qF "keycloak.sovereign.local" && { echo "    CoreDNS rewrite already present"; return; }
+  echo "==> CoreDNS rewrite: keycloak.sovereign.local -> the gateway"
+  local new; new="$(printf '%s\n' "$core" | sed "s#^\( *\)ready#\1ready\n\1${rw}#")"
+  kc -n kube-system create configmap coredns --from-literal=Corefile="$new" --dry-run=client -o yaml | kc apply -f - >/dev/null
+  kc -n kube-system rollout restart deploy/coredns >/dev/null 2>&1 || true
+}
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -107,6 +122,7 @@ PY
     kc -n "$NS" rollout restart statefulset/keycloak 2>/dev/null || true
     echo "waiting for Keycloak to be ready (first start imports the realm, ~40s)..."
     kc -n "$NS" rollout status statefulset/keycloak --timeout=300s
+    coredns_rewrite
     echo
     echo "issuer: ${ISSUER}"
     echo "users:  alice/alice (platform)  bob/bob (research)  carol/carol (admin)"

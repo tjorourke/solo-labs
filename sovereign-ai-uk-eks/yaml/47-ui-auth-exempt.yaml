@@ -24,7 +24,7 @@ spec:
     jwtAuthentication:
       mode: Permissive
       providers:
-        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+        - issuer: "https://keycloak.sovereign.local/realms/sovereign"
           audiences: ["sovereign-ai"]
           jwks:
             remote:
@@ -51,7 +51,7 @@ spec:
     jwtAuthentication:
       mode: Permissive
       providers:
-        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+        - issuer: "https://keycloak.sovereign.local/realms/sovereign"
           audiences: ["sovereign-ai"]
           jwks:
             remote:
@@ -78,7 +78,36 @@ spec:
     jwtAuthentication:
       mode: Permissive
       providers:
-        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+        - issuer: "https://keycloak.sovereign.local/realms/sovereign"
+          audiences: ["sovereign-ai"]
+          jwks:
+            remote:
+              jwksPath: "/realms/sovereign/protocol/openid-connect/certs"
+              cacheDuration: "5m"
+              backendRef:
+                group: ""
+                kind: Service
+                name: keycloak
+                namespace: keycloak
+                port: 80
+---
+# Keycloak's own endpoints (login page, token, JWKS) are bearer-less, so the gateway's
+# Strict JWT would 401 them. Permissive lets them through; the model and MCP routes stay Strict.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: keycloak-auth-exempt
+  namespace: keycloak
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: keycloak
+  traffic:
+    jwtAuthentication:
+      mode: Permissive
+      providers:
+        - issuer: "https://keycloak.sovereign.local/realms/sovereign"
           audiences: ["sovereign-ai"]
           jwks:
             remote:

@@ -23,7 +23,8 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    # The real door. TLS terminated here with the edge certificate.
+    # The real door. TLS terminated here with the edge certificate (SAN = the NLB
+    # hostname). This is the model door; the vLLM and MCP routes attach here.
     - name: https
       protocol: HTTPS
       port: 443
@@ -31,6 +32,23 @@ spec:
         mode: Terminate
         certificateRefs:
           - name: gateway-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+    # A second :443 listener selected by SNI for the *.sovereign.local console hostnames
+    # (kagent, registry, age, keycloak). It presents its own cert, sovereign-local-tls,
+    # a wildcard signed by the SAME edge CA (scripts/tls.sh), so the browser that already
+    # trusts the edge CA validates every console name, and the model-door cert above is
+    # left untouched. Console HTTPRoutes carry a *.sovereign.local hostname, so they bind
+    # to this listener; the NLB is L4 passthrough, so SNI reaches here and selects the cert.
+    - name: https-sovereign-local
+      protocol: HTTPS
+      port: 443
+      hostname: "*.sovereign.local"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: sovereign-local-tls
       allowedRoutes:
         namespaces:
           from: All

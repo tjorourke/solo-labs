@@ -63,7 +63,8 @@ case "${1:-status}" in
     kc create namespace "$NS" --dry-run=client -o yaml | kc apply -f - >/dev/null
     echo "==> AgentRegistry ${AR_VERSION} (bundled postgres, OIDC -> sovereign realm)"
     helm_ upgrade --install agentregistry "$AR_CHART" -n "$NS" --create-namespace --version "$AR_VERSION" \
-      --set oidc.issuer="http://keycloak.keycloak.svc.cluster.local/realms/${REALM}" \
+      --set oidc.issuer="https://keycloak.sovereign.local/realms/${REALM}" \
+      --set oidc.insecureSkipVerify=true \
       --set oidc.clientId=ar-backend --set oidc.clientSecret="$AR_BACKEND_SECRET" \
       --set oidc.publicClientId=ar-ui \
       --set oidc.roleClaim=Groups --set oidc.superuserRole=admin \

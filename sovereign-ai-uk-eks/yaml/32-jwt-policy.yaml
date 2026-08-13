@@ -35,7 +35,7 @@ spec:
     jwtAuthentication:
       mode: Strict
       providers:
-        - issuer: "http://keycloak.keycloak.svc.cluster.local/realms/sovereign"
+        - issuer: "https://keycloak.sovereign.local/realms/sovereign"
           audiences: ["sovereign-ai"]
           jwks:
             remote:
