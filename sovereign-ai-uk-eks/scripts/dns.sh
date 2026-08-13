@@ -32,11 +32,18 @@ r53() { aws route53resolver "$@" --region "$REGION"; }
 # The domains the cluster genuinely resolves. Generous on purpose: a missing entry breaks a
 # real pull or an AWS call, and the security win is blocking everything NOT here, not being
 # stingy with what is. Everything an agent would use to tunnel data out (its own domain) is
-# not on this list, so it is refused.
-ALLOW='*.amazonaws.com amazonaws.com *.docker.io docker.io *.docker.com *.quay.io quay.io
-ghcr.io github.com *.github.com *.githubusercontent.com registry.k8s.io *.k8s.io *.pkg.dev
-*.gcr.io *.googleapis.com *.cloudfront.net pypi.org *.pythonhosted.org *.pypi.org *.jfrog.io
-*.hashicorp.com *.solo.io *.sigstore.dev'
+# not on this list, so it is refused. Adding an approved external integration is one entry
+# here, a reviewed change; workloads reach externals through the gateway, so this list is
+# small and central rather than per-workload.
+ALLOW="$(cat <<'DOMAINS'
+*.amazonaws.com amazonaws.com
+*.docker.io docker.io *.docker.com *.quay.io quay.io *.cloudfront.net
+ghcr.io github.com *.github.com *.githubusercontent.com
+registry.k8s.io *.k8s.io *.pkg.dev *.gcr.io *.googleapis.com
+pypi.org *.pythonhosted.org *.pypi.org
+*.jfrog.io *.hashicorp.com *.solo.io *.sigstore.dev
+DOMAINS
+)"
 
 up() {
   echo "==> allowlist domain list"

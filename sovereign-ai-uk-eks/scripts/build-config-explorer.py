@@ -68,7 +68,7 @@ GROUPS = [
         ("31-vllm-backend.yaml",   "Backend → Mistral + route"),
         ("32-jwt-policy.yaml",     "JWT auth"),
         ("38-rate-limit.yaml",     "Per-identity rate limit"),
-        ("34-uk-pii-guard.yaml",   "PII guard"),
+        ("34-uk-pii-guard.yaml",   "PII + injection guard"),
         ("35-tracing.yaml",        "OTel tracing"),
         ("60-mcp-tools.yaml",      "MCP tool server"),
         ("61-mcp-authz.yaml",      "Per-tool MCP authz"),
@@ -102,6 +102,7 @@ GROUPS = [
         ("91-artifactory-egress.yaml",   "Brokered egress: Artifactory"),
         ("93-registry-readonly.yaml",    "Registry read-only (L7)"),
         ("99-default-deny-egress.yaml",  "Default-deny egress baseline"),
+        SH("scripts/dns.sh", "DOMAINS",  "DNS firewall allowlist"),
     ]),
     ("policy", "Kyverno + PSA", [
         ("40-policies.yaml", "Admission policies"),
