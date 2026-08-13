@@ -1,38 +1,46 @@
-# Agents may only be born through the control plane.
+# Agents AND tool servers may only be born through the control plane.
 #
-# agentregistry is the front door: a developer registers an agent in AR, AR calls the
-# kagent API, and the kagent controller writes the Agent CR into the cluster. Every agent
-# that reaches the cluster that way is authored by the kagent controller's service account.
+# agentregistry is the front door: a developer registers an agent or an MCP tool server in
+# AR, AR calls the kagent API, and the kagent controller writes the CR into the cluster.
+# Everything that reaches the cluster that way, an Agent, a SandboxAgent, an MCPServer, a
+# RemoteMCPServer or a ToolServer, is authored by the kagent controller's service account.
 #
-# A developer who skips the registry and runs `kubectl apply -f my-agent.yaml` authors that
-# CR as themselves, not as the controller. This policy refuses exactly that: a kagent Agent
-# or SandboxAgent may only be created by the kagent controller. The identity is taken from
-# request.userInfo, which the API server signs and a client cannot forge, so a hand-rolled
-# agent, an agent from a personal laptop, or an agent from any tool other than the governed
-# registry path is rejected at admission.
+# A developer who skips the registry and runs `kubectl apply -f my-tool-server.yaml` authors
+# that CR as themselves, not as the controller. This policy refuses exactly that. The tool
+# surface is as much the attack surface as the agents: an unregistered MCP server is a tool
+# an agent can be steered into calling, with no allowlist and no schema pinning behind it. So
+# the same rule that forces agents through the registry forces the tool servers through it
+# too. The identity is taken from request.userInfo, which the API server signs and a client
+# cannot forge, so a hand-applied agent OR tool server, from a laptop or any tool other than
+# the governed registry path, is rejected at admission.
 #
-# This is the "AR is the only place agents deploy from" control, enforced by the cluster
-# rather than by convention.
+# This is the "AR is the only place agents and tools deploy from" control, enforced by the
+# cluster rather than by convention. The gateway is the other half: it only routes to the MCP
+# backends it is configured for, and mcp-tool-authz pins which tools each identity may call.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: agents-only-from-control-plane
+  name: agent-workloads-only-from-control-plane
   annotations:
     policies.kyverno.io/description: >-
-      A kagent Agent or SandboxAgent may only be created by the kagent controller service
-      account, the identity every registry-driven deployment is authored by. Hand-applied
-      agents, the ones that never passed through agentregistry, are refused at admission.
+      A kagent Agent, SandboxAgent, MCPServer, RemoteMCPServer or ToolServer may only be
+      created by the kagent controller service account, the identity every registry-driven
+      deployment is authored by. Hand-applied agents and tool servers, the ones that never
+      passed through agentregistry, are refused at admission.
 spec:
   validationFailureAction: Enforce
   background: false
   rules:
-    - name: agent-create-must-be-control-plane
+    - name: workload-create-must-be-control-plane
       match:
         any:
           - resources:
               kinds:
                 - Agent
                 - SandboxAgent
+                - MCPServer
+                - RemoteMCPServer
+                - ToolServer
               operations: [CREATE, UPDATE]
       # kagent's own controllers are the only writers allowed. The garbage collector and
       # other system controllers act with different verbs and are excluded by Kyverno's
@@ -49,7 +57,7 @@ spec:
                 name: kmcp-enterprise
       validate:
         message: >-
-          Agents may only be deployed through agentregistry. This Agent was applied
-          directly (by {{ request.userInfo.username }}), bypassing the registry, and is
-          refused. Register it in AR and deploy it from there.
+          Agents and tool servers may only be deployed through agentregistry. This
+          {{ request.object.kind }} was applied directly (by {{ request.userInfo.username }}),
+          bypassing the registry, and is refused. Register it in AR and deploy it from there.
         deny: {}
