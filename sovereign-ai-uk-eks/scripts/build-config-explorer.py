@@ -109,6 +109,9 @@ GROUPS = [
         ("40-policies.yaml", "Admission policies"),
         ("41-hardening.yaml", "Restricted-subset + supply chain + RBAC"),
         ("42-agent-admission.yaml", "Agents only from the registry"),
+        ("43-serviceaccount-hardening.yaml", "ServiceAccount hardening"),
+        ("44-resource-quotas.yaml", "ResourceQuota per namespace"),
+        ("82-trivy-cve-gate.yaml", "CVE gate (trivy)"),
     ]),
     ("keycloak", "Keycloak (JWT issuer)", [
         ("37-keycloak.yaml",       "Keycloak deploy"),
