@@ -23,6 +23,12 @@ vpc:
   clusterEndpoints:
     publicAccess: true
     privateAccess: true
+    # Lock the public API endpoint to known admin CIDRs. Left as a placeholder here
+    # because a wrong value locks you out; set it to your office/VPN egress CIDR before
+    # applying, or drop publicAccess entirely and reach the private endpoint through a
+    # bastion. A sovereign production cluster does not leave 0.0.0.0/0 on the API server.
+    publicAccessCIDRs:
+      - 0.0.0.0/0   # REPLACE with your admin CIDR (e.g. 203.0.113.10/32) before a real run
 
 availabilityZones:
   - eu-west-2a
@@ -31,6 +37,15 @@ availabilityZones:
 
 iam:
   withOIDC: true
+
+# Envelope-encrypt Kubernetes Secrets in etcd with a customer-managed KMS key in
+# eu-west-2, the same class of key that unseals Vault. Without this, Secrets are
+# protected only by the AWS-owned EBS key, so "who holds the key" would not cover the
+# application secrets sitting in etcd. This makes the key-custody claim true for data at
+# rest, not just for the mesh CA. On an existing cluster, apply once with
+# `aws eks associate-encryption-config`; it encrypts Secrets written from then on.
+secretsEncryption:
+  keyARN: arn:aws:kms:eu-west-2:<AWS_ACCOUNT_ID>:key/<secrets-cmk>   # customer-managed, in-region
 
 managedNodeGroups:
   # Sized for the full Solo stack, not just coredns. m6i.large gives 1930m
@@ -124,7 +139,12 @@ managedNodeGroups:
     tags:
       Owner: torourke
       Project: solo-demo
-      k8s.io/cluster-autoscaler/node-template/label/role: gpu
+      # No cluster-autoscaler node-template tag here: no autoscaler runs in this lab, the
+      # GPU group is scaled directly by scripts/gpu.sh (up/down sets desired capacity). A
+      # node-template tag would imply an autoscaler that is not present. If you wire Cluster
+      # Autoscaler later, add node-template/label/* AND node-template/taint/* tags so it can
+      # scale this tainted group up from zero; without the taint tag, scale-from-zero silently
+      # never fires and the pod sits Pending.
 
   # Sandbox nodes for gVisor-isolated agents. A separate, tainted node group so a
   # sandboxed agent shares no kernel and no node with the model or the gateway: that
@@ -167,4 +187,9 @@ addons:
 cloudWatch:
   clusterLogging:
     enableTypes: ["audit", "authenticator"]
-    logRetentionInDays: 7
+    # 180 days, not 7. The zero-trust write-up commits to keeping audit logs at least six
+    # months, so the cluster has to actually keep them that long or the claim is empty. The
+    # sovereign-friendly alternative is to ship the audit log to an in-region S3 bucket with
+    # a lifecycle rule and Object Lock, which also takes the retention off the AWS-managed
+    # CloudWatch service; this retention floor is the minimum either way.
+    logRetentionInDays: 180

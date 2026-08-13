@@ -78,10 +78,11 @@ GROUPS = [
         SH("scripts/ambient.sh",   "EOF", "ztunnel (L4) + logs", nth=3),
         SH("scripts/istio-csr.sh", "EOF", "istiod (CA → Vault)", nth=1),
     ]),
-    ("vault", "Vault / CA", [
+    ("vault", "Vault (secrets + CA)", [
         SH("scripts/vault.sh", "POLICY", "Signing policy"),
         SH("scripts/vault.sh", "ISSUER", "cert-manager Issuer"),
         SH("scripts/vault.sh", "EOF",    "KMS auto-unseal"),
+        ("45-vault-secrets.yaml", "Secrets via CSI (KV v2)"),
     ]),
     ("kagent", "kagent", [
         SH("scripts/kagent.sh",    "EOF",  "kagent install (OIDC → Keycloak)"),
