@@ -95,7 +95,8 @@ spec:
                   readOnlyRootFilesystem: true
 ---
 # A soft ceiling on a runaway pod. The incident's defining trait was tempo; limits are the
-# per-pod version of that ceiling. Enforced where the workloads already declare limits.
+# per-pod version of that ceiling. Enforced on the workloads we author (models, agents),
+# where a pod without limits is our own bug to fix.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -109,9 +110,39 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [models, agentgateway-system, agents]
+              namespaces: [models, agents]
       validate:
         message: "every container must set cpu and memory limits"
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"
+---
+# The gateway control plane is a different case. agentgateway's controller and its
+# extension services (ext-auth, WAF, cache, rate-limiter), including the per-waypoint
+# copies the controller generates on the fly, are vendor-managed Deployments whose charts
+# do not expose a resources knob, so we cannot make them carry limits without forking the
+# chart. Enforcing limits here does not harden the gateway, it stops the gateway (and every
+# waypoint) from ever being created or rolled. So this is Audit for agentgateway-system: a
+# visible "these pods have no limits" on the dashboard, not a block that breaks the one door.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits-gateway-audit
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: gateway-cpu-mem-limits-audit
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [agentgateway-system]
+      validate:
+        message: "gateway pods should set cpu and memory limits (vendor-managed; audited)"
         pattern:
           spec:
             containers:

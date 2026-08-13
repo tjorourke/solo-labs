@@ -119,10 +119,13 @@ metadata:
   name: disable-token-automount
   annotations:
     policies.kyverno.io/description: >-
-      Every pod gets a Kubernetes API token mounted by default, and almost nothing
-      needs one. A stolen token is a stolen identity, so the default is flipped:
-      pods must opt IN to an API token rather than receiving one silently. This is
-      a mutate rule, the one thing PSA can never do.
+      A pod on the default ServiceAccount still gets a Kubernetes API token mounted, and
+      nothing that runs on the default SA needs one. A stolen token is a stolen identity,
+      so the default is flipped: a default-SA pod must opt IN to an API token rather than
+      receiving one silently. A workload that genuinely needs the API runs under its own
+      named ServiceAccount with explicit RBAC, and that named SA is the opt-in, so those
+      pods (the agentgateway and kagent controllers, and the like) keep their token. This
+      is a mutate rule, the one thing PSA can never do.
 spec:
   rules:
     - name: default-automount-false
@@ -130,11 +133,18 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              # extended across the workload namespaces: the automounted token is the
-              # article's "inherited credential", and it is a mutate (no secretKeyRef
-              # conflict), so it is safe everywhere. Paired with lock-default-serviceaccount
+              # across the workload namespaces: the automounted token is the article's
+              # "inherited credential". Paired with lock-default-serviceaccount
               # (43-serviceaccount-hardening.yaml), which locks the default SA itself.
               namespaces: [models, apps, keycloak, agentgateway-system, agents, kagent, mcp-tools, internal]
+      # Only the default SA. A pod with a dedicated SA has opted into API access by
+      # carrying RBAC; stripping its token here breaks every controller (it exits the
+      # instant it cannot reach the API), which is exactly how this policy first bit.
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.serviceAccountName || 'default' }}"
+            operator: Equals
+            value: default
       mutate:
         patchStrategicMerge:
           spec:
