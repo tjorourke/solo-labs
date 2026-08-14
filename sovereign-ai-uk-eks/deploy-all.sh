@@ -266,14 +266,15 @@ case "${1:-all}" in
   phases) printf '%s\n' "${PHASES[@]}" ;;
   all)
     for p in "${PHASES[@]}"; do "p_${p}"; done
-    banner "done"
-    echo "Everything is up. Stop the GPU meter when you finish for the day:  ./scripts/gpu.sh down"
-    echo "Consoles: age.sovereign.local (agentgateway), kagent.sovereign.local, registry.sovereign.local"
-    echo "Fire the alert-email demo:  ./scripts/observability.sh alert   then   ./scripts/observability.sh mail"
-    echo "Attack scenarios (run on top, not part of standing up):"
-    echo "  ./scripts/artifactory.sh up && ./scripts/artifactory-ssrf.sh all   # SSRF + lockdown (yaml 90-93,99)"
-    echo "  ./scripts/rate-limit.sh test                                       # 429 after 10/min"
-    echo "  ./scripts/trivy.sh up                                              # CVE admission gate (yaml/82)"
+    banner "done — everything is up"
+    # Print how to connect: kubeconfig, the /etc/hosts line, the console URLs + logins, and
+    # how to reach the model.
+    ./scripts/access.sh
+    echo "Demos (run on top, not part of standing up):"
+    echo "  ./scripts/observability.sh alert && ./scripts/observability.sh mail    # the SOC alert email"
+    echo "  ./scripts/artifactory.sh up && ./scripts/artifactory-ssrf.sh all       # SSRF + lockdown (yaml 90-93,99)"
+    echo "  ./scripts/rate-limit.sh test                                           # 429 after 10/min"
+    echo "  ./scripts/trivy.sh up                                                  # CVE admission gate (yaml/82)"
     ;;
   *)
     fn="p_${1}"
