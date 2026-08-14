@@ -167,15 +167,21 @@ spec:
         any:
           - resources:
               kinds: [Namespace]
-      # Infrastructure namespaces are excluded: their controllers need egress to the API
-      # server and to AWS APIs, which a default-deny egress policy (DNS + gateway only)
-      # would cut off. velero is the clearest example, its backup controller talks to the
-      # Kubernetes API and to S3/EC2. The lock is for WORKLOAD namespaces, where a pod has
-      # no business reaching the API or the internet directly.
+      # Infrastructure AND control-plane namespaces are excluded: their controllers need
+      # egress to the Kubernetes API server and to AWS APIs, which a default-deny egress
+      # policy (DNS + gateway only) cuts off. velero's backup controller talks to the API and
+      # S3/EC2; the agentgateway control plane, its ext-auth service and the management console
+      # (agentgateway-system), the kagent controller (kagent) and the AgentRegistry server
+      # (agentregistry) all watch the API server. Note this bites even though those three are
+      # ambient: a k8s NetworkPolicy is a no-op for in-mesh (HBONE) traffic, but ztunnel's
+      # PASSTHROUGH to a non-mesh destination like the API server (172.20.0.1) still leaves the
+      # pod veth, where the policy applies, so the API-server watch times out and the pod
+      # crashloops. The lock is only for WORKLOAD namespaces, where a pod has no business
+      # reaching the API server or the internet directly.
       exclude:
         any:
           - resources:
-              namespaces: [kube-system, kube-public, kube-node-lease, istio-system, cert-manager, vault, monitoring, velero, gvisor-system, kagent, agentregistry]
+              namespaces: [kube-system, kube-public, kube-node-lease, istio-system, cert-manager, vault, monitoring, velero, gvisor-system, kagent, agentregistry, agentgateway-system]
       generate:
         apiVersion: networking.k8s.io/v1
         kind: NetworkPolicy

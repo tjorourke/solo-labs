@@ -116,22 +116,24 @@ s_gpu_plugin() {
   step "NVIDIA device plugin"
   # Without this, nvidia.com/gpu is never advertised, the vLLM pod sits Pending on an
   # otherwise healthy 4-GPU node, and gpu.sh up times out waiting for a resource that
-  # nothing is publishing. eksctl installs it for GPU nodegroups on some AMI families
-  # and not others, so this checks rather than assumes.
-  if kubectl -n kube-system get ds nvidia-device-plugin-daemonset >/dev/null 2>&1 \
-     || kubectl -n kube-system get ds nvidia-device-plugin >/dev/null 2>&1; then
-    skip "device plugin daemonset present"; return
+  # nothing is publishing. eksctl installs it for GPU nodegroups on some AMI families and not
+  # others, so install it only if absent — but ALWAYS pin it to GPU nodes below, whichever
+  # way it got here, because eksctl's copy (like the upstream manifest) ships with no
+  # nodeSelector and would otherwise crashloop on the CPU nodes.
+  if kubectl -n kube-system get ds nvidia-device-plugin-daemonset >/dev/null 2>&1; then
+    skip "device plugin daemonset already present (eksctl or a prior run); ensuring the GPU pin"
+  else
+    kubectl apply -f "https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/${NVIDIA_PLUGIN_VERSION}/deployments/static/nvidia-device-plugin.yml"
   fi
-  kubectl apply -f "https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/${NVIDIA_PLUGIN_VERSION}/deployments/static/nvidia-device-plugin.yml"
-  # Pin it to GPU nodes. The upstream manifest has only a toleration, no nodeSelector, so it
-  # would also schedule onto the CPU platform nodes and crashloop there (no NVML), and the
-  # rollout wait would hang for 5 min then abort. This stage runs before the GPU node exists,
-  # so with role=gpu the DaemonSet has zero desired pods and the rollout status returns at
-  # once; it schedules for real once the gpu stage brings the node up.
+  # Pin to GPU nodes, ALWAYS (this is the step that was being skipped when eksctl pre-installed
+  # the DaemonSet, leaving it to crashloop on the CPU nodes). The manifest has only a
+  # toleration and no nodeSelector, so without role=gpu it schedules onto the CPU platform
+  # nodes and crashloops there (no NVML). With role=gpu it runs only on the GPU node; before
+  # that node exists the DaemonSet has zero desired pods, so the rollout status returns at once.
   kubectl -n kube-system patch ds nvidia-device-plugin-daemonset --type merge \
     -p '{"spec":{"template":{"spec":{"nodeSelector":{"role":"gpu"}}}}}'
   kubectl -n kube-system rollout status ds/nvidia-device-plugin-daemonset --timeout=300s
-  ok "device plugin $NVIDIA_PLUGIN_VERSION installed (pinned to role=gpu)"
+  ok "device plugin pinned to role=gpu (runs only on the GPU node)"
 }
 
 s_storage() {
