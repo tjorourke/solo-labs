@@ -1,170 +1,149 @@
-# sovereign-ai-uk-eks
+# Sovereign AI on EKS
 
-An open-weights European model, running on UK infrastructure, with agentgateway in
-front of everything. Built for an EMEA webinar on AI security and sovereignty.
+An open-weight European model (Mistral-Small-3.2-24B on vLLM) self-hosted on UK
+infrastructure (EKS, eu-west-2), with a zero-trust control at every layer around the
+data path: Istio ambient identity, a Vault CA unsealed by KMS, Solo Enterprise
+agentgateway as the one governed door, Kyverno and Pod Security Admission, kagent and
+AgentRegistry for the agents, all in one region.
 
-Three claims the build has to physically prove, not assert:
+The write-up is a two-part lab:
+- **Part 1 — the architecture:** https://mastertheagent.com/solo/sovereign-ai-uk-eks/
+- **Part 2 — the exploits under test:** https://mastertheagent.com/solo/sovereign-ai-uk-eks/part-2/
 
-1. The weights and the inference never leave `eu-west-2`.
-2. Nothing reaches the model except through agentgateway, and the gateway knows who
-   the caller is.
-3. Every call produced evidence a compliance team can read.
+This README is how to **run** it.
 
-## What is running
+---
 
-| | |
+## Prerequisites
+
+- An AWS account with an SSO profile (the lab runs in `eu-west-2`).
+- The Solo licence keys in an env file, referenced by `SOVEREIGN_ENV_FILE`
+  (`AGENTGATEWAY_LICENSE_KEY`, `SOLO_ISTIO_LICENSE_KEY`, `SOLO_LICENSE_KEY`).
+- CLI tools on the machine you run from: `awscli`, `eksctl`, `kubectl`, `helm`, `docker`,
+  `dig`, and `arctl` (the AgentRegistry CLI, at `~/.arctl/bin/arctl`) for the register phase.
+- Account-level seed state the deploy assumes (created once, they survive a teardown):
+  the three KMS keys `uk-sovereign-ai-{secrets,vault-unseal,cosign}` (created automatically
+  if absent), and the in-region S3 weights bucket, hydrated once so the deploy restores the
+  48 GB of weights from it rather than pulling from Hugging Face.
+
+---
+
+## Deploy
+
+One command, from an empty-ish account to a working, defended model:
+
+```bash
+cd sovereign-ai-uk-eks
+SOVEREIGN_AWS_PROFILE=<your-sso-profile> \
+SOVEREIGN_ENV_FILE=<your-licences.env> \
+./deploy-all.sh
+```
+
+It runs 16 phases in dependency order: cluster + node groups, the model (GPU + weight
+restore + vLLM), the ambient mesh, Vault + istio-csr, Keycloak, the gateway + edge TLS, the
+model-door policies, mesh enrolment, admission policy, observability, gVisor, kagent, the
+management + registry consoles, the agent + MCP registration, the sovereignty seals, and a
+final verify. Every phase is idempotent, so a re-run picks up rather than starting again.
+Budget roughly an hour; the GPU meter (~$5.84/hr) starts at the `model` phase.
+
+Run a single phase with `./deploy-all.sh <phase>`; list them with `./deploy-all.sh phases`.
+
+At the end it prints the connectivity details below.
+
+---
+
+## Connect
+
+`./scripts/access.sh` prints everything you need, resolved against the running cluster:
+
+```bash
+SOVEREIGN_AWS_PROFILE=<your-sso-profile> ./scripts/access.sh
+```
+
+**kubectl:**
+```bash
+aws eks update-kubeconfig --region eu-west-2 --name uk-sovereign-ai
+# or a standalone file:
+./scripts/access.sh kubeconfig      # writes ./uk-sovereign-ai.kubeconfig
+```
+
+**Consoles** — the UIs are behind the gateway on `*.sovereign.local`, which only resolves
+through your hosts file. Add the line (run once; re-run `./scripts/access.sh hosts` if the
+gateway is recreated and its IP changes):
+```bash
+echo "$(./scripts/access.sh hosts)" | sudo tee -a /etc/hosts
+```
+Then, in a browser, log in with a realm user (**password = the username**):
+
+| Console | URL | |
+|---|---|---|
+| agentgateway | `https://age.sovereign.local/age` | traffic, traces, cost |
+| kagent | `https://kagent.sovereign.local` | agents, sessions, per-run traces |
+| agentregistry | `https://registry.sovereign.local` | catalogue, governance, traces |
+| keycloak | `https://keycloak.sovereign.local` | the IdP (admin: `admin` / `admin`) |
+
+Users: **carol / carol** (admin) · **alice / alice** (platform) · **bob / bob** (research).
+
+---
+
+## Ask the model
+
+Directly over a port-forward (no token needed — this is the in-cluster path):
+```bash
+kubectl -n models port-forward svc/vllm 8000:8000
+curl localhost:8000/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"model":"mistral-small-3.2-24b","messages":[{"role":"user","content":"what region are you in?"}]}'
+```
+
+Or through the gateway, with a real Keycloak token (the governed path a caller uses):
+```bash
+./scripts/ask.sh "what region are you in?"
+```
+
+---
+
+## Demos (run on top, not part of standing up)
+
+```bash
+./scripts/observability.sh alert && ./scripts/observability.sh mail   # the SOC alert email, shown on screen
+./scripts/artifactory.sh up && ./scripts/artifactory-ssrf.sh all      # the SSRF, then locked down layer by layer
+./scripts/rate-limit.sh test                                          # 429 after 10 model calls a minute
+./scripts/trivy.sh up                                                 # a CVE admission gate
+./scripts/policy.sh test                                              # every admission policy refusing a real violation
+```
+
+---
+
+## Teardown
+
+```bash
+./scripts/gpu.sh down            # just stop the GPU meter, keep the cluster
+./scripts/teardown.sh down       # delete the cluster + the orphaned weights volume
+```
+Teardown deletes the LoadBalancer Services first so the gateway's ELB is cleaned up before
+the VPC, checks the weights are safely mirrored in S3 before removing the local copy, and
+leaves the KMS keys and the in-region weights bucket for the next deploy (about a pound a
+month at rest).
+
+---
+
+## Scripts
+
+`deploy-all.sh` orchestrates the phases; the pieces it calls, roughly in order:
+
+| Script | What it does |
 |---|---|
-| Region | AWS `eu-west-2` (London) |
-| Cluster | EKS `uk-sovereign-ai`, Kubernetes **1.34** |
-| VPC | dedicated, `10.42.0.0/16`, single NAT gateway |
-| System nodes | 2× `m6i.large` |
-| GPU node | 1× `g6.12xlarge` (4× L4 24 GB), **on-demand**, `eu-west-2a`, **$5.84/hr** |
-| Model | `mistralai/Mistral-Small-3.2-24B-Instruct-2506`, Apache 2.0 |
-| Inference | vLLM, `--tensor-parallel-size 4`, bf16, 16k context |
-| Weights | `models` PVC (gp3, 750 MiB/s) + mirrored to S3 in `eu-west-2` |
-
-Kubernetes **1.34 is deliberate, not stale**. Istio 1.28 supports 1.29 to 1.34 and
-phase 3 needs Solo ambient for the kagent AccessPolicy waypoint. Taking EKS 1.36
-would strand the mesh work.
-
-## Run it
-
-```bash
-# The GPU node is the only thing that costs real money.
-./scripts/gpu.sh up        # ~4 min to Ready
-./scripts/gpu.sh status
-./scripts/gpu.sh down      # do this when you stop for the day
-```
-
-Everything else assumes the node is up:
-
-```bash
-CTX=arn:aws:eks:eu-west-2:<AWS_ACCOUNT_ID>:cluster/uk-sovereign-ai
-
-kubectl --context $CTX apply -f yaml/00-storage.yaml       # ns, gp3-fast SC, PVC
-kubectl --context $CTX apply -f yaml/10-model-sync-job.yaml # 48 GB pull, ~20 min, once
-kubectl --context $CTX apply -f yaml/20-vllm.yaml           # vLLM, ~5 min to Ready
-```
-
-## Why the model is pulled the way it is
-
-The Hugging Face repo carries **both** weight formats and totals 96 GB:
-`consolidated.safetensors` (48 GB, Mistral-native) and
-`model-0000X-of-00010.safetensors` (48 GB, HF sharded). vLLM here runs with
-`--load-format mistral`, so only the first is needed. The sync job excludes the
-sharded copy and pulls 48 GB.
-
-The job then mirrors those weights to S3 **in `eu-west-2`**. That is not just a
-faster restore path, it is the sovereignty claim: the weights entered the UK once,
-deliberately, and every load since has been in-region. It is a real answer to a
-real audit question, and it is worth being able to say out loud that it is
-literally true.
-
-## Traps, all hit live during the build
-
-**Naming the Service `vllm` breaks vLLM.** Kubernetes injects legacy docker-link
-env vars for every Service in the namespace, so a Service named `vllm` produces
-`VLLM_PORT=tcp://10.x.x.x:8000`. vLLM reads `VLLM_PORT` as its own config expecting
-an integer and the engine dies in `_get_open_port()`, with a traceback that never
-mentions environment variables. Fixed with `enableServiceLinks: false`.
-
-**24B bf16 on 4× L4 fails late, not early.** Weights are ~12 GB per GPU of 22.03
-GiB usable. At `--gpu-memory-utilization=0.90` the KV cache fills the budget and
-the sampler OOMs asking for 128 MiB with 75 MiB free, *after* the weights load
-successfully. Runs at `0.85` with `VLLM_USE_FLASHINFER_SAMPLER=0` and
-`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
-
-**Spot is not usable for 4-GPU nodes in London.** EKS returns
-`UnfulfillableCapacity` and spot placement scores are 1/10 in every AZ. The 7-day
-spot price history is flat and cheap, which is misleading: a flat price means
-nobody is bidding it up, not that there is capacity to sell. Check
-`get-spot-placement-scores`, not the price chart.
-
-**`g5.12xlarge` is not obtainable in `eu-west-2`.** Capacity-reservation probes
-returned `InsufficientInstanceCapacity` in 2a and 2b, and it is not offered in 2c.
-`g6.12xlarge` is available in 2a and 2b but not 2c.
-
-**NetworkPolicy silently does nothing until you turn it on.** The vpc-cni addon
-ships `--enable-network-policy=false`, while the `policyendpoints` CRD is present
-and the controller runs. A NetworkPolicy applies, looks healthy, and enforces
-nothing. Only ever prove it with a connection that times out, never by reading
-config.
-
-**Turning it on can strip the vpc-cni IRSA role and break the CNI.** This cost us
-an afternoon, so it is worth the detail. Running
-
-```
-aws eks update-addon --addon-name vpc-cni \
-  --configuration-values '{"enableNetworkPolicy":"true"}' --resolve-conflicts PRESERVE
-```
-
-without also passing `--service-account-role-arn` left the addon's
-`serviceAccountRoleArn` as `null` and removed the `eks.amazonaws.com/role-arn`
-annotation from the `kube-system/aws-node` ServiceAccount. ipamd then fell back to
-IMDS node-instance-role credentials, which carry `AmazonEKSWorkerNodePolicy` but
-**not** `AmazonEKS_CNI_Policy`, so `ec2:DescribeNetworkInterfaces` returned 403,
-ipamd never finished initialising, never served `/var/run/aws-node/ipamd.sock`, and
-`aws-eks-nodeagent` panicked on connection refused.
-
-What makes it expensive is how far the symptom sits from the cause. You see a
-crashlooping nodeagent with a Go stack trace about a unix socket, and nothing
-anywhere in `kubectl` output mentions IAM. **Always pass
-`--service-account-role-arn` on any vpc-cni addon update**, and if the CNI ever
-misbehaves check these four things in order before theorising:
-
-```bash
-kubectl -n kube-system get sa aws-node -o jsonpath='{.metadata.annotations}'
-aws eks describe-addon --addon-name vpc-cni --query 'addon.serviceAccountRoleArn'
-aws iam list-attached-role-policies --role-name <that role>      # wants AmazonEKS_CNI_Policy
-kubectl debug node/<node> -it --image=busybox --profile=sysadmin -- \
-  sh -c 'grep -i unauthorized /host/var/log/aws-routed-eni/ipamd.log | tail -5'
-```
-
-**`aws-node` stdout tells you almost nothing, and the one line that matters is easy
-to misread.** A healthy ipamd logs three lines:
-
-```
-Checking for IPAM connectivity...
-Copying config file...
-Successfully copied CNI plugin binary and config file.
-```
-
-A broken one stops dead at the first. That boundary is a genuine signal. The real
-detail is in `/var/log/aws-routed-eni/ipamd.log` **on the node**, not in
-`kubectl logs`, and you need `kubectl debug node/...` to read it.
-
-**Do not diagnose a crashloop from one `kubectl get`.** Both of the wrong theories
-in this incident (netpol is fundamentally broken; live-flipping the flag versus
-booting with it) came from reading a pod at a single moment. One of them was
-"confirmed" by a fresh node that showed `ready=true restarts=0` and then failed
-thirty seconds later. Poll for several minutes and require the restart count to
-stay still before believing anything.
-
-**`HF_HUB_ENABLE_HF_TRANSFER` is dead.** huggingface-hub 1.x moved fast transfer to
-Xet. The old variable is accepted and ignored. Use `HF_XET_HIGH_PERFORMANCE=1`.
-
-**Two environment traps on this laptop.** The shell profile exports
-`AWS_PROFILE=weaveone`, so `${AWS_PROFILE:-...}` in a script silently hits the
-wrong account. And the kubeconfig is shared, so any kind cluster that gets created
-steals `current-context` and a bare `kubectl apply` can land somewhere else and
-look successful. Scripts here hardcode the profile and pass `--context`.
-
-## Layout
-
-```
-eks/cluster.yaml              eksctl config, VPC + both nodegroups
-scripts/gpu.sh                up / down / status for the GPU node
-yaml/00-storage.yaml          namespace, gp3-fast StorageClass, model PVC
-yaml/10-model-sync-job.yaml   one-off 48 GB pull + S3 mirror
-yaml/20-vllm.yaml             vLLM Deployment + Service
-yaml/30- .. 39-               gateway lane (phase 2), NOT yet run
-```
-
-Anything numbered 30 and above is written but unvalidated. Parse-checked is not
-the same as working.
-
-## Cost
-
-The GPU node is the entire cost at $5.84/hr. Control plane and system nodes are
-about $0.30/hr. Budget roughly $400-450 for a month of build with disciplined
-scale-to-zero, and check every Friday that `gpu.sh down` actually ran.
+| `e2e.sh` | the model spine: VPC-CNI NetworkPolicy, storage, IRSA, GPU, weight restore, vLLM |
+| `ambient.sh` | Istio ambient (base, istiod, cni, ztunnel); `enrol` labels the namespaces |
+| `vault.sh` · `istio-csr.sh` | Vault (raft + KMS unseal) as the mesh CA, rewired via istio-csr |
+| `keycloak.sh` | the Keycloak IdP + realm, and the CoreDNS rewrite for `keycloak.sovereign.local` |
+| `agentgateway.sh` · `tls.sh` | the gateway control plane, the Gateway + routes, and the edge cert |
+| `policy.sh` | Pod Security Admission + Kyverno |
+| `observability.sh` | Prometheus, Grafana, Alertmanager, Mailpit |
+| `substrate.sh` | gVisor on the sandbox node group |
+| `kagent.sh` | the kagent runtime, OIDC to Keycloak |
+| `management.sh` · `agentregistry.sh` | the management console + collector + ClickHouse, and AgentRegistry |
+| `ar-agent.sh` · `ar-mcp.sh` | register + deploy the agent and the MCP server through AgentRegistry |
+| `registry-mirror.sh` · `dns.sh` | the sovereignty seals: in-region image mirror, Route 53 DNS firewall |
+| `access.sh` | print the connectivity details (kubeconfig, hosts, consoles, model) |
+| `teardown.sh` | delete it all cleanly |
