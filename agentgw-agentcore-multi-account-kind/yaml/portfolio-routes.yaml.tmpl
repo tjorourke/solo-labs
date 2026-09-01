@@ -1,0 +1,188 @@
+# One namespace per portfolio, one backend + route per deployed agent, and a
+# JWT policy per portfolio. Rendered by scripts/40-gateway-config.sh with the
+# runtime ARNs captured in deploy/.env.runtimes.
+#
+# The backends use the OSS AgentgatewayBackend kind on purpose: at v2026.8.0
+# the EnterpriseAgentgatewayBackend SCHEMA accepts spec.aws but the enterprise
+# translator does not yet ("unknown backend"); the OSS kind translates fine
+# under the enterprise control plane and carries the same aws + assumeRole
+# fields. Re-test the Enterprise kind on later releases.
+#
+# The interesting lines are each backend's spec.aws.agentCore.agentRuntimeArn
+# (account + region ride inside the ARN; the gateway derives the regional
+# endpoint and SigV4 config from it) and spec.policies.auth.aws.assumeRole
+# (the per-portfolio STS hop; the session is named from the caller's verified
+# JWT so it lands in that account's CloudTrail).
+apiVersion: v1
+kind: Namespace
+metadata: { name: portfolio-a }
+---
+apiVersion: v1
+kind: Namespace
+metadata: { name: portfolio-b }
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: poet
+  namespace: portfolio-a
+spec:
+  aws:
+    agentCore:
+      agentRuntimeArn: ${PORTFOLIO_A_POET_ARN}
+      qualifier: DEFAULT
+  policies:
+    auth:
+      aws:
+        assumeRole:
+          roleArn: ${PORTFOLIO_A_INVOKE_ROLE_ARN}
+          sessionNameExpression: 'jwt.preferred_username'
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: quant
+  namespace: portfolio-a
+spec:
+  aws:
+    agentCore:
+      agentRuntimeArn: ${PORTFOLIO_A_QUANT_ARN}
+      qualifier: DEFAULT
+  policies:
+    auth:
+      aws:
+        assumeRole:
+          roleArn: ${PORTFOLIO_A_INVOKE_ROLE_ARN}
+          sessionNameExpression: 'jwt.preferred_username'
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: poet
+  namespace: portfolio-b
+spec:
+  aws:
+    agentCore:
+      agentRuntimeArn: ${PORTFOLIO_B_POET_ARN}
+      qualifier: DEFAULT
+  policies:
+    auth:
+      aws:
+        assumeRole:
+          roleArn: ${PORTFOLIO_B_INVOKE_ROLE_ARN}
+          sessionNameExpression: 'jwt.preferred_username'
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: quant
+  namespace: portfolio-b
+spec:
+  aws:
+    agentCore:
+      agentRuntimeArn: ${PORTFOLIO_B_QUANT_ARN}
+      qualifier: DEFAULT
+  policies:
+    auth:
+      aws:
+        assumeRole:
+          roleArn: ${PORTFOLIO_B_INVOKE_ROLE_ARN}
+          sessionNameExpression: 'jwt.preferred_username'
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: poet
+  namespace: portfolio-a
+spec:
+  parentRefs: [{ name: ${GW_NAME}, namespace: ${GW_NS} }]
+  hostnames: ["${AGENTS_HOST}"]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /portfolio-a/poet } }]
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: poet
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: quant
+  namespace: portfolio-a
+spec:
+  parentRefs: [{ name: ${GW_NAME}, namespace: ${GW_NS} }]
+  hostnames: ["${AGENTS_HOST}"]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /portfolio-a/quant } }]
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: quant
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: poet
+  namespace: portfolio-b
+spec:
+  parentRefs: [{ name: ${GW_NAME}, namespace: ${GW_NS} }]
+  hostnames: ["${AGENTS_HOST}"]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /portfolio-b/poet } }]
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: poet
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: quant
+  namespace: portfolio-b
+spec:
+  parentRefs: [{ name: ${GW_NAME}, namespace: ${GW_NS} }]
+  hostnames: ["${AGENTS_HOST}"]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /portfolio-b/quant } }]
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: quant
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: agent-jwt
+  namespace: portfolio-a
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: poet }
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: quant }
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: ${KEYCLOAK_ISSUER}
+          audiences: ["ar-backend"]
+          jwks:
+            remote:
+              url: http://keycloak.${KEYCLOAK_NS}.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: agent-jwt
+  namespace: portfolio-b
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: poet }
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: quant }
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: ${KEYCLOAK_ISSUER}
+          audiences: ["ar-backend"]
+          jwks:
+            remote:
+              url: http://keycloak.${KEYCLOAK_NS}.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs

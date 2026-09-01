@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (gitignored) and fill in your own profiles.
+account_a_profile = "<your-portfolio-a-admin-profile>"
+account_b_profile = "<your-portfolio-b-profile>"
+region_a          = "us-east-1"
+region_b          = "us-west-2"
