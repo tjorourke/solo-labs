@@ -1,0 +1,22 @@
+# Scenario 5, the "before": a client that does not use the pod network
+# namespace. hostNetwork: true means there is no per-pod netns for istio-cni to
+# redirect, so ztunnel never sees this traffic. It reaches catalog as plaintext
+# from the node IP, with no identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: hostnet, namespace: shop }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostnet
+  namespace: shop
+  labels: { app: hostnet }
+spec:
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+  serviceAccountName: hostnet
+  containers:
+    - name: curl
+      image: curlimages/curl:8.9.1
+      command: ["sleep", "infinity"]

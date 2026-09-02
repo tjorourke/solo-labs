@@ -1,0 +1,19 @@
+# Scenario 4 and 5: the VM workloads are principals like any pod. vm-app is
+# allowed, vm-batch (the second identity on the same VM) is not listed, so it is
+# denied even though it runs on the same machine and the same ztunnel.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog
+  namespace: shop
+spec:
+  selector:
+    matchLabels: { app: catalog }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "eks-a.local/ns/shop/sa/frontend"
+              - "eks-b.local/ns/shop/sa/frontend"
+              - "eks-a.local/ns/vm-apps/sa/vm-app"

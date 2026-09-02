@@ -1,0 +1,8 @@
+# Registers eks-b with the management server on eks-a. Apply on eks-a.
+apiVersion: admin.gloo.solo.io/v2
+kind: KubernetesCluster
+metadata:
+  name: eks-b
+  namespace: gloo-mesh
+spec:
+  clusterDomain: cluster.local

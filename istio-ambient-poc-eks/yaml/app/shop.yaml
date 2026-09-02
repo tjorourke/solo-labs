@@ -1,0 +1,98 @@
+# The sample app, deployed to BOTH clusters. Two workloads with their own
+# ServiceAccounts (that is what becomes the mTLS identity):
+#   frontend  - a curl loop that calls catalog every 2s
+#   catalog   - a small API that answers {cluster, pod, peer}
+# The namespace label puts everything in it into the ambient mesh.
+# The catalog Service is labelled global, so once the clusters are linked it
+# is also reachable as catalog.shop.mesh.internal from either cluster.
+# Substitute CLUSTER before applying.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+  labels:
+    istio.io/dataplane-mode: ambient
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: frontend, namespace: shop }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: catalog, namespace: shop }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: shop
+  labels:
+    app: catalog
+    solo.io/service-scope: global      # publish as catalog.shop.mesh.internal across the linked mesh
+spec:
+  selector: { app: catalog }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: shop
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: catalog } }
+  template:
+    metadata:
+      labels: { app: catalog }
+    spec:
+      serviceAccountName: catalog
+      containers:
+        - name: api
+          image: python:3.12-alpine
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              import http.server, socketserver, json, os
+              class H(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      b = json.dumps({"cluster": os.environ["CLUSTER"], "pod": os.environ["POD_NAME"],
+                                      "peer": self.client_address[0]}).encode()
+                      self.send_response(200); self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+                  def log_message(self, *a): pass
+              socketserver.TCPServer.allow_reuse_address = True
+              socketserver.ThreadingTCPServer(("0.0.0.0", 8080), H).serve_forever()
+          env:
+            - { name: CLUSTER, value: "CLUSTER" }
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { tcpSocket: { port: 8080 }, initialDelaySeconds: 2 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: shop
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: frontend } }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      serviceAccountName: frontend
+      containers:
+        - name: curl
+          image: curlimages/curl:8.9.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                R=$(curl -s -m3 http://catalog.shop.svc.cluster.local:8080/ || echo '{"cluster":"UNREACHABLE"}')
+                echo "$(date +%H:%M:%S) $R"
+                sleep 2
+              done

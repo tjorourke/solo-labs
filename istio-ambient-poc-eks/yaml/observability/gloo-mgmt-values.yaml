@@ -1,0 +1,47 @@
+# Gloo Platform on eks-a: management server, Gloo UI, Prometheus, telemetry
+# gateway and the local agent. The management server and telemetry gateway sit
+# on INTERNAL NLBs so eks-b's agent reaches them over the VPC peering. The UI
+# gets its own internet-facing NLB, locked to one source CIDR (ADMIN_CIDR).
+# Substitute LICENSE and ADMIN_CIDR before applying.
+common:
+  cluster: eks-a
+licensing:
+  glooMeshLicenseKey: "LICENSE"
+glooMgmtServer:
+  enabled: true
+  createGlobalWorkspace: true
+  serviceType: LoadBalancer
+  serviceOverrides:
+    metadata:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+glooUi:
+  enabled: true
+  serviceType: LoadBalancer
+  serviceOverrides:
+    metadata:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    spec:
+      loadBalancerSourceRanges: ["ADMIN_CIDR"]
+glooAgent:
+  enabled: true
+  relay:
+    serverAddress: gloo-mesh-mgmt-server.gloo-mesh:9900
+prometheus:
+  enabled: true
+redis:
+  deployment:
+    enabled: true
+telemetryCollector:
+  enabled: true
+telemetryGateway:
+  enabled: true
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+glooInsightsEngine:
+  enabled: true

@@ -1,0 +1,18 @@
+# Same policy, widened for the linked mesh: the frontend identity from EITHER
+# cluster may call catalog. Because each cluster has its own trust domain the
+# two identities are distinct principals and you list both on purpose.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog
+  namespace: shop
+spec:
+  selector:
+    matchLabels: { app: catalog }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "eks-a.local/ns/shop/sa/frontend"
+              - "eks-b.local/ns/shop/sa/frontend"

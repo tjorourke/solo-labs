@@ -1,0 +1,17 @@
+# A pod in the mesh with a ServiceAccount the catalog policy does not allow.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: rogue, namespace: shop }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rogue
+  namespace: shop
+  labels: { app: rogue }
+spec:
+  serviceAccountName: rogue
+  containers:
+    - name: curl
+      image: curlimages/curl:8.9.1
+      command: ["sleep", "infinity"]

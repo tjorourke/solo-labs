@@ -1,0 +1,15 @@
+# Gloo Platform agent on eks-b: relays to eks-a's management server and ships
+# telemetry to eks-a's telemetry gateway, both over the peered VPCs.
+# Substitute MGMT_HOST and TG_HOST (the two internal NLB hostnames).
+common:
+  cluster: eks-b
+glooAgent:
+  enabled: true
+  relay:
+    serverAddress: MGMT_HOST:9900
+telemetryCollector:
+  enabled: true
+  config:
+    exporters:
+      otlp:
+        endpoint: TG_HOST:4317

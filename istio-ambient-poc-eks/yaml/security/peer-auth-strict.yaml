@@ -1,0 +1,11 @@
+# Mesh-wide STRICT mTLS. In ambient, ztunnel already encrypts every hop between
+# mesh pods. STRICT makes the destination ztunnel REFUSE plaintext from anything
+# that is not in the mesh, which is what scenarios 1 and 5 lean on.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT

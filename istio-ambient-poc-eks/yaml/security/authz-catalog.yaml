@@ -1,0 +1,17 @@
+# L4 authorization enforced by ztunnel, no waypoint needed. Only the frontend
+# identity of THIS cluster may open a connection to catalog. The principal is
+# the SPIFFE ID minus the scheme: <trust domain>/ns/<namespace>/sa/<account>.
+# Substitute TRUST_DOMAIN (eks-a.local or eks-b.local) before applying.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog
+  namespace: shop
+spec:
+  selector:
+    matchLabels: { app: catalog }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["TRUST_DOMAIN/ns/shop/sa/frontend"]
