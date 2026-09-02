@@ -1,7 +1,7 @@
 # One gateway, many AWS accounts: AgentCore behind a single agentgateway
 
 A single enterprise agentgateway on kind invokes AWS Bedrock AgentCore runtimes in
-two different AWS accounts and two different regions: one `AgentgatewayBackend` per
+two different AWS accounts and two different regions: one `EnterpriseAgentgatewayBackend` per
 runtime, each with `spec.aws.agentCore.agentRuntimeArn` (the foreign ARN) and
 `spec.policies.auth.aws.assumeRole` (the per-account STS hop). AgentRegistry
 Enterprise deploys the agents (source mode, no ECR) but its Runtimes carry no

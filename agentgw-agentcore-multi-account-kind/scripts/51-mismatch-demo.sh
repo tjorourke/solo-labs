@@ -40,10 +40,13 @@ if [[ "${1:-}" == "revert" ]]; then
 fi
 
 step "One-time prerequisite: outbound web identity federation in both accounts"
-# The 2026.8 reconciler resolves each bound runtime's outbound identity before
-# the account check; a fresh account 404s on GetOutboundWebIdentityFederationInfo
-# until the feature is enabled. Idempotent; runs under each AgentRegistryAccess
-# role (tofu grants iam:EnableOutboundWebIdentityFederation).
+# Off in a fresh account. It does not gate the account check below, but on
+# every Runtime write the registry looks up the account's outbound federation
+# issuer (GetOutboundWebIdentityFederationInfo) to stamp AgentIdentity on the
+# Runtime; a disabled account answers 404 FeatureDisabled, the 2026.8.0 server
+# retry-loops and the Runtime sits at AgentIdentity=False. The registry never
+# enables it itself. Idempotent; runs under each AgentRegistryAccess role
+# (tofu grants iam:Get/EnableOutboundWebIdentityFederation).
 enable_fed() { # enable_fed <role-arn> <external-id>
   ( out="$(AWS_ACCESS_KEY_ID="$AR_AWS_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$AR_AWS_SECRET_ACCESS_KEY" AWS_SESSION_TOKEN= \
       aws sts assume-role --role-arn "$1" --external-id "$2" \
@@ -75,11 +78,9 @@ ok "both Runtimes bound"
 step "Watching the reconciler refuse (multiple AWS accounts behind one binding)"
 # On this build (AR 2026.8.0) the refusal surfaces in the reconciler log
 # (component gateway-irsa); newer builds also stamp a GatewayIdentityReady=
-# False / AWSAccountMismatch status condition. Check both. Prerequisite for
-# the reconciler to get this far on a fresh account pair: outbound web
-# identity federation enabled once per account
-# (aws iam enable-outbound-web-identity-federation, under the
-# AgentRegistryAccess role — tofu grants the action).
+# False / AWSAccountMismatch status condition. Check both. The check itself
+# only needs the registry to assume each bound Runtime's role; the federation
+# and AppConfig grants above keep the Runtime status clean while bound.
 FOUND=""
 for _ in $(seq 1 30); do
   OUT="$(arctl get gateway one-gateway-for-everything -o yaml 2>/dev/null || true)"

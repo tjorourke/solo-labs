@@ -2,11 +2,13 @@
 # JWT policy per portfolio. Rendered by scripts/40-gateway-config.sh with the
 # runtime ARNs captured in deploy/.env.runtimes.
 #
-# The backends use the OSS AgentgatewayBackend kind on purpose: at v2026.8.0
-# the EnterpriseAgentgatewayBackend SCHEMA accepts spec.aws but the enterprise
-# translator does not yet ("unknown backend"); the OSS kind translates fine
-# under the enterprise control plane and carries the same aws + assumeRole
-# fields. Re-test the Enterprise kind on later releases.
+# The backends use the EnterpriseAgentgatewayBackend kind, which needs the
+# v2026.8.1 charts or later: at v2026.8.0 the SCHEMA accepts spec.aws but the
+# control plane fails to translate it (status Accepted=False TranslationError
+# "unknown backend", route 500). Held on v2026.8.0? Swap to the OSS
+# AgentgatewayBackend kind (apiVersion agentgateway.dev/v1alpha1, and the
+# route backendRefs group): same aws + assumeRole fields, translates fine
+# under the enterprise control plane.
 #
 # The interesting lines are each backend's spec.aws.agentCore.agentRuntimeArn
 # (account + region ride inside the ARN; the gateway derives the regional
@@ -21,8 +23,8 @@ apiVersion: v1
 kind: Namespace
 metadata: { name: portfolio-b }
 ---
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayBackend
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
 metadata:
   name: poet
   namespace: portfolio-a
@@ -38,8 +40,8 @@ spec:
           roleArn: ${PORTFOLIO_A_INVOKE_ROLE_ARN}
           sessionNameExpression: 'jwt.preferred_username'
 ---
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayBackend
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
 metadata:
   name: quant
   namespace: portfolio-a
@@ -55,8 +57,8 @@ spec:
           roleArn: ${PORTFOLIO_A_INVOKE_ROLE_ARN}
           sessionNameExpression: 'jwt.preferred_username'
 ---
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayBackend
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
 metadata:
   name: poet
   namespace: portfolio-b
@@ -72,8 +74,8 @@ spec:
           roleArn: ${PORTFOLIO_B_INVOKE_ROLE_ARN}
           sessionNameExpression: 'jwt.preferred_username'
 ---
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayBackend
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
 metadata:
   name: quant
   namespace: portfolio-b
@@ -100,8 +102,8 @@ spec:
   rules:
     - matches: [{ path: { type: PathPrefix, value: /portfolio-a/poet } }]
       backendRefs:
-        - group: agentgateway.dev
-          kind: AgentgatewayBackend
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
           name: poet
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -115,8 +117,8 @@ spec:
   rules:
     - matches: [{ path: { type: PathPrefix, value: /portfolio-a/quant } }]
       backendRefs:
-        - group: agentgateway.dev
-          kind: AgentgatewayBackend
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
           name: quant
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -130,8 +132,8 @@ spec:
   rules:
     - matches: [{ path: { type: PathPrefix, value: /portfolio-b/poet } }]
       backendRefs:
-        - group: agentgateway.dev
-          kind: AgentgatewayBackend
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
           name: poet
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -145,8 +147,8 @@ spec:
   rules:
     - matches: [{ path: { type: PathPrefix, value: /portfolio-b/quant } }]
       backendRefs:
-        - group: agentgateway.dev
-          kind: AgentgatewayBackend
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
           name: quant
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1

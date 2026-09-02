@@ -13,11 +13,14 @@ set -Eeuo pipefail
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
 
-# Pinned: v2026.8.0 is the first chart line this lab verified to ship
+# Pinned: v2026.8.0 was the first chart line to ship
 # spec.policies.auth.aws.assumeRole (+ sessionNameExpression) and
 # spec.aws.agentCore on EnterpriseAgentgatewayBackend, and spec.env on
-# EnterpriseAgentgatewayParameters. Older charts fail schema validation.
-export AGW_VERSION="${AGW_VERSION:-v2026.8.0}"
+# EnterpriseAgentgatewayParameters, but its control plane could not translate
+# spec.aws on the Enterprise kind (fixed in v2026.8.1). v2026.8.2 verified
+# 2026-09-02 with the Enterprise kind end to end. Older charts fail schema
+# validation; v2026.8.0 needs the OSS AgentgatewayBackend kind instead.
+export AGW_VERSION="${AGW_VERSION:-v2026.8.2}"
 export AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 export AGW_CHART="${AGW_CHART:-${AGW_REGISTRY}/enterprise-agentgateway}"
 export AGW_CRDS_CHART="${AGW_CRDS_CHART:-${AGW_REGISTRY}/enterprise-agentgateway-crds}"
