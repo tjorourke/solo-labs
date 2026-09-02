@@ -31,8 +31,13 @@ export ISTIO_HELM_REPO="oci://us-docker.pkg.dev/soloio-img/istio-helm"
 export ISTIO_TAG="$SOLO_ISTIO_VERSION"          # 1.30 line keeps the -solo suffix on image tags
 
 # ── names ─────────────────────────────────────────────────────────────────────
-export CLUSTER_A="${CLUSTER_A:-eks-a}"           # kube context alias == cluster == network name
+export CLUSTER_A="${CLUSTER_A:-eks-a}"           # kube context alias == cluster name
 export CLUSTER_B="${CLUSTER_B:-eks-b}"
+# One network name for BOTH clusters: the peered VPCs are a flat network (pod
+# IPs route directly), so the mesh runs in flat-network peering mode and
+# cross-cluster data goes ztunnel to ztunnel on pod IPs, single HBONE. The
+# east-west gateways stay for the control-plane (xDS) exchange.
+export MESH_NETWORK="${MESH_NETWORK:-flat-network}"
 export TRUST_DOMAIN_A="${CLUSTER_A}.local"       # per-cluster trust domains (Solo multicluster docs)
 export TRUST_DOMAIN_B="${CLUSTER_B}.local"
 export EW_NS="istio-eastwest"

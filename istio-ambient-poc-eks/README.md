@@ -1,6 +1,6 @@
 # istio-ambient-poc-eks
 
-**A quick-start POC for Istio ambient across two EKS clusters and a VM, on Solo Enterprise for Istio: in-cluster mTLS, EKS to EKS, VM enrolment, an app that bypasses Linux networking, observability, certificate rotation.**
+**A quick-start POC for Istio ambient across two EKS clusters and a VM, on Solo Enterprise for Istio: in-cluster mTLS, EKS to EKS over flat-network peering (cross-cluster data pod IP to pod IP, single HBONE), VM enrolment, an app that bypasses Linux networking, observability, certificate rotation.**
 
 The walkthrough is the lab page (`index.html`), published at
 [masterthemesh.com](https://www.masterthemesh.com/solo/istio-ambient-poc-eks/). Every

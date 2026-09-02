@@ -62,8 +62,8 @@ install_cluster() {   # install_cluster <ctx/cluster> <trust-domain> <extra ztun
     --from-file=root-cert.pem="$CERTS/root-ca.crt" \
     --from-file=cert-chain.pem="$CERTS/${name}-chain.crt" \
     --dry-run=client -o yaml | kubectl --context "$name" apply -f - >/dev/null
-  kubectl --context "$name" label ns istio-system "topology.istio.io/network=${name}" --overwrite >/dev/null
-  ok "[$name] cacerts (intermediate + shared root), network=$name"
+  kubectl --context "$name" label ns istio-system "topology.istio.io/network=${MESH_NETWORK}" --overwrite >/dev/null
+  ok "[$name] cacerts (intermediate + shared root), network=$MESH_NETWORK"
 
   step "[$name] Helm: base / istiod / cni / ztunnel ($SOLO_ISTIO_VERSION, trust domain $td)"
   helm --kube-context "$name" upgrade -i istio-base "$ISTIO_HELM_REPO/base" \
@@ -76,7 +76,7 @@ global:
   tag: ${ISTIO_TAG}
   multiCluster:
     clusterName: ${name}
-  network: ${name}
+  network: ${MESH_NETWORK}
 istio_cni:
   enabled: true
 license:
@@ -86,6 +86,7 @@ platforms:
     enabled: true                    # multicluster peering (Enterprise licence)
 env:
   PILOT_ENABLE_IP_AUTOALLOCATE: "true"     # IPs for <svc>.<ns>.mesh.internal global hostnames
+  PEERING_ENABLE_FLAT_NETWORKS: "true"     # flat network: remote services get WorkloadEntries with direct pod IPs
   PILOT_SKIP_VALIDATE_TRUST_DOMAIN: "true" # required with a per-cluster trust domain
   DISABLE_LEGACY_MULTICLUSTER: "true"      # peering, not remote secrets
   REQUIRE_3P_TOKEN: "false"                # step 7: accept the VM's ServiceAccount token (EKS audience)
@@ -113,13 +114,14 @@ variant: distroless
 istioNamespace: istio-system
 multiCluster:
   clusterName: ${name}
-network: ${name}
+network: ${MESH_NETWORK}
 l7Telemetry:
   accessLog:
     enabled: true                    # explicit: 1.31 flips this default to false
 env:
   L7_ENABLED: "true"
   SKIP_VALIDATE_TRUST_DOMAIN: "true"
+  WAYPOINTS_ALWAYS_USE_HOSTNAME: "true"    # flat network: address waypoints by hostname, not (possibly remote) pod IP
 ${zt_extra}
 EOV
   kubectl --context "$name" -n istio-system rollout status ds/ztunnel ds/istio-cni-node --timeout=300s >/dev/null

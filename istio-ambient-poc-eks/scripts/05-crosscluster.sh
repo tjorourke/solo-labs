@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 05-crosscluster.sh — scenario 2: EKS to EKS. The global hostname, locality,
+# 05-crosscluster.sh — scenario 2: EKS to EKS. The global hostname, flat-network
 # failover to the other cluster, and identity-based policy across clusters.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 require_aws; require_contexts; require_istioctl
@@ -8,7 +8,7 @@ A="$CLUSTER_A"; B="$CLUSTER_B"
 step "Shared services the mesh publishes (from istioctl multicluster check)"
 "$ISTIOCTL" multicluster check --contexts "$A,$B" 2>/dev/null | grep -iE 'shared|mesh.internal|catalog' | head -6 || true
 
-step "[$A frontend] 6 calls to the GLOBAL hostname: local endpoints preferred"
+step "[$A frontend] 6 calls to the GLOBAL hostname: endpoints from BOTH clusters (flat network, one endpoint pool)"
 for _ in 1 2 3 4 5 6; do
   kubectl --context "$A" -n "$APP_NS" exec deploy/frontend -- curl -s -m5 http://catalog.shop.mesh.internal:8080/; echo
 done
@@ -29,7 +29,7 @@ echo "  [$B ztunnel] the inbound identity is $A's frontend, arriving through the
 kubectl --context "$B" -n istio-system logs ds/ztunnel --since=40s 2>/dev/null \
   | grep 'dst.service="catalog.shop' | grep -o 'src.identity="[^"]*"' | sort | uniq -c | tail -3 | sed 's/^/   /' || true
 
-step "[$A] scale back: traffic returns local"
+step "[$A] scale back: eks-a endpoints rejoin the pool"
 kubectl --context "$A" -n "$APP_NS" scale deploy/catalog --replicas=2 >/dev/null
 kubectl --context "$A" -n "$APP_NS" rollout status deploy/catalog --timeout=120s >/dev/null
 sleep 5

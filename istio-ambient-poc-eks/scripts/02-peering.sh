@@ -8,7 +8,7 @@ require_license; require_aws; require_contexts; require_istioctl
 for c in "$CLUSTER_A" "$CLUSTER_B"; do
   step "[$c] east-west gateway (internal NLB)"
   kubectl --context "$c" create namespace "$EW_NS" --dry-run=client -o yaml | kubectl --context "$c" apply -f - >/dev/null
-  sed "s/CLUSTER/$c/g" "$YAML_DIR/peering/eastwest-values.yaml" \
+  sed -e "s/CLUSTER/$c/g" -e "s/NETWORK/$MESH_NETWORK/g" "$YAML_DIR/peering/eastwest-values.yaml" \
     | helm --kube-context "$c" upgrade -i istio-eastwest "$ISTIO_HELM_REPO/peering" \
         -n "$EW_NS" --version "$SOLO_ISTIO_VERSION" --wait --timeout 5m -f - >/dev/null
   host="$(wait_lb_host "$c" "$EW_NS" istio-eastwest)" || die "[$c] no NLB hostname for istio-eastwest"

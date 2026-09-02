@@ -2,11 +2,11 @@
 # The gateway is a ztunnel that terminates the outer HBONE hop from the peer
 # cluster. It sits on an INTERNAL NLB: the two VPCs are peered, so nothing
 # about the mesh path is reachable from the internet.
-# Substitute CLUSTER before applying (eks-a or eks-b).
+# Substitute CLUSTER (eks-a or eks-b) and NETWORK (the shared flat network name).
 eastwest:
   create: true
   cluster: CLUSTER
-  network: CLUSTER
+  network: NETWORK
   service:
     metadata:
       annotations:
