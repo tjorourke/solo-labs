@@ -1,0 +1,44 @@
+# Agentdesktop standalone daemon configuration.
+#
+# Run with:
+#   agentdesktop daemon --config config.yaml --user
+#
+# Every top-level key below is optional except `programs`. Schema:
+#   https://github.com/agentdesktop-dev/agentdesktop/blob/main/schema/daemon-config.json
+
+# Where managed tools send model traffic, and how they authenticate to it.
+llmGateway:
+  url: http://127.0.0.1:4001
+  authentication:
+    type: oidc
+    issuer: http://127.0.0.1:5557/dex
+    clientId: agentdesktop-local
+    scopes: [openid, email, offline_access]
+    # Loopback HTTP is only acceptable because everything here is local.
+    allowInsecure: true
+
+# Which developer tools the daemon manages on this device.
+programs:
+  claudeCode:
+    useLlmGateway: true
+    companyAnnouncements: ["Managed by the platform team"]
+  codex:
+    useLlmGateway: true
+
+# Declared once here, written into each tool's own sandbox format.
+sandbox:
+  filesystem:
+    denied:
+      - ~/.ssh
+      - ~/.aws
+    writable:
+      - ~/src
+  network:
+    allowedDomains:
+      - api.anthropic.com
+      - github.com
+
+# Collected only when a controller is present to receive it.
+# tool.use.input implies tool.use and additionally captures tool arguments.
+telemetry:
+  events: [session.new, tool.use]
