@@ -100,11 +100,18 @@ require_secrets() {
   [[ -n "${AGENTGATEWAY_LICENSE_KEY:-}" ]] || die "SOLO_LICENSE_KEY (or AGENTGATEWAY_LICENSE_KEY) not set"
 }
 load_tofu_env() {
+  try_load_tofu_env || die "deploy/.env.tofu missing — run ./scripts/10-tofu.sh first"
+}
+# try_load_tofu_env — same, but RETURNS 1 instead of exiting when the generated
+# env is absent. `load_tofu_env || return 0` does not work: load_tofu_env calls
+# die, which exits the whole script, so teardown used to abort before it had
+# deleted anything at all. Teardown must always use this variant.
+try_load_tofu_env() {
   local lab_root; lab_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  [[ -f "$lab_root/deploy/.env.tofu" ]] || die "deploy/.env.tofu missing — run ./scripts/10-tofu.sh first"
+  [[ -f "$lab_root/deploy/.env.tofu" ]] || return 1
   set -a; source "$lab_root/deploy/.env.tofu"; set +a
   [[ -f "$lab_root/deploy/.env.runtimes" ]] && { set -a; source "$lab_root/deploy/.env.runtimes"; set +a; }
-  true
+  return 0
 }
 
 kc(){ kubectl --context "$CTX" "$@"; }
@@ -198,4 +205,76 @@ mint_user_token() {
   curl -s -X POST "${KEYCLOAK_ISSUER}/protocol/openid-connect/token" \
     -d grant_type=password -d client_id="$AR_CLI_CLIENT" \
     -d username="$AS_USER" -d password="$AS_PASSWORD" | jq -r '.access_token // empty'
+}
+
+# ── teardown helpers ─────────────────────────────────────────────────────────
+# The lab's own names are the source of truth for teardown, so cleanup can be
+# scoped to THIS lab's resources without depending on the generated
+# deploy/.env.runtimes (gitignored, and absent if a run died early). Other labs
+# share these accounts: never delete by "everything in the region".
+export LAB_AGENTS="${LAB_AGENTS:-poet quant}"
+export LAB_ENVS="${LAB_ENVS:-portfolio-a portfolio-b}"
+
+# AgentCore runtime names are <agent>_<env with - as _>, e.g. poet_portfolio_a.
+lab_runtime_names_for_env() {
+  local env="$1" a
+  for a in $LAB_AGENTS; do echo "${a}_${env//-/_}"; done
+}
+
+# env_var <env> <suffix> — read PORTFOLIO_{A,B}_<suffix> from deploy/.env.tofu.
+# NEVER build "role:extid:region" strings and split them on ":": role ARNs
+# contain colons, so an IFS=: read silently yields role="arn", extid="aws" and
+# the assume-role fails. That bug once made teardown a no-op that still
+# reported success while four billed runtimes stayed up.
+env_key() {
+  case "$1" in
+    portfolio-a|a|A) echo A ;;
+    portfolio-b|b|B) echo B ;;
+    *) die "unknown portfolio env '$1'" ;;
+  esac
+}
+env_var() { local n="PORTFOLIO_$(env_key "$1")_$2"; echo "${!n-}"; }
+
+# lab_profile <env> — the operator AWS CLI profile for that account, from
+# tofu/terraform.tfvars (override with PROFILE_A / PROFILE_B).
+lab_profile() {
+  local k; k="$(env_key "$1")"
+  local override="PROFILE_${k}"; [[ -n "${!override-}" ]] && { echo "${!override}"; return; }
+  local var; case "$k" in A) var=account_a_profile ;; B) var=account_b_profile ;; esac
+  local tfvars="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/tofu/terraform.tfvars"
+  [[ -f "$tfvars" ]] || return 0
+  sed -n "s/^[[:space:]]*${var}[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$tfvars" | head -1
+}
+
+# assume_env_role <env> [session] — echo "AK SK ST" for that account's
+# AgentRegistryAccess role, using the ar-control-plane static keys. Whitespace
+# separated, so the caller splits with a plain `read` and never on ":".
+assume_env_role() {
+  local env="$1" session="${2:-lab-teardown}" role extid
+  role="$(env_var "$env" AR_ROLE_ARN)"; extid="$(env_var "$env" EXTERNAL_ID)"
+  [[ -n "$role" && -n "$extid" && -n "${AR_AWS_ACCESS_KEY_ID:-}" ]] || return 1
+  ( unset AWS_PROFILE AWS_SESSION_TOKEN
+    AWS_ACCESS_KEY_ID="$AR_AWS_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$AR_AWS_SECRET_ACCESS_KEY" \
+      aws sts assume-role --role-arn "$role" --external-id "$extid" \
+        --role-session-name "$session" \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+        --output text 2>/dev/null )
+}
+
+# in_env_role <env> <cmd...> — run cmd with that account's role credentials,
+# after proving get-caller-identity matches the expected account. Guarding every
+# assumed-role subshell is mandatory here: a call that falls through to ambient
+# credentials acts on the WRONG ACCOUNT (see CLAUDE.md gotcha 9).
+in_env_role() {
+  local env="$1"; shift
+  local creds ak sk st want
+  creds="$(assume_env_role "$env")" || return 2
+  read -r ak sk st <<<"$creds"
+  [[ -n "$ak" && -n "$sk" && -n "$st" ]] || return 2
+  want="$(env_var "$env" ACCOUNT_ID)"
+  ( unset AWS_PROFILE
+    export AWS_ACCESS_KEY_ID="$ak" AWS_SECRET_ACCESS_KEY="$sk" AWS_SESSION_TOKEN="$st"
+    local got; got="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+    [[ -n "$want" && "$got" == "$want" ]] || { warn "[$env] identity guard failed (got '${got:-none}') — refusing to act"; exit 3; }
+    "$@" )
 }

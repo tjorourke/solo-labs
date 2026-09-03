@@ -59,9 +59,17 @@ cd tofu && AWS_PROFILE=$LAB_AWS_PROFILE tofu init && AWS_PROFILE=$LAB_AWS_PROFIL
 # or all of the above:
 ./scripts/run-all.sh
 
-# 2. tear it ALL down (billed infra)
+# 2. tear it ALL down (billed infra), then verify the region is clear
 ./scripts/teardown.sh
 ```
+
+`teardown.sh` deletes the LoadBalancer Services first (each is an NLB the VPC cannot be
+destroyed under), **polls until they are really gone** rather than sleeping a fixed
+interval, runs `tofu destroy`, and then re-reads the region: no EKS clusters, EC2
+instances, non-default VPCs, peerings, load balancers or NAT gateways, and an empty state
+file. It exits non-zero if any check fails or cannot be run, and lists detached EBS
+volumes, which keep billing and which `DeleteOnTermination` does not catch for
+PVC-backed volumes.
 
 `scripts/lib.sh` downloads the Solo distribution of `istioctl` matching the mesh
 version into `.state/bin/` if the one on your PATH does not match. The generated CA

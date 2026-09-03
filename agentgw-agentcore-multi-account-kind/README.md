@@ -15,8 +15,11 @@ Full write-up: `index.html` (published on the site).
 
 ## Prerequisites
 
-- Two AWS accounts with CLI profiles (admin in the "shared services" account A; the
-  account B profile only needs IAM create/attach rights).
+- Two AWS accounts with CLI profiles. Account A ("shared services") needs admin.
+  Account B needs IAM create **and delete** rights: creating an inline role policy
+  takes `iam:PutRolePolicy`, but removing one takes `iam:DeleteRolePolicy`, and a role
+  cannot be deleted while it still carries one. A permission set with create but not
+  delete brings the lab up fine and then strands two roles at teardown.
 - `tofu`, `kind`, `kubectl`, `helm`, `docker`, `aws`, `jq`, `gh` (authenticated),
   `arctl` (v2026.6.1), `gcloud` (for the Solo chart registry).
 - `SOLO_LICENSE_KEY` (enterprise agentgateway + AgentRegistry 2026.8.0), or
@@ -30,8 +33,35 @@ export SOLO_LICENSE_KEY=...
 ./scripts/quick.sh up          # tofu + kind + Keycloak + AGW + AR + runtimes + agents + routes + invoke
 ./scripts/50-cloudtrail.sh     # per-caller AssumeRole evidence in BOTH accounts
 ./scripts/51-mismatch-demo.sh  # the live AWSAccountMismatch refusal; then: ... revert
-./scripts/quick.sh teardown    # kind + AgentCore runtimes + tofu destroy
+./scripts/quick.sh teardown    # or ./scripts/teardown.sh — same thing
 ```
+
+## Teardown
+
+`scripts/teardown.sh` (what `quick.sh teardown` runs) removes everything, in the one
+order that works. tofu owns the IAM users and access keys that are the only route into
+the two portfolio accounts, so every non-tofu artefact has to go first:
+
+1. the four AgentCore runtimes (billed per invocation)
+2. their CloudWatch log groups
+3. their SDK execution roles, which AgentCore creates and tofu never sees
+4. their S3 source bundles (`bedrock-agentcore-codebuild-sources-*`)
+5. `tofu destroy`, all IAM in both accounts
+6. the kind cluster
+7. the public GitHub repo `31-agents.sh` published, after asking
+8. a verification pass that re-reads both accounts and **exits non-zero if anything is
+   left**, rather than reporting what it merely attempted
+
+Everything is scoped to this lab's own agents and runtimes, because these accounts are
+shared with other labs: nothing is deleted by "everything in the region". Preview with
+`TEARDOWN_DRY_RUN=1 ./scripts/teardown.sh`, skip the repo prompt with
+`TEARDOWN_DELETE_REPO=1`, and note that deleting the repo needs
+`gh auth refresh -h github.com -s delete_repo`.
+
+Source mode clones the agents from a **public** GitHub repo that `31-agents.sh` creates
+on your account, so teardown offers to delete it. Nothing else is left behind except
+`AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`, an empty AWS service-linked role
+that costs nothing and is re-created on demand.
 
 The numbered scripts run individually in order: `10-tofu`, `20-cluster`,
 `21-keycloak`, `22-agentgateway`, `23-ingress`, `24-agentregistry`, `30-runtimes`,

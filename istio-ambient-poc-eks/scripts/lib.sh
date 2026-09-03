@@ -75,8 +75,15 @@ require_aws() {
   [[ -n "${LAB_AWS_PROFILE:-}" ]] || die "set LAB_AWS_PROFILE=<aws profile for this lab>"
   export AWS_PROFILE="$LAB_AWS_PROFILE"
   aws sts get-caller-identity >/dev/null 2>&1 || die "AWS credentials not working for profile '$AWS_PROFILE' (aws sso login --profile $AWS_PROFILE)"
-  export AWS_REGION; AWS_REGION="$(tofu_out region)"
-  export AWS_DEFAULT_REGION="$AWS_REGION"
+  # Region comes from the tofu state, but the state is EMPTY after a destroy, and
+  # an empty AWS_REGION silently falls back to whatever the profile defaults to —
+  # which would point a verification pass at the wrong region. Fail loudly.
+  export AWS_REGION AWS_DEFAULT_REGION
+  AWS_REGION="$(tofu_out region || true)"
+  [[ -n "$AWS_REGION" ]] || AWS_REGION="${LAB_AWS_REGION:-}"
+  [[ -n "$AWS_REGION" ]] || AWS_REGION="$(sed -n '/variable "region"/,/}/s/.*default *= *"\([^"]*\)".*/\1/p' "$TOFU_DIR/variables.tf" 2>/dev/null | head -1)"
+  [[ -n "$AWS_REGION" ]] || die "cannot determine the AWS region (no tofu state) — set LAB_AWS_REGION=<region>"
+  AWS_DEFAULT_REGION="$AWS_REGION"
 }
 require_contexts() {
   for c in "$CLUSTER_A" "$CLUSTER_B"; do
@@ -108,7 +115,19 @@ require_istioctl() {
 }
 
 # ── tofu / AWS helpers ────────────────────────────────────────────────────────
-tofu_out() { tofu -chdir="$TOFU_DIR" output -raw "$1" 2>/dev/null; }
+# tofu_out <name> — a single output value, or empty + non-zero if unavailable.
+# OpenTofu prints "Warning: No outputs found" to STDOUT and still exits 0, so a
+# naive capture returns ~500 bytes of warning text rather than an empty string.
+# That once put the warning into AWS_REGION, where every following aws call
+# failed and got read as "nothing found" — a false all-clear. Reject anything
+# that is not a single clean line.
+tofu_out() {
+  local v
+  v="$(tofu -chdir="$TOFU_DIR" output -no-color -raw "$1" 2>/dev/null)" || return 1
+  case "$v" in *"Warning:"*|*"No outputs"*|*$'\n'*) return 1 ;; esac
+  [[ -n "$v" ]] || return 1
+  printf '%s' "$v"
+}
 
 # Run a shell snippet on the VM through SSM Session Manager (no SSH, no keys).
 # ssm_run "<bash commands>"  → prints stdout/stderr, returns the remote exit code.

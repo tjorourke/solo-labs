@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # quick.sh — one-shot orchestrator.
 #   up        provision AWS (tofu) + kind platform + runtimes + agents + gateway config + invoke
-#   teardown  delete the kind cluster, the 4 AgentCore runtimes, and tofu destroy both accounts
+#   teardown  delegate to teardown.sh: runtimes, log groups, execution roles,
+#             S3 source bundles, tofu destroy, kind, the published GitHub repo
 #   status    what's running where
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -9,22 +10,6 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 usage(){ echo "usage: $0 up|teardown|status" >&2; exit 1; }
-
-delete_agentcore_runtimes() { # under each account's AgentRegistryAccess role
-  load_tofu_env || return 0
-  for spec in "a:$PORTFOLIO_A_AR_ROLE_ARN:$PORTFOLIO_A_EXTERNAL_ID:$PORTFOLIO_A_REGION" \
-              "b:$PORTFOLIO_B_AR_ROLE_ARN:$PORTFOLIO_B_EXTERNAL_ID:$PORTFOLIO_B_REGION"; do
-    IFS=: read -r env role extid region <<<"$spec"
-    ( out="$(AWS_ACCESS_KEY_ID="$AR_AWS_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$AR_AWS_SECRET_ACCESS_KEY" AWS_SESSION_TOKEN= \
-        aws sts assume-role --role-arn "$role" --external-id "$extid" \
-        --role-session-name lab-teardown --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text 2>/dev/null)" || exit 0
-      export AWS_ACCESS_KEY_ID="$(awk '{print $1}' <<<"$out")" AWS_SECRET_ACCESS_KEY="$(awk '{print $2}' <<<"$out")" AWS_SESSION_TOKEN="$(awk '{print $3}' <<<"$out")"
-      for id in $(aws bedrock-agentcore-control list-agent-runtimes --region "$region" 2>/dev/null | jq -r '.agentRuntimes[]?.agentRuntimeId'); do
-        aws bedrock-agentcore-control delete-agent-runtime --region "$region" --agent-runtime-id "$id" >/dev/null 2>&1 \
-          && log "deleted AgentCore runtime $id (portfolio-$env)"
-      done )
-  done
-}
 
 case "${1:-}" in
   up)
@@ -47,15 +32,11 @@ case "${1:-}" in
     echo "  Evidence      : PROFILE_A=... PROFILE_B=... ./scripts/50-cloudtrail.sh" >&2
     ;;
   teardown)
-    step "Deleting the AgentCore runtimes in both accounts"
-    delete_agentcore_runtimes
-    step "Deleting the kind cluster"
-    kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
-    ok "cluster deleted"
-    step "tofu destroy (both accounts)"
-    ( cd "$LAB_ROOT/tofu" && tofu destroy -input=false -auto-approve ) \
-      && ok "AWS IAM destroyed" || warn "tofu destroy failed — retry manually in $LAB_ROOT/tofu"
-    warn "S3 source-bundle buckets (bedrock-agentcore-codebuild-sources-*) are retained by design — empty + delete manually if wanted"
+    # The real implementation lives in teardown.sh: it has to delete the
+    # non-tofu artefacts (runtimes, log groups, SDK execution roles, S3 source
+    # bundles) BEFORE tofu destroy removes the only credentials that can reach
+    # them, and it verifies the accounts afterwards instead of assuming.
+    exec "$SCRIPT_DIR/teardown.sh"
     ;;
   status)
     kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME" && ok "kind cluster '$CLUSTER_NAME' running" || warn "kind cluster not running"
