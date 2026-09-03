@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>MCP Tool RBAC — Inspector</title>
+  <title>MCP Tool RBAC: Inspector</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
   <link rel="stylesheet" href="/static/style.css">
@@ -19,7 +19,7 @@
         </svg>
         <div>
           <h1>MCP Tool RBAC <span class="role-tag">SEE TOOLS THROUGH A DIFFERENT USER'S EYES</span></h1>
-          <div class="sub">One MCP server. Three identities. Three different tool inventories — filtered at the gateway.</div>
+          <div class="sub">One MCP server. Three identities. Three different tool inventories: filtered at the gateway.</div>
           <div class="crumbs">
             <code>EnterpriseAgentgatewayPolicy/mcp-tool-rbac</code> &middot; <code>backend.mcp.authorization</code> &middot; CEL on <code>jwt.*</code> + <code>mcp.tool.name</code>
           </div>
@@ -43,7 +43,7 @@
 
   <main>
     {# tools-panel is HTMX-swapped on dropdown change. The first render comes
-       from the `load` trigger on the select — see hx-trigger above. #}
+       from the `load` trigger on the select, see hx-trigger above. #}
     <div id="tools-panel" class="panel">
       <div class="empty">Loading tools…</div>
     </div>
@@ -80,7 +80,7 @@
   </main>
 
   <footer>
-    Sample web app — not a Solo product. Talks to <code>rbac-gateway</code> via MCP streamable-HTTP.
+    Sample web app: not a Solo product. Talks to <code>rbac-gateway</code> via MCP streamable-HTTP.
     <br>solo-demos &middot; agentic-mcp-rbac-kind
   </footer>
 

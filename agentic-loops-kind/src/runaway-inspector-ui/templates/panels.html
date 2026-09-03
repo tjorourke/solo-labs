@@ -48,7 +48,7 @@
         when the session has been idle for {{ state.limits.session_ttl_sec if state.limits.session_ttl_sec else '10 min' }}.
       </div>
     {% else %}
-      <div class="empty">budget-extauth /state unavailable — {{ state.error or "(no error reported)" }}</div>
+      <div class="empty">budget-extauth /state unavailable, {{ state.error or "(no error reported)" }}</div>
     {% endif %}
   </div>
 
@@ -83,7 +83,7 @@
     <div class="scenario-row reset-row">
       <button class="btn-reset"
               hx-post="/reset" hx-target="#panels" hx-swap="outerHTML">
-        ↺ Reset session — zero every counter
+        ↺ Reset session, zero every counter
       </button>
       <button class="btn-refresh"
               hx-get="/panels" hx-target="#panels" hx-swap="outerHTML">
@@ -106,7 +106,7 @@
           {% if entry.role == 'scenario' %}
             <div class="msg msg-scenario">
               <div class="msg-label">scenario</div>
-              <div class="msg-body"><strong>{{ entry.label }}</strong> — {{ entry.description }}</div>
+              <div class="msg-body"><strong>{{ entry.label }}</strong>: {{ entry.description }}</div>
             </div>
           {% elif entry.role == 'note' %}
             <div class="msg msg-note">

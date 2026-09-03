@@ -17,24 +17,24 @@
         <div class="guide-step"><strong>2. Click the three green buttons</strong> (happy path) to prove the gateway is <em>selective</em>, not blanket-deny.
           Each returns a real tool result.
         </div>
-        <div class="guide-step"><strong>3. Click the four red buttons in order</strong> — each bypasses one enforcement layer:
+        <div class="guide-step"><strong>3. Click the four red buttons in order</strong>: each bypasses one enforcement layer:
           deny-by-default · args schema · risk-tier × intent · forbidden chain.
-          Read the trace below each click — the deny message tells you which layer fired.
+          Read the trace below each click: the deny message tells you which layer fired.
         </div>
-        <div class="guide-step"><strong>4. Live edit — registry as authority.</strong> In a terminal, edit the manifest:
+        <div class="guide-step"><strong>4. Live edit: registry as authority.</strong> In a terminal, edit the manifest:
           <pre>kubectl -n tool-curation edit configmap curation-manifest</pre>
           Remove <code>db_read_secret</code> from <code>approvedTools</code>.
           Within ~5s, the middle panel updates and attack 3 now returns <code>-32602 Unknown tool</code> from the gateway (the ext-auth layer never sees it).
-          No policy CR was edited by hand — the registry is the authority.
+          No policy CR was edited by hand: the registry is the authority.
         </div>
       </div>
       <div class="guide-section guide-intent">
         <div class="guide-step"><strong>About the <code>intent</code> dropdown.</strong>
           The dropdown switches between two JWTs the in-cluster issuer minted at startup.
           <strong>Both JWTs have the same <code>sub: agent</code>.</strong>
-          What differs is the <code>intent</code> claim — <em>what the agent is doing</em>, not <em>who it is</em>.
+          What differs is the <code>intent</code> claim, <em>what the agent is doing</em>, not <em>who it is</em>.
           See the JWT viewer below for the actual claims being sent.
-          This is purpose-based access control (PBAC) — distinct from role-based (RBAC) or attribute-based (ABAC).
+          This is purpose-based access control (PBAC), distinct from role-based (RBAC) or attribute-based (ABAC).
         </div>
       </div>
     </div>
@@ -66,13 +66,13 @@
     <!-- ─── LEFT: registry curated manifest ─── -->
     <div class="panel panel-registry">
       <div class="panel-bar">
-        Registry — curated manifest
+        Registry: curated manifest
         <span class="right">source of truth</span>
       </div>
       <div class="raw-caption">
         What the curation board approved. The gateway reads this (via
         <code>policy-sync</code> + the <code>description-shim</code> + the
-        <code>ext-auth</code>) — three subsystems, one source of truth.
+        <code>ext-auth</code>), three subsystems, one source of truth.
       </div>
       {% if manifest.approvedTools %}
         {% for t in manifest.approvedTools %}
@@ -101,12 +101,12 @@
     <!-- ─── MIDDLE: gateway tools/list ─── -->
     <div class="panel panel-gateway">
       <div class="panel-bar">
-        Gateway — <code>tools/list</code>
+        Gateway: <code>tools/list</code>
         <span class="right">JWT intent: <code>{{ claim }}</code></span>
       </div>
       <div class="raw-caption">
         What an agent sees when it calls <code>tools/list</code> through the
-        gateway. Should match the left panel exactly — that's the curated
+        gateway. Should match the left panel exactly: that's the curated
         contract being enforced.
       </div>
       {% if gateway_err %}
@@ -129,12 +129,12 @@
     <!-- ─── RIGHT: full upstream surface ─── -->
     <div class="panel panel-raw">
       <div class="panel-bar">
-        Upstream — full MCP surface
+        Upstream: full MCP surface
         <span class="right">approved + rejected + poisoned + late, mixed</span>
       </div>
       <div class="raw-caption">
         Direct call to the upstream MCP, no gateway, no shim. The curators
-        approved a <em>subset</em> of what exists here — everything else is
+        approved a <em>subset</em> of what exists here, everything else is
         rejected, poisoned, or appeared after curation.
       </div>
       {% if raw_err %}
@@ -164,14 +164,14 @@
   <!-- ─── tool-call buttons + trace ─── -->
   <div class="panel attack-panel">
     <div class="panel-bar">
-      Tool calls — bypass the LLM, POST <code>tools/call</code> directly
-      <span class="right">happy path (green) + attacks (red) — proves the gateway is selective</span>
+      Tool calls: bypass the LLM, POST <code>tools/call</code> directly
+      <span class="right">happy path (green) + attacks (red), proves the gateway is selective</span>
     </div>
     <div class="raw-caption">
       The <strong>top row</strong> shows the three approved tools used the
-      way an agent would normally call them — they should all return data.
+      way an agent would normally call them. They should all return data.
       The <strong>bottom row</strong> bypasses each enforcement layer in
-      turn — they should all be denied. Read the trace to see which layer
+      turn. They should all be denied. Read the trace to see which layer
       handled each call.
     </div>
 
@@ -198,7 +198,7 @@
       </button>
     </div>
 
-    <div class="allow-row-label deny">Denial scenarios · not all are attacks — read the category badge</div>
+    <div class="allow-row-label deny">Denial scenarios · not all are attacks, read the category badge</div>
     <div class="raw-caption raw-caption-inset">
       <span class="cat-pill cat-pill-attack">ATTACK</span> = genuine malicious call ·
       <span class="cat-pill cat-pill-bug">BUG</span> = legitimate tool, broken input ·
@@ -209,21 +209,21 @@
               hx-post="/attack/unapproved" hx-target="#panels" hx-swap="outerHTML"
               hx-vals='{"intent": "{{ intent }}"}'>
         <span class="cat-pill cat-pill-attack">ATTACK</span>
-        1. Deny-by-default — call <code>system_exec</code>
+        1. Deny-by-default: call <code>system_exec</code>
         <div class="attack-hint">always denied · gateway CEL / ext-auth · tool not in the curated manifest</div>
       </button>
       <button type="button" class="attack"
               hx-post="/attack/bad_args" hx-target="#panels" hx-swap="outerHTML"
               hx-vals='{"intent": "{{ intent }}"}'>
         <span class="cat-pill cat-pill-bug">BUG</span>
-        2. Args schema — <code>db_read_row({row_id:"not-a-number"})</code>
+        2. Args schema: <code>db_read_row({row_id:"not-a-number"})</code>
         <div class="attack-hint">always denied · ext-auth schema · this is what catches a buggy agent, not just an attacker</div>
       </button>
       <button type="button" class="attack"
               hx-post="/attack/wrong_intent" hx-target="#panels" hx-swap="outerHTML"
               hx-vals='{"intent": "{{ intent }}"}'>
         <span class="cat-pill cat-pill-context">CONTEXT</span>
-        3. Risk-tier — <code>db_read_secret</code> under intent <code>{{ claim }}</code>
+        3. Risk-tier: <code>db_read_secret</code> under intent <code>{{ claim }}</code>
         <div class="attack-hint">denied under intent <code>general</code> · allowed under <code>ops-secret-rotation</code> · same call, different purpose = different outcome</div>
       </button>
       <button type="button" class="attack"
@@ -231,7 +231,7 @@
               hx-vals='{"intent": "secret-rot"}'
               hx-on::before-request="document.getElementById('intent-select').value='secret-rot'">
         <span class="cat-pill cat-pill-attack">ATTACK</span>
-        4. Forbidden chain — <code>db_read_secret → http_post_external</code>
+        4. Forbidden chain: <code>db_read_secret → http_post_external</code>
         <div class="attack-hint">first call allowed, second denied · ext-auth chain rule · the textbook exfil pattern · auto-switches intent</div>
       </button>
     </div>
