@@ -8,7 +8,8 @@ Read the lab: <https://www.masterthemesh.com/solo/agentdesktop-standalone/>
 
 ## What the lab covers
 
-- What Agentdesktop is and where it sits relative to MDM.
+- The business value, with the controller fleet inventory view.
+- What Agentdesktop is and where it sits relative to MDM and the gateway.
 - Running the standalone example: Dex plus agentgateway in Docker, one YAML file,
   no Kubernetes and no controller.
 - Tool discovery, and the MCP and skill inventory that deliberately collects no
@@ -25,6 +26,7 @@ Read the lab: <https://www.masterthemesh.com/solo/agentdesktop-standalone/>
 | --- | --- |
 | `index.html` | The lab. |
 | `yaml/config.yaml` | A daemon config with `sandbox` and `telemetry` set, beyond what the upstream standalone example ships. |
+| `img/` | Screenshots and the layering diagram, from the upstream project repository (Apache 2.0). |
 
 The Dex, compose and agentgateway files come from the upstream repository under
 `examples/standalone/`, so clone that and use `yaml/config.yaml` here in place of
