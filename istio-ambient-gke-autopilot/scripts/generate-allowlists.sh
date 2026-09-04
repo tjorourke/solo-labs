@@ -20,7 +20,7 @@ set -uo pipefail
 ISTIO_VER="${ISTIO_VER:-1.30.4}"
 OUT="${OUT:-./allowlists}"
 
-# --- the four values that are not optional -----------------------------------
+# --- the four values you have to set -----------------------------------------
 #
 # profile=ambient changes ztunnel's image to :TAG-distroless and adds
 # ISTIO_META_ENABLE_HBONE, so an allowlist generated without it is silently

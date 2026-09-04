@@ -16,8 +16,8 @@ Autopilot refuses privileged workloads, and Istio ambient is two of them.
 `istio-cni` needs `NET_ADMIN`, `NET_RAW`, `SYS_PTRACE`, `SYS_ADMIN` and
 `DAC_OVERRIDE` plus write-mode hostPaths; `ztunnel` needs `NET_ADMIN`,
 `SYS_ADMIN`, `NET_RAW` and a write-mode hostPath for its socket. Neither runs as
-`privileged: true`, which surprises people: the blockers are Linux capabilities
-and hostPath.
+`privileged: true`, so the blockers are Linux capabilities and hostPath rather
+than privileged mode.
 
 The route through is Autopilot's privileged workload admission control. GKE
 Warden refuses your pod and appends the `WorkloadAllowlist` that would have
@@ -38,7 +38,7 @@ yaml/
                                                   system-node-critical. Not in Google's docs.
   01-orgpolicy-autopilot-privileged-admission.yaml
                                                   container.managed.autopilotPrivilegedAdmission
-  02-allowlistsynchronizer.yaml                   the one object you apply by hand
+  02-allowlistsynchronizer.yaml                   the one you write and apply yourself
   allowlists/                                     the two allowlists GKE generated on the
                                                   verified run. Reference only: diff yours
                                                   against them, do not upload these.
@@ -107,7 +107,7 @@ kubectl apply -f ../yaml/test/03-test-workloads.yaml
 ./health-check.sh
 ```
 
-## Four chart values that are not optional
+## The four chart values you have to set
 
 Every one of these must be identical when you generate the allowlist and when
 you install, because the first three change the rendered pod spec and the
