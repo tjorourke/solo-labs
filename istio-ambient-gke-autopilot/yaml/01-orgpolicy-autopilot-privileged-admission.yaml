@@ -1,0 +1,26 @@
+# The managed org policy that decides which allowlist paths a cluster may install
+# privileged-workload allowlists from.
+#
+# A cluster's --autopilot-privileged-admission value MUST be drawn from this
+# constraint's parameters, so your gs:// paths have to appear here before the
+# cluster will accept them.
+#
+# Keep allowAnyGKEPath: true. Setting it false makes cluster creation and updates
+# fail across the whole organisation unless every cluster passes a conforming
+# --autopilot-privileged-admission, Autopilot or not.
+#
+# Consider a directory prefix (gs://BUCKET/istio/) rather than individual object
+# paths, so an Istio version bump does not need another 20 minute cluster update.
+#
+# Substitute ORG_ID, BUCKET and ISTIO_VER, then:
+#   envsubst < 01-orgpolicy-autopilot-privileged-admission.yaml > policy.yaml
+#   gcloud org-policies set-policy policy.yaml
+name: organizations/${ORG_ID}/policies/container.managed.autopilotPrivilegedAdmission
+spec:
+  rules:
+    - enforce: true
+      parameters:
+        allowAnyGKEPath: true
+        allowPaths:
+          - gs://${BUCKET}/istio/${ISTIO_VER}/istio-cni.yaml
+          - gs://${BUCKET}/istio/${ISTIO_VER}/istio-ztunnel.yaml

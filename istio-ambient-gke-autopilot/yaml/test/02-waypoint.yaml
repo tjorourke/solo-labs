@@ -1,0 +1,23 @@
+# The L7 waypoint.
+#
+# ztunnel alone gives you L4: mutual TLS and identity-based allow/deny on ports.
+# Anything L7 (HTTP methods, paths, headers) needs a waypoint, which is an
+# ordinary Gateway with the istio-waypoint class. It is a normal Envoy pod, needs
+# no WorkloadAllowlist, and stays fully debuggable with istioctl proxy-config.
+#
+# Note the GatewayClass: istio-waypoint. If your cluster also has vendor waypoint
+# classes registered (an agentgateway install adds one), mixing them fails
+# silently.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: my-waypoint
+  namespace: my-app
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE

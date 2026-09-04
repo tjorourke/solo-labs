@@ -1,0 +1,12 @@
+# Enrolling a namespace in ambient is one label. No sidecars, and no pod restarts:
+# istio-cni captures already-running pods in place and stamps
+# ambient.istio.io/redirection=enabled on each one.
+#
+# Check that annotation before believing anything. A pod can sit in a namespace
+# labelled ambient and be entirely unmeshed.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-app
+  labels:
+    istio.io/dataplane-mode: ambient

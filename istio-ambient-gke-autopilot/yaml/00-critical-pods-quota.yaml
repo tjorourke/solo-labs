@@ -1,0 +1,33 @@
+# Autopilot gates the system-node-critical and system-cluster-critical priority
+# classes per namespace with a ResourceQuota. GKE ships one in kube-system and in
+# its own gke-managed-* namespaces, and nowhere else. A namespace without one
+# cannot run pods at those priorities, and the failure is a quota error rather
+# than an admission error:
+#
+#   Error creating: insufficient quota to match these scopes:
+#     [{PriorityClass In [system-node-critical system-cluster-critical]}]
+#
+# istio-cni and ztunnel both set priorityClassName: system-node-critical, and
+# they are right to: they are node-level infrastructure and must not be evicted
+# ahead of application workloads. So grant istio-system the same allowance GKE
+# gives kube-system, rather than downgrading Istio's priority class.
+#
+# This is separate from, and additional to, the WorkloadAllowlist mechanism.
+# Nothing in Google's privileged-workload documentation mentions it.
+# --set global.platform=gke ships an equivalent quota; this file makes the
+# dependency explicit rather than a side effect of a platform flag.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gcp-critical-pods
+  namespace: istio-system
+spec:
+  hard:
+    pods: 1G
+  scopeSelector:
+    matchExpressions:
+      - operator: In
+        scopeName: PriorityClass
+        values:
+          - system-node-critical
+          - system-cluster-critical

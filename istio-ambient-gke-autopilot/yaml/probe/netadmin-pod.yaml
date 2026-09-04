@@ -1,0 +1,29 @@
+# Smallest possible privileged workload. Apply this with --dry-run=server and the
+# generate-allowlist annotation to answer one question before you touch Istio at
+# all: does customer-owned privileged admission work in this project?
+#
+# One container, one capability, no hostPath, no host namespaces. If Warden
+# rejects this and emits an allowlist, the mechanism is available to you. If it
+# rejects it and emits nothing, you are not eligible yet and no amount of Helm
+# flags will change that.
+#
+#   kubectl apply --dry-run=server -f netadmin-pod.yaml
+#
+# Add the annotation first:
+#   cloud.google.com/generate-allowlist: "true"
+apiVersion: v1
+kind: Pod
+metadata:
+  name: allowlist-probe
+  namespace: default
+  annotations:
+    cloud.google.com/generate-allowlist: "true"
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: curlimages/curl:8.11.0
+      command: ["sh", "-c", "sleep 300"]
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]

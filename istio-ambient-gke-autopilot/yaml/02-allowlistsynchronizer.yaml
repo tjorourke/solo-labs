@@ -1,0 +1,28 @@
+# Pulls the WorkloadAllowlist files from Cloud Storage into the cluster and keeps
+# them current. GKE re-checks the bucket every 10 minutes.
+#
+# The synchroniser reads the bucket as the GKE SERVICE AGENT, not as the caller,
+# so that agent needs roles/storage.admin on the allowlist bucket (see
+# tofu/allowlist-bucket.tf). Miss that grant and the synchroniser reports an
+# error that reads like an org policy problem.
+#
+# allowlistPaths are object paths WITHIN bucketName, with no gs:// prefix. The
+# full gs:// URLs go in the cluster's --autopilot-privileged-admission flag and
+# in the container.managed.autopilotPrivilegedAdmission org policy, both of
+# which must already authorise them.
+#
+# You cannot skip this and kubectl apply a WorkloadAllowlist directly. GKE only
+# accepts them from an authorised bucket, through a synchroniser.
+#
+# Substitute PROJECT_NUMBER, BUCKET and ISTIO_VER, then:
+#   envsubst < 02-allowlistsynchronizer.yaml | kubectl apply -f -
+apiVersion: auto.gke.io/v1
+kind: AllowlistSynchronizer
+metadata:
+  name: istio-ambient
+spec:
+  projectNumber: ${PROJECT_NUMBER}
+  bucketName: ${BUCKET}
+  allowlistPaths:
+    - istio/${ISTIO_VER}/istio-cni.yaml
+    - istio/${ISTIO_VER}/istio-ztunnel.yaml

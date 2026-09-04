@@ -1,0 +1,24 @@
+# L4 policy, enforced by ztunnel. No waypoint involved.
+#
+# The selector is the SERVER workload; the rule names the CLIENT's SPIFFE
+# identity, derived from its ServiceAccount. Two clients on the same node with
+# adjacent pod IPs get different answers, which is the thing a NetworkPolicy
+# cannot express.
+#
+# Expect: health-allowed 200, health-denied 000. 000 is curl reporting that the
+# connection itself was refused, not an HTTP error.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: health-l4-allow-one-identity
+  namespace: my-app
+spec:
+  selector:
+    matchLabels:
+      app: health-server
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/my-app/sa/health-allowed
