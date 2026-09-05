@@ -137,6 +137,32 @@ kubectl apply -f ../yaml/test/03-test-workloads.yaml
 ./health-check.sh
 ```
 
+## Sizing: Autopilot reserves 500m for anything you do not size
+
+Not an Istio problem, but it will bite you on the same cluster.
+
+Autopilot cannot run a container with no `resources.requests`: it injects
+**500m CPU and 2Gi memory** per container and reserves them. On a normal GCP
+project nobody notices. On a quota-limited one it is the difference between the
+rest of your stack fitting and not, and the failure arrives much later as
+
+```
+FailedScaleUp: ... GCE quota exceeded
+```
+
+naming whichever pod was unlucky, not the unsized ones that consumed the budget.
+
+Set `resources.requests` on everything you install. Controllers and webhooks are
+happy with `50m / 128Mi`; most of them idle around `1m`.
+
+**The exception is istio-cni and ztunnel.** Both charts already ship sensible
+requests (100m and 200m), so there is nothing to reclaim -- and a
+`WorkloadAllowlist` pins the container spec, resources included. Change either
+one and the pod stops matching the allowlist, and Warden rejects it citing
+capabilities and hostPath while saying nothing about resources. If you must
+change them, regenerate the allowlist and re-authorise the paths, which is
+another ~20 minute cluster update.
+
 ## Two failures that look like something else
 
 **"No allowlist was generated" usually means istio-system is missing.** The
