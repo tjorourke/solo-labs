@@ -61,6 +61,14 @@ kubectl version -o json >/dev/null 2>&1 || die "cannot reach the cluster; check 
 # trying one and falling back to the other on failure can leave a file named ''.
 if sed --version >/dev/null 2>&1; then SED_INPLACE=(-i); else SED_INPLACE=(-i ''); fi
 
+# The dry-run is a SERVER dry-run, so every object in the chart is validated
+# against the live API -- including the namespaced ones. On a cluster that does
+# not have istio-system yet (which is every cluster before you install Istio,
+# and therefore the normal case here) the DaemonSet fails with
+# "namespaces not found", Warden never evaluates it, and NO allowlist is
+# emitted. Create the namespace first; install-ambient.sh is happy to reuse it.
+kubectl create namespace istio-system >/dev/null 2>&1 || true
+
 mkdir -p "$OUT"
 helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
 helm repo update istio >/dev/null 2>&1 || true
@@ -100,20 +108,31 @@ for CHART in cni ztunnel; do
   fi
   rm -f "$RENDER.err"
 
-  kubectl apply --dry-run=server -f "$RENDER" 2>&1 \
-    | sed -n '/^apiVersion: auto.gke.io/,$p' > "$NEW"
+  RAW="$OUT/.$NAME.raw"
+  kubectl apply --dry-run=server -f "$RENDER" > "$RAW" 2>&1 || true
+  sed -n '/^apiVersion: auto.gke.io/,$p' "$RAW" > "$NEW"
   rm -f "$RENDER"
 
   if [[ ! -s "$NEW" ]]; then
-    # An empty result means the dry-run was ADMITTED, so Warden emitted nothing.
-    # That normally means an allowlist for this workload is already installed.
-    # Do not overwrite the existing file: it is very likely the one making that
-    # true. Staging to a temp file first is what makes this safe.
-    warn "$NAME: nothing emitted, so the workload was admitted. Keeping the existing file."
-    [[ -s "$OUT/$NAME.yaml" ]] || warn "  and there is no previous file for $NAME"
-    rm -f "$NEW"
-    continue
+    # Empty output has more than one cause and they are NOT interchangeable.
+    # Only treat it as "admitted" when the DaemonSet actually got through --
+    # anything else is an error, and silently keeping a previous file then
+    # uploads an allowlist that pins an image you are not installing. The
+    # resulting rejection blames capabilities and hostPath and says nothing
+    # about the image, which is a genuinely bad afternoon.
+    if grep -qE 'daemonset\.apps/\S+ (created|configured|unchanged) \(server dry run\)' "$RAW"; then
+      warn "$NAME: admitted by an installed allowlist. Keeping the existing file."
+      [[ -s "$OUT/$NAME.yaml" ]] || warn "  and there is no previous file for $NAME"
+      rm -f "$NEW" "$RAW"
+      continue
+    fi
+    warn "$NAME: the dry-run neither emitted an allowlist nor admitted the"
+    warn "DaemonSet. Output:"
+    sed 's/^/    /' "$RAW" | tail -15 >&2
+    rm -f "$NEW" "$RAW"
+    die "could not generate the allowlist for $NAME"
   fi
+  rm -f "$RAW"
 
   # GKE timestamps the allowlist name, so a regeneration would install a SECOND
   # allowlist rather than replacing the first. Give it a stable name.

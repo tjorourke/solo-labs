@@ -101,11 +101,18 @@ Or step by step, which is what the page walks through:
 # 1. bucket, plus the grant for the GKE service agent (see tofu/, or the page's step 1)
 
 # 2. generate the allowlists from a Warden refusal, then upload
+#    istio-system must EXIST first: this is a server-side dry-run, so the
+#    DaemonSet is validated against the live API and fails with "namespaces
+#    not found" otherwise — Warden never sees it and emits no allowlist.
+kubectl create namespace istio-system
 cd scripts && ./generate-allowlists.sh
 gcloud storage cp allowlists/istio-cni.yaml     "gs://${BUCKET}/istio/${ISTIO_VER}/istio-cni.yaml"
 gcloud storage cp allowlists/istio-ztunnel.yaml "gs://${BUCKET}/istio/${ISTIO_VER}/istio-ztunnel.yaml"
 
 # 3. org policy, then 4. the cluster flag (this one takes ~20 min and fails once on propagation)
+#    Wait for the cluster to be RUNNING first. A freshly created cluster is
+#    still RECONCILING and refuses updates with
+#    "FAILED_PRECONDITION: Cluster is running incompatible operation".
 #    Name each object in full. A gs://BUCKET/istio/ prefix is accepted here and
 #    then refused at step 5 -- the check is exact string membership.
 gcloud container clusters update "$CLUSTER" --location "$REGION" \
@@ -129,6 +136,20 @@ kubectl apply -f ../yaml/test/02-waypoint.yaml
 kubectl apply -f ../yaml/test/03-test-workloads.yaml
 ./health-check.sh
 ```
+
+## Two failures that look like something else
+
+**"No allowlist was generated" usually means istio-system is missing.** The
+generator is a server-side dry-run, so an absent namespace fails the DaemonSet
+before Warden ever evaluates it. Nothing is emitted, and a script that treats
+empty output as "the workload was admitted" will then quietly reuse whatever
+allowlist file it already had — pinning an image you are not installing. The
+admission failure that follows blames capabilities and hostPath and says
+nothing about the image.
+
+**"Cluster is running incompatible operation" is not a misconfiguration.** A
+cluster that was just created, or that GKE is running maintenance on, refuses
+`clusters update` until it is RUNNING again. Wait, then retry.
 
 ## The four chart values you have to set
 

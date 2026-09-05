@@ -74,16 +74,43 @@ PATHS="gke://*"
 for f in istio-cni istio-ztunnel; do
   PATHS="${PATHS},gs://${BUCKET}/istio/${ISTIO_VER}/${f}.yaml"
 done
+# A cluster will not accept an update while another operation is in flight:
+#   FAILED_PRECONDITION: Cluster is running incompatible operation <id>
+# Straight after creation that is the normal state, not an error, so wait for
+# RUNNING rather than failing the run.
+wait_cluster_running() {
+  local i st
+  for i in $(seq 1 60); do
+    st="$(gcloud container clusters describe "$CLUSTER" --location "$REGION" \
+          --project "$PROJECT" --format='value(status)' 2>/dev/null)"
+    [[ "$st" == "RUNNING" ]] && return 0
+    [[ "$i" -eq 1 ]] && echo "    cluster is $st; waiting for it to settle"
+    sleep 30
+  done
+  return 1
+}
+wait_cluster_running || echo "    still not RUNNING; trying the update anyway"
+
 echo "    ~20 minutes, and the first attempt usually fails on propagation"
-for attempt in 1 2 3; do
+for attempt in 1 2 3 4; do
   if gcloud container clusters update "$CLUSTER" --location "$REGION" --project "$PROJECT" \
        --autopilot-privileged-admission="$PATHS" 2>/tmp/upd.err; then
     ok "cluster authorises the allowlist paths"; break
   fi
-  grep -q 'CUSTOM_ORG_POLICY_DENIED\|propagat' /tmp/upd.err 2>/dev/null \
-    || { sed 's/^/    /' /tmp/upd.err >&2; die "cluster update failed"; }
-  echo "    attempt $attempt hit org-policy propagation; waiting 120s"
-  sleep 120
+  if grep -q 'CUSTOM_ORG_POLICY_DENIED\|propagat' /tmp/upd.err 2>/dev/null; then
+    echo "    attempt $attempt hit org-policy propagation; waiting 120s"
+    sleep 120
+    continue
+  fi
+  # GKE runs its own maintenance operations, so this race cannot be removed,
+  # only waited out.
+  if grep -qE 'running incompatible operation|FAILED_PRECONDITION' /tmp/upd.err 2>/dev/null; then
+    echo "    attempt $attempt found the cluster busy; waiting for it to finish"
+    wait_cluster_running || true
+    continue
+  fi
+  sed 's/^/    /' /tmp/upd.err >&2
+  die "cluster update failed"
 done
 
 hdr "5. AllowlistSynchronizer"
