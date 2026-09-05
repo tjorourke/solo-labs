@@ -48,6 +48,8 @@ yaml/
   test/                                           namespace enrolment, waypoint, two client
                                                   identities, L4 and L7 AuthorizationPolicy
 scripts/
+  00-cluster.sh                                   creates the Autopilot cluster
+  e2e.sh                                          the whole sequence, 0 -> 8
   generate-allowlists.sh                          step 2 of the write-up
   install-ambient.sh                              steps 6 and 7, with preflight assertions
   health-check.sh                                 step 9, as six pass/fail checks
@@ -56,8 +58,12 @@ tofu/
                                                   people miss
 ```
 
-Standing up the Autopilot cluster is out of scope here. These start from one you
-already have.
+`scripts/00-cluster.sh` creates the Autopilot cluster, and `scripts/e2e.sh`
+runs the whole sequence from nothing to proven enforcement. Neither replaces the
+page: every step is a plain `gcloud`, `kubectl` or `helm` command, written out
+below and on the page, and reading them is the point. The scripts exist so you
+can get a working environment quickly, and so the sequence can be re-checked
+after an Istio bump.
 
 ## Substitutions
 
@@ -80,6 +86,16 @@ envsubst < yaml/02-allowlistsynchronizer.yaml | kubectl apply -f -
 ```
 
 ## Order
+
+All of it at once, from no cluster:
+
+```bash
+export CLUSTER=my-autopilot REGION=europe-west4 PROJECT=my-project
+export ORG_ID=123456789012 PROJECT_NUMBER=210987654321 BUCKET=my-allowlists
+./scripts/e2e.sh
+```
+
+Or step by step, which is what the page walks through:
 
 ```bash
 # 1. bucket, plus the grant for the GKE service agent (see tofu/, or the page's step 1)
