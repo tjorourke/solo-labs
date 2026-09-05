@@ -9,8 +9,17 @@
 # fail across the whole organisation unless every cluster passes a conforming
 # --autopilot-privileged-admission, Autopilot or not.
 #
-# Consider a directory prefix (gs://BUCKET/istio/) rather than individual object
-# paths, so an Istio version bump does not need another 20 minute cluster update.
+# Name every object individually, as below. A trailing-slash directory prefix
+# looks like it works -- both the org policy and the cluster flag accept
+# gs://BUCKET/istio/ without complaint -- but the check is exact string
+# membership, so the AllowlistSynchronizer is then refused:
+#
+#   [denied by autopilot-allowlist-synchronizer-limitation]: Unauthorized
+#   allowlist path(s) 'gs://BUCKET/istio/1.30.4/istio-cni.yaml', ...: not found
+#   in authorized path list 'gke://*', 'gs://BUCKET/istio/1.30.4/'.
+#
+# So an Istio version bump does cost an org policy change plus another ~20 minute
+# cluster update, and no bucket layout avoids it.
 #
 # Substitute ORG_ID, BUCKET and ISTIO_VER, then:
 #   envsubst < 01-orgpolicy-autopilot-privileged-admission.yaml > policy.yaml

@@ -19,7 +19,8 @@ ISTIO_PLATFORM="${ISTIO_PLATFORM:-gke}"
 ISTIO_CNI_BIN_DIR="${ISTIO_CNI_BIN_DIR:-/home/kubernetes/bin}"
 ISTIO_APPARMOR_ANNOTATION="${ISTIO_APPARMOR_ANNOTATION:-false}"
 AMBIENT_NAMESPACES="${AMBIENT_NAMESPACES:-}"
-YAML_DIR="${YAML_DIR:-../yaml}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+YAML_DIR="${YAML_DIR:-$HERE/../yaml}"
 
 die() { printf '\033[31mERROR\033[0m %s\n' "$*" >&2; exit 1; }
 ok()  { printf '\033[32m  ok\033[0m %s\n' "$*"; }
@@ -33,15 +34,27 @@ kubectl version -o json >/dev/null 2>&1 || die "cannot reach the cluster"
 printf 'context: %s\n' "$CTX"
 
 step "Preflight: the allowlists must already be installed"
-N="$(kubectl get workloadallowlists --no-headers 2>/dev/null | wc -l | tr -d ' ')"
-if [[ "${N:-0}" -lt 2 ]]; then
-  die "found ${N:-0} WorkloadAllowlists, expected at least 2.
-    Run ./generate-allowlists.sh, upload to the bucket, add the gs:// paths to
-    the container.managed.autopilotPrivilegedAdmission org policy and to the
+# Assert by NAME, not by count. Counting admits any two WorkloadAllowlists,
+# including ones a different synchroniser installed, and the cniBinDir check
+# below needs these two specifically. generate-allowlists.sh stamps these names
+# on deliberately, replacing GKE's timestamped default.
+MISSING=""
+for want in "istio-cni-$ISTIO_VER" "istio-ztunnel-$ISTIO_VER"; do
+  kubectl get workloadallowlist "$want" >/dev/null 2>&1 || MISSING="$MISSING $want"
+done
+if [[ -n "$MISSING" ]]; then
+  printf 'installed:\n' >&2
+  kubectl get workloadallowlists >&2 2>/dev/null || true
+  die "missing WorkloadAllowlist(s):$MISSING
+    Run ./generate-allowlists.sh, upload to the bucket, add the gs:// object
+    paths (exact, not a directory prefix) to the
+    container.managed.autopilotPrivilegedAdmission org policy and to the
     cluster's --autopilot-privileged-admission, then apply
-    $YAML_DIR/02-allowlistsynchronizer.yaml."
+    $YAML_DIR/02-allowlistsynchronizer.yaml and give it up to 10 minutes.
+    If they never appear, read the synchroniser's own status:
+      kubectl get allowlistsynchronizer istio-ambient -o yaml | sed -n '/^status:/,\$p'"
 fi
-ok "$N WorkloadAllowlists installed"
+ok "istio-cni-$ISTIO_VER and istio-ztunnel-$ISTIO_VER installed"
 kubectl get workloadallowlists
 
 # Assert the installed allowlist expects the same CNI directory we are about to

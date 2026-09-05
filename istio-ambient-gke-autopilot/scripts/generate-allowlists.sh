@@ -57,13 +57,16 @@ command -v helm    >/dev/null || die "helm not found"
 command -v kubectl >/dev/null || die "kubectl not found"
 kubectl version -o json >/dev/null 2>&1 || die "cannot reach the cluster; check your kubeconfig context"
 
+# BSD sed needs an argument to -i, GNU sed must not have one. Decide once:
+# trying one and falling back to the other on failure can leave a file named ''.
+if sed --version >/dev/null 2>&1; then SED_INPLACE=(-i); else SED_INPLACE=(-i ''); fi
+
 mkdir -p "$OUT"
 helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
 helm repo update istio >/dev/null 2>&1 || true
 
 for CHART in cni ztunnel; do
   NAME="istio-$CHART"
-  [[ "$CHART" == "ztunnel" ]] && NAME="istio-ztunnel"
   step "Generating the allowlist for $NAME $ISTIO_VER"
   NEW="$OUT/.$NAME.new"
 
@@ -76,7 +79,12 @@ for CHART in cni ztunnel; do
   #
   # --dry-run=server is essential. --dry-run=client never reaches the webhook
   # and produces nothing.
-  helm template "istio-$CHART" "istio/$CHART" --version "$ISTIO_VER" \
+  # Render to a file first rather than straight into the pipe. If helm fails --
+  # no repo, a bad --version, a values error -- the pipeline still succeeds with
+  # empty input, and the empty result below would be read as "Warden admitted
+  # it". That is the exact opposite of what happened, so separate the two.
+  RENDER="$OUT/.$NAME.rendered"
+  if ! helm template "istio-$CHART" "istio/$CHART" --version "$ISTIO_VER" \
       -n istio-system \
       --set profile="$ISTIO_PROFILE" \
       --set global.platform="$ISTIO_PLATFORM" \
@@ -84,9 +92,17 @@ for CHART in cni ztunnel; do
       --set cni.useAppArmorAnnotation="$ISTIO_APPARMOR_ANNOTATION" \
       --set-string cni.podAnnotations."cloud\.google\.com/generate-allowlist"=true \
       --set-string podAnnotations."cloud\.google\.com/generate-allowlist"=true \
-      2>/dev/null \
-    | kubectl apply --dry-run=server -f - 2>&1 \
+      > "$RENDER" 2>"$RENDER.err"; then
+    warn "helm template failed for istio/$CHART $ISTIO_VER:"
+    sed 's/^/    /' "$RENDER.err" >&2
+    rm -f "$RENDER" "$RENDER.err"
+    die "could not render the chart, so no allowlist could be generated"
+  fi
+  rm -f "$RENDER.err"
+
+  kubectl apply --dry-run=server -f "$RENDER" 2>&1 \
     | sed -n '/^apiVersion: auto.gke.io/,$p' > "$NEW"
+  rm -f "$RENDER"
 
   if [[ ! -s "$NEW" ]]; then
     # An empty result means the dry-run was ADMITTED, so Warden emitted nothing.
@@ -101,8 +117,7 @@ for CHART in cni ztunnel; do
 
   # GKE timestamps the allowlist name, so a regeneration would install a SECOND
   # allowlist rather than replacing the first. Give it a stable name.
-  sed -i '' "s|^\\( *\\)name: allowlist-[0-9a-zt.-]*\$|\\1name: $NAME-$ISTIO_VER|" "$NEW" 2>/dev/null \
-    || sed -i "s|^\\( *\\)name: allowlist-[0-9a-zt.-]*\$|\\1name: $NAME-$ISTIO_VER|" "$NEW"
+  sed "${SED_INPLACE[@]}" "s|^\\( *\\)name: allowlist-[0-9a-zt.-]*\$|\\1name: $NAME-$ISTIO_VER|" "$NEW"
 
   mv "$NEW" "$OUT/$NAME.yaml"
   ok "wrote $OUT/$NAME.yaml"

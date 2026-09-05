@@ -90,12 +90,19 @@ gcloud storage cp allowlists/istio-cni.yaml     "gs://${BUCKET}/istio/${ISTIO_VE
 gcloud storage cp allowlists/istio-ztunnel.yaml "gs://${BUCKET}/istio/${ISTIO_VER}/istio-ztunnel.yaml"
 
 # 3. org policy, then 4. the cluster flag (this one takes ~20 min and fails once on propagation)
+#    Name each object in full. A gs://BUCKET/istio/ prefix is accepted here and
+#    then refused at step 5 -- the check is exact string membership.
 gcloud container clusters update "$CLUSTER" --location "$REGION" \
   --autopilot-privileged-admission="gke://*,gs://${BUCKET}/istio/${ISTIO_VER}/istio-cni.yaml,gs://${BUCKET}/istio/${ISTIO_VER}/istio-ztunnel.yaml"
 
-# 5. the synchroniser, and confirm the allowlists appear
+# 5. the synchroniser, and confirm the allowlists appear (GKE re-reads every 10 min)
 envsubst < yaml/02-allowlistsynchronizer.yaml | kubectl apply -f -
 kubectl get workloadallowlists
+
+#    If they never appear, read the synchroniser's own status rather than
+#    guessing. A missing service-agent grant on the bucket reports here, and it
+#    reads like an org policy problem if you only look at the org policy.
+kubectl get allowlistsynchronizer istio-ambient -o yaml | sed -n '/^status:/,$p'
 
 # 6 + 7. quota and Istio
 ./install-ambient.sh

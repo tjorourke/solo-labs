@@ -29,7 +29,8 @@ set -uo pipefail
 
 NS="${NS:-my-app}"
 WP="${WP:-my-waypoint}"
-YAML_DIR="${YAML_DIR:-../yaml/test}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+YAML_DIR="${YAML_DIR:-$HERE/../yaml/test}"
 SVC="health-server.${NS}.svc.cluster.local:8080"
 
 PASS=0; FAIL=0
@@ -69,16 +70,32 @@ done
 step "2. Workloads captured by istio-cni"
 kubectl -n "$NS" get pods \
   -o custom-columns='POD:.metadata.name,REDIRECTION:.metadata.annotations.ambient\.istio\.io/redirection'
-UNCAPTURED="$(kubectl -n "$NS" get pods -o json 2>/dev/null \
-  | grep -c '"ambient.istio.io/redirection": "enabled"')"
-[[ "${UNCAPTURED:-0}" -gt 0 ]] \
-  && ok "$UNCAPTURED pod(s) carry ambient.istio.io/redirection=enabled" \
-  || bad "no pod in $NS is captured; the namespace label alone is not enough"
+# Read the annotation with jsonpath rather than grepping the JSON text: the
+# text form depends on kubectl's key/value spacing. And compare captured against
+# TOTAL, because partial capture -- some pods meshed, some not -- is the failure
+# this check exists to catch, and "at least one" would pass straight through it.
+TOTAL="$(kubectl -n "$NS" get pods --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+CAPTURED="$(kubectl -n "$NS" get pods \
+  -o jsonpath='{range .items[*]}{.metadata.annotations.ambient\.istio\.io/redirection}{"\n"}{end}' 2>/dev/null \
+  | grep -c '^enabled$')"
+if [[ "${TOTAL:-0}" -eq 0 ]]; then
+  bad "no pods in $NS; apply $YAML_DIR/03-test-workloads.yaml first"
+elif [[ "${CAPTURED:-0}" -eq "$TOTAL" ]]; then
+  ok "$CAPTURED/$TOTAL pods carry ambient.istio.io/redirection=enabled"
+else
+  bad "only ${CAPTURED:-0}/$TOTAL pods in $NS are captured; the namespace label alone is not enough"
+fi
 
 step "3. mTLS: ztunnel reports peer SPIFFE identities"
 # Scraped from another pod, because exec into ztunnel is refused on Autopilot.
-ZIP="$(kubectl -n istio-system get pod -l app=ztunnel -o jsonpath='{.items[0].status.podIP}' 2>/dev/null)"
+# ztunnel is a DaemonSet and its metrics are per-instance, so the connection we
+# are about to make is recorded by the ztunnel on the CLIENT's node. Taking
+# items[0] is a 1-in-N guess on a multi-node cluster.
 CP="$(client_pod health-allowed)"
+CNODE="$(kubectl -n "$NS" get pod "$CP" -o jsonpath='{.spec.nodeName}' 2>/dev/null)"
+ZIP="$(kubectl -n istio-system get pod -l app=ztunnel \
+  --field-selector "spec.nodeName=$CNODE" \
+  -o jsonpath='{.items[0].status.podIP}' 2>/dev/null)"
 curl_status health-allowed >/dev/null 2>&1   # generate one connection first
 PRINCIPALS="$(kubectl -n "$NS" exec "$CP" -c client -- \
   curl -s -m 10 "http://${ZIP}:15020/metrics" 2>/dev/null \
@@ -94,25 +111,40 @@ step "4. L4 policy, enforced by ztunnel"
 BASE_A="$(curl_status health-allowed)"; BASE_D="$(curl_status health-denied)"
 echo "     baseline: allowed=$BASE_A denied=$BASE_D"
 kubectl apply -f "$YAML_DIR/04-l4-policy.yaml" >/dev/null
-sleep 8
-L4_A="$(curl_status health-allowed)"; L4_D="$(curl_status health-denied)"
+for _ in $(seq 1 20); do
+  L4_A="$(curl_status health-allowed)"; L4_D="$(curl_status health-denied)"
+  [[ "$L4_A" == "200" && "$L4_D" == "000" ]] && break
+  sleep 3
+done
 [[ "$L4_A" == "200" && "$L4_D" == "000" ]] \
   && ok "allowed=$L4_A denied=$L4_D, and 000 means the connection was refused" \
   || bad "expected allowed=200 denied=000, got allowed=$L4_A denied=$L4_D"
 
 step "5. L7 policy, enforced by the waypoint"
+# A cold waypoint takes longer to program than any fixed sleep, and when it does
+# the failure looks like "the L7 policy did not work". Wait on the Gateway.
+kubectl -n "$NS" wait --for=condition=Programmed "gateway/$WP" --timeout=180s >/dev/null 2>&1 \
+  || warn "gateway/$WP is not Programmed; check: kubectl -n $NS describe gateway $WP"
 kubectl -n "$NS" label service health-server "istio.io/use-waypoint=$WP" --overwrite >/dev/null
 kubectl apply -f "$YAML_DIR/05-l7-policy.yaml" >/dev/null
-sleep 10
-GETC="$(curl_status health-allowed GET)"; DELC="$(curl_status health-allowed DELETE)"
+# Attaching a service to a waypoint is not instant either. Poll for the expected
+# state rather than guessing a sleep, and fall through with whatever we last saw.
+for _ in $(seq 1 20); do
+  GETC="$(curl_status health-allowed GET)"; DELC="$(curl_status health-allowed DELETE)"
+  [[ "$GETC" == "200" && "$DELC" == "403" ]] && break
+  sleep 3
+done
 [[ "$GETC" == "200" && "$DELC" == "403" ]] \
   && ok "GET=$GETC DELETE=$DELC, and 403 with the connection intact means L7 decided" \
   || bad "expected GET=200 DELETE=403, got GET=$GETC DELETE=$DELC"
 
 step "6. Removing the policy restores traffic"
 kubectl -n "$NS" delete authorizationpolicy health-l7-deny-methods >/dev/null 2>&1
-sleep 8
-DEL_AFTER="$(curl_status health-allowed DELETE)"
+for _ in $(seq 1 10); do
+  DEL_AFTER="$(curl_status health-allowed DELETE)"
+  [[ "$DEL_AFTER" == "200" ]] && break
+  sleep 3
+done
 [[ "$DEL_AFTER" == "200" ]] \
   && ok "DELETE=$DEL_AFTER, so the deny was the policy" \
   || bad "expected DELETE=200 after removing the policy, got $DEL_AFTER"
