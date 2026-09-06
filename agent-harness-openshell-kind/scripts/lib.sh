@@ -45,7 +45,10 @@ export GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
 
 # kagent OSS — anonymous OCI pull, no auth. AgentHarness CRD landed in 0.9.2;
 # empty version = chart default (currently 0.9.x line).
-export KAGENT_VERSION="${KAGENT_VERSION:-}"
+# Pinned to the matrix value. Left empty this installs whatever is latest, which
+# is how spec.network vanished from the AgentHarness CRD under a lab that had
+# been verified against it.
+export KAGENT_VERSION="${KAGENT_VERSION:-${KAGENT_ENT_VERSION:-0.5.6}}"
 export KAGENT_CRDS_CHART="${KAGENT_CRDS_CHART:-oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds}"
 export KAGENT_CHART="${KAGENT_CHART:-oci://ghcr.io/kagent-dev/kagent/helm/kagent}"
 
