@@ -68,9 +68,17 @@ export OPENSHELL_NS="${OPENSHELL_NS:-openshell}"
 # kagent controller can target (openshell.openshell.svc.cluster.local:8080).
 export OPENSHELL_FULLNAME="${OPENSHELL_FULLNAME:-openshell}"
 # The agent-sandbox controller (sandboxes.agents.x-k8s.io) OpenShell builds on.
-# Pinned rather than tracking latest: v1.0.1 renamed the release asset from
-# manifest.yaml to sandbox.yaml, and a floating URL turned that into a 404 mid-run.
-export AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.1}"
+# Pinned rather than tracking latest, for two separate reasons:
+#   - v1.0.1 renamed the release asset from manifest.yaml to sandbox.yaml, so a
+#     floating URL turns into a 404 the moment upstream cuts that release.
+#   - v1.0.0 dropped the v1alpha1 served version and now serves only v1beta1.
+#     OpenShell 0.0.49 creates its Sandbox through v1alpha1, so on v1.0.x the
+#     Kubernetes API answers "404 page not found" and the harness surfaces it as
+#     `CreateSandbox ... ApiError: "404 page not found"`, which reads like an
+#     OpenShell fault rather than a missing API version.
+# v0.5.6 is the newest release that still serves v1alpha1 and already uses the
+# sandbox.yaml asset name. Revisit when OpenShell moves to v1beta1.
+export AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v0.5.6}"
 export AGENT_SANDBOX_MANIFEST="${AGENT_SANDBOX_MANIFEST:-https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/sandbox.yaml}"
 
 # The gRPC target the kagent controller uses to reach the OpenShell gateway.
