@@ -31,6 +31,12 @@ kc -n "$KEYCLOAK_NS" rollout status statefulset/keycloak --timeout=300s >/dev/nu
 ok "Keycloak up"
 
 step "Ingress routes for Keycloak + AgentRegistry"
+# The routes go in before their backends so the host can resolve the names the
+# moment phase 04 installs the charts. Two of them live in namespaces that phase
+# 04 owns, so create those here or the apply fails on a missing namespace.
+for __ns in "$SOLO_MGMT_NS" agentregistry-system; do
+  kc create namespace "$__ns" --dry-run=client -o yaml | kc apply -f - >/dev/null
+done
 sed "s/__LB__/${LB}/g" "$LAB_ROOT/yaml/agentgateway/01-platform-routes.yaml" \
   | kc apply -f - >/dev/null
 ok "HTTPRoutes applied (the agentregistry route resolves once phase 04 installs it)"
