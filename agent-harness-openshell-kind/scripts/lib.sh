@@ -48,7 +48,14 @@ export GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
 # Pinned to the matrix value. Left empty this installs whatever is latest, which
 # is how spec.network vanished from the AgentHarness CRD under a lab that had
 # been verified against it.
-export KAGENT_VERSION="${KAGENT_VERSION:-${KAGENT_OSS_VERSION:-0.10.0}}"
+# Hard pin, deliberately not a ${VAR:-default}: versions.env is sourced above, so
+# a default could never win. kagent OSS 0.10.0 made AgentHarness spec.substrate a
+# required field, which ties the harness to an Agent Substrate WorkerPool. 0.9.9
+# is the last release where an AgentHarness needs only spec.backend, which is what
+# this lab demonstrates. Revisit when Substrate is GA and the lab can install a
+# WorkerPool of its own.
+KAGENT_VERSION="0.9.9"
+export KAGENT_VERSION
 export KAGENT_CRDS_CHART="${KAGENT_CRDS_CHART:-oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds}"
 export KAGENT_CHART="${KAGENT_CHART:-oci://ghcr.io/kagent-dev/kagent/helm/kagent}"
 

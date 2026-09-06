@@ -3,13 +3,14 @@
 # no runtime baked in — the backend owns the environment's lifecycle and kagent
 # surfaces it in the API/UI next to standard agents.
 #
-# Verified against the installed CRD (kagent.dev/v1alpha2):
-#   - spec.backend enum is openclaw | hermes
-#   - there is no spec.network here any more. Outbound allow-listing moved off
-#     AgentHarness; SandboxAgent carries it as spec.sandbox.network.allowedDomains,
-#     and the harness inherits its egress from the substrate worker pool. In-cluster
-#     API access was never an egress hop, so kubectl from inside the sandbox still
-#     works once RBAC is granted (04-harness.sh).
+# Verified against the installed CRD (kagent.dev/v1alpha2, kagent OSS 0.9.9):
+#   - spec.backend is the only required field, enum openclaw | nemoclaw | hermes
+#   - spec.network is available for outbound allow-listing and left unset here, so
+#     the harness takes the backend's default egress. In-cluster API access is not
+#     an egress hop, so kubectl from inside the sandbox works once RBAC is granted
+#     (04-harness.sh).
+#   - kagent 0.10.0 makes spec.substrate required, which binds the harness to an
+#     Agent Substrate WorkerPool. The lab pins 0.9.9 until Substrate is GA.
 apiVersion: kagent.dev/v1alpha2
 kind: AgentHarness
 metadata:
