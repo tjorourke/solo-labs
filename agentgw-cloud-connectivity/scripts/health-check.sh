@@ -70,8 +70,13 @@ check_lab0() {
   done
 
   # shared global hostname seen by istioctl
-  if istioctl --context="$CLUSTER1" multicluster check 2>&1 | grep -q "1 globally shared service"; then
-    ok "$CLUSTER1 — 1 globally shared service registered"
+  # Match ANY non-zero count, not the literal "1". The lab marks productpage
+  # global on both clusters and istioctl reports "3 globally shared service(s)",
+  # so hardcoding 1 failed a healthy setup. istioctl also writes "service(s)"
+  # rather than "service", so anchor on the number and the noun stem only.
+  shared="$(istioctl --context="$CLUSTER1" multicluster check 2>&1             | grep -oE '[0-9]+ globally shared service' | head -1 | awk '{print $1}' || true)"
+  if [[ -n "$shared" && "$shared" -gt 0 ]]; then
+    ok "$CLUSTER1 — $shared globally shared service(s) registered"
   else
     bad "$CLUSTER1 — no globally shared service (istioctl multicluster check)"
   fi
