@@ -22,7 +22,7 @@ die()    { echo "ERROR: $*" >&2; exit 1; }
 [[ -n "${CLUSTER1:-}" ]] || die "CLUSTER1 is not set — run: export CLUSTER1=kind-east"
 [[ -n "${CLUSTER2:-}" ]] || die "CLUSTER2 is not set — run: export CLUSTER2=kind-west"
 
-METALLB_VERSION="v0.14.9"
+METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"   # honour versions.env like every other lab
 METALLB_URL="https://raw.githubusercontent.com/metallb/metallb/${METALLB_VERSION}/config/manifests/metallb-native.yaml"
 
 # ── Detect kind network CIDR ──────────────────────────────────────────────────
