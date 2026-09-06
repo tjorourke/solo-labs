@@ -98,12 +98,17 @@ for line in (g.splitlines() or ["(nothing)"]):
     -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status' \
     --no-headers 2>/dev/null | sed 's/^/  /' >&2 || log "verdict policy not applied"
 
-  [[ -n "${LB:-}" ]] && cat >&2 <<EOF
+  # An `if`, not `[[ ... ]] && cat`: this is the last statement in the function, so
+  # a false test would become the function's return value and fail `quick.sh up`
+  # after every phase had already succeeded.
+  if [[ -n "${LB:-}" ]]; then
+    cat >&2 <<EOF
 
   Enterprise UI     http://kagent.${LB}.sslip.io      (approvals, both agent types)
   AgentRegistry     http://${AR_HOST}
   MCP               http://${MCP_HOST}/mcp
 EOF
+  fi
 }
 
 cmd_reset() {
