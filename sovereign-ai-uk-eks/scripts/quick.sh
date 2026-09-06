@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# quick.sh — the labs-e2e entry point for this lab: build, run, tear down.
+#
+#   ./scripts/quick.sh up         every stage, skipping what is already done
+#   ./scripts/quick.sh teardown   delete the cluster and the weights volume
+#   ./scripts/quick.sh status     what exists and what it is costing
+#
+# READ THIS BEFORE RUNNING IT UNATTENDED. The build brings up a GPU node that
+# costs about $5.84/hr, and the cluster still costs roughly $330/month with the
+# GPU scaled to zero. `up` therefore arms the nightly scale-to-zero backstop
+# before it starts, so an interrupted run cannot leave the GPU billing forever,
+# and `teardown` always runs the leftovers check so a partial delete is visible
+# rather than silent.
+#
+# Needs LAB_AWS_PROFILE (or AWS_PROFILE) and the Solo licence keys.
+
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+export LAB_AWS_PROFILE="${LAB_AWS_PROFILE:-${AWS_PROFILE:-}}"
+export AWS_PROFILE="${AWS_PROFILE:-${LAB_AWS_PROFILE:-}}"
+
+[[ -f "${SECRETS_FILE:-}" ]] && { set -a; . "$SECRETS_FILE"; set +a; }
+
+case "${1:-up}" in
+  up)
+    [[ -n "$LAB_AWS_PROFILE" ]] || { echo "quick.sh: set LAB_AWS_PROFILE or AWS_PROFILE" >&2; exit 2; }
+    # Arm first, not last: if the build dies halfway the GPU is still covered.
+    bash "$SCRIPT_DIR/gpu-backstop.sh" arm || echo "quick.sh: could not arm the GPU backstop, continuing" >&2
+    bash "$SCRIPT_DIR/e2e.sh"
+    ;;
+  teardown)
+    bash "$SCRIPT_DIR/teardown.sh" down || echo "quick.sh: teardown reported a problem" >&2
+    # Always report what survived, whether or not the delete claimed success.
+    bash "$SCRIPT_DIR/teardown.sh" leftovers || true
+    ;;
+  status)
+    bash "$SCRIPT_DIR/teardown.sh" check
+    ;;
+  *)
+    echo "usage: quick.sh up|teardown|status" >&2; exit 2
+    ;;
+esac
