@@ -18,11 +18,34 @@ if [[ "${LAB_FORCE:-}" != "1" ]]; then
   [[ "$answer" == "destroy" ]] || die "aborted"
 fi
 
+# The zone name is a required var, and terraform looks it up with a data source,
+# so a wrong value fails the PLAN and nothing is destroyed. Defaulting to
+# example.com therefore guaranteed "no matching Route 53 Hosted Zone found" for
+# anyone who tore down without LAB_ROUTE53_ZONE still exported, which is most
+# people, because teardown usually happens in a later shell than apply. Recover
+# it from the state instead: the zone the environment was built against is
+# recorded there.
+if [[ -z "${LAB_ROUTE53_ZONE:-}" && -f "$TF_DIR/terraform.tfstate" ]]; then
+  LAB_ROUTE53_ZONE="$(python3 - "$TF_DIR/terraform.tfstate" <<'PYEOF' 2>/dev/null || true
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: sys.exit()
+for r in d.get("resources",[]):
+    if r.get("type")=="aws_route53_zone":
+        for i in r.get("instances",[]):
+            n=(i.get("attributes") or {}).get("name")
+            if n: print(n.rstrip(".")); sys.exit()
+PYEOF
+)"
+  [[ -n "$LAB_ROUTE53_ZONE" ]] && warn "LAB_ROUTE53_ZONE not set; using '$LAB_ROUTE53_ZONE' from the state"
+fi
+
 if [[ -f "$TF_DIR/terraform.tfstate" ]]; then
+  [[ -n "${LAB_ROUTE53_ZONE:-}" ]] || die "set LAB_ROUTE53_ZONE to the hosted zone this was built with; terraform needs it to plan the destroy"
   hdr "Destroy"
   tf destroy -input=false -auto-approve \
     -var "aws_region=$AWS_REGION" \
-    -var "route53_zone_name=${LAB_ROUTE53_ZONE:-example.com}" \
+    -var "route53_zone_name=${LAB_ROUTE53_ZONE}" \
     ${LAB_AUTH0_ISSUER:+-var "auth0_issuer=$LAB_AUTH0_ISSUER"} \
     -var "openai_api_key=${OPENAI_API_KEY:-}" \
     -var "anthropic_api_key=${ANTHROPIC_API_KEY:-}" \
