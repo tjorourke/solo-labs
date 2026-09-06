@@ -18,7 +18,10 @@ OUT="$("$ISTIOCTL" --context "$A" vm add-workload vm-app \
   --external --address "$VM_IP" --namespace "$VM_NS" \
   --ports http:80:8080 --hostname "$VM_HOST" --output-dir "$TOKENS" --bootstrap 2>&1)"
 echo "$OUT" | grep -v 'BOOTSTRAP_TOKEN=' | sed 's/^/  /'
-BOOTSTRAP="$(echo "$OUT" | grep -o 'BOOTSTRAP_TOKEN=[^ ]*' | head -1 | cut -d= -f2-)"
+# `|| true` then an explicit check: a missing token should report what went wrong,
+# not die inside a command substitution with no message.
+BOOTSTRAP="$(echo "$OUT" | grep -o 'BOOTSTRAP_TOKEN=[^ ]*' | head -1 | cut -d= -f2- || true)"
+[[ -n "$BOOTSTRAP" ]] || die "no BOOTSTRAP_TOKEN in the onboarding output; check the istiod logs"
 [[ -n "$BOOTSTRAP" ]] || die "no bootstrap token in istioctl output"
 echo "$BOOTSTRAP" > "$TOKENS/bootstrap.token"
 [[ -f "$TOKENS/vm-app.token" ]] || die "vm-app.token not written"

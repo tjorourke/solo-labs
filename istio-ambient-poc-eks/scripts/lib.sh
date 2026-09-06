@@ -169,7 +169,11 @@ wait_lb_host() {
 resolve_first_ip() {
   local ip=""
   for _ in $(seq 1 60); do
-    ip="$(dig +short "$1" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1)"
+    # `|| true` is what makes this a poll. Without it, grep exits 1 on the very
+    # first attempt (DNS has not resolved yet, which is the whole reason this
+    # function exists), set -e kills the script mid-assignment, and the 60
+    # retries below never happen.
+    ip="$(dig +short "$1" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
     [[ -n "$ip" ]] && { echo "$ip"; return 0; }
     sleep 5
   done

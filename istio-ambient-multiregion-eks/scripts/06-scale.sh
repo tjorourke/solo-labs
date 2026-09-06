@@ -61,8 +61,13 @@ EOF
 metrics() { # metrics <ctx> <label>
   local ctx="$1" label="$2"
   local pushes rss
+  # `|| true`: this is a metrics REPORT, and it must never fail the lab. Two ways
+  # it can exit non-zero under set -e: grep returns 1 when a counter has not been
+  # emitted yet, and `exec ... curl` returns non-zero when the istiod image has no
+  # curl. Neither says anything about whether the mesh works.
   pushes="$(kubectl --context "$ctx" -n istio-system exec deploy/istiod -- \
-    curl -s localhost:15014/metrics 2>/dev/null | grep -E '^pilot_xds_pushes|^pilot_proxy_convergence_time_sum|^pilot_proxy_convergence_time_count' | head -6)"
+    curl -s localhost:15014/metrics 2>/dev/null | grep -E '^pilot_xds_pushes|^pilot_proxy_convergence_time_sum|^pilot_proxy_convergence_time_count' | head -6 || true)"
+  [[ -n "$pushes" ]] || pushes="  (istiod metrics unavailable: no curl in the image, or no counters yet)"
   echo "── $label istiod ──"; echo "$pushes"
   echo "── $label istiod resources ──"
   kubectl --context "$ctx" -n istio-system top pod -l app=istiod 2>/dev/null || true
