@@ -107,7 +107,9 @@ for id in "${nodes[@]}"; do
   printf '  %-20s shared=%s\n' "$id" "${h:-?}"
   sums="$sums$h\n"
 done
-distinct="$(printf '%b' "$sums" | sort -u | grep -c . | tr -d ' ')"
+# `|| true`: grep -c exits 1 on a zero count, which under set -e would abort the
+# script at the exact point it should report the count and fail the assertion.
+distinct="$(printf '%b' "$sums" | sort -u | grep -c . | tr -d ' ' || true)"
 expect "all nodes hold identical shared credentials" 1 "$distinct"
 
 log "A database-backed feature still works, which exercises the Aurora credential:"

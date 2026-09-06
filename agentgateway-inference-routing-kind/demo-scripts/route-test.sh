@@ -9,7 +9,10 @@ set -Eeuo pipefail
 CTX="${CTX:-kind-inference}"; NS="${NS:-inference}"; N="${1:-8}"; PORT="${PORT:-18080}"
 PROMPT="${PROMPT:-Explain Kubernetes in one sentence.}"
 
-gw() { kubectl --context "$CTX" -n "$NS" logs deploy/inference-gateway --tail=-1 2>/dev/null | grep -c "selected_endpoint=$1:"; }
+# `grep -c` exits 1 when the count is zero, and under `set -e` that killed the
+# script on the very first baseline read, before any request had been sent. It
+# still prints the 0, so swallow the status and keep the count.
+gw() { kubectl --context "$CTX" -n "$NS" logs deploy/inference-gateway --tail=-1 2>/dev/null | grep -c "selected_endpoint=$1:" || true; }
 aip=$(kubectl --context "$CTX" -n "$NS" get pod -l replica=pool-a -o jsonpath='{.items[0].status.podIP}')
 bip=$(kubectl --context "$CTX" -n "$NS" get pod -l replica=pool-b -o jsonpath='{.items[0].status.podIP}')
 
