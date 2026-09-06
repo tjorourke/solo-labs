@@ -1,3 +1,23 @@
+# Image pinned by digest, deliberately.
+#
+# Upstream publishes the chart as v0.0.0-latest and the image as :latest, and the
+# two float independently. They have already drifted apart from each other: the
+# chart's own default config is the older flat schema while the image speaks the
+# v0.3 schema this file uses, so the chart defaults arrive as harmless "unknown
+# field" warnings.
+#
+# Pinning the chart alone is not enough, and pinning to the 0.2.0 chart release is
+# worse than useless: that image predates the v0.3 schema, ignores everything
+# below without error, and starts as a no-op router, so the lab would pass while
+# testing nothing. Pin the digest so the binary is reproducible.
+#
+# The chart builds the reference as "<repository>:<tag>", so the digest is split
+# across the two fields to come out as repository@sha256:<hex>.
+# Digest resolved from :latest on 2026-09-06.
+image:
+  repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
+  tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
+
 config:
   version: v0.3
   listeners: []
@@ -266,7 +286,7 @@ config:
           operator: OR
           conditions:
             - type: keyword
-              rule_name: thinking
+              name: thinking
         modelRefs:
           - model: base-model
             lora_name: general-expert
@@ -296,7 +316,7 @@ config:
               similarity_threshold: 0.75
     signals:
       keywords:
-        - category: thinking
+        - name: thinking
           operator: OR
           keywords:
             - urgent
