@@ -60,5 +60,13 @@ kubectl --context "$A" -n istio-system logs ds/ztunnel --since=30s 2>/dev/null \
 
 step "[$A] allow vm-app in the catalog policy (it is a principal like any pod)"
 show kubectl --context "$A" apply -f "$YAML_DIR/security/authz-catalog-vm.yaml"
-sleep 3
-ssm_run "ALL_PROXY=socks5h://vm-app.${VM_NS}:pass@127.0.0.1:15080 curl -s -o /dev/null -w 'vm-app -> catalog: %{http_code}\n' -m8 http://catalog.shop.svc.cluster.local:8080/"
+# Poll, do not sleep 3 and hope. An AuthorizationPolicy has to reach ztunnel on
+# the node before the VM can be allowed through, and the VM reaches the mesh over
+# HBONE via SSM, so both the policy push and the tunnel have to settle. A single
+# attempt reports 000 for a setup that is seconds away from working.
+vm_ok=0
+for _ in $(seq 1 20); do
+  if ssm_run "ALL_PROXY=socks5h://vm-app.${VM_NS}:pass@127.0.0.1:15080 curl -s -o /dev/null -w 'vm-app -> catalog: %{http_code}\n' -m8 http://catalog.shop.svc.cluster.local:8080/" | tee /dev/stderr | grep -q "catalog: 200"; then vm_ok=1; break; fi
+  sleep 10
+done
+[[ $vm_ok -eq 1 ]] || die "vm-app could not reach catalog through the mesh after 200s; check the VM HBONE tunnel and the catalog AuthorizationPolicy"
