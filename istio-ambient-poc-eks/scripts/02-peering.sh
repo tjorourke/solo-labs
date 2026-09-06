@@ -27,5 +27,19 @@ for c in "$CLUSTER_A" "$CLUSTER_B"; do
   kubectl --context "$c" -n "$EW_NS" get gateway
 done
 
-step "Check"
-"$ISTIOCTL" multicluster check --contexts "$CLUSTER_A,$CLUSTER_B"
+# Poll, do not check once. `Programmed` on the Gateway only means the NLB was
+# created; peering also needs its DNS name to resolve, and an AWS NLB is
+# routinely a few minutes behind that. Checking immediately reports
+# "Disconnected from flat-network" for a setup that is merely still coming up.
+step "Check (polling: NLB DNS lags the Gateway becoming Programmed)"
+__mc_out="$(mktemp)"; trap 'rm -f "$__mc_out"' EXIT
+__end=$(( $(date +%s) + 900 ))
+until "$ISTIOCTL" multicluster check --contexts "$CLUSTER_A,$CLUSTER_B" >"$__mc_out" 2>&1; do
+  if [[ $(date +%s) -ge $__end ]]; then
+    cat "$__mc_out" >&2
+    die "multicluster check did not converge within 15m"
+  fi
+  echo "  not converged yet, retrying in 20s"
+  sleep 20
+done
+cat "$__mc_out"
