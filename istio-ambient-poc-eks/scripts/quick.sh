@@ -38,13 +38,24 @@ case "${1:-up}" in
     bash "$SCRIPT_DIR/run-all.sh"
     ;;
   teardown)
-    # Never let a teardown failure stop the harness from trying the rest: an
-    # orphaned NLB is cheap, an orphaned EKS cluster is not, so always reach
-    # tofu destroy even if the Service deletion pass had a problem.
-    bash "$SCRIPT_DIR/teardown.sh" || {
-      echo "quick.sh: teardown.sh failed, forcing $(tofu_bin) destroy" >&2
-      "$(tofu_bin)" -chdir="$TOFU_DIR" destroy -auto-approve -input=false
-    }
+    # Verify, do not trust the exit code. teardown.sh swallows destroy errors with
+    # `|| warn` and still exits 0, and the AWS provider plugin has been crashing
+    # part way through ("Plugin did not respond"), which left two EKS clusters
+    # running while the run reported itself finished. So: destroy, then look at
+    # the state, and keep going while anything is left.
+    TF="$(tofu_bin)"
+    bash "$SCRIPT_DIR/teardown.sh" || echo "quick.sh: teardown.sh reported a problem" >&2
+    for attempt in 1 2 3; do
+      left="$("$TF" -chdir="$TOFU_DIR" state list 2>/dev/null | wc -l | tr -d ' ')"
+      if [[ "$left" == "0" ]]; then echo "quick.sh: state is empty, nothing left to destroy"; break; fi
+      # Lower parallelism each time round: the plugin crash looks like resource
+      # exhaustion under the default 10 concurrent operations.
+      p=$(( 6 / attempt ))
+      echo "quick.sh: $left resource(s) still in state, destroy attempt $attempt (parallelism $p)" >&2
+      "$TF" -chdir="$TOFU_DIR" destroy -auto-approve -input=false -parallelism="$p" || true
+    done
+    left="$("$TF" -chdir="$TOFU_DIR" state list 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$left" != "0" ]]; then echo "quick.sh: WARNING $left resource(s) still in state; run scripts/aws-sweep.sh" >&2; fi
     ;;
   status)
     "$(tofu_bin)" -chdir="$TOFU_DIR" state list 2>/dev/null || echo "no state"
