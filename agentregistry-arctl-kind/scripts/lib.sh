@@ -32,6 +32,29 @@ die(){ { __err "$*";printf '\n';} >&2; exit 1; }
 step(){ printf '\n' >&2; { __step "══> $*";printf '\n';} >&2; }
 require(){ command -v "$1" >/dev/null 2>&1 || die "$1 not found — install it first"; }
 
+# ── arctl (pinned, lab-local) ────────────────────────────────────────────────
+# This lab runs the local AgentRegistry daemon as its control plane, and arctl
+# v2026.6.x dropped the `daemon` subcommand, so it needs the last line that
+# still carries it. Install into a lab-local prefix and put that first on PATH:
+# the in-cluster AgentRegistry labs need a newer arctl on the host and must not
+# be downgraded by this one. The installer has no target-dir flag but does
+# honour HOME, so override HOME for the install only.
+export ARCTL_VERSION="${ARCTL_VERSION:-v2026.5.4}"
+ARCTL_PREFIX="${ARCTL_PREFIX:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.arctl-home}"
+ARCTL_INSTALLER="${ARCTL_INSTALLER:-https://storage.googleapis.com/agentregistry-enterprise/install.sh}"
+ensure_arctl() {
+  local bin="$ARCTL_PREFIX/.arctl/bin/arctl"
+  if [[ ! -x "$bin" ]] || ! "$bin" version 2>/dev/null | grep -qF "$ARCTL_VERSION"; then
+    log "installing arctl $ARCTL_VERSION into ${ARCTL_PREFIX##*/} (host arctl left alone)"
+    mkdir -p "$ARCTL_PREFIX"
+    curl -sSL "$ARCTL_INSTALLER" | HOME="$ARCTL_PREFIX" ARCTL_VERSION="$ARCTL_VERSION" sh >/dev/null \
+      || die "could not install arctl $ARCTL_VERSION"
+    [[ -x "$bin" ]] || die "arctl $ARCTL_VERSION did not land at $bin"
+  fi
+  case ":$PATH:" in *":$ARCTL_PREFIX/.arctl/bin:"*) ;; *) export PATH="$ARCTL_PREFIX/.arctl/bin:$PATH";; esac
+}
+ensure_arctl
+
 # ── cluster ─────────────────────────────────────────────────────────────────
 export CLUSTER_NAME="${CLUSTER_NAME:-arctl-lab}"
 export CTX="kind-${CLUSTER_NAME}"
