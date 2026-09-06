@@ -20,6 +20,14 @@
 
 set -Eeuo pipefail
 
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -33,7 +41,11 @@ CLUSTER_NAMES=("east" "west")
 
 OPERATOR_VERSION="${GLOO_OPERATOR_VERSION:-0.5.2}"
 OPERATOR_CHART="oci://us-docker.pkg.dev/solo-public/gloo-operator-helm/gloo-operator"
-GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"   # v1.5.0 ships a safe-upgrades ValidatingAdmissionPolicy that blocks SMC's bundled CRD install
+# Hard pin, deliberately not a ${VAR:-default}: versions.env is sourced above, so a
+# default can never win. Gateway API v1.5.0 added a safe-upgrades
+# ValidatingAdmissionPolicy that rejects the Gateway API CRDs the
+# ServiceMeshController installs, which leaves istiod-gloo uncreated. Stay below it.
+GATEWAY_API_VERSION="v1.4.0"
 SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.3-solo}"
 # Strip "-solo" — the operator auto-appends it when distribution=Standard.
 ISTIO_VERSION="${SOLO_ISTIO_VERSION%-solo}"

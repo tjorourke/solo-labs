@@ -62,7 +62,7 @@ case "$DEMO" in
     cd "$LAB_ROOT/demo-scripts/agentregistry" || return 1
     # sources arctl onto PATH + logs the CLI in to the in-cluster registry as admin-user
     source scripts/connect.sh
-    echo "demo-4 · AgentRegistry UI: http://${AR_HOST}  ·  Keycloak: http://${KEYCLOAK_HOST} (admin-user / password)"
+    echo "demo-4 · AgentRegistry UI: http://${AR_HOST} (admin-user / password)  ·  Keycloak admin console: http://${KEYCLOAK_HOST} (admin / admin)"
     echo "  cwd is demo-scripts/agentregistry — 'arctl apply -f yaml/...' paths are relative to here"
     ;;
   5)

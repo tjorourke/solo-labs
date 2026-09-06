@@ -23,6 +23,14 @@
 
 set -Eeuo pipefail
 
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -34,7 +42,7 @@ SECRETS_FILE="${SECRETS_FILE:-}"
 GLOO_OPERATOR_VERSION="${GLOO_OPERATOR_VERSION:-0.5.2}"
 SOLO_ISTIO_VERSION="${SOLO_ISTIO_VERSION:-1.29.3-solo}"
 ISTIO_VERSION_OPERATOR="${SOLO_ISTIO_VERSION%-solo}"
-AGW_VERSION="${AGW_VERSION:-v2026.5.1}"
+AGW_VERSION="${AGW_VERSION:-${AGW_CALVER_VERSION:-v2026.5.1}}"
 AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 AGW_IMAGE_REGISTRY="${AGW_IMAGE_REGISTRY:-}"
 
@@ -44,7 +52,11 @@ if [[ "${AGW_NIGHTLY:-false}" == "true" ]]; then
   AGW_VERSION="${AGW_VERSION_NIGHTLY:-v2026.5.0-beta.4-nightly-2026-05-15}"
   AGW_IMAGE_REGISTRY="us-central1-docker.pkg.dev/developers-369321/enterprise-agentgateway-dev"
 fi
-GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
+# Hard pin, deliberately not a ${VAR:-default}: versions.env is sourced above, so a
+# default can never win. Gateway API v1.5.0 added a safe-upgrades
+# ValidatingAdmissionPolicy that rejects the Gateway API CRDs the
+# ServiceMeshController installs, which leaves istiod-gloo uncreated. Stay below it.
+GATEWAY_API_VERSION="v1.4.0"
 METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"
 ISTIO_REGISTRY="us-docker.pkg.dev/soloio-img/istio"
 ISTIO_TAG="${SOLO_ISTIO_VERSION%-solo}"

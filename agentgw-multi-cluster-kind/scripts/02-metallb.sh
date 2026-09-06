@@ -9,6 +9,14 @@
 
 set -Eeuo pipefail
 
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
+
 METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"
 CLUSTER1="${CLUSTER1:-kind-east-ag}"
 CLUSTER2="${CLUSTER2:-kind-west-ag}"

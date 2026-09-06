@@ -8,6 +8,14 @@
 # Added so labs-e2e.sh can run this lab unattended. Seeding stays a separate
 # step, as setup.sh intends, so `up` does not decide how much history you want.
 set -Euo pipefail
+
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLUSTER="${CLUSTER:-agentgateway-cost}"
 

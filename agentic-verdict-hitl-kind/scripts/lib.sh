@@ -85,7 +85,7 @@ export SRE_NS="${SRE_NS:-sre-tools}"
 # The Solo Enterprise UI lives in its own chart and namespace. This is the product a
 # customer runs — the OSS kagent dashboard is a different thing and is NOT used here.
 export SOLO_MGMT_NS="${SOLO_MGMT_NS:-solo-mgmt}"
-export SOLO_MGMT_VERSION="${SOLO_MGMT_VERSION:-0.5.3}"
+export SOLO_ENT_MGMT_VERSION="${SOLO_ENT_MGMT_VERSION:-0.5.3}"   # the management chart; matrix SOLO_MGMT_VERSION is gloo-platform
 export MGMT_CHART="${MGMT_CHART:-oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management}"
 
 # ── OIDC clients (from the realm import) ──────────────────────────────────────

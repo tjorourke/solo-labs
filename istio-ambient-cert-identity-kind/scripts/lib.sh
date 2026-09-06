@@ -75,7 +75,7 @@ export ISTIO_HELM_VERSION="${ISTIO_HELM_VERSION:-${SOLO_ISTIO_VERSION}}"
 export TRUST_DOMAIN="${TRUST_DOMAIN:-${CLUSTER_NAME}}"
 
 # Solo Enterprise for agentgateway — the L7 waypoint data plane (§9 onwards).
-export AGW_VERSION="${AGW_VERSION:-v2026.7.0}"
+export AGW_VERSION="${AGW_VERSION:-${AGW_CALVER_VERSION:-v2026.7.0}}"   # CalVer track, from versions.env
 
 case "$(uname -m)" in
   arm64|aarch64) export KIND_PLATFORM="${KIND_PLATFORM:-linux/arm64}" ;;

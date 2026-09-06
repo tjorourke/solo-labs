@@ -23,6 +23,11 @@ require(){ command -v "$1" >/dev/null 2>&1 || die "$1 not found — install it f
 export CLUSTER_NAME="${CLUSTER_NAME:-tool-privilege}"
 export CTX="kind-${CLUSTER_NAME}"
 
+# Pin one product matrix like every other lab. Sourced BEFORE the pins below so
+# versions.json drives them and a runtime env override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+[ -f "$__versions_env" ] && . "$__versions_env"
+
 export GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
 export METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"
 
@@ -40,7 +45,7 @@ export KENT_CRDS_CHART="${KENT_CRDS_CHART:-oci://us-docker.pkg.dev/solo-public/k
 export KENT_CHART="${KENT_CHART:-oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise}"
 
 # Enterprise agentgateway (the MCP front door doing JWT auth + per-tool authz).
-export AGW_VERSION="${AGW_VERSION:-v2.3.4}"
+export AGW_VERSION="${AGW_VERSION:-${AGW_ENT_VERSION:-v2.3.4}}"
 export AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 export AGW_CHART="${AGW_CHART:-${AGW_REGISTRY}/enterprise-agentgateway}"
 export AGW_CRDS_CHART="${AGW_CRDS_CHART:-${AGW_REGISTRY}/enterprise-agentgateway-crds}"

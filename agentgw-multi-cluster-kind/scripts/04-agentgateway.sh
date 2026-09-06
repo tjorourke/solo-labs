@@ -18,6 +18,14 @@
 
 set -Eeuo pipefail
 
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -31,7 +39,7 @@ CLUSTER_NAMES=("east" "west")
 # Enterprise agentgateway v2026.5.1 (calver, succeeds v2.3.x) is the GA default.
 # Registry path is `enterprise-agentgateway/charts/...` — the swapped
 # `agentgateway-enterprise/charts/...` form 404s on the public Solo registry.
-AGW_VERSION="${AGENTGATEWAY_ENTERPRISE_VERSION:-v2026.5.1}"
+AGW_VERSION="${AGENTGATEWAY_ENTERPRISE_VERSION:-${AGW_CALVER_VERSION:-v2026.5.1}}"
 AGW_CHART="${AGENTGATEWAY_ENTERPRISE_CHART:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway}"
 AGW_CRDS_CHART="${AGENTGATEWAY_ENTERPRISE_CRDS_CHART:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts/enterprise-agentgateway-crds}"
 

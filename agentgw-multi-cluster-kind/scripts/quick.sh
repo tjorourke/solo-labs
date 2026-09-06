@@ -10,6 +10,14 @@
 
 set -Eeuo pipefail
 
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -28,7 +36,7 @@ ISTIO_VERSION_OPERATOR="${SOLO_ISTIO_VERSION%-solo}"
 # calver (vYYYY.M.X) at v2026.5.0. v2026.5.1 (2026-05-22) is the latest GA on
 # the public Solo registry — succeeds v2.3.3 and includes the cross-cluster
 # WorkloadEntry fix (no more "unknown address type" NACK on failover).
-AGW_VERSION="${AGW_VERSION:-v2026.5.1}"
+AGW_VERSION="${AGW_VERSION:-${AGW_CALVER_VERSION:-v2026.5.1}}"
 AGW_REGISTRY="${AGW_REGISTRY:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 # When pulling from a private/dev registry that the kind nodes can't reach
 # (e.g. the dev/nightly registry below), set AGW_IMAGE_REGISTRY to the image
@@ -44,7 +52,11 @@ if [[ "${AGW_NIGHTLY:-false}" == "true" ]]; then
   AGW_VERSION="${AGW_VERSION_NIGHTLY:-v2026.5.0-beta.4-nightly-2026-05-15}"
   AGW_IMAGE_REGISTRY="us-central1-docker.pkg.dev/developers-369321/enterprise-agentgateway-dev"
 fi
-GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
+# Hard pin, deliberately not a ${VAR:-default}: versions.env is sourced above, so a
+# default can never win. Gateway API v1.5.0 added a safe-upgrades
+# ValidatingAdmissionPolicy that rejects the Gateway API CRDs the
+# ServiceMeshController installs, which leaves istiod-gloo uncreated. Stay below it.
+GATEWAY_API_VERSION="v1.4.0"
 METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"
 GLOO_MESH_VERSION="${GLOO_MESH_VERSION:-2.12.0}"
 ISTIO_REGISTRY="us-docker.pkg.dev/soloio-img/istio"
@@ -810,16 +822,16 @@ done
 # on CLUSTER1 (single-pane-of-glass; no need on the peer cluster).
 
 SOLO_MGMT_CHART="oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management"
-SOLO_MGMT_VERSION="${SOLO_MGMT_VERSION:-0.4.3}"
+SOLO_ENT_MGMT_VERSION="${SOLO_ENT_MGMT_VERSION:-0.4.3}"   # the management chart; matrix SOLO_MGMT_VERSION is gloo-platform
 
 if [[ "${SKIP_SOLO_MGMT:-false}" == "true" ]]; then
   step "Skipping Solo Enterprise management chart (SKIP_SOLO_MGMT=true)"
 else
-  step "Installing Solo Enterprise management chart $SOLO_MGMT_VERSION on ${CLUSTER1#kind-}"
+  step "Installing Solo Enterprise management chart $SOLO_ENT_MGMT_VERSION on ${CLUSTER1#kind-}"
   helm upgrade --install solo-enterprise-mgmt "$SOLO_MGMT_CHART" \
     --kube-context "$CLUSTER1" \
     --namespace agentgateway-system \
-    --version "$SOLO_MGMT_VERSION" \
+    --version "$SOLO_ENT_MGMT_VERSION" \
     --set cluster="${CLUSTER1#kind-}" \
     --set products.agentgateway.enabled=true \
     --set products.agentgateway.namespace=agentgateway-system \

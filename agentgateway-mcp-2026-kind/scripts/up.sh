@@ -6,14 +6,20 @@ cd "$(dirname "$0")/.."
 
 kind create cluster --config kind/kind-config.yaml
 
-# Gateway API CRDs (standard channel)
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
+# This lab documents the MCP 2026-07-28 wire shapes as agentgateway 1.4.1 emits
+# them, so it deliberately does NOT follow the repo version matrix: a newer build
+# can change the framing the whole page is about. Override to try another build.
+AGW_VERSION="${AGW_VERSION:-1.4.1}"
+GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
 
-# agentgateway control plane, pinned to v1.4.1
+# Gateway API CRDs (standard channel)
+kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
+
+# agentgateway control plane
 helm upgrade -i agentgateway-crds oci://cr.agentgateway.dev/charts/agentgateway-crds \
-  --version 1.4.1 -n agentgateway-system --create-namespace
+  --version "$AGW_VERSION" -n agentgateway-system --create-namespace
 helm upgrade -i agentgateway oci://cr.agentgateway.dev/charts/agentgateway \
-  --version 1.4.1 -n agentgateway-system
+  --version "$AGW_VERSION" -n agentgateway-system
 kubectl -n agentgateway-system rollout status deploy/agentgateway --timeout=180s
 
 kubectl create namespace mcp-2026

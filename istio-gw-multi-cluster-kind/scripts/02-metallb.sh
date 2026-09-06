@@ -15,6 +15,14 @@
 
 set -Eeuo pipefail
 
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
+
 log()    { echo "  → $*"; }
 log_ok() { echo "  ✓ $*"; }
 die()    { echo "ERROR: $*" >&2; exit 1; }
@@ -22,7 +30,7 @@ die()    { echo "ERROR: $*" >&2; exit 1; }
 [[ -n "${CLUSTER1:-}" ]] || die "CLUSTER1 is not set — run: export CLUSTER1=kind-east"
 [[ -n "${CLUSTER2:-}" ]] || die "CLUSTER2 is not set — run: export CLUSTER2=kind-west"
 
-METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"   # honour versions.env like every other lab
+METALLB_VERSION="${METALLB_VERSION:-v0.14.9}"   # override to match the node image
 METALLB_URL="https://raw.githubusercontent.com/metallb/metallb/${METALLB_VERSION}/config/manifests/metallb-native.yaml"
 
 # ── Detect kind network CIDR ──────────────────────────────────────────────────

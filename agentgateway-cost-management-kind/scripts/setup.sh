@@ -15,6 +15,14 @@
 #   TRUNCATE=true ./scripts/seed-clickhouse.sh   # then backfill a month of spend
 set -euo pipefail
 
+# Pin one product matrix like every other lab: versions.json -> versions.env.
+# Sourced before the pins below, so the matrix drives them and a runtime env
+# override still wins.
+__versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
+# shellcheck disable=SC1090
+[ -f "$__versions_env" ] && . "$__versions_env"
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -25,9 +33,9 @@ GW_NS="${GW_NS:-gloo-system}"                 # gateway + controller + policies 
 MGMT_NS="${MGMT_NS:-kagent}"                  # management chart (release 'management' → management-clickhouse-shard0-0)
 VIRTUAL_KEY_SET="${VIRTUAL_KEY_SET:-cost-demo-virtual-keys}"
 
-AGW_VERSION="${AGW_VERSION:-v2026.7.0}"
-MGMT_VERSION="${MGMT_VERSION:-0.5.0}"
-GWAPI_VERSION="${GWAPI_VERSION:-v1.4.0}"
+AGW_VERSION="${AGW_VERSION:-${AGW_CALVER_VERSION:-v2026.7.0}}"
+MGMT_VERSION="${MGMT_VERSION:-${SOLO_ENT_MGMT_VERSION:-0.5.0}}"
+GWAPI_VERSION="${GWAPI_VERSION:-${GATEWAY_API_VERSION:-v1.4.0}}"
 AGW_REG="oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts"
 MGMT_CHART="oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management"
 

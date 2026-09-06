@@ -123,7 +123,7 @@ kc -n "$AR_NS" rollout status deploy/"$AR_SERVER_SVC" --timeout=360s >/dev/null 
 # It authenticates against the same realm: kagent-ui is the public PKCE client for
 # the browser, kagent-backend the confidential one for the UI's backend. Without
 # both, the UI loads and then fails with "Failed to get user ID: no session found".
-step "Installing the Solo Enterprise UI ${SOLO_MGMT_VERSION} in ${SOLO_MGMT_NS}"
+step "Installing the Solo Enterprise UI ${SOLO_ENT_MGMT_VERSION} in ${SOLO_MGMT_NS}"
 kc create namespace "$SOLO_MGMT_NS" --dry-run=client -o yaml | kc apply -f - >/dev/null
 kc -n "$SOLO_MGMT_NS" create secret generic ui-backend-oidc-secret \
   --from-literal=clientSecret="$KAGENT_BACKEND_SECRET" \
@@ -132,7 +132,7 @@ kc -n "$SOLO_MGMT_NS" create secret generic ui-backend-oidc-secret \
 # No --wait: the UI backend does OIDC discovery against the sslip issuer, which the
 # pod cannot resolve until the hostAlias lands. Install, bridge, then wait.
 helm --kube-context "$CTX" upgrade --install management "$MGMT_CHART" \
-  -n "$SOLO_MGMT_NS" --version "$SOLO_MGMT_VERSION" \
+  -n "$SOLO_MGMT_NS" --version "$SOLO_ENT_MGMT_VERSION" \
   --set cluster="$CLUSTER_NAME" \
   --set products.kagent.enabled=true \
   --set products.kagent.namespace="$KAGENT_NS" \
