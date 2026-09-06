@@ -12,20 +12,24 @@
 # and `teardown` always runs the leftovers check so a partial delete is visible
 # rather than silent.
 #
-# Needs LAB_AWS_PROFILE (or AWS_PROFILE) and the Solo licence keys.
+# Needs SOVEREIGN_AWS_PROFILE (LAB_AWS_PROFILE or AWS_PROFILE are bridged to it)
+# and the Solo licence keys.
 
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-export LAB_AWS_PROFILE="${LAB_AWS_PROFILE:-${AWS_PROFILE:-}}"
+# This lab reads SOVEREIGN_AWS_PROFILE, not the LAB_AWS_PROFILE the other AWS labs
+# use, so bridge all three rather than making the caller know which.
+export LAB_AWS_PROFILE="${LAB_AWS_PROFILE:-${AWS_PROFILE:-${SOVEREIGN_AWS_PROFILE:-}}}"
 export AWS_PROFILE="${AWS_PROFILE:-${LAB_AWS_PROFILE:-}}"
+export SOVEREIGN_AWS_PROFILE="${SOVEREIGN_AWS_PROFILE:-${AWS_PROFILE:-}}"
 
 [[ -f "${SECRETS_FILE:-}" ]] && { set -a; . "$SECRETS_FILE"; set +a; }
 
 case "${1:-up}" in
   up)
-    [[ -n "$LAB_AWS_PROFILE" ]] || { echo "quick.sh: set LAB_AWS_PROFILE or AWS_PROFILE" >&2; exit 2; }
+    [[ -n "$SOVEREIGN_AWS_PROFILE" ]] || { echo "quick.sh: set SOVEREIGN_AWS_PROFILE, LAB_AWS_PROFILE or AWS_PROFILE" >&2; exit 2; }
     # Arm first, not last: if the build dies halfway the GPU is still covered.
     bash "$SCRIPT_DIR/gpu-backstop.sh" arm || echo "quick.sh: could not arm the GPU backstop, continuing" >&2
     bash "$SCRIPT_DIR/e2e.sh"
