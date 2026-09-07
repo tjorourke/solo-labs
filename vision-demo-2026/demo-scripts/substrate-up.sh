@@ -68,4 +68,45 @@ kubectl --context "$CTX" -n "$KAGENT_NS" rollout status ds/kagent-atelet --timeo
 kubectl --context "$CTX" -n "$KAGENT_NS" wait workerpool/kagent-default --for=jsonpath='{.status.replicas}'=2 --timeout=300s
 kubectl --context "$CTX" -n "$KAGENT_NS" rollout restart deploy/kagent-ate-controller   # clears accrued reconcile backoff
 kubectl --context "$CTX" -n "$KAGENT_NS" rollout status deploy/kagent-ate-controller --timeout=120s
+# The WorkerPool reporting its pods Ready is a Kubernetes-level signal only. The
+# ate-api-server keeps its OWN worker store and populates it some time later; until it
+# has, no actor can be placed ("no free workers available"). Because ate-controller
+# backs off exponentially, the FIRST SandboxAgent a demo creates can then sit unready
+# for minutes and look like a broken product. So prove an actor can actually be placed
+# before claiming substrate is enabled, retrying to reset that backoff.
+echo "→ verifying substrate can place an actor ..."
+CANARY="$(mktemp)"
+cat > "$CANARY" <<'YAML'
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata: { name: substrate-canary, namespace: kagent }
+spec:
+  type: Declarative
+  description: setup canary, removed as soon as it is Ready
+  declarative: { runtime: go, modelConfig: default-model-config, systemMessage: "canary" }
+  substrate: { workerPoolRef: { name: kagent-default } }
+YAML
+CANARY_OK=false
+for attempt in $(seq 1 10); do
+  kubectl --context "$CTX" apply -f "$CANARY" >/dev/null 2>&1 || true
+  if kubectl --context "$CTX" -n "$KAGENT_NS" wait sandboxagent/substrate-canary \
+       --for=condition=Ready --timeout=45s >/dev/null 2>&1; then
+    CANARY_OK=true
+    echo "  ✓ actor placed (attempt $attempt) — substrate is genuinely ready"
+    break
+  fi
+  MSG="$(kubectl --context "$CTX" -n "$KAGENT_NS" get sandboxagent substrate-canary \
+           -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)"
+  echo "  attempt $attempt: ${MSG:-no status yet} — retrying"
+  kubectl --context "$CTX" -n "$KAGENT_NS" delete sandboxagent substrate-canary --ignore-not-found >/dev/null 2>&1 || true
+done
+kubectl --context "$CTX" -n "$KAGENT_NS" delete sandboxagent substrate-canary --ignore-not-found >/dev/null 2>&1 || true
+rm -f "$CANARY"
+if [ "$CANARY_OK" != true ]; then
+  echo "✗ substrate installed but it cannot place an actor. Look at:" >&2
+  echo "    kubectl --context $CTX -n $KAGENT_NS logs deploy/kagent-ate-controller --tail=20" >&2
+  echo "    kubectl --context $CTX -n $KAGENT_NS logs deploy/kagent-ate-api-server-deployment | grep -i worker" >&2
+  exit 1
+fi
+
 echo "✔ Agent Substrate enabled. Demo it in demo-5-substrate.ipynb."
