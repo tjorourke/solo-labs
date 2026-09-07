@@ -155,10 +155,32 @@ EOF
     # istio-csr-signed serving cert. istiod no longer manages these (envs above), so it sticks.
     # Without this, applying any Istio CR (yaml/33, 48, 49) fails the validation webhook.
     echo "==> webhook caBundle -> Vault root (istio-ca-root-cert)"
-    for _ in $(seq 1 30); do
-      kc -n "$ISTIO_NS" get cm istio-ca-root-cert >/dev/null 2>&1 && break; sleep 2
+    # Wait for the ConfigMap to hold the VAULT root, not merely to exist. It exists
+    # from the moment plain Istio is installed, carrying istiod's self-signed
+    # O=cluster.local root, and istio-csr rewrites it only once it has taken over.
+    # Waiting on existence alone breaks immediately, copies the OLD self-signed CA
+    # into the webhooks, and then every Istio CR apply fails with
+    # "failed calling webhook validation.istio.io ... certificate signed by unknown
+    # authority" long after this step has printed success.
+    cab=""
+    for _ in $(seq 1 60); do
+      pem="$(kc -n "$ISTIO_NS" get cm istio-ca-root-cert -o jsonpath='{.data.root-cert\.pem}' 2>/dev/null || true)"
+      if [ -n "$pem" ]; then
+        subj="$(printf '%s' "$pem" | openssl x509 -noout -subject 2>/dev/null || true)"
+        case "$subj" in
+          *"O=cluster.local"*) : ;;                       # still istiod's self-signed root
+          "") : ;;                                        # not parseable yet
+          *) cab="$(printf '%s' "$pem" | base64 | tr -d '\n')"; break ;;
+        esac
+      fi
+      sleep 5
     done
-    cab="$(kc -n "$ISTIO_NS" get cm istio-ca-root-cert -o jsonpath='{.data.root-cert\.pem}' | base64 | tr -d '\n')"
+    if [ -z "$cab" ]; then
+      echo "ERROR: istio-ca-root-cert still holds istiod's self-signed root after 5m." >&2
+      echo "       istio-csr has not taken over the CA; patching the webhooks now would" >&2
+      echo "       copy the WRONG root and every Istio CR apply would fail later." >&2
+      exit 1
+    fi
     for kind in validatingwebhookconfiguration mutatingwebhookconfiguration; do
       for wc in $(kc get "$kind" -o name 2>/dev/null | grep -i istio | sed 's#.*/##'); do
         n="$(kc get "$kind" "$wc" -o jsonpath='{.webhooks}' | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)"
