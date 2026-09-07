@@ -205,7 +205,13 @@ s_weights() {
   fi
   echo "   waiting for the restore (48 GB, ~6-10 min)..."
   kubectl -n "$MODELS_NS" wait --for=condition=complete job/model-restore --timeout=45m
-  kubectl -n "$MODELS_NS" logs job/model-restore --tail=12
+  # `|| true`: this is an informational tail, and it must never fail the build.
+  # On a re-run the Job is Complete but its pod has been garbage-collected, and
+  # `kubectl logs job/...` then blocks looking for a pod and exits with
+  # "error: timed out waiting for the condition" — which killed the whole deploy
+  # immediately after the restore had been confirmed complete.
+  kubectl -n "$MODELS_NS" logs job/model-restore --tail=12 2>/dev/null \
+    || echo "   (restore pod already garbage-collected; the Job is Complete, which is what matters)"
   ok "weights on the PVC, and Hugging Face was never contacted"
 }
 
