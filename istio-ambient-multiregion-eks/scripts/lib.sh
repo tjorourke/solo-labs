@@ -23,7 +23,11 @@ export REGION2="${REGION2:-eu-west-1}"
 export NAME1="${NAME1:-mesh-eu-central}"
 export NAME2="${NAME2:-mesh-eu-west}"
 # eksctl writes contexts as <user>@<cluster>.<region>.eksctl.io — resolve dynamically
-ctx_of() { kubectl config get-contexts -o name | grep "@${1}.${2}.eksctl.io" | head -1; }
+# `|| true` so a MISSING context returns empty instead of killing the script.
+# Without it the grep exits 1, set -e ends the run inside the command
+# substitution, and the caller's `die "no kube context for ..."` never prints, so
+# the failure looks like the step produced no output at all.
+ctx_of() { kubectl config get-contexts -o name 2>/dev/null | grep "@${1}.${2}.eksctl.io" | head -1 || true; }
 
 export ISTIO_REGISTRY="us-docker.pkg.dev/soloio-img/istio"
 export ISTIO_HELM_REPO="oci://us-docker.pkg.dev/soloio-img/istio-helm"

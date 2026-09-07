@@ -42,7 +42,12 @@ case "${1:-up}" in
     for pair in "$NAME1:$REGION1:mesh-eu-central" "$NAME2:$REGION2:mesh-eu-west"; do
       IFS=: read -r name region cfg <<<"$pair"
       if have_cluster "$name" "$region"; then
-        echo "==> $name already exists in $region"
+        # Reusing a cluster from an earlier run means this run's per-lab
+        # kubeconfig has no context for it, and every stage resolves contexts by
+        # name. Write it in, or the lab dies with no usable error.
+        echo "==> $name already exists in $region, writing its kubeconfig entry"
+        eksctl utils write-kubeconfig --cluster "$name" --region "$region" >/dev/null 2>&1 \
+          || echo "  warn: could not write kubeconfig for $name" >&2
       else
         echo "==> Creating $name in $region"
         eksctl create cluster -f "$LAB_ROOT/eksctl/${cfg}.yaml" &
