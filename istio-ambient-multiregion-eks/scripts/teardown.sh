@@ -54,7 +54,33 @@ for pair in "$CTX1:$REGION1" "$CTX2:$REGION2"; do
   kubectl --context "$ctx" delete svc -n kgateway-system --all --ignore-not-found >/dev/null 2>&1 || true
   kubectl --context "$ctx" delete ns shop --ignore-not-found >/dev/null 2>&1 || true
 done
-ok "LB services deleted"; sleep 30
+ok "LB services deleted"
+
+# Wait for AWS to actually remove the load balancers, do not sleep 30 and hope.
+# Deleting the Service only ASKS the in-tree cloud controller to delete the NLB,
+# and that controller dies with the control plane. Delete the cluster too early
+# and the NLB is orphaned, its ENI keeps a subnet alive, the CloudFormation stack
+# ends DELETE_FAILED, and every future run of this lab fails with
+# AlreadyExistsException. That is exactly how two stacks here, and the sovereign
+# lab's stack, ended up stuck for weeks.
+wait_lbs_gone() { # wait_lbs_gone <cluster> <region>
+  local cluster="$1" region="$2" vpc n
+  vpc="$(aws eks describe-cluster --name "$cluster" --region "$region" \
+         --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || true)"
+  [[ -z "$vpc" || "$vpc" == "None" ]] && return 0
+  for _ in $(seq 1 60); do
+    n=$(( $(aws elbv2 describe-load-balancers --region "$region" \
+              --query "length(LoadBalancers[?VpcId=='$vpc'])" --output text 2>/dev/null || echo 0) \
+       + $(aws elb describe-load-balancers --region "$region" \
+              --query "length(LoadBalancerDescriptions[?VPCId=='$vpc'])" --output text 2>/dev/null || echo 0) ))
+    if [[ "$n" == "0" ]]; then echo "  [$cluster] load balancers released"; return 0; fi
+    sleep 10
+  done
+  warn "[$cluster] $n load balancer(s) still present after 10m; the stack may fail to delete"
+}
+step "Waiting for the NLBs to actually go (the cluster delete must not race them)"
+wait_lbs_gone "$NAME1" "$REGION1"
+wait_lbs_gone "$NAME2" "$REGION2"
 
 step "Deleting EKS clusters (10-15 min each)"
 eksctl delete cluster --name "$NAME1" --region "$REGION1" --wait &
