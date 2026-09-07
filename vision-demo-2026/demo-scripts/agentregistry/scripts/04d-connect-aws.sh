@@ -64,7 +64,26 @@ arctl runtime setup bedrock-agent-core --aws-account-id "$AWS_ACCOUNT_ID" --role
 AWS_EXTERNAL_ID="$(grep -ioE 'External ID:[[:space:]]*[A-Za-z0-9_-]+' "$LAB_ROOT/.agentcore/setup.stderr" | awk '{print $NF}' | head -1)"
 [[ -n "$AWS_EXTERNAL_ID" ]] || die "could not parse External ID from arctl runtime setup"
 if aws cloudformation describe-stacks --stack-name "$STACK" >/dev/null 2>&1; then
-  ok "CloudFormation stack $STACK exists"
+  # The role's trust policy pins the external ID minted by the registry install that
+  # created the stack. A REBUILT cluster mints a fresh one, so a reused stack trusts a
+  # secret the server no longer sends: the only statement granting sts:AssumeRole stops
+  # matching and every deploy fails AccessDenied — mid-demo, because nothing before the
+  # push touches STS. (The second trust statement is sts:TagSession, so it rescues
+  # nothing.) Reconcile the trust policy whenever it has drifted.
+  TRUSTED="$(aws iam get-role --role-name "$ROLE_NAME" \
+    --query 'Role.AssumeRolePolicyDocument.Statement[?Action==`sts:AssumeRole`].Condition.StringEquals."sts:ExternalId"' \
+    --output text 2>/dev/null | head -1)"
+  if [[ "$TRUSTED" == "$AWS_EXTERNAL_ID" ]]; then
+    ok "CloudFormation stack $STACK exists (trusts the current external ID)"
+  else
+    log "stack $STACK trusts a stale external ID — updating the role trust policy"
+    aws cloudformation update-stack --stack-name "$STACK" \
+      --template-body "file://$LAB_ROOT/.agentcore/cf.yaml" --capabilities CAPABILITY_NAMED_IAM >/dev/null \
+      || die "could not update stack $STACK — its role trusts an external ID the registry no longer sends"
+    aws cloudformation wait stack-update-complete --stack-name "$STACK" \
+      || die "stack $STACK update did not complete"
+    ok "CloudFormation stack $STACK trust policy updated to the current external ID"
+  fi
 else
   aws cloudformation create-stack --stack-name "$STACK" --template-body "file://$LAB_ROOT/.agentcore/cf.yaml" --capabilities CAPABILITY_NAMED_IAM >/dev/null
   aws cloudformation wait stack-create-complete --stack-name "$STACK"; ok "CloudFormation stack $STACK created"
@@ -95,5 +114,13 @@ case "$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks
   *) die "CloudFormation stack $STACK is not in a COMPLETE state" ;;
 esac
 aws ecr describe-repositories --repository-names agentdemo >/dev/null 2>&1 || die "ECR repo agentdemo missing"
+# Prove the assume actually works instead of inferring it from "stack COMPLETE". The
+# server assumes this role with the creds aws-login exports (the same identity running
+# here), so this is a faithful probe — and it is the one thing whose failure otherwise
+# waits until the agent push, half way through the demo.
+aws sts assume-role --role-arn "$AWS_ROLE_ARN" --role-session-name arpreflight \
+  --external-id "$AWS_EXTERNAL_ID" >/dev/null 2>&1 \
+  || die "cannot assume $AWS_ROLE_ARN with the registry's external ID — the role trust policy and the registry disagree"
+ok "assume-role verified (registry external ID accepted by the role)"
 ok "AWS Bedrock AgentCore platform 'aws-agentcore' registered and verified (role + ECR ready)"
 arctl get runtimes 2>/dev/null | sed 's/^/  /' >&2 || true
