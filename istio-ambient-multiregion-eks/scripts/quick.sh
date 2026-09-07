@@ -52,10 +52,38 @@ case "${1:-up}" in
     rc=0; for p in "${pids[@]:-}"; do [[ -n "$p" ]] && { wait "$p" || rc=1; }; done
     [[ $rc -eq 0 ]] || { echo "quick.sh: a cluster failed to create" >&2; exit 1; }
 
-    for s in 01-istio 02-peering 03-app 04-demo-pod-failover 05-ingress-ga \
-             06-scale 07-demo-region-failover 08-dns-route53 09-demo-dns-failover; do
+    # 07 and 09 take an argument; the rest do not. 07 wants the Global Accelerator
+    # DNS name, which 05 created and AWS can tell us. 09 wants a Route53 failover
+    # record, which only exists when HOSTED_ZONE_ID and RECORD_NAME are set AND the
+    # zone is publicly delegated, so it is skipped rather than failed when it
+    # cannot apply.
+    for s in 01-istio 02-peering 03-app 04-demo-pod-failover 05-ingress-ga 06-scale; do
       echo; echo "################  $s  ################"
       bash "$SCRIPT_DIR/$s.sh" || { echo "FAILED at $s" >&2; exit 1; }
+    done
+
+    echo; echo "################  07-demo-region-failover  ################"
+    GA_DNS="$(aws globalaccelerator list-accelerators --region us-west-2 \
+              --query "Accelerators[?Name=='mesh-multiregion'].DnsName|[0]" --output text 2>/dev/null)"
+    if [[ -n "$GA_DNS" && "$GA_DNS" != "None" ]]; then
+      bash "$SCRIPT_DIR/07-demo-region-failover.sh" "$GA_DNS" \
+        || { echo "FAILED at 07-demo-region-failover" >&2; exit 1; }
+    else
+      echo "  skipped: no Global Accelerator named mesh-multiregion found"
+    fi
+
+    for s in 08-dns-route53 09-demo-dns-failover; do
+      if [[ -z "${HOSTED_ZONE_ID:-}" || -z "${RECORD_NAME:-}" ]]; then
+        echo; echo "################  $s (skipped)  ################"
+        echo "  needs HOSTED_ZONE_ID and RECORD_NAME, and a publicly delegated zone"
+        continue
+      fi
+      echo; echo "################  $s  ################"
+      if [[ "$s" == 09-demo-dns-failover ]]; then
+        bash "$SCRIPT_DIR/$s.sh" "$RECORD_NAME" || { echo "FAILED at $s" >&2; exit 1; }
+      else
+        bash "$SCRIPT_DIR/$s.sh" || { echo "FAILED at $s" >&2; exit 1; }
+      fi
     done
     ;;
   teardown)
