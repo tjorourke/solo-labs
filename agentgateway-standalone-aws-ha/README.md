@@ -72,9 +72,26 @@ You need:
 - an AWS account and an **explicit** profile name. `scripts/lib.sh` refuses to run
   without `LAB_AWS_PROFILE`, and overrides anything a sourced secrets file
   exported, because sourcing one can silently repoint you at another account.
-- a **public Route53 hosted zone**. HTTPS is not optional here: Cognito rejects
-  non-localhost `http` redirect URIs, so the admin UI OIDC flow needs a real
-  certificate, and ACM needs a zone to validate in.
+- a **public Route53 hosted zone that is actually delegated**. HTTPS is not
+  optional here: Cognito rejects non-localhost `http` redirect URIs, so the admin
+  UI OIDC flow needs a real certificate, and ACM needs a zone to validate in.
+
+  "Delegated" is the part that bites. A hosted zone can exist in your account,
+  hold records, and still be invisible to the internet because its parent has no
+  `NS` record pointing at it. ACM validates over public DNS, so it will sit on
+  `aws_acm_certificate_validation` until it times out, roughly 75 minutes, and the
+  error says nothing about DNS. Check before you build:
+
+  ```bash
+  dig +short NS <your-zone> @8.8.8.8    # must return nameservers, not nothing
+  ```
+
+  If you do not have a delegated zone, the cheapest route is a subdomain of a
+  domain you already own: create a Route53 hosted zone for, say,
+  `awslab.example.com`, then add its four nameservers as `NS` records for `awslab`
+  in whatever hosts `example.com`. On Cloudflare they must be **DNS only**, not
+  proxied. That is self-service, costs $0.50/month for the zone, and is undone by
+  deleting the four records.
 - OpenAI and Anthropic API keys. Bedrock needs neither: that provider
   authenticates with the EC2 instance role.
 - `tofu` or `terraform`, `aws`, `jq`, `curl`.
