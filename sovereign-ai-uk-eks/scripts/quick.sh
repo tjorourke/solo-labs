@@ -30,8 +30,15 @@ export SOVEREIGN_AWS_PROFILE="${SOVEREIGN_AWS_PROFILE:-${AWS_PROFILE:-}}"
 case "${1:-up}" in
   up)
     [[ -n "$SOVEREIGN_AWS_PROFILE" ]] || { echo "quick.sh: set SOVEREIGN_AWS_PROFILE, LAB_AWS_PROFILE or AWS_PROFILE" >&2; exit 2; }
-    # Arm first, not last: if the build dies halfway the GPU is still covered.
-    bash "$SCRIPT_DIR/gpu-backstop.sh" arm || echo "quick.sh: could not arm the GPU backstop, continuing" >&2
+    # Arming BEFORE the build cannot work: gpu-backstop.sh needs the gpu-od
+    # nodegroup to exist and refuses with "Arm this after the cluster exists".
+    # So arm on EXIT instead, which covers the case that actually matters, a build
+    # that dies after the GPU node is up. If the run failed earlier than that
+    # there is no nodegroup, arming fails harmlessly, and there is nothing to bill.
+    arm_backstop() { bash "$SCRIPT_DIR/gpu-backstop.sh" arm >/dev/null 2>&1 \
+      && echo "quick.sh: GPU scale-to-zero backstop armed" \
+      || echo "quick.sh: no GPU nodegroup to arm the backstop against" >&2; }
+    trap arm_backstop EXIT
     bash "$SCRIPT_DIR/e2e.sh"
     ;;
   teardown)
