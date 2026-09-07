@@ -55,8 +55,15 @@ spec:
         # should only read". The gateway's own metric carries the HTTP method, so a refused
         # write, a PUT/POST/DELETE that came back 4xx, is a one-line alert. This is the alert
         # the article says would have ended the incident on 8 May.
+        #
+        # MKCOL is in the list because it is the verb the rebuilt message board actually
+        # used, and leaving it out would miss the move that survived the 4 July cleanup.
+        # Confirmed on the live waypoint, which labels it exactly that:
+        #   agentgateway_requests_total{method="MKCOL",status="403",reason="Authorization"}
+        # The registry's waypoint is scraped by yaml/96; this query is not scoped to one
+        # gateway, so any agentgateway that refuses a write lands here.
         - alert: WriteVerbRefused
-          expr: sum by (route, method) (increase(agentgateway_requests_total{method=~"PUT|POST|DELETE|PATCH", status=~"40[0-9]|41[0-9]|42[0-9]"}[5m])) > 0
+          expr: sum by (route, method) (increase(agentgateway_requests_total{method=~"PUT|POST|DELETE|PATCH|MKCOL|PROPPATCH|COPY|MOVE", status=~"40[0-9]|41[0-9]|42[0-9]"}[5m])) > 0
           for: 0m
           labels:
             severity: critical

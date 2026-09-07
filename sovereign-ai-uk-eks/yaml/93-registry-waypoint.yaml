@@ -1,0 +1,29 @@
+# The L7 waypoint in front of the registry, stood up BEFORE Artifactory itself.
+#
+# The read-only rule (93-registry-readonly.yaml) matches HTTP methods, and ztunnel is L4:
+# it proves the caller's SPIFFE identity and forwards bytes, it cannot see that a request
+# is a PUT. So the registry needs an opt-in L7 proxy, and in this lab that proxy is
+# agentgateway, running as the ambient waypoint (GatewayClass
+# enterprise-agentgateway-waypoint), not Envoy.
+#
+# ORDER MATTERS. Enrolling a running, heavy stateful app in ambient mid-flight breaks its
+# in-pod cert path, so the namespace is labelled ambient and this waypoint is created
+# first, and Artifactory is then deployed INTO the already-ambient namespace by
+# scripts/artifactory.sh. Only the artifactory Service carries
+# istio.io/use-waypoint, not the whole namespace: the bundled Postgres talks a binary
+# protocol on 5432 and has no business going through an HTTP proxy.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: artifactory-waypoint
+  namespace: artifactory
+  labels:
+    # service-scoped: it fronts the Service VIP, which is what a caller resolves
+    # http://artifactory:8082 to.
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  listeners:
+    - name: mesh
+      port: 15088
+      protocol: HTTP

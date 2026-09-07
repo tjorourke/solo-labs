@@ -1,0 +1,26 @@
+# Scrape the registry's waypoint, so the write-verb alert fires on the message board.
+#
+# yaml/80 already carries the WriteVerbRefused rule, and its query is deliberately not
+# scoped to one gateway: any agentgateway that refuses a write shows up in it. But
+# Prometheus only had a PodMonitor for the front door, so the waypoint in front of the
+# registry, which is where the board is actually refused, was never scraped. This adds it.
+#
+# The label values below are read off the live proxy, not guessed:
+#   agentgateway_requests_total{method="MKCOL",status="403",reason="Authorization"} 1
+# MKCOL is a first-class method label, which is what makes "the earliest signal in the
+# incident" a one-line query rather than a log-parsing exercise.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: artifactory-waypoint
+  namespace: artifactory
+  labels:
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: artifactory-waypoint
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

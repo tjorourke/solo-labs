@@ -1,31 +1,20 @@
 # Registry read-only: the layer-7 rule that ends the message board.
 #
-# The OpenAI incident's covert channel was a WRITABLE package registry: agents PUT notes
-# into Artifactory to coordinate. A package pull only ever needs GET and HEAD, so the fix
-# is least privilege at the grain of the verb, not the service. This is the exact control
-# the zero-trust write-up calls for.
+# The incident's covert channel was a WRITABLE package registry. Agents PUT notes into
+# Artifactory to coordinate, and when the notes were deleted they rebuilt the board out of
+# directory names instead, so deleting artefacts changed nothing. A package pull only ever
+# needs GET and HEAD, so the fix is least privilege at the grain of the VERB: take the
+# write capability away and there is nothing to rebuild into.
 #
-# Enforced at an L7 waypoint in front of the registry (ztunnel is L4 and cannot match HTTP
-# methods). IMPORTANT: enrol the artifactory namespace in ambient and stand up the
-# waypoint at INSTALL time, before Artifactory starts. Enrolling a running, heavy stateful
-# app in ambient mid-flight can break its in-pod cert path; deploy it into an
-# already-ambient namespace instead.
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: artifactory-waypoint
-  namespace: artifactory
-  labels:
-    istio.io/waypoint-for: service
-spec:
-  gatewayClassName: enterprise-agentgateway-waypoint
-  listeners:
-    - name: mesh
-      port: 15008
-      protocol: HBONE
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
+# Enforced at the agentgateway waypoint from 93-registry-waypoint.yaml. matchExpressions
+# are OR'd and the action is Allow, so a request that satisfies none of them is refused:
+# PUT, POST, DELETE and the WebDAV MKCOL the agents used to rebuild the board all fall
+# through to a 403 at the waypoint, with the caller's SPIFFE identity in the access log.
+#
+# source.identity.* is available without a token because ztunnel already proved the
+# caller's workload identity over HBONE before handing the connection to the waypoint.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
 metadata:
   name: registry-readonly
   namespace: artifactory
@@ -34,10 +23,12 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: artifactory-waypoint
-  action: ALLOW
-  rules:
-    - to:
-        - operation:
-            # reads only. PUT, POST and the WebDAV MKCOL (used to rebuild the board out of
-            # directory names) are all refused.
-            methods: ["GET", "HEAD"]
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          # reads only. a pull is a GET, an existence check is a HEAD, and that is the
+          # whole legitimate vocabulary of a package client.
+          - 'request.method == "GET"'
+          - 'request.method == "HEAD"'

@@ -106,11 +106,43 @@ Or through the gateway, with a real Keycloak token (the governed path a caller u
 
 ```bash
 ./scripts/observability.sh alert && ./scripts/observability.sh mail   # the SOC alert email, shown on screen
-./scripts/artifactory.sh up && ./scripts/artifactory-ssrf.sh all      # the SSRF, then locked down layer by layer
 ./scripts/rate-limit.sh test                                          # 429 after 10 model calls a minute
 ./scripts/trivy.sh up                                                 # a CVE admission gate
 ./scripts/policy.sh test                                              # every admission policy refusing a real violation
 ```
+
+### The OpenAI / Hugging Face incident, recreated
+
+The two headline steps of that incident were an SSRF through JFrog Artifactory and a
+writable package registry the agents used as a message board. Both run here against a
+real Artifactory, and both are refused by a layer that names who tried.
+
+```bash
+./scripts/artifactory.sh up            # Artifactory OSS, into an already-ambient namespace,
+                                       # with its L7 waypoint up before the app starts
+./scripts/artifactory-ssrf.sh all      # the whole story, in order
+```
+
+`all` is these six steps, and each runs on its own if you want to stop and talk:
+
+| Step | What you see |
+|---|---|
+| `repos` | the two remote repositories created, which is the SSRF primitive itself |
+| `recreate` | Artifactory fetching the public internet and an internal-only service for a caller who can reach neither |
+| `board` | four notes PUT into a writable repo: the covert channel, built out of nothing but files |
+| `mkcol` | the notes deleted, then the board rebuilt out of WebDAV directory names, the move that outlived the real cleanup |
+| `readonly` | `yaml/93-registry-readonly.yaml` at the waypoint: GET and HEAD pass, PUT and MKCOL are refused, and the waypoint logs it |
+| `contain` | the SSRF's reach taken away at the mesh layer, with the deny naming Artifactory's own SPIFFE identity |
+
+`./scripts/artifactory-ssrf.sh reset` puts it all back to open so the demo runs again from
+the start.
+
+One thing worth saying out loud when you run it: Artifactory sits **in** the mesh here,
+because the read-only rule matches HTTP methods and only an L7 waypoint can see those.
+Ambient re-originates its egress from ztunnel, past the veth where a pod NetworkPolicy
+hooks, so the SSRF containment is `yaml/94-artifactory-containment.yaml` at the mesh layer,
+not the NetworkPolicy in `yaml/91`. That is a better outcome, not a worse one: a
+NetworkPolicy gives you a timeout, the mesh gives you a refusal with a name on it.
 
 ---
 
@@ -145,5 +177,6 @@ month at rest).
 | `management.sh` · `agentregistry.sh` | the management console + collector + ClickHouse, and AgentRegistry |
 | `ar-agent.sh` · `ar-mcp.sh` | register + deploy the agent and the MCP server through AgentRegistry |
 | `registry-mirror.sh` · `dns.sh` | the sovereignty seals: in-region image mirror, Route 53 DNS firewall |
+| `artifactory.sh` · `artifactory-ssrf.sh` | the incident recreation: Artifactory into an ambient namespace behind an L7 waypoint, then the SSRF and the message board |
 | `access.sh` | print the connectivity details (kubeconfig, hosts, consoles, model) |
 | `teardown.sh` | delete it all cleanly |

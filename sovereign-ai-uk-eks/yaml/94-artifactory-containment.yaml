@@ -1,0 +1,39 @@
+# Taking Artifactory's reach away, and then putting a name on the refusal.
+#
+# 91-artifactory-egress.yaml is the layer that ENFORCES: a default-deny egress
+# NetworkPolicy on the artifactory namespace, and it works even though Artifactory sits in
+# the ambient mesh. That is worth stating plainly, because this lab used to claim the
+# opposite. Measured on this cluster with a real HTTPS fetch (not a bare TCP connect):
+#
+#   ambient namespace, no NetworkPolicy        -> reached api.github.com, 1216 bytes
+#   ambient namespace, default-deny egress     -> Connection reset by peer
+#
+# The trap that produced the old, wrong answer is worth knowing. In ambient a TCP connect
+# ALWAYS succeeds, because it is ztunnel on the same node that accepts it; the drop only
+# shows up when bytes have to flow to the real destination. So a probe that calls
+# connect() and stops reports "reachable" no matter what the policy says, and any egress
+# claim measured that way is measuring nothing.
+#
+# What this file adds is not enforcement, it is ATTRIBUTION. A NetworkPolicy drop gives
+# you a reset and no record of who tried. The mesh knows: ztunnel proved the caller's
+# SPIFFE identity before the connection went anywhere, so the deny below is logged against
+# the workload that made it. On the SSRF that is the difference between "something in that
+# namespace tried to reach the billing API" and "Artifactory did, on someone's behalf".
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: internal-api-gateway-only
+  namespace: internal
+spec:
+  selector:
+    matchLabels:
+      app: internal-api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              # the sanctioned door, and nothing else. Artifactory's own identity
+              # (spiffe://cluster.local/ns/artifactory/sa/artifactory) is not on this list,
+              # so the SSRF's lateral fetch is refused and ztunnel logs who asked.
+              - cluster.local/ns/agentgateway-system/sa/sovereign-gateway

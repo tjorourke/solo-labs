@@ -1,0 +1,39 @@
+# Who may talk to the registry's database, by identity rather than by port.
+#
+# This replaces a NetworkPolicy the Artifactory chart's bundled Postgres ships for itself,
+# and the reason is worth knowing before you enrol any stateful app in ambient.
+#
+# That policy allows ingress on TCP 5432 and nothing else, which is correct for a pod on
+# the plain pod network and WRONG for a meshed one. In ambient, a caller's connection is
+# delivered to the destination over HBONE on port 15008, not on the service port, so a
+# NetworkPolicy that names 5432 drops every meshed connection. Measured on this cluster:
+# Artifactory crashlooped fifteen times with a Postgres "connection reset", and the ztunnel
+# access log named the cause outright:
+#
+#   error: "connection timed out, maybe a NetworkPolicy is blocking HBONE port 15008"
+#   src.workload: artifactory-0  dst.hbone_addr: 10.42.x.x:5432
+#
+# Adding 15008 to that policy fixes it and also empties it of meaning, because 15008 is
+# every meshed port at once. So the port-based policy comes off (postgresql.networkPolicy
+# .enabled=false in scripts/artifactory.sh) and this goes on instead: ztunnel already
+# proved the caller's SPIFFE identity over HBONE, so authorise on that. Only Artifactory
+# reaches its own database, and an attacker in the namespace with a shell in some other pod
+# does not, which a port rule never gave us.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: registry-db-owner-only
+  namespace: artifactory
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              # Artifactory runs under its own ServiceAccount for exactly this reason: on
+              # the chart default it is 'default', and a policy naming the default SA
+              # authorises every unlabelled pod in the namespace, including the attacker's.
+              - cluster.local/ns/artifactory/sa/artifactory

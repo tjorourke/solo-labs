@@ -1,21 +1,33 @@
-# Egress control for the ambient namespaces, done at the mesh layer because NetworkPolicy
-# cannot do it here.
+# Egress control for the ambient namespaces, at the mesh layer, for attribution.
 #
-# The workload NetworkPolicies (36-egress-lockdown, 99-default-deny-egress) enforce for
-# NON-ambient namespaces like apps: measured, a demo-client pod cannot open api.openai.com.
-# But models and kagent are ambient, and ambient re-originates a pod's traffic from ztunnel,
-# so it never crosses the pod veth where the VPC CNI NetworkPolicy agent hooks. Measured, a
-# vLLM pod CAN reach api.openai.com even with a default-deny NetworkPolicy in place. ztunnel
-# is L4 and does transparent passthrough for a destination that is not a mesh service, so
-# there is no ztunnel-only "block that host" knob either.
+# CORRECTED 2026-09-07. This file used to say that a NetworkPolicy "cannot do it here",
+# on the grounds that ambient re-originates a pod's traffic from ztunnel so it never
+# crosses the veth where the VPC CNI policy agent hooks. That is wrong, and the claim
+# behind it ("measured, a vLLM pod CAN reach api.openai.com even with a default-deny
+# NetworkPolicy in place") was measured the wrong way. Re-measured on this cluster with a
+# real HTTPS fetch rather than a bare TCP connect:
 #
-# The enforcement point for ambient egress is an egress waypoint. DNS capture (already on:
-# AMBIENT_DNS_CAPTURE=true) sends an enmeshed pod's outbound traffic to the waypoint, and an
-# AuthorizationPolicy on the waypoint decides allow or deny. The ambient workloads here need
-# no external egress at all (an agent reaches the model through the in-cluster gateway, which
-# is in-mesh, not out over the internet), so the policy is a clean default-deny with no
-# ServiceEntry exceptions. Legitimate outbound, the Artifactory mirror, still goes through
-# agentgateway as the one sanctioned broker, exactly as before.
+#   models (ambient), no NetworkPolicy       -> reached api.github.com, 1216 bytes
+#   models (ambient), default-deny egress    -> Connection reset by peer
+#
+# So NetworkPolicy DOES contain ambient egress here. The trap that produces the wrong
+# answer is worth knowing, because it is easy to fall into twice: in ambient a TCP connect
+# always succeeds, since it is ztunnel on the same node that accepts it. The drop only
+# appears once bytes have to reach the real destination. Any egress claim proved with
+# connect() alone is proving nothing.
+#
+# The egress waypoint is still worth having, for three reasons that survive the
+# correction. It decides by identity rather than by IP, so the deny names the workload
+# that tried. It logs, where a NetworkPolicy drop is a silent reset. And it does not depend
+# on the CNI supporting NetworkPolicy at all, which on EKS is a cluster-wide setting
+# someone can turn off. Defence in depth, with the network layer doing the enforcing and
+# this layer saying who.
+#
+# DNS capture (already on: AMBIENT_DNS_CAPTURE=true) sends an enmeshed pod's outbound
+# traffic to the waypoint, and an AuthorizationPolicy on the waypoint decides allow or
+# deny. The ambient workloads here need no external egress at all (an agent reaches the
+# model through the in-cluster gateway, which is in-mesh, not out over the internet), so
+# the policy is a clean default-deny with no ServiceEntry exceptions.
 apiVersion: v1
 kind: Namespace
 metadata:

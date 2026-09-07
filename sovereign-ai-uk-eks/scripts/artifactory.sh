@@ -10,9 +10,17 @@
 #
 #   ./scripts/artifactory.sh up        install Artifactory OSS (platform node group)
 #   ./scripts/artifactory.sh url        the in-cluster base URL
-#   ./scripts/artifactory.sh creds      the bootstrap admin credentials
-#   ./scripts/artifactory.sh status     what is running
+#   ./scripts/artifactory.sh creds      the admin credentials this install seeds
+#   ./scripts/artifactory.sh status     what is running, and whether the waypoint is up
 #   ./scripts/artifactory.sh down       remove it
+#
+# ORDER MATTERS, and it is the reason this is a script and not four commands. The registry
+# needs an L7 waypoint in front of it (methods, not ports, are what end the message
+# board), and enrolling a running, heavy stateful app in ambient mid-flight breaks its
+# in-pod cert path. So: label the namespace ambient, create the waypoint, THEN install
+# Artifactory into the already-ambient namespace. Only the artifactory Service is pointed
+# at the waypoint, never the whole namespace: the bundled Postgres speaks a binary
+# protocol and has no business going through an HTTP proxy.
 #
 # The SSRF recreate + block live in artifactory-ssrf.sh so this file stays the install.
 set -euo pipefail
@@ -25,6 +33,11 @@ NS=artifactory
 # chart 107.161 the split-services layout is mandatory and deadlocks on boot on a single
 # node; 107.146 (app 7.146) runs everything in one container and boots reliably.
 CHART_VERSION="${ARTIFACTORY_CHART_VERSION:-107.146.35}"   # appVersion 7.146.35
+# Seeded at bootstrap through the chart, so nothing in the demo needs a click-through
+# password change and artifactory-ssrf.sh can authenticate on a fresh install. Override
+# with ARTIFACTORY_PASSWORD if you want your own.
+AR_PASS="${ARTIFACTORY_PASSWORD:-Password1!}"
+LAB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
 [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] || { echo "error: no AWS identity; check SOVEREIGN_AWS_PROFILE" >&2; exit 1; }
@@ -43,6 +56,24 @@ case "${1:-status}" in
     kc create namespace "$NS" --dry-run=client -o yaml | kc apply -f - >/dev/null
     kc label ns "$NS" pod-security.kubernetes.io/enforce=baseline --overwrite >/dev/null
 
+    # Ambient BEFORE the app starts. ztunnel captures a pod on its next start, so doing
+    # this now means Artifactory boots enmeshed and its cert path is never rewritten under
+    # a running JVM.
+    kc label ns "$NS" istio.io/dataplane-mode=ambient --overwrite >/dev/null
+    echo "    namespace $NS -> ambient (before the app starts, deliberately)"
+
+    # The L7 waypoint, also before the app. It is an agentgateway waypoint, so it is the
+    # same proxy as the front door, and 93-registry-readonly.yaml targets it later.
+    kc apply -f "$LAB_ROOT/yaml/93-registry-waypoint.yaml" >/dev/null
+    # Identity-based access to the bundled database, replacing the port-based NetworkPolicy
+    # the Postgres subchart ships (disabled below). Read yaml/95 before changing this: a
+    # NetworkPolicy naming 5432 drops every connection to a MESHED pod, because ambient
+    # delivers on HBONE 15008, and the symptom is a fifteen-restart Postgres crashloop.
+    kc apply -f "$LAB_ROOT/yaml/95-registry-db-authz.yaml" >/dev/null
+    kc -n "$NS" wait --for=condition=Programmed gateway/artifactory-waypoint --timeout=180s >/dev/null 2>&1 \
+      && echo "    waypoint artifactory-waypoint Programmed" \
+      || echo "    WARNING: waypoint not Programmed yet; check 'kubectl -n $NS get gateway'" >&2
+
     # The chart mandates a master key and a join key. Generate them once and keep them in a
     # secret so re-runs reuse the same keys (regenerating would break an upgrade). Generated
     # at runtime, never committed.
@@ -58,6 +89,9 @@ case "${1:-status}" in
       --kube-context "$CTX" -n "$NS" --version "$CHART_VERSION" --wait --timeout 15m \
       --set global.masterKeySecretName=artifactory-mandatory-keys \
       --set global.joinKeySecretName=artifactory-mandatory-keys \
+      --set artifactory.admin.password="$AR_PASS" \
+      --set serviceAccount.create=true --set serviceAccount.name=artifactory \
+      --set postgresql.primary.networkPolicy.enabled=false \
       -f - >/dev/null <<'VALUES'
 # Run all services in one container, the classic monolithic mode. The split-services
 # layout (separate frontend/jfbus deployments) deadlocks on boot: those pods wait for the
@@ -98,8 +132,14 @@ postgresql:
       size: 10Gi
 VALUES
     kc -n "$NS" rollout status statefulset/artifactory --timeout=120s 2>/dev/null || true
+
+    # Point the SERVICE at the waypoint, not the namespace. Callers resolve
+    # http://artifactory:8082 to this Service VIP, so this is what puts their requests
+    # through L7; Postgres on 5432 keeps its plain ztunnel L4 path.
+    kc -n "$NS" label svc artifactory istio.io/use-waypoint=artifactory-waypoint --overwrite >/dev/null
+    echo "    svc/artifactory -> waypoint (svc-scoped; postgres stays L4)"
     echo "    installed. base URL: $("$0" url)"
-    echo "    admin bootstrap:     $("$0" creds)"
+    echo "    admin:               $("$0" creds)"
     ;;
 
   url)
@@ -107,12 +147,19 @@ VALUES
     ;;
 
   creds)
-    # the chart seeds admin/password by default on OSS unless overridden.
-    echo "admin / password  (change on first login; this is a demo)"
+    # Seeded by the chart at bootstrap (artifactory.admin.password), so there is no
+    # first-login password change standing between a fresh install and a scripted demo.
+    echo "admin / $AR_PASS"
     ;;
 
   status)
     kc -n "$NS" get pods -o wide --no-headers 2>/dev/null || echo "  not installed"
+    echo "--- ambient + waypoint"
+    kc get ns "$NS" -o jsonpath='{.metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null | sed 's/^/  dataplane-mode: /' ; echo
+    kc -n "$NS" get gateway artifactory-waypoint --no-headers 2>/dev/null | sed 's/^/  gateway: /' || echo "  gateway: none"
+    kc -n "$NS" get svc artifactory -o jsonpath='{.metadata.labels.istio\.io/use-waypoint}' 2>/dev/null | sed 's/^/  svc use-waypoint: /' ; echo
+    echo "--- the read-only rule (93-registry-readonly.yaml)"
+    kc -n "$NS" get enterpriseagentgatewaypolicy registry-readonly --no-headers 2>/dev/null | sed 's/^/  /' || echo "  not applied (the board is still writable)"
     ;;
 
   down)

@@ -216,7 +216,7 @@ s_weights() {
 }
 
 s_vllm() {
-  step "vLLM serving Mistral across 4x L4"
+  step "vLLM serving Mistral on one RTX PRO 6000 (g7e.2xlarge, TP=1)"
   kubectl apply -f "$LAB_ROOT/yaml/20-vllm.yaml"
   echo "   waiting for Ready (weight load + CUDA graph capture, ~5-8 min)..."
   kubectl -n "$MODELS_NS" rollout status deploy/vllm --timeout=20m
