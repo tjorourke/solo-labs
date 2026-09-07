@@ -257,7 +257,7 @@ kc -n "$SOLO_MGMT_NS" create secret generic ui-backend-oidc-secret \
 # No --wait: the UI backend does OIDC discovery against the sslip issuer, which a
 # pod can't resolve until the hostAlias lands (below). Install, bridge, THEN wait.
 helm --kube-context "$CTX" upgrade --install management "$MGMT_CHART" \
-  -n "$SOLO_MGMT_NS" --version "$SOLO_ENT_MGMT_VERSION" --reuse-values \
+  -n "$SOLO_MGMT_NS" --version "$SOLO_ENT_MGMT_VERSION" --reset-then-reuse-values \
   --set cluster=mesh1 \
   --set products.kagent.enabled=true \
   --set products.kagent.namespace="$KAGENT_NS" \
