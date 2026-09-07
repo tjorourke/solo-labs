@@ -88,6 +88,34 @@ Consoles are on the mesh1 LoadBalancer IP via `sslip.io` (no `/etc/hosts`): the 
 
 Day-2:
 
+### The coding harness: agentdemo-cc
+
+`agentdemo-cc.sh` puts the same dice agent up twice, through two different doors, on the
+Part 5 cluster:
+
+```bash
+./demo-scripts/agentdemo-cc.sh up     # agentdemo (ADK image) + agentdemo-cc (harness)
+./demo-scripts/agentdemo-cc.sh ask    # prompt both, print both answers
+./demo-scripts/agentdemo-cc.sh down
+```
+
+- **`agentdemo`** is `type: BYO`: the image you built with `arctl`, running as a pod.
+- **`agentdemo-cc`** is an `AgentHarness` with `backend: openclaw`, the claude-code
+  family. It runs as a **gVisor actor on the WorkerPool**, not as a pod of its own,
+  because `AgentHarness` has a required `spec.substrate` — which is why it lives here
+  and not on mesh1.
+
+It answers for itself: *"I'm Claude Haiku 4.5 running as an OpenClaw agent inside a
+gVisor sandbox."* The kagent UI lists `agentdemo` as an Agent and `agentdemo-cc` as an
+AgentHarness, and both can be prompted there.
+
+Two things that will bite anyone repeating this. The controller ships without an
+acp-sandbox image unless it was built with one, so the harness must name a
+**digest-pinned** `substrate.workloadImage` or it reports `image digest is not set at
+link time`. And a harness does not answer on A2A: it speaks the **Agent Client
+Protocol** over a websocket (`initialize` → `session/new` → `session/prompt`), which is
+what `acp-chat.py` does.
+
 ### Watch the actors (Part 5)
 
 `substrate-scope.sh` runs [Substrate Scope](https://github.com/themsquared/substrate-scope), a live
