@@ -43,11 +43,11 @@ KEYCLOAK_NS=ar-keycloak
 KEYCLOAK_REALM=agentregistry
 KAGENT_NS=kagent
 AR_NS=agentregistry-system
-AR_VERSION=2026.6.1
+AR_VERSION="${AR_VERSION:-2026.6.1}"
 AR_CHART="oci://us-docker.pkg.dev/solo-public/agentregistry-enterprise/helm/agentregistry-enterprise"
 AR_SERVER_SVC=agentregistry-enterprise-server
 AR_SERVER_PORT=12121
-KAGENT_ENT_VERSION=0.4.3
+KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.4.3}"
 KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
 KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
 AR_BACKEND_CLIENT=ar-backend
@@ -62,7 +62,7 @@ RBAC_SUPERUSER_ROLE=admins
 # --reuse-values, so either can run first and neither drops the other's values).
 # Because demo-7 needs it too, it is NOT parked with the rest of demo-4.
 SOLO_MGMT_NS=solo-cost
-SOLO_ENT_MGMT_VERSION=0.5.2
+SOLO_ENT_MGMT_VERSION="${SOLO_ENT_MGMT_VERSION:-0.5.2}"
 MGMT_CHART="oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management"
 TELEMETRY_COLLECTOR_ENDPOINT="http://solo-enterprise-telemetry-collector.${SOLO_MGMT_NS}.svc.cluster.local:4317"
 
@@ -131,6 +131,29 @@ AR_BACKEND_SECRET="$(scrape ar-backend)"
 KAGENT_BACKEND_SECRET="$(scrape kagent-backend)"
 [[ -n "$AR_BACKEND_SECRET" && -n "$KAGENT_BACKEND_SECRET" ]] || die "could not scrape client secrets"
 ok "client secrets scraped"
+
+# The registry now mints its OWN client-credentials token for every call it makes to the
+# kagent controller, so the client it uses needs the service-account grant switched on.
+# Without it the runtime registers but never syncs: "Client not enabled to retrieve
+# service account". It has to be kagent-backend rather than ar-backend, because kagent
+# validates the audience and rejects a token minted for the registry's own client.
+enable_service_account() {
+  local client="$1" pf admtok cid
+  kc -n "$KEYCLOAK_NS" port-forward svc/keycloak 18099:8080 >/dev/null 2>&1 & pf=$!
+  for _ in $(seq 1 30); do curl -sf -m2 http://localhost:18099/realms/master/.well-known/openid-configuration >/dev/null 2>&1 && break; sleep 1; done
+  admtok="$(curl -s -X POST http://localhost:18099/realms/master/protocol/openid-connect/token \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d 'grant_type=password&client_id=admin-cli&username=admin&password=admin' | jq -r '.access_token // empty')"
+  cid="$(curl -s -H "Authorization: Bearer $admtok" \
+    "http://localhost:18099/admin/realms/${KEYCLOAK_REALM}/clients?clientId=${client}" | jq -r '.[0].id // empty')"
+  [ -n "$cid" ] && curl -s -o /dev/null -X PUT -H "Authorization: Bearer $admtok" \
+    -H 'Content-Type: application/json' \
+    "http://localhost:18099/admin/realms/${KEYCLOAK_REALM}/clients/${cid}" \
+    -d '{"serviceAccountsEnabled":true}'
+  kill "$pf" 2>/dev/null || true
+}
+enable_service_account kagent-backend
+ok "client-credentials grant enabled on kagent-backend"
 
 # hostAlias helper: map the sslip issuer host -> Keycloak ClusterIP on a deployment
 bridge() {
@@ -298,6 +321,18 @@ for _ in 1 2 3 4 5; do
 done
 # kind-kagent runtime (type Kagent: deploys via the controller HTTP API, forwarding
 # the caller's bearer; reached by plain Service DNS now the registry runs in-cluster).
+# auth.oidc is required on kagent runtimes from 2026.8.0: the registry mints a
+# client-credentials token per call instead of forwarding the caller's bearer. The
+# clientSecretRef is a REGISTRY Secret resource, not a Kubernetes one, so publish the
+# scraped client secret into the catalog first.
+arctl apply -f - >/dev/null 2>&1 <<SEC
+apiVersion: ar.dev/v1alpha1
+kind: Secret
+metadata: { name: kagent-oidc }
+spec:
+  stringData:
+    clientSecret: "${KAGENT_BACKEND_SECRET}"
+SEC
 arctl apply -f - >/dev/null 2>&1 <<RT
 apiVersion: ar.dev/v1alpha1
 kind: Runtime
@@ -305,7 +340,14 @@ metadata: { name: kind-kagent }
 spec:
   type: Kagent
   telemetryEndpoint: http://agentregistry-enterprise-telemetry-collector.${AR_NS}.svc.cluster.local:4318
-  config: { kagentUrl: "http://kagent-controller.kagent:8083", namespace: kagent }
+  config:
+    kagentUrl: "http://kagent-controller.kagent:8083"
+    namespace: kagent
+    auth:
+      oidc:
+        issuer: ${KEYCLOAK_ISSUER}
+        clientId: ${KAGENT_BACKEND_CLIENT}
+        clientSecretRef: { name: kagent-oidc, key: clientSecret }
 RT
 for r in virtual-default kubernetes-default; do arctl delete runtime "$r" >/dev/null 2>&1 || true; done
 ok "runtime kind-kagent registered"

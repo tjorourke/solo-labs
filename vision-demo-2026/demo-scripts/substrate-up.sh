@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# substrate-up.sh — enable kagent Agent Substrate (gVisor) on mesh1, STANDALONE.
-# If no kagent release exists it installs a minimal one (v0.5.2, anthropic provider,
-# INSECURE_MODE for local dev); if Part 4's kagent is present it upgrades that in place
-# (v0.4.3 -> v0.5.2). Either way it turns on the substrate subchart + a 2-replica gVisor
-# WorkerPool. OPT-IN: upgrading Part 4's release bumps the kagent it shares.
+# substrate-up.sh — enable kagent Agent Substrate (gVisor) on a cluster.
+# If no kagent release exists it installs a minimal one (anthropic provider,
+# INSECURE_MODE for local dev); if one is already there (Part 4's, say) it upgrades that
+# release in place. Either way it turns on the substrate subchart + a 2-replica gVisor
+# WorkerPool.
 #
-#   ./demo-scripts/substrate-up.sh        # then demo it in demo-5-substrate.ipynb
+#   ./demo-scripts/substrate-up.sh                 # the Part 5 cluster (kind-substrate)
+#   CTX=kind-mesh1 ./demo-scripts/substrate-up.sh  # add substrate to Part 4's cluster
+#
+# Part 4 and Part 5 now run the SAME kagent version, so the version clash that once
+# forced them onto separate clusters is gone: mesh1 can carry substrate too, which is
+# what an AgentHarness needs (its spec.substrate is required).
 #
 set -euo pipefail
 CTX="${CTX:-kind-substrate}"; KAGENT_NS="${KAGENT_NS:-kagent}"
 KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
 KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
-KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.2}"
+KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.6}"
 SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
 [ -f "$SECRETS_FILE" ] && set -a && . "$SECRETS_FILE" && set +a
 LIC="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-${SOLO_ISTIO_LICENSE_KEY:-}}}"
@@ -45,8 +50,12 @@ helm --kube-context "$CTX" upgrade -i kagent-crds "$KENT_CRDS_CHART" -n "$KAGENT
 KSTATUS="$(helm --kube-context "$CTX" -n "$KAGENT_NS" status kagent -o json 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("info",{}).get("status",""))' 2>/dev/null || true)"
 if [ "$KSTATUS" = "deployed" ]; then
   echo "→ Part 4 kagent present — upgrading it to ${KAGENT_ENT_VERSION} with substrate on (~minutes) ..."
+  # --reset-then-reuse-values, NOT --reuse-values: plain reuse carries the previous
+  # release's values over verbatim and never picks up defaults a newer chart added, so
+  # upgrading across versions dies rendering a template that reads one of them
+  # (0.5.2 -> 0.5.6 fails on controller.serviceAccount.annotations being nil).
   helm --kube-context "$CTX" upgrade kagent "$KENT_CHART" -n "$KAGENT_NS" --version "$KAGENT_ENT_VERSION" \
-    --reuse-values "${SUBSTRATE_FLAGS[@]}" --wait --timeout 12m
+    --reset-then-reuse-values "${SUBSTRATE_FLAGS[@]}" --wait --timeout 12m
 else
   [ -n "$KSTATUS" ] && { echo "→ clearing a non-deployed kagent release (status: $KSTATUS) ..."; helm --kube-context "$CTX" -n "$KAGENT_NS" uninstall kagent >/dev/null 2>&1 || true; }
   echo "→ installing a minimal standalone kagent ${KAGENT_ENT_VERSION} with substrate (~minutes) ..."

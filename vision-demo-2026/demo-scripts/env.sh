@@ -71,7 +71,7 @@ case "$DEMO" in
     export CTX=kind-substrate KAGENT_NS=kagent
     export KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
     export KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
-    export KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.2}"
+    export KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.6}"
     echo "demo-5 · context: $CTX · kagent-enterprise: $KAGENT_ENT_VERSION"
     kubectl --context $CTX get ns "$KAGENT_NS" >/dev/null 2>&1 \
       && echo "substrate cluster: up" \
