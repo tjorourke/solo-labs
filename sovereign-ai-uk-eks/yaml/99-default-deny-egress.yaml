@@ -24,6 +24,15 @@
 # Control-plane namespaces (kube-system, istio-system, cert-manager, vault, monitoring) are
 # left to their own policies: they have their own egress needs (Vault reaches AWS KMS to
 # auto-unseal, for one) and locking them here would break the platform.
+# NOTE for anyone copying this into an AMBIENT namespace. These three namespaces have no
+# waypoint, so DNS + in-namespace + the gateway is genuinely all they need. The moment a
+# namespace gets a waypoint, podSelector {} selects it too and this shape takes it offline
+# at its first certificate renewal, roughly forty-five minutes later, because a waypoint
+# needs istiod (istio-system 15012) and istio-csr (cert-manager 6443, the POD port, not the
+# Service's 443). yaml/91 and the Kyverno generate rule in yaml/41 carry those two rules for
+# that reason; this file deliberately does not, because adding egress these namespaces do
+# not need would weaken the test in the write-up that proves they cannot reach the internet.
+
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

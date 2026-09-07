@@ -204,6 +204,28 @@ spec:
                 ports:
                   - { protocol: TCP, port: 443 }
                   - { protocol: TCP, port: 80 }
+              # The mesh control plane, and this is not optional in an ambient namespace.
+              # podSelector {} selects waypoints too, and a waypoint needs istiod for xDS
+              # and istio-csr for its workload certificate. Leave these out and the failure
+              # is DELAYED and therefore nasty: the waypoint gets its first cert in the
+              # window before the CNI programs this policy, runs on it for an hour, then
+              # fails renewal and resets every connection it is handed. Measured on the
+              # artifactory namespace: the registry died about forty-five minutes after
+              # install, and only the waypoint's own log named the cause
+              # ("CA client error: upstream call failed: Connect: deadline has elapsed").
+              #
+              # 6443, NOT 443, for istio-csr. A NetworkPolicy port matches the port on the
+              # destination POD, and that Service is 443 with targetPort 6443, so a rule
+              # copied from the helm caAddress matches nothing and looks identical to
+              # having no rule at all.
+              - to:
+                  - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-system } }
+                ports:
+                  - { protocol: TCP, port: 15012 }
+              - to:
+                  - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cert-manager } }
+                ports:
+                  - { protocol: TCP, port: 6443 }
 ---
 # The supply-chain answer to "a tampered dependency in its image". restrict-registries says
 # WHERE an image may come from; this says it was signed by a key we hold and not swapped

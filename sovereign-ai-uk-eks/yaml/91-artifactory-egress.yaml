@@ -34,3 +34,33 @@ spec:
       ports:
         - { protocol: TCP, port: 443 }
         - { protocol: TCP, port: 80 }
+    # The mesh control plane. This is NOT optional and it is not part of the SSRF story:
+    # podSelector {} selects every pod in the namespace, and that includes the waypoint
+    # from 93-registry-waypoint.yaml. A waypoint needs istiod for xDS and istio-csr for
+    # its workload certificate, so a policy that omits these two rules takes the waypoint
+    # offline a minute or so after it is applied, and the failure looks nothing like a
+    # policy problem: the registry starts resetting connections and ztunnel reports
+    # "Connection reset by peer" on inbound HBONE 15008 to the waypoint, not on anything
+    # Artifactory did. Measured on this cluster, and it cost an hour of looking in the
+    # wrong place.
+    #
+    # This is a general rule for an ambient namespace, not a quirk of this lab: an egress
+    # NetworkPolicy that selects all pods must permit the control plane, or it kills the
+    # data plane it is supposed to be protecting.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - { protocol: TCP, port: 15012 }   # istiod xDS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cert-manager
+      ports:
+        # 6443, NOT 443. A NetworkPolicy port matches the port on the destination POD, and
+        # the istio-csr Service is 443 with targetPort 6443, so a rule naming 443 matches
+        # nothing and the waypoint's certificate renewal times out. The CA address in the
+        # helm values says 443 because that is the Service; the policy has to name the
+        # container port.
+        - { protocol: TCP, port: 6443 }    # istio-csr, the CA this mesh signs against
