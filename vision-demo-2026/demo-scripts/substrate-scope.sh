@@ -3,8 +3,10 @@
 # the Part 5 cluster. You watch worker bays fill, actors resume from snapshots and get
 # checkpointed back, which is the thing demo-5 otherwise has to prove with ps and ls.
 #
-#   ./demo-scripts/substrate-scope.sh          # start it, prints the URL
-#   ./demo-scripts/substrate-scope.sh stop     # stop it
+#   ./demo-scripts/substrate-scope.sh              # start it, prints the URL
+#   ./demo-scripts/substrate-scope.sh load [N] [B]  # N agents, then B real chats at them
+#   ./demo-scripts/substrate-scope.sh stop          # stop the viewer and any load
+#   ./demo-scripts/substrate-scope.sh clean         # delete the agents load created
 #
 # Third party (Mike Moore, Apache-2.0): https://github.com/themsquared/substrate-scope
 # It is NOT vendored here. This clones it under demo-scripts/.substrate-scope (gitignored)
@@ -25,8 +27,14 @@ LOG="${TMPDIR:-/tmp}/substrate-scope.log"
 # It is started from inside $DIR, so its argv is a bare "node server.mjs" with no path:
 # a pkill pattern matching the directory would never find it. Track the pid instead.
 PIDF="${TMPDIR:-/tmp}/substrate-scope.pid"
+load_stop() {
+  pkill -f 'node stimulate.mjs' 2>/dev/null || true
+  curl -s -X POST "http://localhost:${PORT}/demo" -d '{"run":false}' -m 3 >/dev/null 2>&1 || true
+}
+
 scope_stop() {
   local pid
+  load_stop
   [ -f "$PIDF" ] && pid="$(cat "$PIDF" 2>/dev/null)" || pid=""
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null; rm -f "$PIDF"; return 0; fi
   rm -f "$PIDF"
@@ -36,6 +44,48 @@ scope_stop() {
 
 if [ "${1:-}" = "stop" ]; then
   scope_stop && echo "✔ Substrate Scope stopped" || echo "not running"
+  exit 0
+fi
+
+if [ "${1:-}" = "clean" ]; then
+  kubectl --context "$CTX" -n kagent delete sandboxagent -l scope-load=true --ignore-not-found
+  echo "✔ load agents removed"
+  exit 0
+fi
+
+if [ "${1:-}" = "load" ]; then
+  N="${2:-6}"; BUDGET="${3:-30}"
+  curl -sf -o /dev/null -m 5 "http://localhost:${PORT}/" || { echo "✗ start it first: ./demo-scripts/substrate-scope.sh"; exit 1; }
+  echo "→ deploying $N SandboxAgents (labelled scope-load=true, remove with '$0 clean')"
+  for i in $(seq 1 "$N"); do
+    kubectl --context "$CTX" apply -f - >/dev/null <<YAML
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: scope-agent-$i
+  namespace: kagent
+  labels: { scope-load: "true" }
+spec:
+  type: Declarative
+  description: load agent $i for the Substrate Scope board
+  declarative: { runtime: go, modelConfig: default-model-config, systemMessage: "You are agent $i, an SRE assistant running in a gVisor sandbox." }
+  substrate: { workerPoolRef: { name: kagent-default } }
+YAML
+  done
+  for i in $(seq 1 "$N"); do
+    kubectl --context "$CTX" -n kagent wait sandboxagent/scope-agent-$i --for=condition=Ready --timeout=120s >/dev/null 2>&1       || echo "  scope-agent-$i not Ready yet (it will join the board when it is)"
+  done
+  echo "✔ $N agents Ready"
+  # /demo is the visualiser's billing switch and defaults to OFF, so the load
+  # generator refuses to dispatch until it is flipped. These are REAL model calls.
+  curl -s -X POST "http://localhost:${PORT}/demo" -d '{"run":true}' -m 5 >/dev/null
+  pkill -f 'node stimulate.mjs' 2>/dev/null || true
+  cd "$DIR"
+  nohup node stimulate.mjs --budget "$BUDGET" >"${TMPDIR:-/tmp}/substrate-stimulate.log" 2>&1 </dev/null &
+  cd - >/dev/null
+  echo "▶ sending $BUDGET real chats at them — these are billable model calls, and it stops at the budget"
+  echo "  watch http://localhost:${PORT} : bays light up, actors resume from snapshots, then checkpoint back"
+  echo "  log: ${TMPDIR:-/tmp}/substrate-stimulate.log   stop early: $0 stop"
   exit 0
 fi
 

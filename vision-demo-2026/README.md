@@ -96,9 +96,17 @@ snapshot storage and per-agent activity. It is third party (Apache-2.0) and not 
 the script clones it at a pinned commit into a gitignored directory and runs it locally.
 
 ```bash
-./demo-scripts/substrate-scope.sh          # http://localhost:8123
-./demo-scripts/substrate-scope.sh stop
+./demo-scripts/substrate-scope.sh              # http://localhost:8123
+./demo-scripts/substrate-scope.sh load 6 30    # 6 agents, then 30 real chats at them
+./demo-scripts/substrate-scope.sh stop         # stop the viewer and any load
+./demo-scripts/substrate-scope.sh clean        # delete the agents load created
 ```
+
+`load` is what fills the board: it deploys N `SandboxAgent`s and drives real chats at them, so
+bays light up, actors resume from their snapshots and checkpoint back as each turn finishes. Those
+are **billable model calls**, which is why the visualiser ships a master switch that defaults to off
+and why `load` takes a budget and stops there. Nothing in demo-5 itself leaves a populated board:
+§5.3 deploys three extra actors but deletes them again, so use `load` for a board that stays busy.
 
 It reads through the kagent controller API, which gives full fidelity (actors and sessions, not just
 pools and pods) on this suite's cluster. Two things to know: it watches the **current** kubectl
