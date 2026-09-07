@@ -37,7 +37,21 @@ s_cluster() {
   if aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
     skip "cluster exists"; return
   fi
-  eksctl create cluster -f "$LAB_ROOT/eks/cluster.yaml"
+  # eks/cluster.yaml carries a PLACEHOLDER secrets CMK
+  # (arn:aws:kms:eu-west-2:<AWS_ACCOUNT_ID>:key/<secrets-cmk>). deploy-all.sh
+  # substitutes it; e2e.sh did not, so eksctl sent the literal placeholder to EKS
+  # and the control plane failed with "The KeyArn in encryptionConfig provider ...
+  # is not found", rolling the whole stack back. Resolve the alias the same way.
+  local skey rendered
+  skey="$(aws kms describe-key --key-id alias/uk-sovereign-ai-secrets \
+          --region "$REGION" --query 'KeyMetadata.Arn' --output text 2>/dev/null)"
+  [ -n "$skey" ] && [ "$skey" != "None" ] \
+    || die "cannot resolve alias/uk-sovereign-ai-secrets in $REGION; the cluster needs its secrets CMK"
+  rendered="$(mktemp -t sovereign-cluster).yaml"
+  sed "s|arn:aws:kms:eu-west-2:<AWS_ACCOUNT_ID>:key/<secrets-cmk>|${skey}|" \
+    "$LAB_ROOT/eks/cluster.yaml" > "$rendered"
+  eksctl create cluster -f "$rendered"
+  rm -f "$rendered"
   ok "cluster created"
 }
 
