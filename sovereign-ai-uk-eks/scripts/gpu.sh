@@ -46,16 +46,28 @@ scale() {
 case "${1:-status}" in
   up)
     scale 1
-    echo "waiting for the node to register and advertise its GPUs..."
-    for i in $(seq 1 60); do
+    # 30 minutes, not 15. A g7e has to boot, install the NVIDIA driver and have the
+    # device plugin land and advertise before nvidia.com/gpu appears, and on
+    # 2026-09-07 that took just over the old 15 minute window: the build gave up at
+    # 10:30 and the node was advertising nvidia.com/gpu: 1 three minutes later.
+    # Waiting longer costs GPU time; giving up too early wastes the whole build.
+    echo "waiting for the node to register and advertise its GPUs (up to 30m)..."
+    gpu_ready=0
+    for i in $(seq 1 120); do
       n=$(kubectl get nodes -l role=gpu -o name 2>/dev/null | wc -l | tr -d ' ')
       if [ "$n" != "0" ]; then
         g=$(kubectl get nodes -l role=gpu \
               -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || true)
-        [ -n "$g" ] && { echo "GPU node ready, nvidia.com/gpu: $g"; break; }
+        [ -n "$g" ] && { echo "GPU node ready after $((i*15))s, nvidia.com/gpu: $g"; gpu_ready=1; break; }
       fi
       sleep 15
     done
+    if [ "$gpu_ready" != "1" ]; then
+      echo "ERROR: no node advertised nvidia.com/gpu within 30m." >&2
+      echo "  check: kubectl -n kube-system get pods -l name=nvidia-device-plugin-ds" >&2
+      echo "  and:   kubectl get nodes -l role=gpu -o wide" >&2
+      exit 1
+    fi
     kubectl get nodes -l role=gpu \
       -o custom-columns='NAME:.metadata.name,TYPE:.metadata.labels.node\.kubernetes\.io/instance-type,ZONE:.metadata.labels.topology\.kubernetes\.io/zone,GPU:.status.allocatable.nvidia\.com/gpu'
     ;;
