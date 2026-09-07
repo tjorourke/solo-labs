@@ -39,7 +39,10 @@ case "${1:-up}" in
       && echo "quick.sh: GPU scale-to-zero backstop armed" \
       || echo "quick.sh: no GPU nodegroup to arm the backstop against" >&2; }
     trap arm_backstop EXIT
-    bash "$SCRIPT_DIR/e2e.sh"
+    # deploy-all.sh is the lab's documented entry point ("the whole environment,
+    # from an empty AWS account ... in one command"). e2e.sh is one of the pieces
+    # it calls, the model spine, and it expects the cluster to exist already.
+    bash "$SCRIPT_DIR/../deploy-all.sh"
     ;;
   teardown)
     bash "$SCRIPT_DIR/teardown.sh" down || echo "quick.sh: teardown reported a problem" >&2

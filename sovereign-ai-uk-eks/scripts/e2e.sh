@@ -37,11 +37,11 @@ s_cluster() {
   if aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
     skip "cluster exists"; return
   fi
-  # eks/cluster.yaml carries a PLACEHOLDER secrets CMK
-  # (arn:aws:kms:eu-west-2:<AWS_ACCOUNT_ID>:key/<secrets-cmk>). deploy-all.sh
-  # substitutes it; e2e.sh did not, so eksctl sent the literal placeholder to EKS
-  # and the control plane failed with "The KeyArn in encryptionConfig provider ...
-  # is not found", rolling the whole stack back. Resolve the alias the same way.
+  # Normally unreachable: deploy-all.sh creates the cluster, so this step skips.
+  # It is here for the case where e2e.sh is run directly against an empty account.
+  # eks/cluster.yaml carries a PLACEHOLDER secrets CMK, which deploy-all.sh
+  # substitutes, so resolve the alias the same way rather than handing eksctl a
+  # literal "<AWS_ACCOUNT_ID>" and getting a rolled-back stack.
   local skey rendered
   skey="$(aws kms describe-key --key-id alias/uk-sovereign-ai-secrets \
           --region "$REGION" --query 'KeyMetadata.Arn' --output text 2>/dev/null)"
