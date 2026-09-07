@@ -11,7 +11,9 @@ spec:
       containers:
         - name: calc
           image: localhost:5001/calc-mcp:latest
-          imagePullPolicy: IfNotPresent
+          # Always: the tag is mutable, so IfNotPresent leaves the node serving a cached
+          # older layer and a rebuild of this demo image silently never takes effect.
+          imagePullPolicy: Always
           ports: [{ containerPort: 3000 }]
           readinessProbe: { tcpSocket: { port: 3000 }, initialDelaySeconds: 3, periodSeconds: 3 }
 ---

@@ -45,7 +45,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              pip install --quiet mcp fastapi uvicorn && python /app/server.py
+              pip install --quiet "mcp<2" fastapi uvicorn && python /app/server.py
           volumeMounts:
             - name: app
               mountPath: /app
