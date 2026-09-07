@@ -165,6 +165,16 @@ bridge() {
 }
 
 # ── kagent-enterprise ──────────────────────────────────────────────────────────
+# OBO moved out of kagent from 0.5.x: skipOBO is deprecated there in favour of an
+# agentgateway STS named by oidc.stsWellKnownUri. This lab deploys no STS, so leaving
+# skipOBO=false on 0.5.x makes an agent attempt a token exchange with nowhere to send
+# it, and the symptom is not an error: the agent runs, serves its card, and its A2A
+# turns simply never return. Skip OBO unless an STS is actually configured.
+case "$KAGENT_ENT_VERSION" in
+  0.4.*) KAGENT_SKIP_OBO="${KAGENT_SKIP_OBO:-false}" ;;
+  *)     KAGENT_SKIP_OBO="${KAGENT_SKIP_OBO:-true}"  ;;
+esac
+
 step "Installing kagent-enterprise ${KAGENT_ENT_VERSION}"
 kc create namespace "$KAGENT_NS" --dry-run=client -o yaml | kc apply -f - >/dev/null
 kc -n "$KAGENT_NS" get secret jwt >/dev/null 2>&1 || {
@@ -182,7 +192,8 @@ helm --kube-context "$CTX" upgrade --install kagent "$KENT_CHART" -n "$KAGENT_NS
   --set providers.anthropic.apiKey="$ANTHROPIC_API_KEY" \
   --set oidc.issuer="$KEYCLOAK_ISSUER" \
   --set oidc.clientId="$KAGENT_BACKEND_CLIENT" \
-  --set oidc.secretRef=kagent-enterprise-oidc-secret --set oidc.secretKey=clientSecret --set oidc.skipOBO=false \
+  --set oidc.secretRef=kagent-enterprise-oidc-secret --set oidc.secretKey=clientSecret \
+  --set oidc.skipOBO="${KAGENT_SKIP_OBO}" \
   --set-json 'controller.envFrom=[{"configMapRef":{"name":"kagent-enterprise-config"}}]' \
   --set kagent-tools.enabled=true --set ui.enabled=false \
   --set otel.tracing.enabled=true --set otel.tracing.exporter.otlp.endpoint="$TELEMETRY_COLLECTOR_ENDPOINT" \
