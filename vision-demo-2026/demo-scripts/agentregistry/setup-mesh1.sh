@@ -170,9 +170,15 @@ bridge() {
 # skipOBO=false on 0.5.x makes an agent attempt a token exchange with nowhere to send
 # it, and the symptom is not an error: the agent runs, serves its card, and its A2A
 # turns simply never return. Skip OBO unless an STS is actually configured.
+# From 0.5.x, OBO is no longer served by the kagent controller: agents exchange tokens
+# at an agentgateway STS named by oidc.stsWellKnownUri, injected into each agent pod as
+# STS_WELL_KNOWN_URI. Leave that unset on 0.5.x and a BYO agent runs, serves its card and
+# then never returns from an A2A turn, because its OBO exchange has nowhere to go.
+# The STS is the agentgateway controller's token-exchange server, off by default.
 case "$KAGENT_ENT_VERSION" in
-  0.4.*) KAGENT_SKIP_OBO="${KAGENT_SKIP_OBO:-false}" ;;
-  *)     KAGENT_SKIP_OBO="${KAGENT_SKIP_OBO:-true}"  ;;
+  0.4.*) KAGENT_SKIP_OBO="${KAGENT_SKIP_OBO:-false}"; KAGENT_STS_URI="" ;;
+  *)     KAGENT_SKIP_OBO="${KAGENT_SKIP_OBO:-false}"
+         KAGENT_STS_URI="${KAGENT_STS_URI:-http://enterprise-agentgateway.agentgateway-system:7777/.well-known/openid-configuration}" ;;
 esac
 
 step "Installing kagent-enterprise ${KAGENT_ENT_VERSION}"
@@ -194,6 +200,7 @@ helm --kube-context "$CTX" upgrade --install kagent "$KENT_CHART" -n "$KAGENT_NS
   --set oidc.clientId="$KAGENT_BACKEND_CLIENT" \
   --set oidc.secretRef=kagent-enterprise-oidc-secret --set oidc.secretKey=clientSecret \
   --set oidc.skipOBO="${KAGENT_SKIP_OBO}" \
+  ${KAGENT_STS_URI:+--set oidc.stsWellKnownUri="$KAGENT_STS_URI"} \
   --set-json 'controller.envFrom=[{"configMapRef":{"name":"kagent-enterprise-config"}}]' \
   --set kagent-tools.enabled=true --set ui.enabled=false \
   --set otel.tracing.enabled=true --set otel.tracing.exporter.otlp.endpoint="$TELEMETRY_COLLECTOR_ENDPOINT" \
