@@ -14,6 +14,36 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 N="${1:-100}"
+
+# Scale the nodegroups to fit N before ramping, rather than after finding out.
+# The default cluster is three m5.large per region. AWS VPC CNI caps an m5.large
+# at 29 pods, so three nodes leave about 64 schedulable once system pods have
+# taken theirs, and a default run of 100 tenants stalls at exactly 64/100 on both
+# clusters and then times out waiting for discovery. The lab already documented
+# scaling as the fix for N=1000; it is needed for the default N too.
+# About 22 tenant pods per node once system pods are accounted for.
+NODES_NEEDED=$(( (N + 21) / 22 ))
+if (( NODES_NEEDED < 3 )); then NODES_NEEDED=3; fi
+# maxSize in the eksctl configs is 12. Asking for more just fails, so cap and say so.
+if (( NODES_NEEDED > 12 )); then
+  echo "  note: $N tenants would need ~$NODES_NEEDED nodes; capping at the nodegroup maxSize of 12"
+  NODES_NEEDED=12
+fi
+scale_nodes_for_n() {
+  local cluster="$1" region="$2"
+  local have
+  have="$(eksctl get nodegroup --cluster "$cluster" --region "$region" --name workers -o json 2>/dev/null \
+          | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: d=[]
+print(d[0].get("DesiredCapacity",0) if d else 0)' 2>/dev/null || echo 0)"
+  have="${have:-0}"
+  if (( have < NODES_NEEDED )); then
+    echo "  scaling $cluster workers ${have} -> ${NODES_NEEDED} so $N tenants can schedule"
+    eksctl scale nodegroup --cluster "$cluster" --region "$region" --name workers \
+      -N "$NODES_NEEDED" -M 12 >/dev/null 2>&1 || echo "  warn: could not scale $cluster workers" >&2
+  fi
+}
 CTX1="$(ctx_of "$NAME1" "$REGION1")"; CTX2="$(ctx_of "$NAME2" "$REGION2")"
 [[ -n "$CTX1" && -n "$CTX2" ]] || die "missing kube contexts"
 
@@ -77,6 +107,10 @@ metrics() { # metrics <ctx> <label>
 
 step "Baseline metrics"
 metrics "$CTX1" "$REGION1"
+
+step "Sizing the nodegroups for $N tenants"
+scale_nodes_for_n "$NAME1" "$REGION1"
+scale_nodes_for_n "$NAME2" "$REGION2"
 
 step "Ramping to $N tenants on BOTH clusters"
 START=$(date +%s)
