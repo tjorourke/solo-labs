@@ -88,6 +88,23 @@ Consoles are on the mesh1 LoadBalancer IP via `sslip.io` (no `/etc/hosts`): the 
 
 Day-2:
 
+### Watch the actors (Part 5)
+
+`substrate-scope.sh` runs [Substrate Scope](https://github.com/themsquared/substrate-scope), a live
+visualiser for Agent Substrate, against the `substrate` cluster: worker bays, the restore queue,
+snapshot storage and per-agent activity. It is third party (Apache-2.0) and not vendored here, so
+the script clones it at a pinned commit into a gitignored directory and runs it locally.
+
+```bash
+./demo-scripts/substrate-scope.sh          # http://localhost:8123
+./demo-scripts/substrate-scope.sh stop
+```
+
+It reads through the kagent controller API, which gives full fidelity (actors and sessions, not just
+pools and pods) on this suite's cluster. Two things to know: it watches the **current** kubectl
+context, so the script switches you to `kind-substrate`; and its scaling buttons really do scale the
+WorkerPool, so treat them as live actions during a demo.
+
 ```bash
 ./demo-scripts/reset.sh       # wipe ALL demo workloads (both parts) back to square 1, keep the platform
 ./demo-scripts/wake.sh        # after a laptop sleep (expired 24h leaf certs)
