@@ -20,6 +20,7 @@ AC_AGENT="${AGENT}-agentcore"
 
 step "Preflight"
 aws sts get-caller-identity >/dev/null 2>&1 || die "no AWS session — run: source scripts/aws-login.sh"
+require_solo_account || exit 1
 arctl get runtime aws-agentcore >/dev/null 2>&1 || die "AWS platform not connected — run ./scripts/04d-connect-aws.sh (or re-run setup.sh)"
 [[ -d "$PROJ" ]] || die "no agentdemo/ project — scaffold it in the notebook first"
 : "${AGENT_GIT_URL:?set AGENT_GIT_URL in .env.local}"

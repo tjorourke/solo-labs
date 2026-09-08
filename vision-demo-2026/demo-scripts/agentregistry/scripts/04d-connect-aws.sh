@@ -53,6 +53,7 @@ arctl_login
 # `arctl runtime setup` (below) authenticates via ARCTL_API_TOKEN, not the keychain.
 export ARCTL_API_TOKEN="$(arctl_token)"
 [[ -n "$ARCTL_API_TOKEN" ]] || die "could not mint a registry token — is the gateway up so ${KEYCLOAK_ISSUER} resolves?"
+require_solo_account || exit 1
 AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ok "AWS $AWS_ACCOUNT_ID / $AWS_REGION"
 

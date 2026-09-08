@@ -99,6 +99,29 @@ seed_agent_env() {
   ok "stamped ANTHROPIC_API_KEY into ${proj#"$PROJECT_ROOT"/}/.env (from the cluster Secret)"
 }
 
+# require_solo_account — hard guard. This lab deploys to the Solo
+# field-engineering account ONLY. It has previously been run with a personal
+# AWS_PROFILE exported in the shell and left ECR repos, an IAM role and an
+# AgentCore workload identity behind in the wrong account. .env.aws pins the
+# profile, but an exported AWS_PROFILE or a stale session can still win, so the
+# account is asserted rather than assumed. Override deliberately with
+# ALLOW_AWS_ACCOUNT if you ever genuinely need another one.
+SOLO_AWS_ACCOUNT="${SOLO_AWS_ACCOUNT:-253915036081}"
+require_solo_account() {
+  local want acct
+  want="${ALLOW_AWS_ACCOUNT:-$SOLO_AWS_ACCOUNT}"
+  acct="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)" || acct=""
+  [ -n "$acct" ] || { die "no AWS session — run: source scripts/aws-login.sh"; return 1; }
+  if [ "$acct" != "$want" ]; then
+    die "WRONG AWS ACCOUNT: session is $acct, this lab requires $want.
+       AWS_PROFILE=${AWS_PROFILE:-<unset>}
+       Fix:  export AWS_PROFILE=253915036081_AdministratorAccess && aws sso login --sso-session solo
+       Then re-run. Nothing was created."
+    return 1
+  fi
+  ok "AWS account $acct (${AWS_PROFILE:-default}) — correct account"
+}
+
 # load_secrets — source an optional secrets env (AWS_PROFILE, AWS_REGION,
 # AGENT_GIT_URL) for the AWS AgentCore step. Point SECRETS_FILE at your local
 # secrets before running the AgentCore scripts; nothing here is committed.
