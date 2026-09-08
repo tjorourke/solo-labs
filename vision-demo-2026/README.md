@@ -16,11 +16,26 @@ The parts run **independently** — pick one per customer, or run all seven. Thi
 
 | Piece | Version |
 |---|---|
-| Solo Istio (Helm charts + images, ambient) | `1.30.3-solo` |
-| Solo Enterprise for agentgateway (ingress + waypoint) | `v2026.7.0` |
-| Gloo Platform (Gloo UI, mgmt on mesh1 + agents on both) | `2.13.2` |
+| Solo Istio (Helm charts + images, ambient) | `1.30.4-solo` |
+| Solo Enterprise for agentgateway (ingress + waypoint) | `v2026.8.2` |
+| Solo Enterprise for AgentRegistry | `2026.8.0` |
+| Solo Enterprise for kagent (Part 4) | `0.4.3` — held, see below |
+| Solo Enterprise for kagent (Part 5) | `0.5.6` |
+| Solo Enterprise management (UI + telemetry) | `0.5.6` |
+| Gloo Platform (Gloo UI, mgmt on mesh1 + agents on both) | `2.13.3` |
 | Gateway API | `v1.5.1` |
 | kind clusters | `mesh1` + `mesh2` (unique — no clash with other labs) |
+
+**Why Part 4's kagent is held at 0.4.3 while everything else is current.** On 0.5.6 with
+OIDC a `type: BYO` agent (the image `arctl` builds) deploys, runs and serves its agent
+card, but never returns from an A2A turn: its callback to the controller is refused with
+`user_id is required` on `/api/tasks/<id>`. Declarative agents and SandboxAgents are
+unaffected, which is why Part 5 runs 0.5.6 on its own cluster and the coding harness works
+there. Moving the agent to the ADK build that pairs with 0.5.6 does not help either:
+`arctl` still scaffolds `kagent-adk:0.8.0-beta6`, `0.10.0` is distroless so the scaffold's
+`uv sync` cannot run, and `0.10.0-full` then crash-loops because the controller injects an
+entrypoint the newer image has moved. Retry with `KAGENT_ENT_VERSION=0.5.6`; every version
+is overridable from the environment.
 
 Trust domains are per-cluster (`mesh1` / `mesh2`), the documented 1.30.x multicluster flow — Part 2's principals read `mesh1/ns/petshop/sa/<sa>`.
 

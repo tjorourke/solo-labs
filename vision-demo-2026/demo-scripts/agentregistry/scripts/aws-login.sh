@@ -13,7 +13,7 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib.sh
 . "$SCRIPT_DIR/lib.sh"
 load_secrets
-export AR_VERSION="${AR_VERSION:-2026.6.1}"
+export AR_VERSION="${AR_VERSION:-2026.8.0}"
 export AR_CHART="${AR_CHART:-oci://us-docker.pkg.dev/solo-public/agentregistry-enterprise/helm/agentregistry-enterprise}"
 export GAR_HOST="${GAR_HOST:-us-docker.pkg.dev}"
 

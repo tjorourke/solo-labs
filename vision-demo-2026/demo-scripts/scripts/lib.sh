@@ -17,7 +17,7 @@ set -Eeuo pipefail
 # Pin the Solo 1.30 line BEFORE sourcing the repo-wide versions.env (whose
 # ${VAR:-default} keeps whatever is already set). Part 2's workload-claims step
 # needs 1.30.3-solo. A runtime SOLO_ISTIO_VERSION env still wins.
-: "${SOLO_ISTIO_VERSION:=1.30.3-solo}"
+: "${SOLO_ISTIO_VERSION:=1.30.4-solo}"
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
 : "${GATEWAY_API_VERSION:=v1.5.1}"
@@ -49,12 +49,12 @@ export ISTIO_HELM_VERSION="${ISTIO_HELM_VERSION:-${SOLO_ISTIO_VERSION}}"
 
 # Solo Enterprise for agentgateway — ingress (Part 1) and the L7 waypoint
 # data plane (Part 1 §8 + Part 2 §10 onwards).
-export AGW_VERSION="${AGW_VERSION:-v2026.7.0}"
+export AGW_VERSION="${AGW_VERSION:-v2026.8.2}"
 export AGW_CHARTS="${AGW_CHARTS:-oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts}"
 
 # Gloo Platform (the Solo UI / Gloo UI): mgmt plane on mesh1, agent on both, so
 # the service graph spans both clusters. 2.13.x pairs with Istio 1.30.
-export GLOO_PLATFORM_VERSION="${GLOO_PLATFORM_VERSION:-2.13.2}"
+export GLOO_PLATFORM_VERSION="${GLOO_PLATFORM_VERSION:-2.13.3}"
 export GLOO_MESH_NS="${GLOO_MESH_NS:-gloo-mesh}"
 
 # The Solo istioctl build (has the `multicluster expose|link|check` commands).

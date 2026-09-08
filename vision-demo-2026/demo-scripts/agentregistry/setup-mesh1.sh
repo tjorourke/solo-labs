@@ -43,10 +43,17 @@ KEYCLOAK_NS=ar-keycloak
 KEYCLOAK_REALM=agentregistry
 KAGENT_NS=kagent
 AR_NS=agentregistry-system
-AR_VERSION="${AR_VERSION:-2026.6.1}"
+AR_VERSION="${AR_VERSION:-2026.8.0}"
 AR_CHART="oci://us-docker.pkg.dev/solo-public/agentregistry-enterprise/helm/agentregistry-enterprise"
 AR_SERVER_SVC=agentregistry-enterprise-server
 AR_SERVER_PORT=12121
+# kagent is deliberately NOT on the current release while everything around it is.
+# On 0.5.6 with OIDC, a BYO agent deploys and serves its card but never returns from an
+# A2A turn: its callback is refused with "user_id is required" on /api/tasks/<id>.
+# Declarative agents and SandboxAgents are fine, so Part 5 runs 0.5.6 on its own cluster.
+# The obvious fix is blocked too: arctl still scaffolds kagent-adk 0.8.0-beta6, 0.10.0 is
+# distroless so the scaffold's `uv sync` cannot run, and 0.10.0-full then crash-loops
+# because the controller injects an entrypoint the newer image has moved.
 KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.4.3}"
 KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
 KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
@@ -62,7 +69,7 @@ RBAC_SUPERUSER_ROLE=admins
 # --reuse-values, so either can run first and neither drops the other's values).
 # Because demo-7 needs it too, it is NOT parked with the rest of demo-4.
 SOLO_MGMT_NS=solo-cost
-SOLO_ENT_MGMT_VERSION="${SOLO_ENT_MGMT_VERSION:-0.5.2}"
+SOLO_ENT_MGMT_VERSION="${SOLO_ENT_MGMT_VERSION:-0.5.6}"
 MGMT_CHART="oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management"
 TELEMETRY_COLLECTOR_ENDPOINT="http://solo-enterprise-telemetry-collector.${SOLO_MGMT_NS}.svc.cluster.local:4317"
 
