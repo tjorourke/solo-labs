@@ -13,7 +13,11 @@
 #   agentdemo-cc  AgentHarness      backend openclaw (the claude-code family), one actor
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CTX="${CTX:-kind-substrate}"
+# NOT ${CTX:-...}: connect.sh and env.sh both export CTX=kind-mesh1, so a shell that has
+# sourced either would silently point this at mesh1 — where a SandboxAgent is rejected
+# with `unknown field "spec.substrate"` because mesh1 carries no substrate. Use a name
+# nothing else exports, and override deliberately with SUBSTRATE_CTX=... if you need to.
+CTX="${SUBSTRATE_CTX:-kind-substrate}"
 NS="${KAGENT_NS:-kagent}"
 PORT="${ACP_PORT:-19110}"
 # The controller has no acp-sandbox image baked in unless it was built with one, so the

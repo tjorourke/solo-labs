@@ -24,7 +24,11 @@
 # restart), so treat the scaling buttons as live actions on the cluster.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CTX="${CTX:-kind-substrate}"
+# NOT ${CTX:-...}: connect.sh and env.sh both export CTX=kind-mesh1, so a shell that has
+# sourced either would silently point this at mesh1 — where a SandboxAgent is rejected
+# with `unknown field "spec.substrate"` because mesh1 carries no substrate. Use a name
+# nothing else exports, and override deliberately with SUBSTRATE_CTX=... if you need to.
+CTX="${SUBSTRATE_CTX:-kind-substrate}"
 DIR="$SCRIPT_DIR/.substrate-scope"
 REPO="https://github.com/themsquared/substrate-scope.git"
 PIN="${SUBSTRATE_SCOPE_REF:-952c386777638e1e3a0a2c3e10c7021fe217a38f}"
@@ -36,6 +40,19 @@ PIDF="${TMPDIR:-/tmp}/substrate-scope.pid"
 load_stop() {
   pkill -f 'node stimulate.mjs' 2>/dev/null || true
   curl -s -X POST "http://localhost:${PORT}/demo" -d '{"run":false}' -m 3 >/dev/null 2>&1 || true
+}
+
+# Every path that touches the cluster calls this. Checked here rather than inline in the
+# start path because `load` and `clean` exit before that runs, and pointing load at a
+# cluster without substrate produces an opaque strict-decoding error on spec.substrate.
+require_substrate() {
+  kubectl config get-contexts "$CTX" >/dev/null 2>&1 || {
+    echo "✗ no $CTX context — run $SCRIPT_DIR/substrate-cluster.sh first"; exit 1; }
+  kubectl --context "$CTX" get crd workerpools.ate.dev >/dev/null 2>&1 || {
+    echo "✗ $CTX has no Agent Substrate installed (no workerpools.ate.dev)."
+    echo "  This needs the Part 5 cluster: $SCRIPT_DIR/substrate-cluster.sh"
+    echo "  If you meant a different cluster, set SUBSTRATE_CTX=<context>."
+    exit 1; }
 }
 
 scope_stop() {
@@ -54,12 +71,14 @@ if [ "${1:-}" = "stop" ]; then
 fi
 
 if [ "${1:-}" = "clean" ]; then
+  require_substrate
   kubectl --context "$CTX" -n kagent delete sandboxagent -l scope-load=true --ignore-not-found
   echo "✔ load agents removed"
   exit 0
 fi
 
 if [ "${1:-}" = "load" ]; then
+  require_substrate
   N="${2:-6}"; BUDGET="${3:-30}"
   curl -sf -o /dev/null -m 5 "http://localhost:${PORT}/" || { echo "✗ start it first: $0"; exit 1; }
   echo "→ deploying $N SandboxAgents (labelled scope-load=true, remove with '$0 clean')"
@@ -96,7 +115,7 @@ YAML
 fi
 
 command -v node >/dev/null 2>&1 || { echo "✗ node 18+ required (it has no npm dependencies, just the runtime)"; exit 1; }
-kubectl config get-contexts "$CTX" >/dev/null 2>&1 || { echo "✗ no $CTX context — run $SCRIPT_DIR/substrate-cluster.sh first"; exit 1; }
+require_substrate
 
 if [ ! -d "$DIR/.git" ]; then
   echo "→ cloning substrate-scope at $PIN ..."
