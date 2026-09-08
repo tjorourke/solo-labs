@@ -32,11 +32,11 @@ cp "$LAB_ROOT/templates/bedrock_model.py" "$PROJ/agentdemo/bedrock_model.py"
 python3 "$SCRIPT_DIR/agentcore_multicloud_patch.py" "$PROJ"
 ok "agent is multi-cloud"
 
-step "Pushing the agent image to ECR (linux/amd64)"
+step "Pushing the agent image to ECR (linux/arm64 — AgentCore requires arm64)"
 ECR_HOST="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"; ECR_IMAGE="${ECR_HOST}/${AGENT}:0.0.1"
 aws ecr describe-repositories --repository-names "$AGENT" >/dev/null 2>&1 || aws ecr create-repository --repository-name "$AGENT" >/dev/null
 aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_HOST" >/dev/null
-arctl build "$PROJ" --push --platform linux/amd64 --image "$ECR_IMAGE"; ok "pushed $ECR_IMAGE"
+arctl build "$PROJ" --push --platform linux/arm64 --image "$ECR_IMAGE"; ok "pushed $ECR_IMAGE"
 
 step "Pushing the agent source to git (AgentCore clones it)"
 SLUG="${AGENT_GIT_URL#https://github.com/}"; SLUG="${SLUG%.git}"; BR="${AGENT_GIT_BRANCH:-main}"
