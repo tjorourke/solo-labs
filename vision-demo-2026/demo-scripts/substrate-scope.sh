@@ -3,10 +3,16 @@
 # the Part 5 cluster. You watch worker bays fill, actors resume from snapshots and get
 # checkpointed back, which is the thing demo-5 otherwise has to prove with ps and ls.
 #
-#   ./demo-scripts/substrate-scope.sh              # start it, prints the URL
-#   ./demo-scripts/substrate-scope.sh load [N] [B]  # N agents, then B real chats at them
-#   ./demo-scripts/substrate-scope.sh stop          # stop the viewer and any load
-#   ./demo-scripts/substrate-scope.sh clean         # delete the agents load created
+# Runs from the suite root or from demo-scripts/ — it resolves everything from its own
+# location, never from the current directory:
+#
+#   ./demo-scripts/substrate-scope.sh [cmd]   # from the suite root
+#   ./substrate-scope.sh [cmd]                # from demo-scripts/
+#
+#   (no args)        start it, prints the URL
+#   load [N] [B]     N agents, then B real chats at them
+#   stop             stop the viewer and any load
+#   clean            delete the agents load created
 #
 # Third party (Mike Moore, Apache-2.0): https://github.com/themsquared/substrate-scope
 # It is NOT vendored here. This clones it under demo-scripts/.substrate-scope (gitignored)
@@ -55,7 +61,7 @@ fi
 
 if [ "${1:-}" = "load" ]; then
   N="${2:-6}"; BUDGET="${3:-30}"
-  curl -sf -o /dev/null -m 5 "http://localhost:${PORT}/" || { echo "✗ start it first: ./demo-scripts/substrate-scope.sh"; exit 1; }
+  curl -sf -o /dev/null -m 5 "http://localhost:${PORT}/" || { echo "✗ start it first: $0"; exit 1; }
   echo "→ deploying $N SandboxAgents (labelled scope-load=true, remove with '$0 clean')"
   for i in $(seq 1 "$N"); do
     kubectl --context "$CTX" apply -f - >/dev/null <<YAML
@@ -90,7 +96,7 @@ YAML
 fi
 
 command -v node >/dev/null 2>&1 || { echo "✗ node 18+ required (it has no npm dependencies, just the runtime)"; exit 1; }
-kubectl config get-contexts "$CTX" >/dev/null 2>&1 || { echo "✗ no $CTX context — run ./demo-scripts/substrate-cluster.sh first"; exit 1; }
+kubectl config get-contexts "$CTX" >/dev/null 2>&1 || { echo "✗ no $CTX context — run $SCRIPT_DIR/substrate-cluster.sh first"; exit 1; }
 
 if [ ! -d "$DIR/.git" ]; then
   echo "→ cloning substrate-scope at $PIN ..."
@@ -120,7 +126,7 @@ if curl -sf -o /dev/null -m 10 "http://localhost:${PORT}/"; then
     && echo "  full fidelity: it is reading the controller's substrate inventory, so actors and sessions are real" \
     || echo "  kubectl-only fallback: pools/workers/templates are live, per-session actor state is not"
   echo "  deploy a SandboxAgent (5.1) and chat with it (5.6) to light the board up"
-  echo "  log: $LOG   stop: ./demo-scripts/substrate-scope.sh stop"
+  echo "  log: $LOG   stop: $0 stop"
 else
   echo "✗ it did not come up — last lines of $LOG:"; tail -15 "$LOG"; exit 1
 fi

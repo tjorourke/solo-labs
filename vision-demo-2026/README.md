@@ -140,10 +140,14 @@ the script clones it at a pinned commit into a gitignored directory and runs it 
 
 ```bash
 ./demo-scripts/substrate-scope.sh              # http://localhost:8123
-./demo-scripts/substrate-scope.sh load 6 30    # 6 agents, then 30 real chats at them
+./demo-scripts/substrate-load.sh               # fill the board: 6 agents, 40 real chats
+./demo-scripts/substrate-load.sh 10 60         # or pick your own N agents / B chats
 ./demo-scripts/substrate-scope.sh stop         # stop the viewer and any load
 ./demo-scripts/substrate-scope.sh clean        # delete the agents load created
 ```
+
+Both scripts resolve everything from their own location, so they run from the suite root,
+from `demo-scripts/`, or by absolute path from anywhere.
 
 `load` is what fills the board: it deploys N `SandboxAgent`s and drives real chats at them, so
 bays light up, actors resume from their snapshots and checkpoint back as each turn finishes. Those
