@@ -13,7 +13,14 @@
 # what an AgentHarness needs (its spec.substrate is required).
 #
 set -euo pipefail
-CTX="${CTX:-kind-substrate}"; KAGENT_NS="${KAGENT_NS:-kagent}"
+# NOT ${CTX:-...}. connect.sh and env.sh both export CTX=kind-mesh1, so running this in a
+# shell that had sourced either silently upgraded Part 4's kagent instead of the Part 5
+# cluster — and a cancelled upgrade there migrates the database forward, which the older
+# controller then cannot start against. Use a name nothing else exports.
+CTX="${SUBSTRATE_CTX:-kind-substrate}"; KAGENT_NS="${KAGENT_NS:-kagent}"
+# Say out loud which cluster is about to be changed, so a wrong target is obvious before
+# any helm work starts rather than after.
+echo "→ target cluster: $CTX   (override with SUBSTRATE_CTX=<context>)"
 KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
 KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
 KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.6}"

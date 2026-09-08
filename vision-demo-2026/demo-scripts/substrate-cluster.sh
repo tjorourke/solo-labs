@@ -14,5 +14,5 @@ if ! kind get clusters 2>/dev/null | grep -qx substrate; then
 else
   echo "→ kind cluster 'substrate' already exists"
 fi
-CTX=kind-substrate bash "$SCRIPT_DIR/substrate-up.sh"
+SUBSTRATE_CTX=kind-substrate bash "$SCRIPT_DIR/substrate-up.sh"
 echo "✔ Part 5 substrate cluster ready (context kind-substrate). Demo it in demo-5-substrate.ipynb."

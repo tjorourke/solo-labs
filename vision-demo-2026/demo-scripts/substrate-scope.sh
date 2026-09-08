@@ -124,17 +124,23 @@ fi
 git -C "$DIR" fetch -q origin 2>/dev/null || true
 git -C "$DIR" checkout -q "$PIN" 2>/dev/null || { echo "✗ could not check out pin $PIN"; exit 1; }
 
-# It watches the CURRENT kubectl context, so point that at the substrate cluster. Every
-# other lab in this suite passes --context explicitly, so this is the one place it matters.
-PREV="$(kubectl config current-context 2>/dev/null || true)"
-[ "$PREV" = "$CTX" ] || { kubectl config use-context "$CTX" >/dev/null; echo "→ kubectl context switched to $CTX (was ${PREV:-none})"; }
+# Substrate Scope watches the CURRENT kubectl context, and plenty in this suite switches
+# that (demo-7's Connect cell runs `kubectl config use-context kind-mesh1`). Switching it
+# here would only be true until the next cell ran, and the board would quietly start
+# showing a cluster with no substrate. So give the viewer its own kubeconfig, pinned to
+# $CTX, and leave YOUR current context alone.
+SCOPE_KUBECONFIG="${TMPDIR:-/tmp}/substrate-scope.kubeconfig"
+kubectl config view --raw > "$SCOPE_KUBECONFIG" 2>/dev/null
+KUBECONFIG="$SCOPE_KUBECONFIG" kubectl config use-context "$CTX" >/dev/null 2>&1 \
+  || { echo "✗ could not pin a kubeconfig to $CTX"; exit 1; }
+echo "→ viewer pinned to $CTX (your own kubectl context is untouched)"
 
 scope_stop || true      # a previous run would otherwise hold the port
 sleep 1
 # Detach properly: every fd redirected and no wrapping subshell, or the caller (a
 # notebook cell, or this script's own shell) blocks until the server exits.
 cd "$DIR"
-nohup node server.mjs --live >"$LOG" 2>&1 </dev/null &
+KUBECONFIG="$SCOPE_KUBECONFIG" nohup node server.mjs --live >"$LOG" 2>&1 </dev/null &
 echo $! > "$PIDF"
 cd - >/dev/null
 sleep 5
