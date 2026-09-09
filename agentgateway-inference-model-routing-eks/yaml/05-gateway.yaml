@@ -1,9 +1,15 @@
 # The gateway this lab routes through.
 #
-# A cluster-local Gateway on port 80, with no TLS and no external address. That is
-# deliberate: this lab is about the routing decision, and everything that would normally
-# sit in front of an LLM endpoint (TLS, JWT, rate limits, an external load balancer) is
-# a separate concern that would triple the size of it. Put those back for anything real.
+# A Gateway on port 80 with no TLS and no external address. That is deliberate: this lab
+# is about the routing decision, and everything that would normally sit in front of an
+# LLM endpoint (TLS, JWT, rate limits, an external load balancer) is a separate concern
+# that would triple the size of it. Put those back for anything real.
+#
+# WHICH IS WHY THE SERVICE TYPE IS PINNED. The gateway's Service defaults to
+# LoadBalancer, so applying the Gateway on its own gets you a public cloud load balancer
+# in front of an unauthenticated LLM endpoint, billed by the hour, and nothing on the
+# Gateway says so. AgentgatewayParameters overrides the generated Service, and the
+# Gateway points at it through spec.infrastructure.parametersRef.
 #
 # GATEWAY CLASS. `agentgateway` is the OSS class. On Solo Enterprise the class is
 # `enterprise-agentgateway` and everything else on this page is unchanged. Check what
@@ -12,6 +18,16 @@
 # allowedRoutes from Same keeps the routes in this namespace, which is all the lab
 # needs and one less thing to reason about.
 ---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: model-gateway-params
+  namespace: agentgateway-system
+spec:
+  service:
+    spec:
+      type: ClusterIP
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -19,6 +35,11 @@ metadata:
   namespace: agentgateway-system
 spec:
   gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: model-gateway-params
   listeners:
     - name: http
       port: 80
