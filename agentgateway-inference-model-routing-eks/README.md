@@ -183,10 +183,19 @@ keyword classifier:  4/9 correct
 semantic classifier: 9/9 correct
 ```
 
-Five of the six keyword failures are misses that could each be fixed by adding a word.
-The sixth cannot: "Model the credit risk function for our loan book" is a finance
-question that reached the code model because it contains `function`. Every keyword
-added to catch a miss widens the surface for a false positive.
+Keyword matching fails in two directions. It misses: four coding questions went to the
+general model because none used a listed word. Adding `kubernetes`, `pod`, `golang`,
+`terraform` and `loop` was measured and takes it from four correct to seven. And it
+fires when it should not: "Model the credit risk function for our loan book" is a
+finance question that went to the code model because it contains `function`. No word
+added fixes that, and each one added makes another false positive more likely.
+
+The semantic router runs a fine-tuned mmBERT classifier over the whole prompt, so an
+unknown term like CrashLoopBackOff still classifies from its context, one misleading
+word does not carry the sentence, and a low-confidence prediction falls to the default
+model instead of guessing. It needs no training for this split: `economics` and
+`business` map to the general model, `computer science` and `engineering` to the code
+model.
 
 
 ### Seeing which model answered
