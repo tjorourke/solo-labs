@@ -1,8 +1,7 @@
 # The second model: Qwen3-Coder-30B-A3B-Instruct-FP8, on the second GPU card.
 #
-# WHY A SECOND MODEL EXISTS AT ALL. Part 1 of this lab serves one model and proves
-# sovereignty. Part 2 proves ROUTING, and routing needs somewhere to route to. One
-# model behind a gateway is a proxy; two models behind a gateway is a decision. The
+# WHY A SECOND MODEL. One model behind a gateway is a proxy; two models behind a
+# gateway is a decision. The
 # decision this pair demonstrates is the honest one: a coding prompt should not be
 # answered by a general instruct model when a code model is sitting next to it.
 #
@@ -177,7 +176,7 @@ spec:
             # before removing these: this is a version-and-card bug, not a design.
             - {name: VLLM_USE_DEEP_GEMM, value: "0"}
             - {name: VLLM_MOE_USE_DEEP_GEMM, value: "0"}
-            # Sovereignty: same as the Mistral pod, kill the phone-home at the
+            # Same as the Mistral pod, kill the phone-home at the
             # workload and not only at the network.
             - {name: VLLM_NO_USAGE_STATS, value: "1"}
             - {name: DO_NOT_TRACK, value: "1"}

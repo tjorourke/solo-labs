@@ -24,36 +24,36 @@
 # named model and only classifies "auto", so naming a model here is the supported way
 # to opt out.
 #
-# Apply as the control plane on the sovereign cluster:
+# Apply as the control plane on a cluster with admission policies:
 #   kubectl apply -f yaml/60-kagent-specialist-agents.yaml \
 #     --as=system:serviceaccount:kagent:kagent-controller
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: ModelConfig
 metadata:
-  name: sovereign-mistral
+  name: model-mistral
   namespace: kagent
 spec:
   provider: OpenAI
   # A concrete model, not "auto". The policy honours it and skips classification.
   model: mistral-small-3.2-24b
-  apiKeySecret: sovereign-gateway-key
+  apiKeySecret: vllm-api-key
   apiKeySecretKey: OPENAI_API_KEY
   openAI:
-    baseUrl: http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local/v1
+    baseUrl: http://model-gateway.agentgateway-system.svc.cluster.local/v1
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: ModelConfig
 metadata:
-  name: sovereign-qwen
+  name: model-qwen
   namespace: kagent
 spec:
   provider: OpenAI
   model: qwen3-coder-30b
-  apiKeySecret: sovereign-gateway-key
+  apiKeySecret: vllm-api-key
   apiKeySecretKey: OPENAI_API_KEY
   openAI:
-    baseUrl: http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local/v1
+    baseUrl: http://model-gateway.agentgateway-system.svc.cluster.local/v1
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
@@ -64,7 +64,7 @@ spec:
   type: Declarative
   description: Answers finance and regulatory questions on the general model
   declarative:
-    modelConfig: sovereign-mistral
+    modelConfig: model-mistral
     systemMessage: |
       You are a financial analyst for a UK bank. Answer questions on accounting
       standards, regulatory capital and risk directly and concisely. If a question
@@ -79,7 +79,7 @@ spec:
             - What is IFRS 9 stage 2 impairment?
             - Explain the difference between CVA and DVA.
     deployment:
-      # Both settings are for the sovereign cluster's admission policies: its registry
+      # Both settings are for this cluster's admission policies: its registry
       # allowlist does not carry the kagent default, and it requires limits on every
       # container. Drop them elsewhere.
       imageRegistry: ghcr.io
@@ -96,7 +96,7 @@ spec:
   type: Declarative
   description: Answers engineering questions on the code model
   declarative:
-    modelConfig: sovereign-qwen
+    modelConfig: model-qwen
     systemMessage: |
       You are an engineering assistant. Answer questions about code, Kubernetes,
       infrastructure and debugging directly. Prefer a working example over prose.

@@ -2,7 +2,7 @@
 # the one the transformation writes.
 #
 # Everything else is unchanged: the same two backends, the same two models, the same
-# fall-through to the catch-all in the parent lab. Only the header name differs, which
+# fall-through behaviour. Only the header name differs, which
 # is the clearest possible statement of the point this lab makes. Swapping who decides
 # is a one-line change to the routing table.
 ---
@@ -13,11 +13,11 @@ metadata:
   namespace: agentgateway-system
 spec:
   hostnames:
-    - sovereign-gateway-internal.agentgateway-system.svc.cluster.local
+    - model-gateway.agentgateway-system.svc.cluster.local
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: sovereign-gateway-internal
+      name: model-gateway
       sectionName: http
   rules:
     - matches:

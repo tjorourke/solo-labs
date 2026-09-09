@@ -35,7 +35,7 @@ POD="$(kubectl get pod -n models -l app=vllm -o jsonpath='{.items[0].metadata.na
 kubectl exec -i -n models "$POD" -- python3 - <<'PY'
 import json, sys, urllib.request
 
-GW = ("http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local"
+GW = ("http://model-gateway.agentgateway-system.svc.cluster.local"
       "/v1/chat/completions")
 
 def parts(t):
@@ -82,5 +82,5 @@ PY
 echo
 echo "gateway's own view (route= and endpoint= are the authoritative proof):"
 kubectl logs -n agentgateway-system \
-  -l gateway.networking.k8s.io/gateway-name=sovereign-gateway-internal --tail=7 \
+  -l gateway.networking.k8s.io/gateway-name=model-gateway --tail=7 \
   | grep -oE 'endpoint=[^ ]+|gen_ai.response.model=[^ ]+' | paste - - || true

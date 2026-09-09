@@ -12,11 +12,11 @@ metadata:
   namespace: agentgateway-system
 spec:
   hostnames:
-    - sovereign-gateway-internal.agentgateway-system.svc.cluster.local
+    - model-gateway.agentgateway-system.svc.cluster.local
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: sovereign-gateway-internal
+      name: model-gateway
       sectionName: http
   rules:
     # Coding traffic to the code model.

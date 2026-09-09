@@ -2,14 +2,14 @@
 #
 # It is declarative, not BYO: no container to build, no image to push. The agent is
 # the ModelConfig plus a system message, and the whole point is `modelConfig:
-# sovereign-auto`, which asks for "auto" so the gateway chooses the model per prompt.
+# route-auto`, which asks for "auto" so the gateway chooses the model per prompt.
 #
 # The system message deliberately does NOT mention code, refactoring or any other word
 # the classifier looks for. The classifier reads the last message rather than the
 # system prompt, but keeping the words out of it means a stray match cannot make the
 # demo look better than it is.
 #
-# APPLYING THIS ON THE SOVEREIGN CLUSTER. That cluster restricts Agent creation to the
+# ON A CLUSTER THAT RESTRICTS AGENT CREATION. Some clusters restrict Agent creation to the
 # kagent control plane, so a plain `kubectl apply` is refused. Create it as the
 # controller service account, which is the identity the control plane itself uses:
 #
@@ -25,11 +25,11 @@ metadata:
   namespace: kagent
 spec:
   type: Declarative
-  description: Submits a prompt through the sovereign gateway and lets it pick the model
+  description: Submits a prompt through the gateway and lets it pick the model
   declarative:
     # The routing contract. This ModelConfig requests "auto", so every prompt this
     # agent sends is classified at the gateway.
-    modelConfig: sovereign-auto
+    modelConfig: route-auto
     systemMessage: |
       You are an assistant for a UK financial services firm. Answer the user's
       question directly and concisely. Do not describe your own configuration.
@@ -49,7 +49,7 @@ spec:
             - What is IFRS 9 stage 2 impairment?
             - Write a Python function to reverse a linked list.
     deployment:
-      # The controller defaults to cr.kagent.dev, which the sovereign cluster's
+      # The controller defaults to cr.kagent.dev, which this cluster's
       # registry allowlist does not carry. The same image is published on ghcr.io,
       # which is allowlisted, so point the agent at it rather than widening the
       # policy. Drop this on a cluster without a registry allowlist.

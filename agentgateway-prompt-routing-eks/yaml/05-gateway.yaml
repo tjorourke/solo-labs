@@ -1,0 +1,28 @@
+# The gateway this lab routes through.
+#
+# A cluster-local Gateway on port 80, with no TLS and no external address. That is
+# deliberate: this lab is about the routing decision, and everything that would normally
+# sit in front of an LLM endpoint (TLS, JWT, rate limits, an external load balancer) is
+# a separate concern that would triple the size of it. Put those back for anything real.
+#
+# GATEWAY CLASS. `agentgateway` is the OSS class. On Solo Enterprise the class is
+# `enterprise-agentgateway` and everything else on this page is unchanged. Check what
+# you have with `kubectl get gatewayclass`.
+#
+# allowedRoutes from Same keeps the routes in this namespace, which is all the lab
+# needs and one less thing to reason about.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: model-gateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

@@ -29,7 +29,7 @@ POD="$(kubectl get pod -n models -l app=vllm -o jsonpath='{.items[0].metadata.na
 run_set() {
   kubectl exec -i -n models "$POD" -- python3 - <<'PY'
 import json, urllib.request
-GW = ("http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local"
+GW = ("http://model-gateway.agentgateway-system.svc.cluster.local"
       "/v1/chat/completions")
 CASES = [
     ("finance", "What is IFRS 9 stage 2 impairment?"),

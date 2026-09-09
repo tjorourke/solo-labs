@@ -48,22 +48,16 @@ All three are deployed here. Three kagent agents cover both patterns:
 
 | Agent | ModelConfig | Who decides |
 |---|---|---|
-| `finance-analyst` | `sovereign-mistral` | the caller, by picking the agent |
-| `coding-assistant` | `sovereign-qwen` | the caller, by picking the agent |
-| `routing-demo` | `sovereign-auto`, asks for `auto` | the gateway, from the prompt |
-
-## What this lab is not
-
-It is not a cluster build. It assumes the EKS cluster, the Enterprise agentgateway
-install, Keycloak and the ambient mesh from
-[sovereign-ai-uk-eks](../sovereign-ai-uk-eks/). Everything here layers on top.
+| `finance-analyst` | `model-mistral` | the caller, by picking the agent |
+| `coding-assistant` | `model-qwen` | the caller, by picking the agent |
+| `routing-demo` | `route-auto`, asks for `auto` | the gateway, from the prompt |
 
 ## Prerequisites
 
-- The `sovereign-ai-uk-eks` cluster up, with `sovereign-gateway-internal` programmed.
-- **Two** GPU nodes. The nodegroup ships at `desiredSize: 0` and part 1 uses one.
-- Roughly **$11.70/hr** while both are up. The parent lab's `scripts/gpu-backstop.sh`
-  scales the nodegroup to zero at 21:00 UTC nightly, taking both models down together.
+- A Kubernetes cluster with agentgateway installed and the Gateway API **experimental**
+  channel applied. Written and run on EKS in eu-west-2; nothing is EKS-specific beyond
+  the nodegroup commands.
+- **Two** GPU nodes, one per model, each with enough VRAM for its model.
 
 ## The mechanism
 
@@ -102,7 +96,7 @@ Six steps on an EKS cluster that already has agentgateway, all wrapped as
 `scripts/quick.sh up`.
 
 **What the gateway install has to include.** This lab does not install agentgateway;
-the parent lab does. The **Gateway API experimental channel** is required, because
+your cluster build does. The **Gateway API experimental channel** is required, because
 ExtProc rides on it and the standard channel does not carry it. Nothing else needs
 enabling: AI backends are part of the gateway, and `inferenceExtension.enabled` is for
 `InferencePool` routing across replicas of one model, which this lab does not use. On
@@ -110,15 +104,17 @@ OSS that is `experimental-install.yaml` plus the `agentgateway-crds` and `agentg
 charts; on Enterprise the same with the `enterprise-` charts and a licence key.
 
 ```bash
-# 1. second GPU node. maxSize must move with desiredSize or the node never arrives
-aws eks update-nodegroup-config --region eu-west-2 --cluster-name uk-sovereign-ai   --nodegroup-name gpu-od --scaling-config minSize=0,maxSize=2,desiredSize=2
+# 1. two GPU nodes, one per model. The nodegroup ships at 0 and the nightly backstop
+#    returns it there, so assume you start from zero. maxSize must move with desiredSize,
+#    because the cluster build gpu.sh hardcodes maxSize=1 and the second node would be capped.
+aws eks update-nodegroup-config --region eu-west-2 --cluster-name <your-cluster>   --nodegroup-name gpu-od --scaling-config minSize=0,maxSize=2,desiredSize=2
 
-# 2. the second model. Mistral already runs from the parent lab on the first card.
+# 2. the second model. Mistral already runs from the cluster build on the first card.
 #    First run pulls ~31 GB; the rollout took about 12 minutes.
-kubectl apply -f yaml/00-qwen-model.yaml
+kubectl apply -f yaml/01-qwen-model.yaml
 kubectl rollout status deploy/vllm-qwen -n models --timeout=1500s
 
-# 3. a backend per model (only Qwen; Mistral's exists in the parent lab)
+# 3. a backend per model (only Qwen; Mistral's exists in the cluster build)
 kubectl apply -f yaml/10-backends.yaml
 
 # 4. the policy and the route
@@ -161,8 +157,8 @@ kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
 ## Testing
 
 ```bash
-SOVEREIGN_AWS_PROFILE=<sandbox SSO profile> ./scripts/test.sh              # 7 cases, current config
-SOVEREIGN_AWS_PROFILE=<sandbox SSO profile> ./scripts/test-classifiers.sh  # keyword vs semantic
+AWS_PROFILE=<sandbox SSO profile> ./scripts/test.sh              # 7 cases, current config
+AWS_PROFILE=<sandbox SSO profile> ./scripts/test-classifiers.sh  # keyword vs semantic
 ```
 
 `test-classifiers.sh` switches the policy twice and runs the same nine prompts through
@@ -200,7 +196,7 @@ it actually dialled and cannot be faked by a backend pinning a name:
 
 ```bash
 kubectl logs -n agentgateway-system \
-  -l gateway.networking.k8s.io/gateway-name=sovereign-gateway-internal --tail=2 \
+  -l gateway.networking.k8s.io/gateway-name=model-gateway --tail=2 \
   | tr ' ' '\n' | grep -E '^(endpoint|gen_ai.response.model|gen_ai.usage.output_tokens)=' | paste - - -
 ```
 
@@ -215,21 +211,10 @@ tables behind the cost views, not the individual span.
 
 ### From the kagent UI
 
-The consoles are on `*.sovereign.local`, which does not resolve publicly:
+In the kagent console, pick `routing-demo` for the classified path or `finance-analyst`
+and `coding-assistant` for the declared one, and send the prompts above. The gateway log
+command in the previous section prints the model that served each request as you type.
 
-```bash
-kubectl get gateway sovereign-gateway -n agentgateway-system -o jsonpath='{.status.addresses[0].value}'
-# resolve that, then point /etc/hosts at it for
-#   kagent.sovereign.local age.sovereign.local keycloak.sovereign.local
-```
-
-Open `https://kagent.sovereign.local`, accept the lab CA warning, and log in against the
-`sovereign` realm. Pick `routing-demo` for the classified path or a specialist for the
-declared path. `age.sovereign.local` carries the per-model token and cost views.
-
-If the parent lab is also deployed, its `sovereignanalyst` agent appears in the same
-list. It pins a model in its own resource, so every prompt goes to Mistral and the
-routing looks broken. Use `routing-demo`.
 
 ## Things that will catch you
 
@@ -246,7 +231,7 @@ routing looks broken. Use `routing-demo`.
 ## Teardown
 
 ```bash
-SOVEREIGN_AWS_PROFILE=<profile> ./scripts/quick.sh teardown
+AWS_PROFILE=<profile> ./scripts/quick.sh teardown
 ```
 
 Removes this lab's objects and scales back to **one** GPU node, not zero, because part

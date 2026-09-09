@@ -4,20 +4,16 @@
 # model. The agent never names Mistral or Qwen; it asks for "auto" and the gateway
 # decides from the prompt.
 #
-# ModelConfig is NOT covered by the parent lab's agent-workloads-only-from-control-plane
+# ModelConfig is NOT covered by the agent-workloads-only-from-control-plane
 # admission policy (which gates Agent, SandboxAgent, MCPServer, RemoteMCPServer and
 # ToolServer), so this applies directly with kubectl.
 #
-# The Agent that consumes it is a different matter. See README step 6: the parent
-# lab's sovereignanalyst pins its model in the Agent CR, patching the Deployment is
-# reconciled away by the kagent controller within seconds, and editing the Agent CR
-# is refused by admission. Publish the agent through AgentRegistry so the controller
-# creates it.
+# The Agent that consumes it is in yaml/50 and yaml/60.
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: sovereign-gateway-key
+  name: vllm-api-key
   namespace: kagent
 type: Opaque
 stringData:
@@ -29,16 +25,16 @@ stringData:
 apiVersion: kagent.dev/v1alpha2
 kind: ModelConfig
 metadata:
-  name: sovereign-auto
+  name: route-auto
   namespace: kagent
 spec:
   provider: OpenAI
   # The whole point. Any concrete name here would bypass classification, because the
   # policy in 20- honours an explicitly named model.
   model: auto
-  apiKeySecret: sovereign-gateway-key
+  apiKeySecret: vllm-api-key
   apiKeySecretKey: OPENAI_API_KEY
   openAI:
     # The internal gateway. /v1 is the base; kagent appends /chat/completions, which
     # is what the HTTPRoute in 30- matches on.
-    baseUrl: http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local/v1
+    baseUrl: http://model-gateway.agentgateway-system.svc.cluster.local/v1

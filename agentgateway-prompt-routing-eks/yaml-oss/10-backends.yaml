@@ -22,9 +22,8 @@
 
 # The coding model as a gateway backend.
 #
-# Only Qwen is defined here. The Mistral backend (vllm-mistral) already exists in
-# sovereign-ai-uk-eks yaml/31-vllm-backend.yaml and this lab reuses it rather than
-# redefining it, so the two labs cannot drift into two versions of the same object.
+# Both models get a backend.
+# yaml/00-mistral-model.yaml. Both are defined below.
 #
 # `ai.provider` is singular deliberately. Prompt guards bind to the single-provider
 # shape only: on the ai.groups[]/providers[] failover shape a guard policy still
