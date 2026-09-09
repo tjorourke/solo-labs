@@ -21,11 +21,13 @@
 # 60 GB for KV cache instead of 30. The card is Blackwell (RTX PRO 6000 Server), so
 # FP8 is native and not emulated.
 #
-# NO TOOL-CALL PARSER. vLLM 0.27.1 reworked the tool-parser registry and the
-# qwen3 adapter is no longer selected by the old --tool-call-parser name. Rather
-# than guess a flag value and have the pod crash-loop on startup, tool calling is
-# left off: the routing demo does not use it. Add it once the parser name for this
-# exact vLLM build has been read off `vllm serve --help` in the running image.
+# TOOL CALLING IS REQUIRED HERE, not optional. kagent agents send `tools` on every
+# request, and vLLM defaults tool_choice to "auto", so without a parser the model
+# returns 400: ""auto" tool choice requires --enable-auto-tool-choice and
+# --tool-call-parser to be set". The routing still works and the gateway still logs
+# a clean hand-off to this backend, so it looks like a routing success with a broken
+# model. `qwen3_coder` is a built-in parser choice in vLLM 0.27.1; the parser file
+# shipped in the model repo targets an older module path and does not load.
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -151,6 +153,10 @@ spec:
             # gateway backend pins AND the name the router rewrites into the body.
             # Change it here and the route stops matching, silently.
             - --served-model-name=qwen3-coder-30b
+            # kagent sends tool definitions on every request. Without these two the
+            # model 400s on tool_choice "auto" and the agent shows an API_ERROR.
+            - --enable-auto-tool-choice
+            - --tool-call-parser=qwen3_coder
             - --tensor-parallel-size=1
             - --max-model-len=32768
             - --gpu-memory-utilization=0.90

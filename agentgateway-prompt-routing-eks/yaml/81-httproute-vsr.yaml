@@ -1,0 +1,44 @@
+# The rung 3 route. Same object as yaml/30, matching the router's header instead of
+# the one the transformation writes.
+#
+# Everything else is unchanged: the same two backends, the same two models, the same
+# fall-through to the catch-all in the parent lab. Only the header name differs, which
+# is the clearest possible statement of the point this lab makes. Swapping who decides
+# is a one-line change to the routing table.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: model-routing-internal
+  namespace: agentgateway-system
+spec:
+  hostnames:
+    - sovereign-gateway-internal.agentgateway-system.svc.cluster.local
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+      sectionName: http
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            # Set by the semantic router on the REQUEST. The similarly named
+            # x-vsr-selected-model is a response header and matching it never works.
+            - type: RegularExpression
+              name: x-selected-model
+              value: '^qwen.*'
+      backendRefs:
+        - name: vllm-qwen
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - type: RegularExpression
+              name: x-selected-model
+              value: '^mistral.*'
+      backendRefs:
+        - name: vllm-mistral
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend

@@ -1,0 +1,60 @@
+# Rung 3: hand the decision to the semantic router.
+#
+# Applying this file plus yaml/81 turns rung 3 on. Re-applying yaml/20 plus yaml/30
+# returns to the keyword classifier, so the A/B is two commands either way:
+#
+#   kubectl apply -f yaml/80-semantic-router-extproc.yaml -f yaml/81-httproute-vsr.yaml
+#   kubectl apply -f yaml/20-routing-policy.yaml          -f yaml/30-httproute.yaml
+#
+# THERE IS NO TRANSFORMATION IN THIS POLICY, AND THAT IS NOT AN OMISSION.
+#
+# Within one PreRouting policy the transformation is evaluated BEFORE the external
+# processor, and the processor's body rewrite is applied after the backend has
+# already pinned its own model name. Keeping both in one policy produces a request
+# whose route was chosen by the regex and whose body was rewritten by the router, and
+# when those two disagree the backend is handed a model it does not serve and answers
+# 400. Measured: a CrashLoopBackOff prompt routed to the general model and arrived
+# there asking for the code model.
+#
+# So rung 3 does not read the body at all. The router publishes its decision as a
+# request header and the route in yaml/81 matches that header instead.
+#
+# THE HEADER IS `x-selected-model`. Not `x-vsr-selected-model`, which is a response
+# header carrying the same value for debugging. Matching the response name produces a
+# route that never matches, every request falls through to the default backend, and
+# nothing anywhere reports an error.
+#
+# WHY requestBodyMode: Buffered IS MANDATORY. The router needs the whole prompt to
+# classify it. The field defaults to FullDuplexStreamed, and on the default the router
+# still classifies while its output is dropped, so every request quietly serves the
+# default model.
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: extract-model-internal
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+  traffic:
+    # The router runs before the route is chosen, which is the only reason its header
+    # is available to match on. At the default PostRouting the backend is already
+    # selected and the decision changes nothing.
+    phase: PreRouting
+    extProc:
+      backendRef:
+        name: semantic-router
+        namespace: agentgateway-system
+        port: 50051
+      # A classifier outage must not become a gateway outage. On failure the request
+      # continues without the header and falls through to the default backend.
+      failureMode: FailOpen
+      processingOptions:
+        requestHeaderMode: Send
+        requestBodyMode: Buffered
+        responseHeaderMode: Send
+        responseBodyMode: Buffered
+        allowModeOverride: true

@@ -1,0 +1,116 @@
+# Two specialist agents, each pinned to a model. This is rung 1.
+#
+# WHY THIS EXISTS ALONGSIDE routing-demo. The two answer different questions and a
+# real deployment wants both.
+#
+#   routing-demo      one surface, mixed traffic, the gateway classifies. This is the
+#                     hard case and the reason semantic routing exists.
+#   finance-analyst   the caller already knows what it is for, so it says so.
+#   coding-assistant  same.
+#
+# WHAT YOU KEEP BY DOING IT THIS WAY. It looks like the model choice has moved out of
+# the platform and into the client, and it has not. The client picks an AGENT; the
+# platform picks the MODEL, because the ModelConfig is a platform-owned resource.
+# Repoint coding-assistant at a different model by editing one object and no agent,
+# prompt or client changes. You keep the property that matters and you delete the
+# guessing.
+#
+# WHAT IT COSTS. Someone has to pick the right agent. That is free when the caller is
+# an IDE plugin or a purpose-built app that already knows what it is, and it is not
+# free on a general chat surface where a human just types. That is the case
+# routing-demo covers.
+#
+# These bypass classification by design: the PreRouting policy honours an explicitly
+# named model and only classifies "auto", so naming a model here is the supported way
+# to opt out.
+#
+# Apply as the control plane on the sovereign cluster:
+#   kubectl apply -f yaml/60-kagent-specialist-agents.yaml \
+#     --as=system:serviceaccount:kagent:kagent-controller
+---
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: sovereign-mistral
+  namespace: kagent
+spec:
+  provider: OpenAI
+  # A concrete model, not "auto". The route still matches on it, via rung 1.
+  model: mistral-small-3.2-24b
+  apiKeySecret: sovereign-gateway-key
+  apiKeySecretKey: OPENAI_API_KEY
+  openAI:
+    baseUrl: http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local/v1
+---
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: sovereign-qwen
+  namespace: kagent
+spec:
+  provider: OpenAI
+  model: qwen3-coder-30b
+  apiKeySecret: sovereign-gateway-key
+  apiKeySecretKey: OPENAI_API_KEY
+  openAI:
+    baseUrl: http://sovereign-gateway-internal.agentgateway-system.svc.cluster.local/v1
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: finance-analyst
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Answers finance and regulatory questions on the general model
+  declarative:
+    modelConfig: sovereign-mistral
+    systemMessage: |
+      You are a financial analyst for a UK bank. Answer questions on accounting
+      standards, regulatory capital and risk directly and concisely. If a question
+      is about writing or debugging software, say it is outside your remit.
+    a2aConfig:
+      skills:
+        - id: finance
+          name: Finance and regulation
+          description: IFRS, capital, credit risk and reporting questions
+          tags: [finance, regulation, risk]
+          examples:
+            - What is IFRS 9 stage 2 impairment?
+            - Explain the difference between CVA and DVA.
+    deployment:
+      # Both settings are for the sovereign cluster's admission policies: its registry
+      # allowlist does not carry the kagent default, and it requires limits on every
+      # container. Drop them elsewhere.
+      imageRegistry: ghcr.io
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: coding-assistant
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Answers engineering questions on the code model
+  declarative:
+    modelConfig: sovereign-qwen
+    systemMessage: |
+      You are an engineering assistant. Answer questions about code, Kubernetes,
+      infrastructure and debugging directly. Prefer a working example over prose.
+    a2aConfig:
+      skills:
+        - id: engineering
+          name: Code and infrastructure
+          description: Writing, reviewing and debugging code and infrastructure
+          tags: [engineering, code, kubernetes]
+          examples:
+            - Write a Python function that reverses a linked list.
+            - Why is my pod stuck in CrashLoopBackOff?
+    deployment:
+      imageRegistry: ghcr.io
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}

@@ -1,0 +1,173 @@
+# vLLM Semantic Router, configured for finance against coding. This is rung 3.
+#
+# WHAT CHANGES AND WHAT DOES NOT. The HTTPRoute in yaml/30 is untouched, and so are
+# the two backends. The only change is WHO decides: instead of a regex in the
+# PreRouting transformation, a ModernBERT classifier reads the prompt and rewrites
+# the body's model field. The gateway then routes on that exactly as before.
+#
+# WHY THE BUILT-IN DOMAINS ALREADY FIT. The classifier is fine-tuned on MMLU-Pro,
+# which gives it fourteen domains, and two pairs of them map cleanly onto this split:
+#
+#   economics + business          -> the general model   (finance, risk, reporting)
+#   computer science + engineering -> the code model     (code, infrastructure, debugging)
+#
+# So there is no training to do for this use case. Fine-tuning becomes worthwhile
+# when a bank wants a split the academic domains do not express, for example
+# separating regulatory reporting from trading analytics.
+#
+# NO LoRA HERE. The upstream example routes to LoRA adapters on one base model, so
+# every modelRef carries a lora_name. This lab routes to two separate models on two
+# separate GPUs, so modelRefs name the model and nothing else. Leaving a stray
+# lora_name in would ask vLLM for an adapter that does not exist.
+#
+# THE NAMES ARE A CONTRACT. `providers.models[].name` is what the router writes into
+# the request body, so it has to match the vLLM --served-model-name AND the pattern
+# the HTTPRoute matches on. Change one of the three and the route silently stops
+# matching.
+
+persistence:
+  # The chart defaults this to "standard", a StorageClass that exists on some
+  # distributions and not on EKS, where the default is gp3. Left alone, the PVC stays
+  # Pending forever and the pod reports "unbound immediate PersistentVolumeClaims",
+  # which reads as a scheduling problem rather than a one-word config error.
+  storageClassName: gp3
+  # 10Gi is the chart default and it is not enough headroom to be comfortable: the
+  # classifier weights are several GB and a version bump can pull a second copy.
+  size: 20Gi
+
+image:
+  # Pinned by digest. Upstream publishes the chart as v0.0.0-latest and the image as
+  # :latest and the two drift independently, so a floating tag can pull an image that
+  # predates the v0.3 schema below, ignore all of it without error, and start as a
+  # no-op router. The lab would pass while testing nothing.
+  repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
+  tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
+
+config:
+  version: v0.3
+
+  listeners: []
+
+  providers:
+    defaults:
+      # Anything the classifier is not confident about lands here. The general model
+      # is the safe default: a finance question answered by the code model is a worse
+      # outcome than a coding question answered competently by the general one.
+      default_model: mistral-small-3.2-24b
+      reasoning_families:
+        qwen3:
+          type: chat_template_kwargs
+          parameter: enable_thinking
+      default_reasoning_effort: high
+    models:
+      - name: mistral-small-3.2-24b
+        backend_refs:
+          - name: vllm-mistral
+            endpoint: vllm.models.svc.cluster.local:8000
+            weight: 1
+      - name: qwen3-coder-30b
+        reasoning_family: qwen3
+        backend_refs:
+          - name: vllm-qwen
+            endpoint: vllm-qwen.models.svc.cluster.local:8000
+            weight: 1
+
+  routing:
+    decisions:
+      - name: coding_decision
+        description: Software, infrastructure and debugging questions
+        priority: 10
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: computer science
+            - type: domain
+              name: engineering
+        modelRefs:
+          - model: qwen3-coder-30b
+            use_reasoning: false
+
+      - name: finance_decision
+        description: Finance, regulation, risk and reporting questions
+        priority: 10
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: economics
+            - type: domain
+              name: business
+        modelRefs:
+          - model: mistral-small-3.2-24b
+            use_reasoning: false
+
+      # Priority 1 so it only wins when nothing above matched. Everything the bank
+      # asks that is neither finance nor engineering still gets a good answer.
+      - name: general_decision
+        description: Everything else
+        priority: 1
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: other
+        modelRefs:
+          - model: mistral-small-3.2-24b
+            use_reasoning: false
+
+    signals:
+      # All fourteen domains stay listed even though only five are routed on. This is
+      # the label space the classifier was trained against, so trimming it does not
+      # make the model faster, it just removes the names the decisions can refer to.
+      domains:
+        - name: business
+          description: Business, corporate strategy, management, finance, marketing
+        - name: economics
+          description: Microeconomics, macroeconomics, financial markets, monetary policy, trade
+        - name: computer science
+          description: Algorithms, data structures, programming, software engineering
+        - name: engineering
+          description: Engineering disciplines, design, problem-solving, systems
+        - name: law
+          description: Legal principles, case law, statutory interpretation, legal procedures
+        - name: math
+          description: Mathematics, algebra, calculus, geometry, statistics
+        - name: physics
+          description: Physical laws, mechanics, thermodynamics, electromagnetism, quantum physics
+        - name: chemistry
+          description: Chemical reactions, molecular structures, laboratory techniques
+        - name: biology
+          description: Molecular biology, genetics, cell biology, ecology, evolution, anatomy
+        - name: health
+          description: Anatomy, physiology, diseases, treatments, preventive care, nutrition
+        - name: psychology
+          description: Cognitive processes, behavioral patterns, mental health, developmental psychology
+        - name: history
+          description: Historical events, time periods, cultures, civilizations
+        - name: philosophy
+          description: Philosophical traditions, ethics, logic, metaphysics, epistemology
+        - name: other
+          description: General knowledge and miscellaneous topics
+
+    modelCards:
+      - name: mistral-small-3.2-24b
+      - name: qwen3-coder-30b
+
+  global:
+    router:
+      strategy: priority
+    stores:
+      # Off deliberately. A semantic cache returns a stored completion for a
+      # near-identical prompt, which is a good idea in production and a bad one in a
+      # demo: the second run of the same question never reaches a model, the gateway
+      # logs no upstream, and the routing looks broken.
+      semantic_cache:
+        enabled: false
+      memory:
+        embedding_model: mmbert
+      vector_store:
+        embedding_model: mmbert
+    observability:
+      tracing:
+        enabled: false
