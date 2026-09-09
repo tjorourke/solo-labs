@@ -191,23 +191,32 @@ added to catch a miss widens the surface for a false positive.
 
 ### Seeing which model answered
 
-The gateway access log is the authoritative view, because `endpoint=` is the upstream
-it actually dialled and cannot be faked by a backend pinning a name:
+The script reads the model out of each response body. The gateway access log is stronger
+evidence, because `endpoint=` is the upstream it actually dialled. Read it off the run
+you just did:
 
 ```bash
 kubectl logs -n agentgateway-system \
-  -l gateway.networking.k8s.io/gateway-name=model-gateway --tail=2 \
-  | tr ' ' '\n' | grep -E '^(endpoint|gen_ai.response.model|gen_ai.usage.output_tokens)=' | paste - - -
+  -l gateway.networking.k8s.io/gateway-name=model-gateway --tail=9 \
+  | grep -oE 'endpoint=[^ ]+|gen_ai.response.model=[^ ]+' | paste - -
 ```
 
 ```
-endpoint=vllm.models.svc.cluster.local:8000       gen_ai.response.model=mistral-small-3.2-24b  411
-endpoint=vllm-qwen.models.svc.cluster.local:8000  gen_ai.response.model=qwen3-coder-30b        396
+endpoint=vllm.models.svc.cluster.local:8000        gen_ai.response.model=mistral-small-3.2-24b
+endpoint=vllm.models.svc.cluster.local:8000        gen_ai.response.model=mistral-small-3.2-24b
+endpoint=vllm.models.svc.cluster.local:8000        gen_ai.response.model=mistral-small-3.2-24b
+endpoint=vllm.models.svc.cluster.local:8000        gen_ai.response.model=mistral-small-3.2-24b
+endpoint=vllm-qwen.models.svc.cluster.local:8000   gen_ai.response.model=qwen3-coder-30b
+endpoint=vllm-qwen.models.svc.cluster.local:8000   gen_ai.response.model=qwen3-coder-30b
+endpoint=vllm-qwen.models.svc.cluster.local:8000   gen_ai.response.model=qwen3-coder-30b
+endpoint=vllm-qwen.models.svc.cluster.local:8000   gen_ai.response.model=qwen3-coder-30b
+endpoint=vllm-qwen.models.svc.cluster.local:8000   gen_ai.response.model=qwen3-coder-30b
 ```
 
-The kagent trace view shows `auto` on the agent spans, because that is all the agent
-asked for, and the per-span `LLM` field is empty. The served model reaches the rollup
-tables behind the cost views, not the individual span.
+Four to the general model and five to the code model, from nine requests that all named
+`auto`. The same records carry input and output token counts, which is what a
+cost-per-model view is built from. Add `-f` to follow it live while typing in the
+console.
 
 ### From the kagent UI
 
