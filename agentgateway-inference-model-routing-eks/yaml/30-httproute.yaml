@@ -19,6 +19,18 @@ spec:
       name: model-gateway
       sectionName: http
   rules:
+    # The LoRA adapter. First, because it is the most specific name and the rules below
+    # would not match it anyway; keeping it first makes the precedence explicit.
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - type: RegularExpression
+              name: x-model
+              value: '^house-style$'
+      backendRefs:
+        - name: vllm-house-style
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
     # Coding traffic to the code model.
     - matches:
         - path: {type: PathPrefix, value: /v1/chat/completions}
