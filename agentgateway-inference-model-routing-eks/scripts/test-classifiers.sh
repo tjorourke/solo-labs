@@ -9,6 +9,9 @@
 # It switches the policy twice and leaves semantic classification applied at the end.
 set -euo pipefail
 
+# The lab root, so the script works from anywhere.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Cluster selection. Nothing here is tied to one cluster: by default it uses whatever
 # kubectl context is current, which is what you want on kind or any cluster you are
 # already pointed at. Set KUBE_CONTEXT to name one explicitly.
@@ -30,8 +33,19 @@ else
 fi
 kubectl() { command kubectl --context "$CTX" "$@"; }
 
-POD="$(kubectl get pod -n models -l app=vllm -o jsonpath='{.items[0].metadata.name}')"
-[ -n "$POD" ] || { echo "error: no vLLM pod in models" >&2; exit 1; }
+# Resolve the pod the requests are sent from. 2>/dev/null because kubectl prints a
+# jsonpath template dump when the list is empty, which buries the real problem: you are
+# pointed at the wrong cluster. A kind cluster stealing current-context is the usual
+# cause, so say which context was used.
+POD="$(kubectl get pod -n models -l app=vllm -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+if [ -z "$POD" ]; then
+  echo "error: no pod matching -l app=vllm in namespace 'models'." >&2
+  echo "  context in use: $CTX" >&2
+  echo "  set another with KUBE_CONTEXT=<name>, or EKS_CLUSTER=<cluster> for an EKS ARN." >&2
+  echo "  contexts available:" >&2
+  kubectl config get-contexts -o name 2>/dev/null | sed 's/^/    /' >&2
+  exit 1
+fi
 
 # The prompt set is chosen to include the cases the keyword classifier gets wrong:
 # four technical questions that avoid the listed vocabulary, and two finance

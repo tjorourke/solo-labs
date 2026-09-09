@@ -9,6 +9,9 @@
 # and `teardown` scales it back. Everything else is a handful of objects.
 set -euo pipefail
 
+# The lab root, so the script works from anywhere.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Cluster selection. Nothing here is tied to one cluster: by default it uses whatever
 # kubectl context is current, which is what you want on kind or any cluster you are
 # already pointed at. Set KUBE_CONTEXT to name one explicitly.
