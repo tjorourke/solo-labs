@@ -1,34 +1,35 @@
-# OSS conversion. Same routing, upstream agentgateway CRDs.
+# One gateway backend per model.
 #
-# Mechanical from the Enterprise manifests in ../yaml:
-#   enterpriseagentgateway.solo.io/v1alpha1 -> agentgateway.dev/v1alpha1
-#   EnterpriseAgentgatewayPolicy            -> AgentgatewayPolicy
-#   EnterpriseAgentgatewayBackend           -> AgentgatewayBackend
-#   gatewayClassName: enterprise-agentgateway -> agentgateway
+# A backend is what the HTTPRoute points at instead of a Service. It names the model
+# and the vLLM endpoint that serves it, and the gateway rewrites the request body's
+# model field to the name pinned here before forwarding.
 #
-# Every field this lab uses is present on the OSS CRDs, checked with kubectl explain:
-# spec.traffic.phase (PreRouting), spec.traffic.transformation and
-# spec.traffic.extProc.processingOptions on the policy, and
-# spec.ai.provider.openai.model with host and path on the backend. None of the
-# Enterprise-only fields (entPromptGuard, entRateLimit, entExtAuth, entWAF,
-# entBudgetEnforcement, entMcp, tokenExchange, workloadIdentity) appears anywhere here.
-#
-# NOT YET RUN LIVE ON OSS. The lab was built and validated on Solo Enterprise, and the
-# cluster it runs on has only the enterprise-agentgateway GatewayClass installed, so
-# these files are an API-level conversion rather than a tested one. The vSR ExtProc
-# half is separately proven on OSS upstream by the kind lab in
-# ../../vllm-semantic-router-agentgateway-kind. Run these before claiming an OSS build
-# in the Versions footer.
-
-# The coding model as a gateway backend.
-#
-# Both models get a backend.
-# yaml/00-mistral-model.yaml. Both are defined below.
+# `model` must match the vLLM `--served-model-name` exactly, and the HTTPRoute in
+# yaml/30 matches on a header whose value is one of these two names. Change a name in
+# one place and the route stops matching, with no error anywhere.
 #
 # `ai.provider` is singular deliberately. Prompt guards bind to the single-provider
 # shape only: on the ai.groups[]/providers[] failover shape a guard policy still
-# reports Accepted and Attached and enforces nothing at all. Do not tidy this into
-# the groups form to add a fallback.
+# reports Accepted and Attached and enforces nothing at all. Do not tidy this into the
+# groups form to add a fallback.
+#
+# `openai` is the provider name because vLLM serves an OpenAI-compatible API, not
+# because anything leaves the cluster. Both hosts are ClusterIP Services.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: vllm-mistral
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: mistral-small-3.2-24b
+      host: vllm.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
@@ -38,7 +39,6 @@ spec:
   ai:
     provider:
       openai:
-        # Must match --served-model-name on the Qwen deployment exactly.
         model: qwen3-coder-30b
       host: vllm-qwen.models.svc.cluster.local
       port: 8000

@@ -76,7 +76,18 @@ for want, q in CASES:
         got = json.load(r).get("model", "?")
     except Exception as e:
         got = "ERROR %s" % e
-    served = "coding" if "qwen" in got else "finance"
+    # Bucket by the model that answered. An error is NOT a routing outcome, so it gets
+    # its own bucket: folding errors into one of the two models makes a completely
+    # failed run look like a plausible score, and both classifiers then tie because
+    # both failed identically.
+    if got.startswith("ERROR") or got in ("?", None):
+        served = "error"
+    elif "qwen" in got:
+        served = "coding"
+    elif "mistral" in got:
+        served = "finance"
+    else:
+        served = "error"
     print("%s|%s|%s" % (want, q, served))
 PY
 }
@@ -99,6 +110,15 @@ paste -d'|' /tmp/rung2.txt /tmp/rung3.txt | while IFS='|' read -r want q got2 wa
   m3="ok "; [ "$got3" != "$want" ] && m3="X  "
   printf "%-52s %-8s %s%-7s %s%-7s\n" "$(echo "$q" | cut -c1-50)" "$want" "$m2" "$got2" "$m3" "$got3"
 done
+
+errs=$(cat /tmp/rung2.txt /tmp/rung3.txt | awk -F'|' '$3=="error"' | wc -l | tr -d ' ')
+if [ "$errs" != "0" ]; then
+  echo
+  echo "ERROR: $errs of the requests did not reach a model, so there is nothing to score." >&2
+  echo "  Check the gateway exists and the route is attached:" >&2
+  echo "    kubectl --context \"$CTX\" -n agentgateway-system get gateway,httproute" >&2
+  exit 1
+fi
 
 w2=$(paste -d'|' /tmp/rung2.txt /tmp/rung3.txt | awk -F'|' '$1!=$3' | wc -l | tr -d ' ')
 w3=$(paste -d'|' /tmp/rung2.txt /tmp/rung3.txt | awk -F'|' '$4!=$6' | wc -l | tr -d ' ')

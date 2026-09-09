@@ -1,12 +1,35 @@
-# The coding model as a gateway backend.
+# One gateway backend per model.
 #
-# Both models get a backend.
-# yaml/00-mistral-model.yaml. Both are defined below.
+# A backend is what the HTTPRoute points at instead of a Service. It names the model
+# and the vLLM endpoint that serves it, and the gateway rewrites the request body's
+# model field to the name pinned here before forwarding.
+#
+# `model` must match the vLLM `--served-model-name` exactly, and the HTTPRoute in
+# yaml/30 matches on a header whose value is one of these two names. Change a name in
+# one place and the route stops matching, with no error anywhere.
 #
 # `ai.provider` is singular deliberately. Prompt guards bind to the single-provider
 # shape only: on the ai.groups[]/providers[] failover shape a guard policy still
-# reports Accepted and Attached and enforces nothing at all. Do not tidy this into
-# the groups form to add a fallback.
+# reports Accepted and Attached and enforces nothing at all. Do not tidy this into the
+# groups form to add a fallback.
+#
+# `openai` is the provider name because vLLM serves an OpenAI-compatible API, not
+# because anything leaves the cluster. Both hosts are ClusterIP Services.
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: vllm-mistral
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: mistral-small-3.2-24b
+      host: vllm.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
 metadata:
@@ -16,7 +39,6 @@ spec:
   ai:
     provider:
       openai:
-        # Must match --served-model-name on the Qwen deployment exactly.
         model: qwen3-coder-30b
       host: vllm-qwen.models.svc.cluster.local
       port: 8000

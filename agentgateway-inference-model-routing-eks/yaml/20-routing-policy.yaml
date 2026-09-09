@@ -52,10 +52,28 @@ spec:
             #
             # The `||` covers both. CEL evaluates left to right and absorbs the
             # error from whichever shape does not apply.
+            # WHY THE type() CHECK AND NOT AN ||.
+            #
+            # OpenAI's chat API allows `content` to be a plain string or a list of typed
+            # parts. curl and most SDKs send a string; ADK and LiteLLM-based agents send
+            # the list. The obvious fix is to test both and OR them:
+            #
+            #   content.matches(RE) || content[0].text.matches(RE)
+            #
+            # That is wrong, and it fails in a way that looks like it works. CEL's ||
+            # short-circuits, so when the LEFT side is true the right is never evaluated
+            # and the error from the wrong shape never happens. But when the left side is
+            # FALSE, the right side runs, indexing a string as a list, and the whole
+            # expression errors. The header is then never set, no route matches, and the
+            # request 404s. In other words: every prompt that SHOULD go to the default
+            # model breaks, and every prompt that matches a keyword works. Measured.
+            #
+            # type() resolves the shape first, so exactly one accessor is ever evaluated
+            # and neither shape can error.
             value: |
               coalesce(json(request.body).model, "auto") != "auto"
                 ? json(request.body).model
-                : ((json(request.body).messages[size(json(request.body).messages) - 1].content.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)")
-                    || json(request.body).messages[size(json(request.body).messages) - 1].content[0].text.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)"))
-                    ? "qwen3-coder-30b"
-                    : "mistral-small-3.2-24b")
+                : ((type(json(request.body).messages[size(json(request.body).messages) - 1].content) == string
+                      ? json(request.body).messages[size(json(request.body).messages) - 1].content
+                      : json(request.body).messages[size(json(request.body).messages) - 1].content[0].text
+                   ).matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)") ? "qwen3-coder-30b" : "mistral-small-3.2-24b")
