@@ -36,15 +36,18 @@ eastwest:
         # in-tree controller (no AWS LB Controller on a stock eksctl cluster):
         # this single annotation makes the LB an internet-facing NLB
         service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-    # Deliberately NO spec.ports here. The Service is created and owned by
+    # Annotations only, no spec.ports. The Service is created and owned by
     # istiod's east-west controller (ownerRef Gateway/istio-eastwest,
-    # gateway.istio.io/managed=istio.io-eastwest-controller), and the controller
-    # decides which ports it publishes and where they target. Supplying a
-    # spec.ports list replaces that: a hand-written tls-xds:15012 entry targets
-    # port 15012 on the gateway pod, and the gateway does not listen there, so
-    # the NLB target group for 15012 fails its health checks and the peer's
-    # istiod gets "connection refused" dialling :15012. Set annotations only,
-    # which is what the validated two-EKS peering setup does.
+    # gateway.istio.io/managed=istio.io-eastwest-controller), so let the
+    # controller publish the ports. This matches istio-ambient-poc-eks, the
+    # two-EKS setup that is validated on this version.
+    #
+    # Note: this is not the fix for the :15012 problem described in the README.
+    # The controller publishes exactly the same three ports the override used to
+    # hard-code (15021, 15008, tls-xds 15012 -> 15012), and the gateway pod still
+    # binds no 15012 listener either way, so that target group still fails its
+    # health checks. Removing the override just stops this lab second-guessing
+    # the controller.
 remote:
   create: false
 EOF
@@ -140,7 +143,9 @@ __end=$(( $(date +%s) + 900 ))
 __peers=0
 while [[ $(date +%s) -lt $__end ]]; do
   "$ISTIOCTL" multicluster check --contexts "$CTX1,$CTX2" >"$__mc_out" 2>&1 || true
-  __peers="$(grep -cE '✅ Peers Check: all clusters connected' "$__mc_out" || true)"
+  # Match the text, not the tick: the emoji is cosmetic and could change, while
+  # a failing check prints "Peers Check: found disconnected cluster(s)" instead.
+  __peers="$(grep -cE 'Peers Check: all clusters connected' "$__mc_out" || true)"
   [[ "$__peers" -ge 2 ]] && break
   echo "  not converged yet ($__peers/2 clusters report peers connected), retrying in 20s"
   sleep 20
