@@ -1,4 +1,4 @@
-# The rung 3 route. Same object as yaml/30, matching the router's header instead of
+# The semantic-classification route. Same object as yaml/30, matching the router's header instead of
 # the one the transformation writes.
 #
 # Everything else is unchanged: the same two backends, the same two models, the same

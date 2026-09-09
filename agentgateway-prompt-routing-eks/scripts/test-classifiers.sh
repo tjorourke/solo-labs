@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Run the same prompts through the keyword classifier and the semantic classifier and
-# print them side by side. This is the A/B that makes the case for rung 3, and it is
+# print them side by side. This is the A/B that makes the case for semantic classification, and it is
 # worth running live rather than quoting, because the failures are the interesting
 # part and they are specific to the wording you use.
 #
 #   ./scripts/test-rungs.sh
 #
-# It switches the policy twice and leaves rung 3 applied at the end.
+# It switches the policy twice and leaves semantic classification applied at the end.
 set -euo pipefail
 
 : "${SOVEREIGN_AWS_PROFILE:?set SOVEREIGN_AWS_PROFILE to the sandbox SSO profile}"
@@ -57,12 +57,12 @@ for want, q in CASES:
 PY
 }
 
-echo "==> rung 2: the keyword classifier"
+echo "==> keyword classifier"
 kubectl apply -f "$HERE/yaml/20-routing-policy.yaml" -f "$HERE/yaml/30-httproute.yaml" >/dev/null
 sleep 8
 run_set > /tmp/rung2.txt
 
-echo "==> rung 3: the semantic classifier"
+echo "==> semantic classifier"
 kubectl apply -f "$HERE/yaml/80-semantic-router-extproc.yaml" -f "$HERE/yaml/81-httproute-vsr.yaml" >/dev/null
 sleep 8
 run_set > /tmp/rung3.txt
@@ -83,5 +83,5 @@ echo
 echo "keyword classifier:  $((n-w2))/$n correct"
 echo "semantic classifier: $((n-w3))/$n correct"
 echo
-echo "rung 3 is left applied. Return to the keyword classifier with:"
+echo "semantic classification is left applied. Return to the keyword classifier with:"
 echo "  kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml"

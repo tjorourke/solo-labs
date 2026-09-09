@@ -1,4 +1,4 @@
-# vLLM Semantic Router, configured for finance against coding. This is rung 3.
+# vLLM Semantic Router, configured for finance against coding. This is the semantic option.
 #
 # WHAT CHANGES AND WHAT DOES NOT. The HTTPRoute in yaml/30 is untouched, and so are
 # the two backends. The only change is WHO decides: instead of a regex in the

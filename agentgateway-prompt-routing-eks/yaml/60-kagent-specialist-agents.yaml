@@ -1,4 +1,4 @@
-# Two specialist agents, each pinned to a model. This is rung 1.
+# Two specialist agents, each pinned to a model. This is the client-declared option.
 #
 # WHY THIS EXISTS ALONGSIDE routing-demo. The two answer different questions and a
 # real deployment wants both.
@@ -35,7 +35,7 @@ metadata:
   namespace: kagent
 spec:
   provider: OpenAI
-  # A concrete model, not "auto". The route still matches on it, via rung 1.
+  # A concrete model, not "auto". The policy honours it and skips classification.
   model: mistral-small-3.2-24b
   apiKeySecret: sovereign-gateway-key
   apiKeySecretKey: OPENAI_API_KEY

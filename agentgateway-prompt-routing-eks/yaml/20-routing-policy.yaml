@@ -18,7 +18,7 @@ spec:
       request:
         set:
           - name: x-model
-            # Two rungs in one expression, and the order matters.
+            # Two of the three options in one expression, and the order matters.
             #
             # If the client named a concrete model, that wins: a team that has
             # already picked is not overridden by a guess. Only "auto", or a request

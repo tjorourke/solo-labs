@@ -30,19 +30,19 @@ route has been selected, so a header set there cannot influence the choice it ex
 influence. Set the phase wrong and every request lands on the default backend with a
 200.
 
-## The ladder
+## Three ways to decide which model answers
 
-The routing table is identical at every rung. Only the source of the decision changes,
+The routing table is identical in all three. Only the source of the decision changes,
 which is the point: the HTTPRoute does not know who decided.
 
-| Rung | Who decides | Cost |
+| Option | Who decides | Cost |
 |---|---|---|
-| 1 | the client, by naming a model | nothing |
-| 2 | the gateway, with a CEL heuristic over the prompt | nothing, no new component |
-| 3 | the vLLM Semantic Router, classifying by embedding | one more service, several GB of classifier models |
+| Client-declared | the client names a model | nothing |
+| Keyword match | the gateway matches words in the prompt | nothing, no new component |
+| Semantic | a classifier reads the meaning of the prompt | one more service, several GB of model weights |
 
-This lab ships rungs 1 and 2 and is wired so rung 3 drops in without touching the
-route. Rung 3 uses `traffic.extProc` with `processingOptions.requestBodyMode: Buffered`
+This lab ships all three. The first two need no extra component; semantic
+classification adds one service and uses `traffic.extProc` with `processingOptions.requestBodyMode: Buffered`
 and `allowModeOverride: true`, which the Enterprise CRD carries from the 2026.8 line.
 
 ## Prerequisites
