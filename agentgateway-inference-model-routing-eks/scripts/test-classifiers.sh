@@ -58,7 +58,7 @@ GW = ("http://model-gateway.agentgateway-system.svc.cluster.local"
 CASES = [
     ("finance", "What is IFRS 9 stage 2 impairment?"),
     ("finance", "Explain the difference between CVA and DVA in derivative pricing."),
-    ("finance", "What is our Python licensing spend this quarter?"),
+    ("finance", "What capital must we hold against a stage 3 loan?"),
     ("finance", "Model the credit risk function for our loan book."),
     ("coding",  "Write a Python function that reverses a linked list."),
     ("coding",  "Why is my pod stuck in CrashLoopBackOff?"),

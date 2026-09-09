@@ -171,7 +171,7 @@ both:
 PROMPT                                            SHOULD    KEYWORD    SEMANTIC
 What is IFRS 9 stage 2 impairment?                finance   ok         ok
 Explain the difference between CVA and DVA        finance   ok         ok
-What is our Python licensing spend this quarter?  finance   X coding   X coding
+What capital must we hold against a stage 3 loan? finance   ok         ok
 Model the credit risk function for our loan book  finance   X coding   ok
 Write a Python function that reverses a list      coding    ok         ok
 Why is my pod stuck in CrashLoopBackOff?          coding    X finance  ok
@@ -179,8 +179,8 @@ Make this run faster without the inner loop       coding    X finance  ok
 Write a Golang handler for an S3 upload           coding    X finance  ok
 How do I set a Terraform provider version?        coding    X finance  ok
 
-keyword classifier:  3/9 correct
-semantic classifier: 8/9 correct
+keyword classifier:  4/9 correct
+semantic classifier: 9/9 correct
 ```
 
 Five of the six keyword failures are misses that could each be fixed by adding a word.
@@ -188,9 +188,6 @@ The sixth cannot: "Model the credit risk function for our loan book" is a financ
 question that reached the code model because it contains `function`. Every keyword
 added to catch a miss widens the surface for a false positive.
 
-Both get "What is our Python licensing spend this quarter?" wrong. That sentence is
-genuinely ambiguous, and it is what the confidence threshold and a default model are
-for.
 
 ### Seeing which model answered
 
