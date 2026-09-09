@@ -12,18 +12,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Cluster selection: current context by default, KUBE_CONTEXT to name one, or
 # EKS_CLUSTER for the cloud case where the context name is an ARN nobody types.
-if [ -n "${KUBE_CONTEXT:-}" ]; then
-  CTX="$KUBE_CONTEXT"
-elif [ -n "${EKS_CLUSTER:-}" ]; then
-  REGION="${AWS_REGION:-eu-west-2}"
-  ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
-  [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] \
-    || { echo "error: no AWS identity. Check AWS_PROFILE, or run aws sso login." >&2; exit 1; }
-  CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${EKS_CLUSTER}"
-else
-  CTX="$(kubectl config current-context 2>/dev/null)"
-  [ -n "$CTX" ] || { echo "error: no current kubectl context, and neither KUBE_CONTEXT nor EKS_CLUSTER is set." >&2; exit 1; }
-fi
+. "$HERE/scripts/lib-context.sh"
+resolve_ctx
 kubectl() { command kubectl --context "$CTX" "$@"; }
 helm_()   { helm --kube-context "$CTX" "$@"; }
 

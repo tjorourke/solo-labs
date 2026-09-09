@@ -9,9 +9,12 @@
 # one AZ, so up brings the same nodes back to the same volumes and vLLM reloads in
 # minutes rather than re-pulling 76 GB.
 set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER="${EKS_CLUSTER:-model-routing}"
 REGION="${AWS_REGION:-eu-west-2}"
 NG="${GPU_NODEGROUP:-gpu}"
+export EKS_CLUSTER="$CLUSTER" AWS_REGION="$REGION"
+. "$HERE/scripts/lib-context.sh"
 
 scale() {
   aws eks update-nodegroup-config --region "$REGION" --cluster-name "$CLUSTER" \
@@ -23,8 +26,7 @@ case "${1:-status}" in
   up)
     scale 2
     echo "waiting for both nodes to advertise a GPU (up to 30m)"
-    ACC=$(aws sts get-caller-identity --query Account --output text)
-    CTX="arn:aws:eks:${REGION}:${ACC}:cluster/${CLUSTER}"
+    resolve_ctx
     for _ in $(seq 1 120); do
       n=$(kubectl --context "$CTX" get nodes -l role=gpu \
             -o jsonpath='{range .items[*]}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}' 2>/dev/null \

@@ -53,8 +53,9 @@ case "${1:-}" in
     # Gateways own load balancers, and a load balancer still attached to a subnet stops
     # the VPC deleting, which surfaces much later as a DELETE_FAILED stack and an
     # AlreadyExistsException on the next build. Remove them first and let them go.
-    export EKS_CLUSTER="$CLUSTER"
-    CTX="arn:aws:eks:${REGION}:$(aws sts get-caller-identity --query Account --output text):cluster/${CLUSTER}"
+    export EKS_CLUSTER="$CLUSTER" AWS_REGION="$REGION"
+    . "$HERE/scripts/lib-context.sh"
+    resolve_ctx
     kubectl --context "$CTX" delete gateway --all -A --timeout=120s 2>/dev/null || true
     echo "waiting for load balancers to go"
     for _ in $(seq 1 30); do

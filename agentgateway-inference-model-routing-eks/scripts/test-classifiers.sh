@@ -14,23 +14,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Cluster selection. Nothing here is tied to one cluster: by default it uses whatever
 # kubectl context is current, which is what you want on kind or any cluster you are
-# already pointed at. Set KUBE_CONTEXT to name one explicitly.
-#
-# The EKS block is a convenience for the cloud case, where a context name is an ARN
-# nobody types by hand. Set EKS_CLUSTER (and optionally AWS_PROFILE and AWS_REGION) and
-# the context is derived from the account the profile resolves to.
-if [ -n "${KUBE_CONTEXT:-}" ]; then
-  CTX="$KUBE_CONTEXT"
-elif [ -n "${EKS_CLUSTER:-}" ]; then
-  REGION="${AWS_REGION:-eu-west-2}"
-  ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
-  [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] \
-    || { echo "error: no AWS identity. Check AWS_PROFILE, or run aws sso login." >&2; exit 1; }
-  CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${EKS_CLUSTER}"
-else
-  CTX="$(kubectl config current-context 2>/dev/null)"
-  [ -n "$CTX" ] || { echo "error: no current kubectl context, and neither KUBE_CONTEXT nor EKS_CLUSTER is set." >&2; exit 1; }
-fi
+# already pointed at. Set KUBE_CONTEXT to name one explicitly, or EKS_CLUSTER for the
+# cloud case where the context name is an ARN nobody types by hand.
+. "$HERE/scripts/lib-context.sh"
+resolve_ctx
 kubectl() { command kubectl --context "$CTX" "$@"; }
 
 # Resolve the pod the requests are sent from. 2>/dev/null because kubectl prints a
@@ -44,6 +31,17 @@ if [ -z "$POD" ]; then
   echo "  set another with KUBE_CONTEXT=<name>, or EKS_CLUSTER=<cluster> for an EKS ARN." >&2
   echo "  contexts available:" >&2
   kubectl config get-contexts -o name 2>/dev/null | sed 's/^/    /' >&2
+  exit 1
+fi
+
+# A Pending pod still has a name, so the check above passes and the first exec fails
+# with "does not have a host assigned", which reads like a kubectl problem rather than
+# what it is: the GPU nodes are scaled to zero. Say so.
+PHASE="$(kubectl get pod -n models "$POD" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+if [ "$PHASE" != "Running" ]; then
+  echo "error: pod $POD is $PHASE, not Running. Both models must be serving." >&2
+  echo "  if the GPU nodes are scaled to zero:  ./scripts/gpu.sh up" >&2
+  kubectl get pods -n models >&2
   exit 1
 fi
 
