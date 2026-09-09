@@ -103,7 +103,12 @@ spec:
           env:
             - {name: MODEL_ID, value: Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8}
             - {name: DEST, value: /models/qwen3-coder-30b-fp8}
-            - {name: HF_XET_HIGH_PERFORMANCE, value: "1"}
+            # Xet is the Hub's newer chunked transfer backend and it fails on the
+            # sharded repos here with "File reconstruction error: Internal Writer
+            # Error: Background writer channel closed", which crash-loops the init
+            # container with nothing pointing at the transfer layer. Plain HTTP is
+            # slower and finishes.
+            - {name: HF_HUB_DISABLE_XET, value: "1"}
             # uid 1000 owns neither /root nor site-packages, so give pip and the
             # HF cache somewhere writable and install to a target dir.
             - {name: HOME, value: /tmp}
@@ -128,7 +133,7 @@ spec:
               snapshot_download(
                   repo_id=os.environ["MODEL_ID"],
                   local_dir=os.environ["DEST"],
-                  max_workers=8,
+                  max_workers=4,
               )
               PY
               # Blob symlinks are dead weight on the PVC and confuse s5cmd later.
@@ -138,8 +143,11 @@ spec:
           volumeMounts:
             - {name: models, mountPath: /models}
           resources:
-            requests: {cpu: "2", memory: 4Gi}
-            limits: {cpu: "6", memory: 12Gi}
+            requests: {cpu: "2", memory: 8Gi}
+            # 24Gi, not 12. hf_transfer buffers aggressively and a 45 GB single-file
+            # download OOMKills at 12Gi, which surfaces as Init:OOMKilled with no
+            # explanation of what wanted the memory.
+            limits: {cpu: "6", memory: 24Gi}
       containers:
         - name: vllm
           # Same pinned digest as the Mistral deployment: vLLM 0.27.1, the build

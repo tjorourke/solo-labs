@@ -71,9 +71,9 @@ spec:
         name: semantic-router
         namespace: agentgateway-system
         port: 50051
-      # A classifier outage must not become a gateway outage. On failure the request
-      # continues without the header and falls through to the default backend.
-      failureMode: FailOpen
+      # NOTE: the OSS CRD has no failureMode. The Enterprise set adds it, and the
+      # Enterprise manifest in ../yaml sets FailOpen so a classifier outage does not
+      # become a gateway outage. On OSS the behaviour is the controller's default.
       processingOptions:
         requestHeaderMode: Send
         requestBodyMode: Buffered

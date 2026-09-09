@@ -103,7 +103,12 @@ spec:
           env:
             - {name: MODEL_ID, value: mistralai/Mistral-Small-3.2-24B-Instruct-2506}
             - {name: DEST, value: /models/mistral-small-3.2-24b}
-            - {name: HF_XET_HIGH_PERFORMANCE, value: "1"}
+            # Xet is the Hub's newer chunked transfer backend and it fails on the
+            # sharded repos here with "File reconstruction error: Internal Writer
+            # Error: Background writer channel closed", which crash-loops the init
+            # container with nothing pointing at the transfer layer. Plain HTTP is
+            # slower and finishes.
+            - {name: HF_HUB_DISABLE_XET, value: "1"}
           command: ["/bin/bash", "-ec"]
           args:
             - |
@@ -124,7 +129,7 @@ spec:
               snapshot_download(repo_id=os.environ["MODEL_ID"],
                                 local_dir=os.environ["DEST"],
                                 ignore_patterns=["model-*.safetensors","*.index.json"],
-                                max_workers=8)
+                                max_workers=4)
               PY
               rm -rf "$DEST/.cache"
               touch "$DEST/.download-complete"
@@ -132,8 +137,11 @@ spec:
           volumeMounts:
             - {name: models, mountPath: /models}
           resources:
-            requests: {cpu: "2", memory: 4Gi}
-            limits: {cpu: "6", memory: 12Gi}
+            requests: {cpu: "2", memory: 8Gi}
+            # 24Gi, not 12. hf_transfer buffers aggressively and a 45 GB single-file
+            # download OOMKills at 12Gi, which surfaces as Init:OOMKilled with no
+            # explanation of what wanted the memory.
+            limits: {cpu: "6", memory: 24Gi}
       containers:
         - name: vllm
           # Pinned to the digest that was actually validated, not :latest. This is
