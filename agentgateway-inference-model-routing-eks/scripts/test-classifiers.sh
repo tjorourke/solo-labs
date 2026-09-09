@@ -93,12 +93,12 @@ PY
 }
 
 echo "==> keyword classifier"
-kubectl apply -f "$HERE/yaml/20-routing-policy.yaml" -f "$HERE/yaml/30-httproute.yaml" >/dev/null
+kubectl apply -f "$HERE/yaml-oss/20-routing-policy.yaml" -f "$HERE/yaml-oss/30-httproute.yaml" >/dev/null
 sleep 8
 run_set > /tmp/rung2.txt
 
 echo "==> semantic classifier"
-kubectl apply -f "$HERE/yaml/80-semantic-router-extproc.yaml" -f "$HERE/yaml/81-httproute-vsr.yaml" >/dev/null
+kubectl apply -f "$HERE/yaml-oss/80-semantic-router-extproc.yaml" -f "$HERE/yaml-oss/81-httproute-vsr.yaml" >/dev/null
 sleep 8
 run_set > /tmp/rung3.txt
 
@@ -128,4 +128,4 @@ echo "keyword classifier:  $((n-w2))/$n correct"
 echo "semantic classifier: $((n-w3))/$n correct"
 echo
 echo "semantic classification is left applied. Return to the keyword classifier with:"
-echo "  kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml"
+echo "  kubectl apply -f yaml-oss/20-routing-policy.yaml -f yaml-oss/30-httproute.yaml"
