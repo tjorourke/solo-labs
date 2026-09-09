@@ -85,12 +85,29 @@ spec:
             # argument for the semantic router, not against this: swap this
             # expression for the router's ExtProc decision and the HTTPRoute below
             # does not change at all.
+            # The regex is written TWICE, over two different shapes of the same
+            # field, and that is not redundancy. OpenAI's chat API allows
+            # `content` to be either a plain string or a list of typed parts, and
+            # real clients differ: curl and most SDKs send a string, while ADK and
+            # LiteLLM-based agents send `[{"type":"text","text":"..."}]`.
+            #
+            # Matching only the string shape does not error on the list shape. It
+            # returns false, the expression falls to the default, and every request
+            # from those agents quietly lands on the general model. Measured here:
+            # identical coding prompts routed to Qwen over curl and to Mistral from
+            # the agent, with 200s and sensible answers in both cases. Nothing in
+            # the logs says "classifier missed", because as far as the gateway is
+            # concerned it did classify.
+            #
+            # The `||` covers both. CEL evaluates left to right and absorbs the
+            # error from whichever shape does not apply.
             value: |
-              coalesce(json(request.body).model, "auto") == "auto"
-                ? (json(request.body).messages[size(json(request.body).messages) - 1].content.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)")
+              coalesce(json(request.body).model, "auto") != "auto"
+                ? json(request.body).model
+                : ((json(request.body).messages[size(json(request.body).messages) - 1].content.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)")
+                    || json(request.body).messages[size(json(request.body).messages) - 1].content[0].text.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)"))
                     ? "qwen3-coder-30b"
                     : "mistral-small-3.2-24b")
-                : json(request.body).model
 ---
 # Route on the header the policy just set.
 #
