@@ -38,9 +38,11 @@ spec:
   storageClassName: gp3-fast
   resources:
     requests:
-      # 31.2 GB of weights. 60Gi leaves room for a re-download alongside the old
-      # copy, which is what you want the first time a model is swapped.
-      storage: 60Gi
+      # 31.2 GB of weights, but 100Gi not 60. huggingface_hub stages each file into
+      # .cache inside the target directory and moves it after, so peak usage is close
+      # to double the final size. At 60Gi the download dies on "[Errno 28] No space
+      # left on device" most of the way through, having already spent the transfer.
+      storage: 100Gi
 ---
 apiVersion: v1
 kind: Service
