@@ -98,14 +98,23 @@ Enterprise set is the same shape with an `Enterprise` prefix.
 
 ## Deploy it
 
-All of this is wrapped as `scripts/quick.sh up`.
+Six steps on an EKS cluster that already has agentgateway, all wrapped as
+`scripts/quick.sh up`.
+
+**What the gateway install has to include.** This lab does not install agentgateway;
+the parent lab does. The **Gateway API experimental channel** is required, because
+ExtProc rides on it and the standard channel does not carry it. Nothing else needs
+enabling: AI backends are part of the gateway, and `inferenceExtension.enabled` is for
+`InferencePool` routing across replicas of one model, which this lab does not use. On
+OSS that is `experimental-install.yaml` plus the `agentgateway-crds` and `agentgateway`
+charts; on Enterprise the same with the `enterprise-` charts and a licence key.
 
 ```bash
 # 1. second GPU node. maxSize must move with desiredSize or the node never arrives
-aws eks update-nodegroup-config --region eu-west-2 --cluster-name uk-sovereign-ai \
-  --nodegroup-name gpu-od --scaling-config minSize=0,maxSize=2,desiredSize=2
+aws eks update-nodegroup-config --region eu-west-2 --cluster-name uk-sovereign-ai   --nodegroup-name gpu-od --scaling-config minSize=0,maxSize=2,desiredSize=2
 
-# 2. the coding model. first run pulls ~31 GB, the rollout took about 12 minutes
+# 2. the second model. Mistral already runs from the parent lab on the first card.
+#    First run pulls ~31 GB; the rollout took about 12 minutes.
 kubectl apply -f yaml/00-qwen-model.yaml
 kubectl rollout status deploy/vllm-qwen -n models --timeout=1500s
 
@@ -116,38 +125,38 @@ kubectl apply -f yaml/10-backends.yaml
 kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
 kubectl get enterpriseagentgatewaybackends,enterpriseagentgatewaypolicies -n agentgateway-system
 
-# 5. the agents
+# 5. the agents: one asking for auto, two naming a model
 kubectl apply -f yaml/40-kagent-modelconfig.yaml
 kubectl apply -f yaml/50-kagent-agent.yaml -f yaml/60-kagent-specialist-agents.yaml \
   --as=system:serviceaccount:kagent:kagent-controller
-```
 
-Check the backends report `ACCEPTED` and the policy `ATTACHED`. A policy that fails to
-attach leaves the header unset, no rule matches, and every request serves the default
-model with a 200.
-
-### Turning on semantic classification
-
-```bash
+# 6. the semantic router (optional). First start downloads the classifier weights.
 helm upgrade --install semantic-router \
   oci://ghcr.io/vllm-project/charts/semantic-router \
   -n agentgateway-system --version v0.0.0-latest \
   -f yaml/70-semantic-router-values.yaml
 kubectl rollout status deploy/semantic-router -n agentgateway-system --timeout=1800s
-
 kubectl apply -f yaml/80-semantic-router-extproc.yaml -f yaml/81-httproute-vsr.yaml
 ```
 
-Switching back to the keyword classifier is the matching pair:
-
-```bash
-kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
-```
+Two vLLM flags on the Qwen Deployment are not optional: `VLLM_USE_DEEP_GEMM=0` with
+`VLLM_MOE_USE_DEEP_GEMM=0`, and `--enable-auto-tool-choice --tool-call-parser=qwen3_coder`.
+Check the backends report `ACCEPTED` and the policy `ATTACHED`; a policy that fails to
+attach leaves the header unset and every request serves the default model with a 200.
 
 `yaml/70` maps the classifier's built-in MMLU-Pro domains onto the two models, so there
 is no training to do for this split: `economics` and `business` to the general model,
 `computer science` and `engineering` to the code model, everything else and anything
 below the confidence threshold to the default.
+
+### Switching between the classifiers
+
+```bash
+# semantic
+kubectl apply -f yaml/80-semantic-router-extproc.yaml -f yaml/81-httproute-vsr.yaml
+# keyword
+kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
+```
 
 ## Testing
 
