@@ -1,39 +1,34 @@
 # Prompt-aware model routing on agentgateway (EKS, real GPUs)
 
-Two open-weight models on two GPUs behind one endpoint, and the gateway decides which
-one answers based on what the prompt is about. A finance question goes to Mistral. A
-coding question goes to Qwen3-Coder. The client sends `"model": "auto"` and never names
-either.
+Two open-weight models on two GPUs behind one endpoint, with the gateway choosing which
+one answers. A finance question goes to Mistral, a coding question goes to Qwen3-Coder,
+and the caller does not have to know which is which.
 
-This is part 2 of [vLLM Semantic Router on agentgateway](../vllm-semantic-router-agentgateway/).
-Part 1 runs on kind with a vLLM simulator and mock LoRA adapters, and proves the router
-can pick an adapter behind a single backend. This one runs on real GPUs in EKS with two
-real models, on **Solo Enterprise for agentgateway**, and shows how that decision
-becomes a different upstream.
+Part 2 of [vLLM Semantic Router on agentgateway](../vllm-semantic-router-agentgateway/).
+Part 1 runs on kind with a simulator and mock LoRA adapters and shows a router picking
+an adapter behind one backend. This runs on real GPUs with two real models, on **Solo
+Enterprise for agentgateway**, and shows the decision selecting a different upstream.
 
-## What this lab is not
+## The scenario
 
-It is not a cluster build. It assumes the cluster, gateway and mesh from
-[sovereign-ai-uk-eks](../sovereign-ai-uk-eks/). This lab is the Solo install and config
-on top: a second model, two backends, one policy, one route, and a kagent agent.
+A bank runs its own GPUs. Finance and risk staff ask about accounting treatment,
+capital and reporting. Engineers ask about code, Kubernetes and deployments that will
+not start. Both go through the same internal assistant. Two questions run through the
+lab as the example pair:
 
-## The mechanism
+| Question | What it is | Wants |
+|---|---|---|
+| "What is IFRS 9 stage 2 impairment?" | IFRS 9 is the accounting standard for financial instruments. Stage 2 is where a loan's credit risk has risen enough that the bank provisions for losses expected over its whole remaining life rather than the next year. | the general model |
+| "Why is my pod stuck in CrashLoopBackOff?" | A Kubernetes workload that starts, fails and is restarted repeatedly. | the code model |
 
-Gateway API matches routes on **headers**. It has no body matcher. Prompt-aware routing
-is therefore two moves:
+Both cards are paid for whether or not the traffic uses them well. The second GPU only
+returns anything if requests reach the model that suits them, and nothing in the URL,
+the method or the caller's identity says which that is. The only thing that does is the
+prompt.
 
-1. a policy at the `PreRouting` phase lifts a value out of the JSON body into a header
-2. the HTTPRoute matches that header and chooses a backend
+## Three ways a request reaches a model
 
-`phase: PreRouting` is load-bearing. The default is `PostRouting`, which runs after the
-route has been selected, so a header set there cannot influence the choice it exists to
-influence. Set the phase wrong and every request lands on the default backend with a
-200.
-
-## Three ways to decide which model answers
-
-The routing table is identical in all three. Only the source of the decision changes,
-which is the point: the HTTPRoute does not know who decided.
+The routing table is identical in all three. Only the source of the decision changes.
 
 | Option | Who decides | Cost |
 |---|---|---|
@@ -41,17 +36,38 @@ which is the point: the HTTPRoute does not know who decided.
 | Keyword match | the gateway matches words in the prompt | nothing, no new component |
 | Semantic | a classifier reads the meaning of the prompt | one more service, several GB of model weights |
 
-This lab ships all three. The first two need no extra component; semantic
-classification adds one service and uses `traffic.extProc` with `processingOptions.requestBodyMode: Buffered`
-and `allowModeOverride: true`, which the Enterprise CRD carries from the 2026.8 line.
+All three are deployed here. Three kagent agents cover both patterns:
+
+| Agent | ModelConfig | Who decides |
+|---|---|---|
+| `finance-analyst` | `sovereign-mistral` | the caller, by picking the agent |
+| `coding-assistant` | `sovereign-qwen` | the caller, by picking the agent |
+| `routing-demo` | `sovereign-auto`, asks for `auto` | the gateway, from the prompt |
+
+## What this lab is not
+
+It is not a cluster build. It assumes the EKS cluster, the Enterprise agentgateway
+install, Keycloak and the ambient mesh from
+[sovereign-ai-uk-eks](../sovereign-ai-uk-eks/). Everything here layers on top.
 
 ## Prerequisites
 
 - The `sovereign-ai-uk-eks` cluster up, with `sovereign-gateway-internal` programmed.
 - **Two** GPU nodes. The nodegroup ships at `desiredSize: 0` and part 1 uses one.
-- Roughly **$11.70/hr** while both nodes are up. The parent lab's
-  `scripts/gpu-backstop.sh` scales the nodegroup to zero at 21:00 UTC nightly and takes
-  both models down together.
+- Roughly **$11.70/hr** while both are up. The parent lab's `scripts/gpu-backstop.sh`
+  scales the nodegroup to zero at 21:00 UTC nightly, taking both models down together.
+
+## The mechanism
+
+Gateway API matches routes on **headers** and has no body matcher. So the decision
+becomes a header before the route is chosen:
+
+1. a policy at the `PreRouting` phase puts the decision in a header
+2. the HTTPRoute matches that header and picks a backend
+
+`phase: PreRouting` is the part to get right. The default is `PostRouting`, which runs
+after the route has been selected, so a header set there changes nothing. Nothing
+errors, and every request lands on the default backend.
 
 ## Sizing
 
@@ -62,168 +78,152 @@ The NVIDIA device plugin hands out whole GPUs, so each model gets its own node. 
 |---|---|---|
 | Mistral-Small-3.2-24B | 44.7 GB | |
 | Qwen3-Coder-30B-A3B bf16 | 61.1 GB | 105.8 GB, does not fit |
-| Qwen3-Coder-30B-A3B **FP8** | 31.2 GB | 75.9 GB, fits with ~20 GB for both KV caches |
+| Qwen3-Coder-30B-A3B **FP8** | 31.2 GB | 75.9 GB, ~20 GB left for both KV caches |
 
-With a card each, FP8 is a throughput and load-time choice rather than a capacity one:
-half the load time, and roughly 60 GB of KV headroom instead of 30.
+With a card each, FP8 is a throughput and load-time choice: half the load time and
+roughly 60 GB of KV headroom instead of 30.
 
-## One vLLM per model
-
-vLLM is not an operator and ships no CRD. A vLLM process loads **one** model at startup
-and serves it, so `vllm` and `vllm-qwen` are two independent Deployments, each with its
-own pod, GPU, PVC and Service. The declarative part is the Solo layer: one
-`EnterpriseAgentgatewayBackend` per model, one policy, one route.
-
-The exception is LoRA. A single vLLM can serve one base model plus many adapters
-(`--enable-lora`, `--lora-modules`, and the client names the adapter in the `model`
-field), sharing one GPU allocation. All adapters share a base, so it does not help when
-you want Mistral for finance and Qwen-Coder for code.
+vLLM is not an operator and ships no CRD. One process serves one model, so `vllm` and
+`vllm-qwen` are two independent Deployments. The declarative part is the Solo layer:
+one `EnterpriseAgentgatewayBackend` per model, one policy, one route.
 
 ## Deploy it
 
-All five steps are wrapped as `scripts/quick.sh up`.
-
-### 1. Second GPU node
-
-Move `maxSize` with `desiredSize`, or the second node is capped and never arrives.
+All of this is wrapped as `scripts/quick.sh up`.
 
 ```bash
+# 1. second GPU node. maxSize must move with desiredSize or the node never arrives
 aws eks update-nodegroup-config --region eu-west-2 --cluster-name uk-sovereign-ai \
   --nodegroup-name gpu-od --scaling-config minSize=0,maxSize=2,desiredSize=2
 
-kubectl get nodes -l role=gpu -o custom-columns=\
-'NAME:.metadata.name,ZONE:.metadata.labels.topology\.kubernetes\.io/zone,GPU:.status.allocatable.nvidia\.com/gpu'
-```
-
-A `g7e.2xlarge` in eu-west-2a registered and advertised `nvidia.com/gpu` in 75 seconds.
-Check the nodegroup **Health** field as well as the node list.
-
-### 2. The coding model
-
-```bash
+# 2. the coding model. first run pulls ~31 GB, the rollout took about 12 minutes
 kubectl apply -f yaml/00-qwen-model.yaml
 kubectl rollout status deploy/vllm-qwen -n models --timeout=1500s
-```
 
-Weights are fetched by an init container so the volume binds on the node that will run
-the model. First run pulls about 31 GB; the whole rollout took about 12 minutes.
-
-The deployment sets `VLLM_USE_DEEP_GEMM=0` and `VLLM_MOE_USE_DEEP_GEMM=0`. Both are
-required for this model on this card, and vLLM selects a working FP8 MoE backend with
-them in place.
-
-### 3. A backend per model
-
-```bash
+# 3. a backend per model (only Qwen; Mistral's exists in the parent lab)
 kubectl apply -f yaml/10-backends.yaml
-```
 
-Only Qwen is defined; the Mistral backend already exists in the parent lab and is
-reused. `model` on the backend must match vLLM's `--served-model-name` exactly, and
-`ai.provider` stays singular so prompt guards keep binding.
-
-### 4. Policy and route
-
-```bash
-kubectl apply -f yaml/20-routing-policy.yaml
-kubectl apply -f yaml/30-httproute.yaml
-
+# 4. the policy and the route
+kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
 kubectl get enterpriseagentgatewaybackends,enterpriseagentgatewaypolicies -n agentgateway-system
-```
 
-Both should report `ACCEPTED` and the policy `ATTACHED`. Not cosmetic: a policy that
-fails to attach leaves the header unset, no rule matches, and every request serves the
-default model with a 200.
-
-### 5. kagent
-
-```bash
+# 5. the agents
 kubectl apply -f yaml/40-kagent-modelconfig.yaml
-kubectl apply -f yaml/50-kagent-agent.yaml \
+kubectl apply -f yaml/50-kagent-agent.yaml -f yaml/60-kagent-specialist-agents.yaml \
   --as=system:serviceaccount:kagent:kagent-controller
 ```
 
-The `ModelConfig` requests `auto`, which is what makes the agent a client of the
-routing rather than of a model. The agent is declarative, so there is no container to
-build. On the sovereign cluster, Agent creation is reserved to the kagent control
-plane, hence the `--as`; elsewhere apply it normally.
+Check the backends report `ACCEPTED` and the policy `ATTACHED`. A policy that fails to
+attach leaves the header unset, no rule matches, and every request serves the default
+model with a 200.
 
-Three settings exist for this cluster and can be dropped elsewhere:
-`a2aConfig.skills` (an agent card with no skills list is rejected by the runtime at
-startup), `deployment.imageRegistry: ghcr.io` (the cluster's registry allowlist does not
-carry the kagent default), and an explicit `deployment.resources` block (it requires CPU
-and memory limits on every container).
-
-## How the classifier behaves
-
-`yaml/20-routing-policy.yaml` does three things deliberately:
-
-- **An explicitly named model wins.** Only `auto`, or a request with no `model` field,
-  is classified.
-- **It reads the last message, not the first.** `messages[0]` is usually a system
-  prompt, and in a multi-turn chat the opening user turn stops being what the request is
-  about after turn two.
-- **It matches both shapes of `content`.** The OpenAI chat API allows `content` to be a
-  plain string or a list of typed parts. curl and most SDKs send a string; ADK and
-  LiteLLM-based agents send `[{"type":"text","text":"..."}]`. The `||` covers both, so
-  agent traffic classifies the same way client traffic does.
-
-## Testing it
+### Turning on semantic classification
 
 ```bash
-SOVEREIGN_AWS_PROFILE=<your sandbox SSO profile> ./scripts/test.sh
+helm upgrade --install semantic-router \
+  oci://ghcr.io/vllm-project/charts/semantic-router \
+  -n agentgateway-system --version v0.0.0-latest \
+  -f yaml/70-semantic-router-values.yaml
+kubectl rollout status deploy/semantic-router -n agentgateway-system --timeout=1800s
+
+kubectl apply -f yaml/80-semantic-router-extproc.yaml -f yaml/81-httproute-vsr.yaml
 ```
 
-Seven requests to one endpoint. Six send `"model": "auto"`; the seventh names a model to
-prove classification is bypassed when a client has already chosen.
-
-```
-ok  FIN str    What is IFRS 9 stage 2 impairment?                     -> mistral-small-3.2-24b
-ok  FIN parts  Explain the difference between CVA and DVA...          -> mistral-small-3.2-24b
-ok  FIN str    Summarise our Q3 results for the board.                -> mistral-small-3.2-24b
-ok  COD str    Write a Python function to reverse a linked list.      -> qwen3-coder-30b
-ok  COD parts  Refactor this to remove the nested loop...             -> qwen3-coder-30b
-ok  COD parts  Debug why my SQL query returns duplicates.             -> qwen3-coder-30b
-ok  PINNED     (client names qwen3-coder-30b)                         -> qwen3-coder-30b
-
-all 7 cases routed as expected
-```
-
-## Seeing the model choice from the agent
-
-Submit one finance prompt and one coding prompt over A2A, then read the gateway log.
+Switching back to the keyword classifier is the matching pair:
 
 ```bash
-POD=$(kubectl get pods -n kagent -l kagent=routing-demo -o jsonpath='{.items[0].metadata.name}')
+kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
+```
 
-kubectl exec -i -n kagent "$POD" -- python3 - <<'PY'
-import json, urllib.request, uuid
-def ask(t):
-    p = {"jsonrpc":"2.0","id":str(uuid.uuid4()),"method":"message/send",
-         "params":{"message":{"role":"user","messageId":str(uuid.uuid4()),
-                              "parts":[{"kind":"text","text":t}]}}}
-    urllib.request.urlopen(urllib.request.Request("http://localhost:8080/",
-        data=json.dumps(p).encode(),
-        headers={"Content-Type":"application/json"}), timeout=180).read()
-ask("Explain the difference between CVA and DVA in derivative pricing.")
-ask("Refactor this Python function to remove the nested loop and add a unit test.")
-PY
+`yaml/70` maps the classifier's built-in MMLU-Pro domains onto the two models, so there
+is no training to do for this split: `economics` and `business` to the general model,
+`computer science` and `engineering` to the code model, everything else and anything
+below the confidence threshold to the default.
 
+## Testing
+
+```bash
+SOVEREIGN_AWS_PROFILE=<sandbox SSO profile> ./scripts/test.sh              # 7 cases, current config
+SOVEREIGN_AWS_PROFILE=<sandbox SSO profile> ./scripts/test-classifiers.sh  # keyword vs semantic
+```
+
+`test-classifiers.sh` switches the policy twice and runs the same nine prompts through
+both:
+
+```
+PROMPT                                            SHOULD    KEYWORD    SEMANTIC
+What is IFRS 9 stage 2 impairment?                finance   ok         ok
+Explain the difference between CVA and DVA        finance   ok         ok
+What is our Python licensing spend this quarter?  finance   X coding   X coding
+Model the credit risk function for our loan book  finance   X coding   ok
+Write a Python function that reverses a list      coding    ok         ok
+Why is my pod stuck in CrashLoopBackOff?          coding    X finance  ok
+Make this run faster without the inner loop       coding    X finance  ok
+Write a Golang handler for an S3 upload           coding    X finance  ok
+How do I set a Terraform provider version?        coding    X finance  ok
+
+keyword classifier:  3/9 correct
+semantic classifier: 8/9 correct
+```
+
+Five of the six keyword failures are misses that could each be fixed by adding a word.
+The sixth cannot: "Model the credit risk function for our loan book" is a finance
+question that reached the code model because it contains `function`. Every keyword
+added to catch a miss widens the surface for a false positive.
+
+Both get "What is our Python licensing spend this quarter?" wrong. That sentence is
+genuinely ambiguous, and it is what the confidence threshold and a default model are
+for.
+
+### Seeing which model answered
+
+The gateway access log is the authoritative view, because `endpoint=` is the upstream
+it actually dialled and cannot be faked by a backend pinning a name:
+
+```bash
 kubectl logs -n agentgateway-system \
   -l gateway.networking.k8s.io/gateway-name=sovereign-gateway-internal --tail=2 \
   | tr ' ' '\n' | grep -E '^(endpoint|gen_ai.response.model|gen_ai.usage.output_tokens)=' | paste - - -
 ```
 
 ```
-endpoint=vllm.models.svc.cluster.local:8000       gen_ai.response.model=mistral-small-3.2-24b  gen_ai.usage.output_tokens=411
-endpoint=vllm-qwen.models.svc.cluster.local:8000  gen_ai.response.model=qwen3-coder-30b        gen_ai.usage.output_tokens=396
+endpoint=vllm.models.svc.cluster.local:8000       gen_ai.response.model=mistral-small-3.2-24b  411
+endpoint=vllm-qwen.models.svc.cluster.local:8000  gen_ai.response.model=qwen3-coder-30b        396
 ```
 
-One agent, one endpoint, two prompts, two models, and the agent named neither.
-`endpoint=` is the field that settles it: it is the upstream the gateway actually
-dialled, and unlike a model name in a response body it cannot come from a backend
-pinning a value. The same records carry per-model token counts, which is what a
-cost-per-team view is built from.
+The kagent trace view shows `auto` on the agent spans, because that is all the agent
+asked for, and the per-span `LLM` field is empty. The served model reaches the rollup
+tables behind the cost views, not the individual span.
+
+### From the kagent UI
+
+The consoles are on `*.sovereign.local`, which does not resolve publicly:
+
+```bash
+kubectl get gateway sovereign-gateway -n agentgateway-system -o jsonpath='{.status.addresses[0].value}'
+# resolve that, then point /etc/hosts at it for
+#   kagent.sovereign.local age.sovereign.local keycloak.sovereign.local
+```
+
+Open `https://kagent.sovereign.local`, accept the lab CA warning, and log in against the
+`sovereign` realm. Pick `routing-demo` for the classified path or a specialist for the
+declared path. `age.sovereign.local` carries the per-model token and cost views.
+
+If the parent lab is also deployed, its `sovereignanalyst` agent appears in the same
+list. It pins a model in its own resource, so every prompt goes to Mistral and the
+routing looks broken. Use `routing-demo`.
+
+## Things that will catch you
+
+| | |
+|---|---|
+| **DeepGEMM crash-loops Qwen FP8** | vLLM 0.27.1 auto-selects the DEEPGEMM FP8 MoE backend on the RTX PRO 6000 and dies at engine init with `Assertion error (layout.hpp:60): Unknown SF transformation`. `VLLM_USE_DEEP_GEMM=0` and `VLLM_MOE_USE_DEEP_GEMM=0` fix it. |
+| **Qwen needs a tool parser** | kagent sends `tools` on every request and vLLM defaults `tool_choice` to `auto`, so without `--enable-auto-tool-choice --tool-call-parser=qwen3_coder` it 400s on every agent request while the routing still looks fine. |
+| **The transformation runs before the ExtProc** | In one `PreRouting` policy the transformation is evaluated first, and the processor's body rewrite lands after the backend pinned its model. Both in one policy gives a request whose route came from the regex and whose body came from the router, and a 400 when they disagree. The semantic policy therefore has no transformation. |
+| **The header is `x-selected-model`** | `x-vsr-selected-model` is a *response* header with the same value. Matching it gives a route that never matches, with no error anywhere. |
+| **Read both content shapes** | `content` can be a string or a list of typed parts. curl sends a string, ADK and LiteLLM agents send parts. Matching only the string shape silently sends all agent traffic to the default model. |
+| **The vSR chart PVC** | defaults to a `standard` StorageClass that does not exist on EKS, so the pod reports an unbound claim rather than a config error. `yaml/70` sets `gp3`. |
+| **kagent admission here** | Agent creation is reserved to the kagent control plane, hence the `--as`. The agents also need `a2aConfig.skills` (a card with no skills list is rejected at startup), `imageRegistry: ghcr.io` and an explicit `resources` block. Drop the last three on a cluster without those policies. |
 
 ## Teardown
 
@@ -232,5 +232,5 @@ SOVEREIGN_AWS_PROFILE=<profile> ./scripts/quick.sh teardown
 ```
 
 Removes this lab's objects and scales back to **one** GPU node, not zero, because part
-1's Mistral is on the other card. The `qwen-weights` PVC is left in place on purpose: it
-holds 31 GB that costs another download to replace.
+1's Mistral is on the other card. The `qwen-weights` PVC is left in place: it holds
+31 GB that costs another download to replace.
