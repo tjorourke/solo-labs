@@ -9,17 +9,29 @@
 # and `teardown` scales it back. Everything else is a handful of objects.
 set -euo pipefail
 
-: "${SOVEREIGN_AWS_PROFILE:?set SOVEREIGN_AWS_PROFILE to the sandbox SSO profile}"
-export AWS_PROFILE="$SOVEREIGN_AWS_PROFILE"
-REGION=eu-west-2
-CLUSTER=uk-sovereign-ai
-NG=gpu-od
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
-[ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] || { echo "error: no AWS identity; check SOVEREIGN_AWS_PROFILE" >&2; exit 1; }
-CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${CLUSTER}"
+# Cluster selection. Nothing here is tied to one cluster: by default it uses whatever
+# kubectl context is current, which is what you want on kind or any cluster you are
+# already pointed at. Set KUBE_CONTEXT to name one explicitly.
+#
+# The EKS block is a convenience for the cloud case, where a context name is an ARN
+# nobody types by hand. Set EKS_CLUSTER (and optionally AWS_PROFILE and AWS_REGION) and
+# the context is derived from the account the profile resolves to.
+if [ -n "${KUBE_CONTEXT:-}" ]; then
+  CTX="$KUBE_CONTEXT"
+elif [ -n "${EKS_CLUSTER:-}" ]; then
+  REGION="${AWS_REGION:-eu-west-2}"
+  ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
+  [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] \
+    || { echo "error: no AWS identity. Check AWS_PROFILE, or run aws sso login." >&2; exit 1; }
+  CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${EKS_CLUSTER}"
+else
+  CTX="$(kubectl config current-context 2>/dev/null)"
+  [ -n "$CTX" ] || { echo "error: no current kubectl context, and neither KUBE_CONTEXT nor EKS_CLUSTER is set." >&2; exit 1; }
+fi
 kubectl() { command kubectl --context "$CTX" "$@"; }
+
+# The GPU nodegroup to scale. EKS only; ignored on any other cluster.
+NG="${GPU_NODEGROUP:-gpu-od}"
 
 banner() { echo; echo "==> $*"; }
 
@@ -28,7 +40,7 @@ scale_gpu() {
   # maxSize=1, so a plain desiredSize=2 there is silently capped at one node and the
   # second model sits Pending on Insufficient nvidia.com/gpu with nothing to explain
   # why.
-  aws eks update-nodegroup-config --region "$REGION" --cluster-name "$CLUSTER" \
+  aws eks update-nodegroup-config --region "${AWS_REGION:-eu-west-2}" --cluster-name "$EKS_CLUSTER" \
     --nodegroup-name "$NG" --scaling-config "minSize=0,maxSize=$1,desiredSize=$1" >/dev/null
   echo "$NG -> desired=$1"
 }
@@ -46,7 +58,7 @@ wait_gpu_nodes() {
   done
   echo "ERROR: fewer than $want GPU nodes advertised a GPU within 30m." >&2
   echo "  check nodegroup HEALTH, not just the node list:" >&2
-  echo "  aws eks describe-nodegroup --region $REGION --cluster-name $CLUSTER --nodegroup-name $NG --query 'nodegroup.health'" >&2
+  echo "  aws eks describe-nodegroup --region ${AWS_REGION:-eu-west-2} --cluster-name $EKS_CLUSTER --nodegroup-name $NG --query 'nodegroup.health'" >&2
   return 1
 }
 
@@ -100,7 +112,7 @@ case "${1:-}" in
     # Never trust a teardown's exit code, read the state back.
     banner "state after teardown"
     kubectl get pods -n models 2>/dev/null || true
-    aws eks describe-nodegroup --region "$REGION" --cluster-name "$CLUSTER" \
+    aws eks describe-nodegroup --region "${AWS_REGION:-eu-west-2}" --cluster-name "$EKS_CLUSTER" \
       --nodegroup-name "$NG" --query 'nodegroup.scalingConfig' --output json
     echo
     echo "The PVC qwen-weights is deliberately NOT deleted: it holds 31 GB that costs"

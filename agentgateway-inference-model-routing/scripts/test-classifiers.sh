@@ -9,15 +9,25 @@
 # It switches the policy twice and leaves semantic classification applied at the end.
 set -euo pipefail
 
-: "${SOVEREIGN_AWS_PROFILE:?set SOVEREIGN_AWS_PROFILE to the sandbox SSO profile}"
-export AWS_PROFILE="$SOVEREIGN_AWS_PROFILE"
-REGION=eu-west-2
-CLUSTER=uk-sovereign-ai
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
-[ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] || { echo "error: no AWS identity" >&2; exit 1; }
-CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${CLUSTER}"
+# Cluster selection. Nothing here is tied to one cluster: by default it uses whatever
+# kubectl context is current, which is what you want on kind or any cluster you are
+# already pointed at. Set KUBE_CONTEXT to name one explicitly.
+#
+# The EKS block is a convenience for the cloud case, where a context name is an ARN
+# nobody types by hand. Set EKS_CLUSTER (and optionally AWS_PROFILE and AWS_REGION) and
+# the context is derived from the account the profile resolves to.
+if [ -n "${KUBE_CONTEXT:-}" ]; then
+  CTX="$KUBE_CONTEXT"
+elif [ -n "${EKS_CLUSTER:-}" ]; then
+  REGION="${AWS_REGION:-eu-west-2}"
+  ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
+  [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] \
+    || { echo "error: no AWS identity. Check AWS_PROFILE, or run aws sso login." >&2; exit 1; }
+  CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${EKS_CLUSTER}"
+else
+  CTX="$(kubectl config current-context 2>/dev/null)"
+  [ -n "$CTX" ] || { echo "error: no current kubectl context, and neither KUBE_CONTEXT nor EKS_CLUSTER is set." >&2; exit 1; }
+fi
 kubectl() { command kubectl --context "$CTX" "$@"; }
 
 POD="$(kubectl get pod -n models -l app=vllm -o jsonpath='{.items[0].metadata.name}')"
