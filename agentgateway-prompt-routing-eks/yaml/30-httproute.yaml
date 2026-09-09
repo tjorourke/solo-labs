@@ -1,0 +1,44 @@
+# Route on the header the policy just set.
+#
+# This is deliberately a SEPARATE HTTPRoute from vllm-mistral-internal rather than
+# an edit to it. Both attach to the same gateway and hostname, and Gateway API
+# resolves overlapping routes by match specificity, so these header-matched rules
+# win when they match and the existing catch-all keeps serving everything else.
+# Nothing that works today stops working, and deleting this file reverts cleanly.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: model-routing-internal
+  namespace: agentgateway-system
+spec:
+  hostnames:
+    - sovereign-gateway-internal.agentgateway-system.svc.cluster.local
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+      sectionName: http
+  rules:
+    # Coding traffic to the code model.
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - type: RegularExpression
+              name: x-model
+              value: '^(qwen|qwen3-coder-30b|code)$|^qwen.*'
+      backendRefs:
+        - name: vllm-qwen
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+    # Everything that names Mistral, or names the general tier, to Mistral.
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - type: RegularExpression
+              name: x-model
+              value: '^(mistral|mistral-small-3\.2-24b|general|finance)$|^mistral.*'
+      backendRefs:
+        - name: vllm-mistral
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+
