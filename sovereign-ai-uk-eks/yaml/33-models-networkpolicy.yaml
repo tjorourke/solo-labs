@@ -28,3 +28,12 @@ spec:
             # cert (spiffe://cluster.local/ns/agentgateway-system/sa/sovereign-gateway).
             principals:
               - "cluster.local/ns/agentgateway-system/sa/sovereign-gateway"
+              # The internal gateway is a SEPARATE Gateway and therefore a separate
+              # ServiceAccount, so it needs naming here in its own right. Leaving it
+              # out is why every request through sovereign-gateway-internal returned
+              # 503 with "connection error: Connection reset by peer (os error 104)":
+              # ztunnel was enforcing this ALLOW policy and the internal gateway's
+              # identity was not on it. The symptom points at the upstream, so it
+              # reads as a broken model rather than a policy that is working
+              # correctly on an incomplete list. Found 2026-09-09.
+              - "cluster.local/ns/agentgateway-system/sa/sovereign-gateway-internal"

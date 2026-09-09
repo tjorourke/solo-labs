@@ -11,22 +11,43 @@ This reproduces the masterthemesh KB article *"vLLM Semantic Router on
 agentgateway"* and runs on the **OSS upstream agentgateway**
 (`cr.agentgateway.dev`, the Linux Foundation project).
 
-## Why OSS upstream agentgateway (not Solo)
+## Why OSS upstream agentgateway here (and why Enterprise now works too)
 
-This is the one place the distribution matters. The router works by having the
-gateway buffer the request body, hand it to the router over ExtProc, and forward
-the body the router rewrites. That requires ExtProc body-mode control on the
-policy: `processingOptions` with `requestBodyMode: Buffered` and
-`allowModeOverride: true`.
+This lab installs the **OSS upstream agentgateway** (`cr.agentgateway.dev`). The
+router works by having the gateway buffer the request body, hand it to the router
+over ExtProc, and forward the body the router rewrites, which needs ExtProc
+body-mode control on the policy: `processingOptions` with `requestBodyMode:
+Buffered` and `allowModeOverride: true`.
 
-Solo's agentgateway CRDs (both the OSS-packaged `agentgateway.dev` set and the
-Enterprise `enterpriseagentgateway.solo.io` set) expose `extProc.backendRef`
-only, with no `processingOptions`. Tested on Solo Enterprise v2.3.3: the router
-classifies the prompt correctly, but the rewritten body is dropped and the
-backend returns `503 ... EOF while parsing` on an empty body. The
-`processingOptions`/`allowModeOverride` fields exist only on the upstream
-agentgateway CRD (`cr.agentgateway.dev`, v1.3.0-alpha.1+), so that is what this
-lab installs.
+**Correction, 2026-09-09.** This section used to say that Solo's CRDs, both the
+`agentgateway.dev` set and the Enterprise `enterpriseagentgateway.solo.io` set,
+expose `extProc.backendRef` only and therefore cannot do this at all. That was
+true when it was written, on Solo Enterprise v2.3.3, where the router classified
+correctly but the rewritten body was dropped and the backend returned
+`503 ... EOF while parsing` on an empty body. **It is no longer true**, and the
+old wording should not be used to tell anyone Enterprise cannot run the router.
+
+Verified with `kubectl explain` against a live `EnterpriseAgentgatewayPolicy`
+v1alpha1 CRD from the 2026.8 line:
+
+- `spec.traffic.extProc.processingOptions` exists, with `allowModeOverride`
+  (bool, default `false`) and `requestBodyMode`
+  (`Buffered | BufferedPartial | FullDuplexStreamed | None`).
+- `spec.traffic.phase`, enum `PreRouting | PostRouting`.
+- `spec.traffic.extProc.conditional[]`, a list of `{condition (CEL), policy}` so
+  the ExtProc call itself can be gated.
+
+Two things to carry across if you translate this lab to Enterprise:
+
+1. `requestBodyMode` **defaults to `FullDuplexStreamed`**, not `Buffered`. It has
+   to be set explicitly or you are back to the old failure.
+2. Set `phase: PreRouting` if anything downstream matches on what the router
+   produced. At the default `PostRouting` the route has already been chosen, which
+   is fine for one backend and wrong the moment you have two.
+
+The version floor is agentgateway **1.3.0 or later** on either distribution. This
+lab stays on OSS upstream because that is what it was validated on end to end;
+the Enterprise path is proven separately rather than assumed here.
 
 ## What gets deployed
 
@@ -151,10 +172,12 @@ kubectl --context kind-vllm-sr -n default exec deploy/vllm-llama3-8b-instruct --
 ```
 
 If every prompt routes to the same adapter, or you get `503 EOF while parsing`,
-the body rewrite did not take effect. On OSS agentgateway, confirm
-`processingOptions.allowModeOverride: true` is set on the policy. On Solo
-agentgateway this is expected: that CRD has no `processingOptions` (see "Why OSS
-upstream agentgateway" above).
+the body rewrite did not take effect. Confirm
+`processingOptions.allowModeOverride: true` and `requestBodyMode: Buffered` are
+both set on the policy. This applies on Enterprise as well as OSS: the Enterprise
+CRD has `processingOptions` from the 2026.8 line, and its `requestBodyMode`
+defaults to `FullDuplexStreamed`, so leaving it unset reproduces exactly this
+symptom.
 
 ## Working with real LoRA adapters
 

@@ -1,0 +1,197 @@
+# The second model: Qwen3-Coder-30B-A3B-Instruct-FP8, on the second GPU card.
+#
+# WHY A SECOND MODEL EXISTS AT ALL. Part 1 of this lab serves one model and proves
+# sovereignty. Part 2 proves ROUTING, and routing needs somewhere to route to. One
+# model behind a gateway is a proxy; two models behind a gateway is a decision. The
+# decision this pair demonstrates is the honest one: a coding prompt should not be
+# answered by a general instruct model when a code model is sitting next to it.
+#
+# WHY A SEPARATE NODE AND NOT A SHARED CARD. The NVIDIA device plugin hands out whole
+# GPUs: the node advertises `nvidia.com/gpu: 1` and a second pod asking for a GPU on
+# that node stays Pending with "Insufficient nvidia.com/gpu". Sharing one card needs
+# time-slicing or MPS configured in the device plugin AND a hand-split
+# gpu-memory-utilization on both pods, which is two extra failure modes for a demo
+# that is not about GPU packing. The gpu-od nodegroup is therefore scaled to 2.
+# No affinity rules are needed: the scheduler puts this pod on the free-GPU node by
+# itself, because Mistral has already claimed the other one.
+#
+# WHY FP8 AND NOT bf16. Both fit now that each model owns a card (bf16 is ~61 GB on
+# a 96 GB card), so this is a throughput and load-time choice, not a capacity one:
+# FP8 is 31.2 GB against 61.1 GB, so it loads in half the time and leaves roughly
+# 60 GB for KV cache instead of 30. The card is Blackwell (RTX PRO 6000 Server), so
+# FP8 is native and not emulated.
+#
+# NO TOOL-CALL PARSER. vLLM 0.27.1 reworked the tool-parser registry and the
+# qwen3 adapter is no longer selected by the old --tool-call-parser name. Rather
+# than guess a flag value and have the pod crash-loop on startup, tool calling is
+# left off: the routing demo does not use it. Add it once the parser name for this
+# exact vLLM build has been read off `vllm serve --help` in the running image.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qwen-weights
+  namespace: models
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: gp3-fast
+  resources:
+    requests:
+      # 31.2 GB of weights. 60Gi leaves room for a re-download alongside the old
+      # copy, which is what you want the first time a model is swapped.
+      storage: 60Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen
+  namespace: models
+  labels: {app: vllm-qwen}
+spec:
+  selector: {app: vllm-qwen}
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen
+  namespace: models
+  labels: {app: vllm-qwen}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # single RWO volume, no rolling second pod
+  selector:
+    matchLabels: {app: vllm-qwen}
+  template:
+    metadata:
+      labels: {app: vllm-qwen}
+    spec:
+      # Same trap as the Mistral deployment: a Service named vllm-qwen would inject
+      # VLLM_QWEN_PORT=tcp://... and vLLM parses *_PORT vars as its own config.
+      enableServiceLinks: false
+      # fsGroup so the non-root init container can write the weights onto the PVC.
+      # The vLLM container runs as root and reads them regardless.
+      securityContext:
+        fsGroup: 1000
+      nodeSelector:
+        role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 30
+      # The weights are fetched here rather than by a separate Job on purpose. The
+      # PVC is gp3 with WaitForFirstConsumer, so it binds in whichever AZ the pod
+      # lands in. A standalone Job can bind it to the wrong node and leave this
+      # Deployment Pending forever with no obvious cause. As an init container the
+      # bind and the consumer are the same pod, so that cannot happen. It is
+      # idempotent: on every restart after the first it finds the weights and exits.
+      initContainers:
+        - name: fetch-weights
+          image: python:3.12-slim
+          # Kyverno's restricted-subset-models policy excludes the "Running as
+          # Non-root" control, but that exclusion does NOT reach init containers:
+          # the admission error names spec.template.spec.initContainers[0]
+          # specifically. So this one runs as an ordinary uid, which it can, and
+          # only the vLLM container relies on the exemption.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          env:
+            - {name: MODEL_ID, value: Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8}
+            - {name: DEST, value: /models/qwen3-coder-30b-fp8}
+            - {name: HF_XET_HIGH_PERFORMANCE, value: "1"}
+            # uid 1000 owns neither /root nor site-packages, so give pip and the
+            # HF cache somewhere writable and install to a target dir.
+            - {name: HOME, value: /tmp}
+            - {name: PYTHONPATH, value: /tmp/pylibs}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              if [ -f "$DEST/config.json" ]; then
+                echo "==> weights already on the PVC, skipping download"
+                du -sh "$DEST"; exit 0
+              fi
+              pip install -q --target=/tmp/pylibs "huggingface_hub[hf_transfer]"
+              echo "==> pulling $MODEL_ID (about 31 GB)"
+              python - <<'PY'
+              import os
+              from huggingface_hub import snapshot_download
+              snapshot_download(
+                  repo_id=os.environ["MODEL_ID"],
+                  local_dir=os.environ["DEST"],
+                  max_workers=8,
+              )
+              PY
+              # Blob symlinks are dead weight on the PVC and confuse s5cmd later.
+              rm -rf "$DEST/.cache"
+              du -sh "$DEST"; ls -la "$DEST"
+          volumeMounts:
+            - {name: models, mountPath: /models}
+          resources:
+            requests: {cpu: "2", memory: 4Gi}
+            limits: {cpu: "6", memory: 12Gi}
+      containers:
+        - name: vllm
+          # Same pinned digest as the Mistral deployment: vLLM 0.27.1, the build
+          # proven to have Blackwell kernels for this card.
+          image: vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          args:
+            - --model=/models/qwen3-coder-30b-fp8
+            # This name is the routing contract. It has to match the model name the
+            # gateway backend pins AND the name the router rewrites into the body.
+            # Change it here and the route stops matching, silently.
+            - --served-model-name=qwen3-coder-30b
+            - --tensor-parallel-size=1
+            - --max-model-len=32768
+            - --gpu-memory-utilization=0.90
+            - --port=8000
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            - {name: VLLM_LOGGING_LEVEL, value: INFO}
+            - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+            # DeepGEMM is broken for this model on this card. vLLM 0.27.1 picks the
+            # DEEPGEMM FP8 MoE backend automatically on the RTX PRO 6000 Server and
+            # then dies in the scale-factor layout transform while loading weights:
+            #   RuntimeError: Assertion error (layout.hpp:60): Unknown SF transformation
+            # It is a hard crash-loop at engine init, not a slow path, and the pod
+            # restarts forever with the real cause 60 lines up the traceback. Turning
+            # DeepGEMM off drops vLLM to the next backend in its own preference list
+            # (FLASHINFER / TRITON), which loads and serves. Re-test on a newer vLLM
+            # before removing these: this is a version-and-card bug, not a design.
+            - {name: VLLM_USE_DEEP_GEMM, value: "0"}
+            - {name: VLLM_MOE_USE_DEEP_GEMM, value: "0"}
+            # Sovereignty: same as the Mistral pod, kill the phone-home at the
+            # workload and not only at the network.
+            - {name: VLLM_NO_USAGE_STATS, value: "1"}
+            - {name: DO_NOT_TRACK, value: "1"}
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 40Gi
+              cpu: "6"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: 24Gi
+              cpu: "4"
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 60
+          volumeMounts:
+            - {name: models, mountPath: /models}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: qwen-weights

@@ -1,0 +1,137 @@
+# Prompt-aware routing across two models on two GPUs.
+#
+# THE PROBLEM THIS SOLVES. Part 1 has one model behind the gateway, so every
+# request goes to the same place and the gateway is a policy enforcement point,
+# not a router. With Mistral on one card and Qwen3-Coder on the other, the gateway
+# has to choose, and the choice has to be made from the CONTENT of the request:
+# nothing in the URL, the method or the client identity says "this is a coding
+# question".
+#
+# WHY THIS NEEDS PreRouting, WHICH IS THE WHOLE TRICK. Gateway API matches routes
+# on headers, not on bodies. There is no body matcher in HTTPRoute and there is not
+# going to be one. So the pattern is two moves:
+#
+#   1. a PreRouting policy lifts a value OUT of the JSON body and INTO a header
+#   2. the HTTPRoute matches that header and picks the backend
+#
+# `phase: PreRouting` is load-bearing. The default is PostRouting, which runs after
+# the route has already been selected, so a header set there cannot influence the
+# choice it was meant to influence. Set the phase wrong and the transformation still
+# applies, the header is still visible upstream, and every request still lands on
+# the default backend. Nothing errors. That is the failure to watch for.
+#
+# WHERE THE SEMANTIC ROUTER PLUGS IN. This file is the mechanism, and it works with
+# the model name the client already sent. Swap the source of that name and you climb
+# the ladder without changing the routing at all:
+#   rung 1  client names the model            -> json(request.body).model   (this file)
+#   rung 2  gateway guesses from the prompt   -> a CEL heuristic on the body
+#   rung 3  vLLM Semantic Router classifies   -> ExtProc rewrites body.model, also
+#                                                at PreRouting, before this runs
+# The HTTPRoute below is identical in all three cases. That is the point worth
+# making out loud: the routing table does not know or care who decided.
+---
+# The coding model as a gateway backend. Same shape as 31-vllm-backend.yaml: read
+# the warning there about `ai.provider` singular before changing this to groups[].
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: vllm-qwen
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        # Must match --served-model-name on the Qwen deployment exactly.
+        model: qwen3-coder-30b
+      host: vllm-qwen.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+---
+# Lift the requested model name out of the JSON body into a header the router can
+# match on. `json(request.body)` parses the buffered body; coalesce gives a value
+# for requests that omit the field entirely, so the match below is total and the
+# policy cannot 500 on a malformed request.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: extract-model-internal
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+  traffic:
+    phase: PreRouting
+    transformation:
+      request:
+        set:
+          - name: x-model
+            # Two rungs in one expression, and the order matters.
+            #
+            # If the client named a concrete model, that wins: a team that has
+            # already picked is not overridden by a guess. Only "auto", or a request
+            # with no model field at all, is classified.
+            #
+            # The classifier itself is a regex over the LAST message, not the first.
+            # The first message in a real conversation is usually a system prompt,
+            # and in a multi-turn chat the first user turn stops being what the
+            # request is about after turn two. Matching messages[0] passes a demo and
+            # then routes the whole conversation on its opening line.
+            #
+            # This is a HEURISTIC and it should be presented as one. It costs nothing
+            # and no extra component, it is auditable in one line, and it is wrong on
+            # anything that discusses code without using the words. That is the
+            # argument for the semantic router, not against this: swap this
+            # expression for the router's ExtProc decision and the HTTPRoute below
+            # does not change at all.
+            value: |
+              coalesce(json(request.body).model, "auto") == "auto"
+                ? (json(request.body).messages[size(json(request.body).messages) - 1].content.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)")
+                    ? "qwen3-coder-30b"
+                    : "mistral-small-3.2-24b")
+                : json(request.body).model
+---
+# Route on the header the policy just set.
+#
+# This is deliberately a SEPARATE HTTPRoute from vllm-mistral-internal rather than
+# an edit to it. Both attach to the same gateway and hostname, and Gateway API
+# resolves overlapping routes by match specificity, so these header-matched rules
+# win when they match and the existing catch-all keeps serving everything else.
+# Nothing that works today stops working, and deleting this file reverts cleanly.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: model-routing-internal
+  namespace: agentgateway-system
+spec:
+  hostnames:
+    - sovereign-gateway-internal.agentgateway-system.svc.cluster.local
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+      sectionName: http
+  rules:
+    # Coding traffic to the code model.
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - type: RegularExpression
+              name: x-model
+              value: '^(qwen|qwen3-coder-30b|code)$|^qwen.*'
+      backendRefs:
+        - name: vllm-qwen
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+    # Everything that names Mistral, or names the general tier, to Mistral.
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - type: RegularExpression
+              name: x-model
+              value: '^(mistral|mistral-small-3\.2-24b|general|finance)$|^mistral.*'
+      backendRefs:
+        - name: vllm-mistral
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
