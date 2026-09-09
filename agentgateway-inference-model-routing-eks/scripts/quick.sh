@@ -1,126 +1,78 @@
 #!/usr/bin/env bash
 # Harness entry point: up | test | teardown.
 #
-# This lab LAYERS on sovereign-ai-uk-eks. It does not build a cluster, a gateway or
-# a mesh, and it does not tear any of those down. It adds a second model, two
-# backends, one policy and one route, and removes exactly those again.
+# This lab is standalone. `up` builds an EKS cluster, installs OSS agentgateway, serves
+# two models on two GPUs, wires the routing, installs kagent and the semantic router,
+# and leaves a working environment. `teardown` deletes the cluster.
 #
-# The one thing here that costs real money is the second GPU node, so `up` scales it
-# and `teardown` scales it back. Everything else is a handful of objects.
+# The GPUs are the cost: two g7e.2xlarge at about $11.70/hr together. Nothing else here
+# is expensive, and `gpu.sh down` stops the meter without losing the weights.
 set -euo pipefail
 
 # The lab root, so the script works from anywhere.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLUSTER="${EKS_CLUSTER:-model-routing}"
+REGION="${AWS_REGION:-eu-west-2}"
 
-# Cluster selection. Nothing here is tied to one cluster: by default it uses whatever
-# kubectl context is current, which is what you want on kind or any cluster you are
-# already pointed at. Set KUBE_CONTEXT to name one explicitly.
-#
-# The EKS block is a convenience for the cloud case, where a context name is an ARN
-# nobody types by hand. Set EKS_CLUSTER (and optionally AWS_PROFILE and AWS_REGION) and
-# the context is derived from the account the profile resolves to.
-if [ -n "${KUBE_CONTEXT:-}" ]; then
-  CTX="$KUBE_CONTEXT"
-elif [ -n "${EKS_CLUSTER:-}" ]; then
-  REGION="${AWS_REGION:-eu-west-2}"
-  ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
-  [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != "None" ] \
-    || { echo "error: no AWS identity. Check AWS_PROFILE, or run aws sso login." >&2; exit 1; }
-  CTX="arn:aws:eks:${REGION}:${ACCOUNT}:cluster/${EKS_CLUSTER}"
-else
-  CTX="$(kubectl config current-context 2>/dev/null)"
-  [ -n "$CTX" ] || { echo "error: no current kubectl context, and neither KUBE_CONTEXT nor EKS_CLUSTER is set." >&2; exit 1; }
-fi
-kubectl() { command kubectl --context "$CTX" "$@"; }
-
-# The GPU nodegroup to scale. EKS only; ignored on any other cluster.
-NG="${GPU_NODEGROUP:-gpu-od}"
-
-banner() { echo; echo "==> $*"; }
-
-scale_gpu() {
-  # maxSize has to move with desiredSize. The parent lab's gpu.sh hardcodes
-  # maxSize=1, so a plain desiredSize=2 there is silently capped at one node and the
-  # second model sits Pending on Insufficient nvidia.com/gpu with nothing to explain
-  # why.
-  aws eks update-nodegroup-config --region "${AWS_REGION:-eu-west-2}" --cluster-name "$EKS_CLUSTER" \
-    --nodegroup-name "$NG" --scaling-config "minSize=0,maxSize=$1,desiredSize=$1" >/dev/null
-  echo "$NG -> desired=$1"
-}
-
-wait_gpu_nodes() {
-  local want="$1"
-  banner "waiting for $want GPU node(s) to advertise nvidia.com/gpu (up to 30m)"
-  for _ in $(seq 1 120); do
-    local n
-    n=$(kubectl get nodes -l role=gpu \
-          -o jsonpath='{range .items[*]}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}' 2>/dev/null \
-        | grep -c '^1$' || true)
-    [ "${n:-0}" -ge "$want" ] && { echo "$n GPU node(s) ready"; return 0; }
-    sleep 15
-  done
-  echo "ERROR: fewer than $want GPU nodes advertised a GPU within 30m." >&2
-  echo "  check nodegroup HEALTH, not just the node list:" >&2
-  echo "  aws eks describe-nodegroup --region ${AWS_REGION:-eu-west-2} --cluster-name $EKS_CLUSTER --nodegroup-name $NG --query 'nodegroup.health'" >&2
-  return 1
-}
+banner() { echo; echo "############ $*"; }
 
 case "${1:-}" in
   up)
-    banner "second GPU node"
-    scale_gpu 2
-    wait_gpu_nodes 2
+    banner "1/6  cluster"
+    if aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
+      echo "cluster $CLUSTER already exists, skipping"
+    else
+      eksctl create cluster -f "$HERE/eks/cluster.yaml"
+    fi
+    export EKS_CLUSTER="$CLUSTER"
 
-    banner "both models (Qwen's first run pulls ~31 GB of weights)"
-    kubectl apply -f "$HERE/yaml/00-mistral-model.yaml"
-    kubectl apply -f "$HERE/yaml/01-qwen-model.yaml"
-    kubectl rollout status deploy/vllm -n models --timeout=1500s
-    # 25 minutes: the weight pull, then a 9 GB image pull on a cold node, then the
-    # load and CUDA graph capture. Observed end to end at about 12 minutes.
-    kubectl rollout status deploy/vllm-qwen -n models --timeout=1500s
+    banner "2/6  OSS agentgateway"
+    "$HERE/scripts/01-gateway.sh"
 
-    banner "gateway, backends, routing policy and route"
-    kubectl apply -f "$HERE/yaml/05-gateway.yaml"
-    kubectl apply -f "$HERE/yaml/10-backends.yaml"
-    kubectl apply -f "$HERE/yaml/20-routing-policy.yaml"
-    kubectl apply -f "$HERE/yaml/30-httproute.yaml"
-    kubectl apply -f "$HERE/yaml/40-kagent-modelconfig.yaml"
+    banner "3/6  the two models (this is the slow one, ~76 GB of weights)"
+    "$HERE/scripts/02-models.sh"
 
-    # Accepted+Attached is not cosmetic. A policy that fails to attach leaves the
-    # header unset, no rule matches, and every request quietly serves the default
-    # model with a 200.
-    banner "attachment status"
-    kubectl get enterpriseagentgatewaybackends,enterpriseagentgatewaypolicies -n agentgateway-system \
-      | grep -E 'NAME|vllm-qwen|extract-model' || true
+    banner "4/6  routing"
+    "$HERE/scripts/03-routing.sh"
+
+    banner "5/6  kagent and the agents"
+    "$HERE/scripts/04-kagent.sh"
+
+    banner "6/6  semantic router"
+    "$HERE/scripts/05-semantic-router.sh"
+
+    banner "done. Prove it with:  ./scripts/test-classifiers.sh"
     ;;
 
   test)
-    exec "$HERE/scripts/test.sh"
+    exec "$HERE/scripts/test-classifiers.sh"
     ;;
 
   teardown)
-    banner "removing this lab's objects (the parent lab is left alone)"
-    kubectl delete -f "$HERE/yaml/40-kagent-modelconfig.yaml" --ignore-not-found
-    kubectl delete -f "$HERE/yaml/30-httproute.yaml" --ignore-not-found
-    kubectl delete -f "$HERE/yaml/20-routing-policy.yaml" --ignore-not-found
-    kubectl delete -f "$HERE/yaml/10-backends.yaml" --ignore-not-found
-    kubectl delete -f "$HERE/yaml/01-qwen-model.yaml" --ignore-not-found
-    kubectl delete -f "$HERE/yaml/05-gateway.yaml" --ignore-not-found
-
-    banner "back to one GPU node"
-    # Back to 1, not 0: the parent lab's Mistral is still running on the other card
-    # and scaling to 0 here would take part 1 down with it.
-    scale_gpu 1
+    banner "deleting the cluster"
+    # Gateways own load balancers, and a load balancer still attached to a subnet stops
+    # the VPC deleting, which surfaces much later as a DELETE_FAILED stack and an
+    # AlreadyExistsException on the next build. Remove them first and let them go.
+    export EKS_CLUSTER="$CLUSTER"
+    CTX="arn:aws:eks:${REGION}:$(aws sts get-caller-identity --query Account --output text):cluster/${CLUSTER}"
+    kubectl --context "$CTX" delete gateway --all -A --timeout=120s 2>/dev/null || true
+    echo "waiting for load balancers to go"
+    for _ in $(seq 1 30); do
+      n=$(aws elb describe-load-balancers --region "$REGION" \
+            --query "length(LoadBalancerDescriptions[?VPCId=='$(aws eks describe-cluster --region "$REGION" --name "$CLUSTER" --query 'cluster.resourcesVpcConfig.vpcId' --output text)'])" \
+            --output text 2>/dev/null || echo 0)
+      [ "$n" = "0" ] && break
+      sleep 10
+    done
+    eksctl delete cluster --region "$REGION" --name "$CLUSTER" --disable-nodegroup-eviction --wait
 
     # Never trust a teardown's exit code, read the state back.
     banner "state after teardown"
-    kubectl get pods -n models 2>/dev/null || true
-    aws eks describe-nodegroup --region "${AWS_REGION:-eu-west-2}" --cluster-name "$EKS_CLUSTER" \
-      --nodegroup-name "$NG" --query 'nodegroup.scalingConfig' --output json
+    aws eks list-clusters --region "$REGION" --query clusters --output text
     echo
-    echo "The PVC qwen-weights is deliberately NOT deleted: it holds 31 GB that costs"
-    echo "another download to replace. Remove it by hand when you are done for good:"
-    echo "  kubectl --context \$CTX -n models delete pvc qwen-weights"
+    echo "Check for leftovers the cluster delete cannot see (classic ELBs, orphan volumes,"
+    echo "NAT gateways, DELETE_FAILED stacks):"
+    echo "  ../scripts/aws-sweep.sh"
     ;;
 
   *)

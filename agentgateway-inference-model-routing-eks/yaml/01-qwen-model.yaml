@@ -91,11 +91,8 @@ spec:
       initContainers:
         - name: fetch-weights
           image: python:3.12-slim
-          # Kyverno's restricted-subset-models policy excludes the "Running as
-          # Non-root" control, but that exclusion does NOT reach init containers:
-          # the admission error names spec.template.spec.initContainers[0]
-          # specifically. So this one runs as an ordinary uid, which it can, and
-          # only the vLLM container relies on the exemption.
+          # Runs as an ordinary uid. Not required on a plain cluster, kept because
+          # some clusters enforce non-root init containers and it costs nothing.
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -114,9 +111,14 @@ spec:
           command: ["/bin/bash", "-ec"]
           args:
             - |
-              if [ -f "$DEST/config.json" ]; then
-                echo "==> weights already on the PVC, skipping download"
-                du -sh "$DEST"; exit 0
+              # Skip only on a marker written AFTER a successful download. Testing for a
+              # config file instead is wrong and fails silently: params.json and
+              # config.json are small and arrive first, so an interrupted pull leaves
+              # them present, the next run skips, and vLLM dies later on
+              # "Weight files referenced in index but missing". Measured: 9.5 GB of 45
+              # treated as complete. snapshot_download resumes, so re-running is cheap.
+              if [ -f "$DEST/.download-complete" ]; then
+                echo "==> weights already on the volume"; du -sh "$DEST"; exit 0
               fi
               pip install -q --target=/tmp/pylibs "huggingface_hub[hf_transfer]"
               echo "==> pulling $MODEL_ID (about 31 GB)"
@@ -131,7 +133,8 @@ spec:
               PY
               # Blob symlinks are dead weight on the PVC and confuse s5cmd later.
               rm -rf "$DEST/.cache"
-              du -sh "$DEST"; ls -la "$DEST"
+              touch "$DEST/.download-complete"
+              du -sh "$DEST"
           volumeMounts:
             - {name: models, mountPath: /models}
           resources:

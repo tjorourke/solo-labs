@@ -1,0 +1,24 @@
+# A default StorageClass.
+#
+# eksctl does not mark one, and the in-tree gp2 class it leaves behind is not default
+# either. Anything that asks for storage without naming a class then sits Pending with
+# "no persistent volumes available for this claim and no storage class is set", which
+# reads like a provisioning problem rather than a missing default. kagent's bundled
+# postgres is the first thing in this lab to hit it.
+#
+# Delete rather than Retain: this is for incidental volumes. The model weights use the
+# gp3-fast class in yaml/00, which is Retain on purpose so a redeployed model does not
+# re-download 45 GB.
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
