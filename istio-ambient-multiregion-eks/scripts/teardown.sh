@@ -46,15 +46,26 @@ for HC in $(aws route53 list-health-checks --query 'HealthChecks[].Id' --output 
   [[ "$TAG" == "mesh-multiregion" ]] && aws route53 delete-health-check --health-check-id "$HC" && echo "  deleted $HC"
 done
 
-step "Deleting LoadBalancer services (releases the NLBs)"
-for pair in "$CTX1:$REGION1" "$CTX2:$REGION2"; do
-  ctx="${pair%%:*}"
+step "Deleting the Gateways and LoadBalancer services (releases the NLBs)"
+# The east-west Service is NOT ours to delete: istiod's east-west controller
+# creates it and owns it (ownerRef Gateway/istio-eastwest,
+# gateway.istio.io/managed=istio.io-eastwest-controller). Deleting only the
+# Service makes the controller recreate it, which provisions a BRAND NEW NLB,
+# so the wait below can never reach zero and the cluster delete then races
+# orphaned load balancers: leftover NLB -> ENI -> security group -> the VPC
+# delete fails and the CloudFormation stack ends DELETE_FAILED, still billing.
+# Remove the peering releases and the Gateways FIRST, then mop up any Service.
+for pair in "$CTX1:$REGION1:$NAME1" "$CTX2:$REGION2:$NAME2"; do
+  ctx="${pair%%:*}"; rest="${pair#*:}"; name="${rest#*:}"
   [[ -z "$ctx" ]] && continue
+  helm --kube-context "$ctx" uninstall "peering-${name}" -n istio-eastwest >/dev/null 2>&1 || true
+  helm --kube-context "$ctx" uninstall "remote-${name}"  -n istio-eastwest >/dev/null 2>&1 || true
+  kubectl --context "$ctx" delete gateway -n istio-eastwest --all --ignore-not-found >/dev/null 2>&1 || true
   kubectl --context "$ctx" delete svc -n istio-eastwest --all --ignore-not-found >/dev/null 2>&1 || true
   kubectl --context "$ctx" delete svc -n kgateway-system --all --ignore-not-found >/dev/null 2>&1 || true
   kubectl --context "$ctx" delete ns shop --ignore-not-found >/dev/null 2>&1 || true
 done
-ok "LB services deleted"
+ok "gateways + LB services deleted"
 
 # Wait for AWS to actually remove the load balancers, do not sleep 30 and hope.
 # Deleting the Service only ASKS the in-tree cloud controller to delete the NLB,
