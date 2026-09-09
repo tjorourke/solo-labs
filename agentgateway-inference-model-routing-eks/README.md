@@ -159,8 +159,9 @@ kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
 ## Testing
 
 ```bash
-AWS_PROFILE=<sandbox SSO profile> ./scripts/test.sh              # 7 cases, current config
-AWS_PROFILE=<sandbox SSO profile> ./scripts/test-classifiers.sh  # keyword vs semantic
+./scripts/test-classifiers.sh          # uses the current kubectl context
+KUBE_CONTEXT=my-ctx ./scripts/test-classifiers.sh
+AWS_PROFILE=... EKS_CLUSTER=my-cluster ./scripts/test-classifiers.sh
 ```
 
 `test-classifiers.sh` switches the policy twice and runs the same nine prompts through
