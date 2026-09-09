@@ -43,26 +43,3 @@ spec:
       host: vllm-qwen.models.svc.cluster.local
       port: 8000
       path: /v1/chat/completions
----
-# The LoRA adapter, addressed exactly like a model.
-#
-# Same host and port as the Mistral backend above, because it IS the Mistral server: one
-# vLLM process, one set of base weights, one GPU. Only the model name differs, and vLLM
-# applies the adapter for requests that carry it.
-#
-# That is the part worth noticing. Nothing in the gateway knows or cares that this is an
-# adapter rather than a separate model, so adding a specialism costs one backend, one
-# route rule and 88 MB, instead of a GPU.
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayBackend
-metadata:
-  name: vllm-house-style
-  namespace: agentgateway-system
-spec:
-  ai:
-    provider:
-      openai:
-        model: house-style
-      host: vllm.models.svc.cluster.local
-      port: 8000
-      path: /v1/chat/completions

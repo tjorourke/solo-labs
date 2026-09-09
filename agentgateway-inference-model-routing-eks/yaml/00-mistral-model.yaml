@@ -82,10 +82,6 @@ spec:
       # already targets vllm.models.svc.cluster.local, so kill the injection
       # instead of the name.
       enableServiceLinks: false
-      # Lets the init container write the adapters volume without running as root.
-      # Cheap here because it applies to a 5Gi volume, not the 44.7 GB weights one.
-      securityContext:
-        fsGroup: 1000
       nodeSelector:
         role: gpu
       tolerations:
@@ -94,47 +90,6 @@ spec:
           effect: NoSchedule
       # 48 GB off gp3 at 750 MiB/s is ~90s, then CUDA graph capture on top.
       terminationGracePeriodSeconds: 30
-      # Fetch the LoRA adapters into an emptyDir.
-      #
-      # They are small enough that persisting them buys little: the rank-16 adapter here
-      # is 88 MB against 44.7 GB of base weights, and re-fetching it on a pod restart
-      # takes seconds. A dedicated PVC also deadlocks against the weights volume, which
-      # is ReadWriteOnce, when a rolling replacement waits for the old pod to release it.
-      #
-      # That 88 MB against 44.7 GB is the ratio worth remembering. It is the reason LoRA
-      # exists: many specialisms for one set of base weights and one GPU.
-      initContainers:
-        - name: fetch-adapters
-          image: python:3.12-slim
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
-            allowPrivilegeEscalation: false
-            capabilities: { drop: ["ALL"] }
-            seccompProfile: { type: RuntimeDefault }
-          env:
-            - {name: HOME, value: /tmp}
-            - {name: PYTHONPATH, value: /tmp/pylibs}
-          command: ["/bin/bash", "-ec"]
-          args:
-            - |
-              if [ -f /adapters/house-style/adapter_config.json ]; then
-                echo "==> adapters already on the volume"; du -sh /adapters/*; exit 0
-              fi
-              pip install -q --target=/tmp/pylibs huggingface_hub
-              python - <<'PY'
-              from huggingface_hub import snapshot_download
-              snapshot_download(repo_id="coconut00/mistral-small-3.2-lora-250625",
-                                local_dir="/adapters/house-style",
-                                allow_patterns=["adapter_config.json","adapter_model.safetensors"])
-              PY
-              du -sh /adapters/*
-          volumeMounts:
-            - {name: adapters, mountPath: /adapters}
-          resources:
-            requests: {cpu: "1", memory: 2Gi}
-            limits: {cpu: "2", memory: 4Gi}
       containers:
         - name: vllm
           # Pinned to the digest that was actually validated, not :latest. This is
@@ -156,17 +111,6 @@ spec:
           args:
             - --model=/models/mistral-small-3.2-24b
             - --served-model-name=mistral-small-3.2-24b
-            # LoRA. The base is loaded once and each adapter is applied per request, so
-            # every name below is a separate model to a client while costing one set of
-            # base weights and one GPU.
-            #
-            # max-lora-rank must be >= the rank of the largest adapter, from its
-            # adapter_config.json. Too low and vLLM refuses the adapter at load.
-            - --enable-lora
-            - --max-loras=4
-            - --max-lora-rank=32
-            - --lora-modules
-            - house-style=/adapters/house-style
             # ONE GPU, not four. The node is g7e.2xlarge: a single RTX PRO 6000
             # Server with 96 GB. Weights are ~48 GB in bf16, so the whole model sits
             # on one card with ~48 GB left for KV cache, and there is no tensor
@@ -239,7 +183,6 @@ spec:
               cpu: "4"
           volumeMounts:
             - {name: models, mountPath: /models, readOnly: true}
-            - {name: adapters, mountPath: /adapters, readOnly: true}
             - {name: shm, mountPath: /dev/shm}
           # timeoutSeconds matters here and the default of 1s is wrong. On the RTX PRO
           # 6000, /health can take several seconds while the engine is busy, so a 1s
@@ -259,8 +202,6 @@ spec:
             timeoutSeconds: 15
             failureThreshold: 8
       volumes:
-        - name: adapters
-          emptyDir: {}
         - name: models
           persistentVolumeClaim:
             claimName: model-weights
