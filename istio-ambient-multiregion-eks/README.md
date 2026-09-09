@@ -47,6 +47,19 @@ this is specific to this lab's LoadBalancer/multi-network shape. Next step is to
 NodePort-peered setup (`preferredDataplaneServiceType`) or raise the 15012 exposure with Solo.
 Until it converges, do not record a validated build for this lab.
 
+**Second open item, dependent on the first.** `03-app.sh` now labels the Service
+`solo.io/service-scope=global` (the current label; `istio.io/global` predates it) plus
+`solo.io/service-takeover=true`, so the client can keep dialling
+`region-echo.shop.svc.cluster.local`. Verified live: the global hostname publishes, and the
+cluster-local name still serves locally, so locality preference survives takeover at steady state.
+**Not** verified: the cross-region failover in demo 04, because peering never converged on the Solo
+build. The docs note that with takeover you lose the ability to control local-versus-global
+endpoint preference, and this lab's whole premise is `trafficDistribution: PreferClose`, so when
+peering is fixed, check demo 04 phase 2 and 3 specifically. If takeover and PreferClose turn out to
+conflict, the alternative is to drop takeover and point the client at
+`region-echo.shop.mesh.internal`, which costs the "no client change" line on the page but keeps
+locality control.
+
 ## Never run this against the wrong AWS account
 
 `secrets-envs.sh` exports `AWS_PROFILE` as a side effect. To stop that silently choosing the account, every
