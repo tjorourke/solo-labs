@@ -46,6 +46,11 @@ log()    { echo "  $*"; }
 ok()     { echo "  ✓ $*"; }
 step()   { echo ""; echo "==> $*"; }
 die()    { echo "ERROR: $*" >&2; exit 1; }
+# warn was used by teardown.sh but never defined anywhere. Under `set -e` an
+# undefined command exits 127, so the one path that called it (load balancers
+# still present after 10 minutes) killed the teardown immediately BEFORE the
+# cluster delete, leaving both clusters billing.
+warn()   { echo "WARN: $*" >&2; }
 
 load_secrets() {
   if [[ -n "${SECRETS_FILE:-}" ]]; then

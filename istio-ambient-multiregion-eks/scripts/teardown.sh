@@ -94,7 +94,35 @@ wait_lbs_gone "$NAME1" "$REGION1"
 wait_lbs_gone "$NAME2" "$REGION2"
 
 step "Deleting EKS clusters (10-15 min each)"
-eksctl delete cluster --name "$NAME1" --region "$REGION1" --wait &
-eksctl delete cluster --name "$NAME2" --region "$REGION2" --wait &
-wait
-ok "clusters deleted — verify no leftover NLBs/EIPs in $REGION1 and $REGION2"
+# Two eksctl processes racing the SSO token cache is a real failure: one of them
+# dies immediately with "failed to replace old cached SSO token file, rename
+# ...tmp-...", and because the pair ran in the background the script sailed past
+# it and one cluster was never deleted at all. Warm the token first so neither
+# process needs to refresh it, and keep each exit code.
+aws sts get-caller-identity >/dev/null 2>&1 || die "AWS credentials are not usable; run: aws sso login --profile $AWS_PROFILE"
+
+eksctl delete cluster --name "$NAME1" --region "$REGION1" --wait & p1=$!
+eksctl delete cluster --name "$NAME2" --region "$REGION2" --wait & p2=$!
+rc1=0; rc2=0
+wait "$p1" || rc1=$?
+wait "$p2" || rc2=$?
+[[ $rc1 -eq 0 ]] || warn "[$NAME1] eksctl delete exited $rc1"
+[[ $rc2 -eq 0 ]] || warn "[$NAME2] eksctl delete exited $rc2"
+
+# Never trust the exit code: read the state back and retry serially. A cluster
+# left behind here bills all night.
+step "Verifying both clusters are actually gone"
+for pair in "$NAME1:$REGION1" "$NAME2:$REGION2"; do
+  name="${pair%%:*}"; region="${pair##*:}"
+  if aws eks describe-cluster --name "$name" --region "$region" >/dev/null 2>&1; then
+    warn "[$name] still present in $region — retrying the delete serially"
+    eksctl delete cluster --name "$name" --region "$region" --wait \
+      || warn "[$name] serial delete also failed; check CloudFormation for DELETE_FAILED stacks"
+  fi
+  if aws eks describe-cluster --name "$name" --region "$region" >/dev/null 2>&1; then
+    warn "[$name] STILL PRESENT in $region — this is billing, delete it by hand"
+  else
+    ok "[$name] gone from $region"
+  fi
+done
+ok "clusters deleted — now run scripts/aws-sweep.sh, which covers what the labs cannot see"
