@@ -962,10 +962,17 @@ done
 # 3) Multicluster peering verified. istiod needs a few seconds to push the
 #    remote endpoints after the peer references land, so retry rather than
 #    fail on the first (pre-convergence) check.
+# Grep a FILE, never pipe into `grep -q`. This script runs under
+# `set -o pipefail` and `grep -q` exits on its first match, which closes the
+# pipe, hands istioctl a SIGPIPE and makes the pipeline report failure at the
+# moment the check succeeds. That is what reported "did not confirm peering"
+# here while `Peers Check: all clusters connected` was in the output.
 PEERING_OK=no
-for _ in 1 2 3 4 5 6; do
-  if istioctl --context "$CLUSTER1" multicluster check 2>&1 \
-       | grep -qE 'Peers Check.*all clusters connected'; then
+__sm_out="$(mktemp)"
+__sm_end=$(( $(date +%s) + 300 ))
+while [[ $(date +%s) -lt $__sm_end ]]; do
+  istioctl --context "$CLUSTER1" multicluster check >"$__sm_out" 2>&1 || true
+  if grep -Eq 'Peers Check: all clusters connected' "$__sm_out"; then
     PEERING_OK=yes
     break
   fi
@@ -974,9 +981,11 @@ done
 if [[ "$PEERING_OK" == "yes" ]]; then
   log_ok "[${CLUSTER1#kind-}] multicluster peering verified — both clusters connected"
 else
-  log "[${CLUSTER1#kind-}] multicluster check did not confirm peering after 60s"
+  tail -20 "$__sm_out" >&2
+  log "[${CLUSTER1#kind-}] multicluster check did not confirm peering after 5m"
   INFRA_OK=no
 fi
+rm -f "$__sm_out"
 
 if [[ "$INFRA_OK" == "yes" ]]; then
   log_ok "infrastructure smoke test — PASS"
