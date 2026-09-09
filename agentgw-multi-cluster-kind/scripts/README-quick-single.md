@@ -6,7 +6,8 @@ stand up `east` on one machine (e.g. a laptop), `west` on a second machine
 machine runs `quick-single.sh` once.
 
 `quick.sh` is the right choice when both clusters live on one host — it does
-the full peering + remote-secret cross-apply for you in one invocation.
+the full peering (east-west gateways + peer references) for you in one
+invocation.
 `quick-single.sh` is the right choice when each half lives on a different
 host, because the cross-cluster steps need to be deferred until after both
 machines are up.
@@ -126,23 +127,22 @@ containing:
 
 | File                                 | Purpose                                                                                        |
 |--------------------------------------|------------------------------------------------------------------------------------------------|
-| `istio-remote-secret-<name>.yaml`    | kubeconfig Secret (bound to `istio-reader-service-account`) that the **peer** istiod applies to discover this cluster's k8s API. Generated via `istioctl create-remote-secret --context kind-<name> --name <name> -n istio-system`. |
-| `eastwest-ip.txt`                    | This cluster's east-west GW external LB IP — the peer's helm `remote` entry points at this. |
+| `eastwest-ip.txt`                    | This cluster's east-west GW external LB IP — the peer's helm `remote` entry points at this. **It is the whole contract:** `:15008` carries HBONE data plane, `:15012` carries the istiod-to-istiod xDS connection. |
 | `cluster-name.txt`                   | This cluster's name (also used as the `network`).                                              |
 | `root-ca.crt` + `root-ca.key`        | Shared root CA so the second machine's intermediate chains back to the same root.              |
 
 Ship `peer-bundle-<name>.tar.gz` to the other machine. The script's summary
-prints the exact `scp` + `kubectl apply` + `helm upgrade --install remote-peers`
-commands you'll need on the receiving side.
+prints the exact `scp` + `helm upgrade --install remote-peers` commands you'll
+need on the receiving side.
 
 > [!NOTE]
-> The `istio-remote-secret` YAML is a kubeconfig pointing at the kind API
-> server's in-cluster URL (`https://kind-<name>-control-plane:6443`). With
-> the peering chart's `remote.create=true` data-plane entry, the **runtime**
-> cross-cluster traffic uses HBONE on `eastwest-ip.txt:15008` — the kube-API
-> URL in the secret is only consumed by istiod for Service/Endpoint discovery
-> on the peer side, so as long as the peer's istiod can reach this cluster's
-> API server, the data-plane path works. See **Networking caveat** below.
+> Nothing in this bundle is a credential. There is no remote secret, because
+> peering in the Solo distribution never reads the peer's Kubernetes API: the
+> two control planes federate service and workload information over the mTLS
+> xDS connection to the east-west gateway on `:15012`, and the data plane
+> tunnels HBONE to the same address on `:15008`. Those two ports between the
+> two hosts are the entire cross-host requirement. See **Networking caveat**
+> below.
 
 ## Configuration via env vars
 
@@ -183,16 +183,12 @@ GW on each host's LAN-reachable address. Common patterns:
 The peering bundle's `eastwest-ip.txt` is the value to override when you've
 fronted the GW with a tunnel — every other field stays correct.
 
-You also need to make this cluster's **kube API server** reachable from the
-peer's istiod for Service / Endpoint discovery (the `istio-remote-secret`
-kubeconfig). For a real cross-host setup, either:
-
-* expose `kind-<name>-control-plane:6443` on the host (kind already does this
-  via `127.0.0.1:<random>`; for cross-host, front it with the same tunnel
-  scheme as the east-west GW), then hand-edit the `server:` field in the
-  remote-secret YAML before applying it, or
-* run the istiod-side discovery through Tailscale / similar overlay so the
-  in-cluster hostname resolves.
+You do **not** need this cluster's kube API server reachable from the peer.
+That is the point of peering: istiod discovers the peer over xDS through the
+east-west gateway rather than watching its Kubernetes API, and
+`DISABLE_LEGACY_MULTICLUSTER=true` stops it looking at a remote secret at all.
+The only thing that needs cross-host reachability is the east-west address, on
+`:15008` (HBONE) and `:15012` (xDS).
 
 ## Idempotency
 
@@ -210,12 +206,10 @@ the current east-west IP.
 
 Deletes the kind cluster and removes the entire `certs/` directory. If you're
 tearing down only one machine in the peering, the other side will keep its
-remote-secret pointing at a dead cluster — clean that up on the surviving
+peer reference pointing at a dead cluster — clean that up on the surviving
 machine with:
 
 ```bash
-kubectl --context kind-<surviving> -n istio-system \
-  delete secret istio-remote-secret-<gone-cluster>
 helm uninstall remote-peers --kube-context kind-<surviving> -n istio-eastwest
 ```
 
@@ -269,10 +263,9 @@ What it does:
    the bundle's `root-ca.crt` SHA256. If they differ, bails with a clear
    error — the two clusters' intermediates must chain to the same root or
    cross-cluster mTLS will silently fail.
-3. Decodes the embedded kubeconfig in `istio-remote-secret-<peer>.yaml`,
-   rewrites its `server:` URL to the peer's LAN-reachable kube-API endpoint
-   (defaults to `<peer-ew-host>:6443`; override with `PEER_API_HOST_PORT`),
-   re-encodes, and applies on the local cluster.
+3. Applies no credential, because there is none to apply. The peer reference
+   in the next step carries both the HBONE (`:15008`) and xDS (`:15012`)
+   endpoints, so the peer's kube API is never contacted.
 4. Runs `helm upgrade --install remote-peers` against the `peering` chart to
    add a `remote.items[]` entry pointing at `<peer-ew-host>:<port>` (HBONE)
    with XDS at `port+4` (override with `PEER_XDS_OFFSET`).

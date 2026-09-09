@@ -46,7 +46,10 @@ else DOWN_CTX="$CTX2"; DOWN_REGION="$REGION2"; UP_REGION="$REGION1"; fi
 step "Phase 2 — $DOWN_REGION ingress goes down (the region GA is serving us)"
 kubectl --context "$DOWN_CTX" -n kgateway-system scale deploy/ingress --replicas=0 >/dev/null
 echo "  ...polling until GA fails $DOWN_REGION and serves $UP_REGION (health check + propagation)"
-wait_flip "$UP_REGION" 180 || true
+# Deliberately non-fatal: GA sends each client to its nearest edge, so an
+# unattended run from a different network can legitimately see this differently.
+# It must still be loud in the log rather than silently passing.
+wait_flip "$UP_REGION" 180 || echo "  WARN: GA did not flip to $UP_REGION within 180s — check the GA endpoint health for $DOWN_REGION"
 sample "during outage (expect only $UP_REGION)"
 
 step "Phase 3 — restore $DOWN_REGION ingress"

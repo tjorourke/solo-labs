@@ -71,8 +71,11 @@ peering connect but won't enable global service rewriting.
 8. East-west HBONE gateways via Solo Istio's `peering` helm chart, type
    LoadBalancer (MetalLB IPs).
 9. Per-cluster `Gateway` + `RemoteGateway` peer references.
-10. Cross-applied `istio-remote-secret-*` Secrets (token bound to
-    `istio-reader-service-account`).
+10. Asserted that **no** `istio-remote-secret-*` Secret exists. Peering here is
+    istiod-to-istiod xDS through the east-west gateway on `:15012`, so no
+    cluster holds a kubeconfig for another or reaches its Kubernetes API, and
+    istiod runs with `DISABLE_LEGACY_MULTICLUSTER=true` so a stray secret would
+    be ignored anyway.
 11. Solo Enterprise agentgateway control plane + CRDs at the version selected
     by `AGW_VERSION` / `AGW_REGISTRY` / `AGW_NIGHTLY`.
 12. Smoke test — `istiod-gloo` Available, `ztunnel` Ready on every node,

@@ -4,17 +4,16 @@
 # republishes that machine's east-west GW on its LAN IP).
 #
 # What this does on the LOCAL cluster:
-#   1. Extracts the peer bundle (root-ca.{crt,key}, istio-remote-secret-<peer>.yaml,
-#      cluster-name.txt, eastwest-ip.txt).
+#   1. Extracts the peer bundle (root-ca.{crt,key}, cluster-name.txt,
+#      eastwest-ip.txt). Note what is NOT in it: any credential for the peer.
 #   2. Verifies the local cacerts secret was signed by the same root CA the bundle
 #      ships. (If not, the peering will silently fail mTLS — better to bail now.)
-#   3. Rewrites the bundle's `istio-remote-secret-<peer>.yaml` so the embedded
-#      kubeconfig's `server:` points at the peer's LAN-reachable host:port (the
-#      bundle captured the in-cluster URL, which won't resolve cross-host).
-#   4. Applies the rewritten remote-secret on the local cluster — istiod-gloo
-#      uses it to read the peer's k8s API.
-#   5. Adds a `remote.items[]` entry to the local `peering` helm release so the
-#      local data plane knows where the peer's east-west GW lives.
+#   3. Points the local cluster at the peer's east-west gateway, either as a
+#      `remote.items[]` entry on the peering helm release or as an istio-remote
+#      Gateway CR. That one address serves both halves: :15008 for HBONE data
+#      plane and :15012 for the istiod-to-istiod xDS connection the two control
+#      planes federate over. No kubeconfig, and no access to the peer's
+#      Kubernetes API.
 #
 # Usage:
 #   ./scripts/peer-with.sh <local-cluster-name> <path/to/peer-bundle.tar.gz> <peer-ew-host:port>
@@ -24,11 +23,6 @@
 #   ./scripts/peer-with.sh green /tmp/peer-bundle-blue.tar.gz 192.168.1.42:15008
 #
 # Env overrides:
-#   PEER_API_HOST_PORT — host:port of the peer's kube API server, LAN-reachable.
-#                        If unset, defaults to "<peer-ew-host>:6443" (a separate
-#                        socat tunnel must be running on the peer for port 6443
-#                        — most operators front the kind control-plane port
-#                        instead and set this explicitly).
 #   PEER_XDS_OFFSET    — XDS port offset from HBONE (default 4 → 15012 for 15008).
 #   SOLO_ISTIO_VERSION — helm chart version (default 1.29.2-solo).
 
@@ -102,8 +96,6 @@ validate_name "$PEER_NAME"
 
 [[ -f "$BUNDLE_INNER/root-ca.crt" ]] || die "bundle missing root-ca.crt"
 [[ -f "$BUNDLE_INNER/root-ca.key" ]] || die "bundle missing root-ca.key"
-[[ -f "$BUNDLE_INNER/istio-remote-secret-${PEER_NAME}.yaml" ]] \
-  || die "bundle missing istio-remote-secret-${PEER_NAME}.yaml"
 [[ -f "$BUNDLE_INNER/eastwest-ip.txt" ]] || die "bundle missing eastwest-ip.txt"
 
 PEER_EW_BRIDGE_IP="$(cat "$BUNDLE_INNER/eastwest-ip.txt")"
@@ -140,87 +132,16 @@ EOF
 fi
 log_ok "root CA matches (sha256 $LOCAL_ROOT_SHA)"
 
-# ── Rewrite remote-secret kubeconfig server URL ──────────────────────────────
-
-step "Rewriting peer remote-secret to point at LAN-reachable kube API"
-REMOTE_SECRET_IN="$BUNDLE_INNER/istio-remote-secret-${PEER_NAME}.yaml"
-REMOTE_SECRET_OUT="$TMP_DIR/istio-remote-secret-${PEER_NAME}.lan.yaml"
-
-PEER_API_HOST_PORT_DEFAULT="${PEER_HOST}:6443"
-PEER_API_HOST_PORT="${PEER_API_HOST_PORT:-$PEER_API_HOST_PORT_DEFAULT}"
-log "  using peer kube-API endpoint: https://${PEER_API_HOST_PORT}"
-
-# The remote-secret YAML can be in two shapes depending on how it was generated:
-#   - `data:` block — value is base64-encoded kubeconfig (older istioctl path)
-#   - `stringData:` block — value is inline-YAML kubeconfig (`istioctl
-#     create-remote-secret` default since at least 1.20+)
-# Handle both: detect the block kind, rewrite every `server: https://...`
-# line in each embedded kubeconfig (decode/re-encode for base64, in-place
-# regex for stringData).
-python3 - "$REMOTE_SECRET_IN" "$REMOTE_SECRET_OUT" "https://${PEER_API_HOST_PORT}" <<'PY'
-import base64, re, sys
-
-src, dst, server = sys.argv[1], sys.argv[2], sys.argv[3]
-
-with open(src, "r") as f:
-    raw = f.read()
-
-server_rx = re.compile(r"(?m)^(\s*server:\s*).*$")
-
-# Try stringData first — that's what istioctl create-remote-secret emits today.
-sd = re.search(r"(?ms)^stringData:\s*\n(?P<body>(?:[ \t]+[^\n]*(?:\n|$))+)", raw)
-if sd:
-    body = sd.group("body")
-    new_body, n = server_rx.subn(r"\1" + server, body)
-    if n == 0:
-        sys.exit("ERROR: no `server:` line found in stringData kubeconfig")
-    out = raw[:sd.start("body")] + new_body + raw[sd.end("body"):]
-    with open(dst, "w") as f:
-        f.write(out)
-    print(f"  patched {n} server: line(s) in stringData block", file=sys.stderr)
-    sys.exit(0)
-
-# Fallback: legacy base64 `data:` block.
-m = re.search(r"^data:\s*\n((?:[ \t]+[^\n]+\n)+)", raw, re.M)
-if not m:
-    sys.exit("ERROR: no `stringData:` or `data:` block found in remote-secret YAML")
-
-block = m.group(1)
-patched_lines = []
-patched = False
-for ln in block.splitlines(keepends=False):
-    km = re.match(r"^([ \t]+)([^:\s]+):\s*(\S.*)$", ln)
-    if not km:
-        patched_lines.append(ln)
-        continue
-    indent, key, val = km.group(1), km.group(2), km.group(3)
-    try:
-        decoded = base64.b64decode(val).decode("utf-8")
-    except Exception:
-        patched_lines.append(ln)
-        continue
-    new_decoded, n = server_rx.subn(r"\1" + server, decoded)
-    if n == 0:
-        sys.exit("ERROR: no `server:` field in embedded base64 kubeconfig")
-    new_val = base64.b64encode(new_decoded.encode("utf-8")).decode("ascii")
-    patched_lines.append(f"{indent}{key}: {new_val}")
-    patched = True
-
-if not patched:
-    sys.exit("ERROR: failed to patch any base64 kubeconfig blob in remote-secret")
-
-new_block = "\n".join(patched_lines) + "\n"
-out = raw[:m.start(1)] + new_block + raw[m.end(1):]
-with open(dst, "w") as f:
-    f.write(out)
-PY
-log_ok "rewrote server: → https://${PEER_API_HOST_PORT}"
-
-# ── Apply rewritten remote-secret on local cluster ───────────────────────────
-
-step "Applying remote-secret on $LOCAL_CTX"
-kubectl --context "$LOCAL_CTX" apply -f "$REMOTE_SECRET_OUT" >/dev/null
-log_ok "istio-remote-secret-${PEER_NAME} applied on $LOCAL_CTX"
+# ── No remote secret, deliberately ────────────────────────────────────────────
+# Peering in the Solo distribution is a decentralised, push-based model: the
+# local istiod opens an mTLS xDS connection to the peer's east-west gateway on
+# :15012 and the two control planes exchange federated service and workload
+# information over it. So there is nothing to apply here. This script used to
+# rewrite the peer's kubeconfig to a LAN-reachable API endpoint and apply it as a
+# remote secret, which meant the cross-host demo required the peer's Kubernetes
+# API to be reachable, and quietly claimed that peering needs API access. It does
+# not: the peer Gateway written below carries both the data-plane (:15008) and
+# control-plane (:15012) endpoints, and that is the entire contract.
 
 # ── Add remote peer entry ────────────────────────────────────────────────────
 # Two peering styles in play depending on which lab stood the cluster up:
@@ -311,8 +232,8 @@ echo "════════════════════════�
 echo ""
 echo "  Local cluster:       $LOCAL_CTX"
 echo "  Peer cluster:        kind-${PEER_NAME}"
-echo "  Peer kube-API:       https://${PEER_API_HOST_PORT}"
 echo "  Peer east-west GW:   ${PEER_HOST}  HBONE=${PEER_HBONE_PORT}  XDS=${PEER_XDS_PORT}"
+echo "  Peer kube-API:       not used — discovery is istiod-to-istiod xDS"
 echo ""
 echo "  Verify (run on either side; both clusters should appear connected):"
 echo ""

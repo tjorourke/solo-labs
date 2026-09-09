@@ -552,9 +552,12 @@ ensure_env_var() {
 }
 
 # istiod — disable K8s WorkloadEntry selection so cross-cluster endpoints
-# resolve via the east-west GW, not WorkloadEntries.
+# resolve via the east-west GW, not WorkloadEntries. DISABLE_LEGACY_MULTICLUSTER
+# makes istiod ignore remote secrets outright: peering here is istiod-to-istiod
+# xDS through the east-west gateway, never a watch on the peer's Kubernetes API.
 for CTX in "$CLUSTER1" "$CLUSTER2"; do
   ensure_env_var "$CTX" deployment istiod-gloo PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES "false"
+  ensure_env_var "$CTX" deployment istiod-gloo DISABLE_LEGACY_MULTICLUSTER "true"
   log_ok "[${CTX#kind-}] istiod env ensured"
 done
 
@@ -690,24 +693,53 @@ remote:
 EOF
 log_ok "[${CLUSTER2#kind-}] peer → ${CLUSTER1#kind-} @ ${EAST_EW_IP}"
 
-step "Cross-applying remote secrets (istiod control-plane discovery)"
-istioctl create-remote-secret --context "$CLUSTER1" --name "${CLUSTER1#kind-}" 2>/dev/null \
-  | kubectl --context "$CLUSTER2" apply -f - >/dev/null
-log_ok "[${CLUSTER2#kind-}] remote secret for ${CLUSTER1#kind-} applied"
-
-istioctl create-remote-secret --context "$CLUSTER2" --name "${CLUSTER2#kind-}" 2>/dev/null \
-  | kubectl --context "$CLUSTER1" apply -f - >/dev/null
-log_ok "[${CLUSTER1#kind-}] remote secret for ${CLUSTER2#kind-} applied"
+# No remote secrets. The peer references above give each istiod the other's
+# east-west gateway address, and discovery rides the mTLS xDS connection to it on
+# :15012 — neither cluster holds a kubeconfig for the other or reaches its
+# Kubernetes API. istiod runs with DISABLE_LEGACY_MULTICLUSTER=true so a stray
+# secret would be ignored; assert there is none rather than leave one implying
+# the mesh depends on cross-cluster API access.
+step "Asserting no remote secrets (discovery is xDS, not the API server)"
+for c in "$CLUSTER1" "$CLUSTER2"; do
+  found="$(kubectl --context "$c" -n istio-system get secrets -o name 2>/dev/null \
+    | grep -E 'istio-remote-secret-' || true)"
+  if [[ -n "$found" ]]; then
+    echo "$found" >&2
+    die "[$c] a remote secret is present — this lab peers over xDS and must not use remote secrets"
+  fi
+  log_ok "[${c#kind-}] no remote secret"
+done
 
 step "Verifying peering ($CLUSTER1 → $CLUSTER2)"
-# Tolerate the "found invalid license for multicluster" warning — basic HBONE
-# peering still works without the GlobalService entitlement. Peers Check is
-# the assertion that matters.
-if istioctl --context "$CLUSTER1" multicluster check 2>&1 | grep -qE 'Peers Check.*all clusters connected'; then
+# Poll, do not check once. The peer references were applied seconds ago and the
+# istiod-to-istiod xDS connection takes a little while to establish, so a single
+# immediate check reports a mesh that is merely still coming up. This used to be
+# a one-shot check with a "continuing anyway" fallback, which meant a genuinely
+# broken peering looked identical to a slow one and the run still passed.
+# Write the output to a file and grep the FILE. Do not pipe into `grep -q`:
+# this script runs under `set -o pipefail`, and `grep -q` exits as soon as it
+# matches, which closes the pipe and hands istioctl a SIGPIPE, so the pipeline
+# reports failure at the exact moment the check SUCCEEDS. That is what made the
+# original one-shot check here report "did not confirm peering" while
+# `Peers Check: all clusters connected` was sitting in the output.
+__mc_out="$(mktemp)"
+__peer_ok=""
+__end=$(( $(date +%s) + 300 ))
+while [[ $(date +%s) -lt $__end ]]; do
+  istioctl --context "$CLUSTER1" multicluster check >"$__mc_out" 2>&1 || true
+  if grep -Eq 'Peers Check: all clusters connected' "$__mc_out"; then
+    __peer_ok=yes; break
+  fi
+  sleep 10
+done
+if [[ -n "$__peer_ok" ]]; then
   log_ok "peering verified — both clusters connected"
 else
-  log "multicluster check did not confirm peering — continuing anyway (cross-cluster traffic may need a few seconds to converge)"
+  tail -30 "$__mc_out" >&2
+  rm -f "$__mc_out"
+  die "peering did not converge within 5m — see the multicluster check output above"
 fi
+rm -f "$__mc_out"
 
 # ── Step 9: Namespace labels for agentgateway-system ─────────────────────────
 # Only label the platform's own namespace. Lab workloads (bookinfo, ai-tools,

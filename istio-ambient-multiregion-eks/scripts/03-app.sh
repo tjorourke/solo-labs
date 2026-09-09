@@ -35,7 +35,16 @@ metadata:
   namespace: shop
   labels:
     app: region-echo
-    istio.io/global: "true"
+    # Current Solo label for publishing a service across the peered mesh. It
+    # creates region-echo.shop.mesh.internal from every cluster that carries the
+    # same labelled Service. (The old istio.io/global label predates it.)
+    solo.io/service-scope: global
+    # The client below dials region-echo.shop.svc.cluster.local, the ordinary
+    # in-cluster name. Takeover points that name at the global hostname, which is
+    # what makes the cross-region failover in demo 04 happen with no client
+    # change. Without it, requests to the cluster.local name stay local and the
+    # demo would simply fail when the local endpoints go away.
+    solo.io/service-takeover: "true"
 spec:
   # k8s-native locality preference — istiod translates this to ztunnel's
   # Failover LB policy (Network -> Region -> Zone, healthy endpoints only).
@@ -121,9 +130,40 @@ EOF
 deploy "$CTX1" "$REGION1"
 deploy "$CTX2" "$REGION2"
 
+step "Assert the global hostname was published in both regions"
+# solo.io/service-scope=global makes istiod synthesise an autogen ServiceEntry
+# for <svc>.<ns>.mesh.internal. If this is missing, the service is cluster-local
+# and every failover demo below is meaningless, so fail here rather than print a
+# green tick and fail confusingly three scripts later.
+for pair in "$CTX1:$REGION1" "$CTX2:$REGION2"; do
+  IFS=: read -r ctx region <<<"$pair"
+  for _ in $(seq 1 30); do
+    if kubectl --context "$ctx" -n istio-system get serviceentry -o jsonpath='{.items[*].spec.hosts[*]}' 2>/dev/null \
+        | tr ' ' '\n' | grep -qx 'region-echo.shop.mesh.internal'; then
+      ok "[$region] region-echo.shop.mesh.internal published"
+      break
+    fi
+    sleep 5
+  done || true
+  kubectl --context "$ctx" -n istio-system get serviceentry -o jsonpath='{.items[*].spec.hosts[*]}' 2>/dev/null \
+    | tr ' ' '\n' | grep -qx 'region-echo.shop.mesh.internal' \
+    || die "[$region] no ServiceEntry for region-echo.shop.mesh.internal — the global-service label did not take effect"
+done
+
 echo
 step "Sanity: what does each cluster's client see?"
 sleep 8
 echo "[$REGION1 client]"; kubectl --context "$CTX1" -n shop logs deploy/client --tail=3
 echo "[$REGION2 client]"; kubectl --context "$CTX2" -n shop logs deploy/client --tail=3
-ok "expected: each client served by its OWN region (PreferNetwork)"
+
+# Assert, do not eyeball. Each client must be served by its OWN region while both
+# are healthy (PreferClose). A run where both clients are served by one region is
+# a broken locality preference that still "passes" if nobody reads the logs.
+for pair in "$CTX1:$REGION1" "$CTX2:$REGION2"; do
+  IFS=: read -r ctx region <<<"$pair"
+  seen="$(kubectl --context "$ctx" -n shop logs deploy/client --tail=5 2>/dev/null || true)"
+  grep -q "\"region\": *\"$region\"" <<<"$seen" \
+    || { echo "$seen" >&2; die "[$region] client is not being served locally — locality preference is not working"; }
+  ok "[$region] served locally"
+done
+ok "each client served by its OWN region (PreferClose)"

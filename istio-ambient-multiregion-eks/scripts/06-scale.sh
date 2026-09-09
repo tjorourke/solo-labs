@@ -60,7 +60,7 @@ kind: Service
 metadata:
   name: app
   namespace: tenant-$1
-  labels: { app: app, istio.io/global: "true" }
+  labels: { app: app, solo.io/service-scope: global }
 spec:
   trafficDistribution: PreferClose
   selector: { app: app }
@@ -131,16 +131,25 @@ for _ in $(seq 1 60); do
 done
 
 step "Time-to-discovery: new global service visible from the peer"
+# The peer dials the GLOBAL hostname (<svc>.<ns>.mesh.internal), which is what
+# solo.io/service-scope=global publishes across the peered mesh. The peer has no
+# tenant-probe namespace of its own, so the cluster-local name means nothing
+# there — only the global hostname does.
 T0=$(date +%s%3N)
 tenant_yaml "probe" | kubectl --context "$CTX1" apply -f - >/dev/null
 kubectl --context "$CTX1" -n tenant-probe rollout status deploy/app --timeout=120s >/dev/null
+discovered=""
 for _ in $(seq 1 120); do
   R="$(kubectl --context "$CTX2" -n shop exec deploy/client -- \
-      curl -s -m2 http://app.tenant-probe.svc.cluster.local:8080/ 2>/dev/null || true)"
-  [[ "$R" == *"tenant-probe"* ]] && break
+      curl -s -m2 http://app.tenant-probe.mesh.internal:8080/ 2>/dev/null || true)"
+  [[ "$R" == *"tenant-probe"* ]] && { discovered=yes; break; }
   sleep 1
 done
 T1=$(date +%s%3N)
+# Fail loudly. Without this the loop simply runs out and the elapsed time gets
+# reported as if discovery had succeeded.
+[[ -n "$discovered" ]] \
+  || die "peer cluster never served app.tenant-probe.mesh.internal within 120s — cross-cluster discovery of a new global service is not working"
 ok "peer cluster served tenant-probe after $(( T1 - T0 ))ms (includes pod start)"
 
 step "Metrics at $N tenants"

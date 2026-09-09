@@ -13,10 +13,11 @@
 #   3. Create solo-istio-license Secret in istio-system
 #   4. Generate shared root CA + per-cluster intermediates (shared trust domain)
 #   5. Apply ServiceMeshController CR (SMC) — operator reconciles istiod+ztunnel+CNI
-#   6. Patch istiod with PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES + SOLO_LICENSE_KEY
+#   6. Patch istiod with PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES,
+#      DISABLE_LEGACY_MULTICLUSTER + SOLO_LICENSE_KEY
 #      and ztunnel with L7_ENABLED
 #   7. Install east/west gateways for HBONE mesh peering
-#   8. Install remote peer references + cross-apply remote secrets
+#   8. Install remote peer references (istiod-to-istiod xDS peering, no remote secrets)
 
 set -Eeuo pipefail
 
@@ -195,6 +196,7 @@ done
 # ---------- Step 7: Patch istiod + ztunnel env vars ----------
 # Three things go in here that the SMC schema doesn't expose:
 #   - PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false  → istiod (Ambient peering)
+#   - DISABLE_LEGACY_MULTICLUSTER=true                → istiod (ignore remote secrets)
 #   - SOLO_LICENSE_KEY (from Secret)                  → istiod (unlocks MultiCluster)
 #   - L7_ENABLED=true                                 → ztunnel (L7 HBONE across waypoints)
 #
@@ -209,6 +211,8 @@ for i in "${!CLUSTERS[@]}"; do
     --type=json -p='[
       {"op":"add","path":"/spec/template/spec/containers/0/env/-",
        "value":{"name":"PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES","value":"false"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-",
+       "value":{"name":"DISABLE_LEGACY_MULTICLUSTER","value":"true"}},
       {"op":"add","path":"/spec/template/spec/containers/0/env/-",
        "value":{"name":"SOLO_LICENSE_KEY",
                 "valueFrom":{"secretKeyRef":{"name":"solo-istio-license","key":"license"}}}}
@@ -342,56 +346,26 @@ EOF
   log_ok "[$name] remote peers configured"
 done
 
-# ---------- Step 9: Remote secrets (control-plane discovery) ----------
-step "Cross-applying istio-remote-secrets"
+# ---------- Step 9: Assert peering needs no Kube API access ----------
+# There are deliberately no remote secrets here. Step 8 gave every cluster an
+# istio-remote peer reference for each other cluster, and discovery rides the
+# istiod-to-istiod xDS connection through those east-west gateways, so no cluster
+# holds a kubeconfig for another or reaches another's Kubernetes API. istiod also
+# runs with DISABLE_LEGACY_MULTICLUSTER=true (step 7) so a stray secret would be
+# ignored, and a silently-ignored secret is exactly what made this lab look like
+# it needed cross-cluster API access when it did not.
+step "Asserting no remote secrets (peering discovery is xDS, not the API server)"
 for i in "${!CLUSTERS[@]}"; do
-  src_ctx="${CLUSTERS[$i]}"
-  src_name="${CLUSTER_NAMES[$i]}"
-  for j in "${!CLUSTERS[@]}"; do
-    [[ "$j" == "$i" ]] && continue
-    dst_ctx="${CLUSTERS[$j]}"
-    dst_name="${CLUSTER_NAMES[$j]}"
-    log "[$dst_name] installing remote secret for $src_name..."
-    SA_SECRET="$(kubectl --context "$src_ctx" -n istio-system \
-      get sa istio-reader-service-account -o jsonpath='{.secrets[0].name}' 2>/dev/null || true)"
-    TOKEN="$(kubectl --context "$src_ctx" -n istio-system create token \
-      istio-reader-service-account --duration=8760h 2>/dev/null)"
-    SERVER="$(kubectl --context "$src_ctx" config view \
-      --minify --flatten -o jsonpath='{.clusters[0].cluster.server}')"
-    CA="$(kubectl --context "$src_ctx" config view \
-      --minify --flatten -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
-    kubectl --context "$dst_ctx" apply -f - >/dev/null <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: istio-remote-secret-${src_name}
-  namespace: istio-system
-  labels:
-    istio.io/cluster: ${src_name}
-    networking.istio.io/remote: "true"
-type: Opaque
-stringData:
-  ${src_name}: |
-    apiVersion: v1
-    kind: Config
-    clusters:
-    - cluster:
-        certificate-authority-data: ${CA}
-        server: ${SERVER}
-      name: ${src_name}
-    contexts:
-    - context:
-        cluster: ${src_name}
-        user: ${src_name}
-      name: ${src_name}
-    current-context: ${src_name}
-    users:
-    - name: ${src_name}
-      user:
-        token: ${TOKEN}
-EOF
-    log_ok "[$dst_name] remote secret for $src_name applied"
-  done
+  ctx="${CLUSTERS[$i]}"
+  name="${CLUSTER_NAMES[$i]}"
+  found="$(kubectl --context "$ctx" -n istio-system get secrets -o name 2>/dev/null \
+    | grep -E 'istio-remote-secret-' || true)"
+  if [[ -n "$found" ]]; then
+    echo "$found" >&2
+    echo "[$name] a remote secret is present — this lab peers over xDS and must not use remote secrets" >&2
+    exit 1
+  fi
+  log_ok "[$name] no remote secret"
 done
 
 # ---------- Step 10: Label workload namespaces ----------

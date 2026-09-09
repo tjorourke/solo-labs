@@ -676,21 +676,23 @@ else
 fi
 
 # ── Step 17: Peering bundle for the OTHER machine ────────────────────────────
-# The other machine needs three things from us:
+# The other machine needs two things from us:
 #   1. our root-ca.crt + root-ca.key (so its intermediate CA chains back to the
 #      SAME root — required for cross-cluster mTLS).
-#   2. our istio-remote-secret-<NAME> kubeconfig Secret (so its istiod-gloo can
-#      read OUR k8s API and discover Services + Endpoints).
-#   3. our east-west GW external LB IP + cluster/network name (so its peering
-#      chart can install a Remote / RemoteGateway entry pointing at us).
+#   2. our east-west GW external LB IP + cluster/network name, so its peering
+#      chart can install a Remote entry pointing at us. That address carries
+#      both halves: :15008 for HBONE and :15012 for the istiod-to-istiod xDS
+#      connection the two control planes federate service and workload
+#      information over.
+#
+# Deliberately NOT in the bundle: any credential for this cluster. Peering never
+# reads the peer's Kubernetes API, so there is no remote secret to ship.
 
 step "Building peering bundle for the other machine"
 BUNDLE_DIR="$CERTS_DIR/peer-bundle-${NAME}"
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR"
 
-istioctl create-remote-secret --context "$CTX" --name "$NAME" -n istio-system 2>/dev/null \
-  > "$BUNDLE_DIR/istio-remote-secret-${NAME}.yaml"
 echo -n "$EW_IP" > "$BUNDLE_DIR/eastwest-ip.txt"
 echo -n "$NAME"  > "$BUNDLE_DIR/cluster-name.txt"
 cp "$CERTS_DIR/root-ca.crt" "$BUNDLE_DIR/root-ca.crt"
@@ -745,10 +747,9 @@ echo "       OTHER_CTX=kind-west-mini   # whatever you named the other cluster"
 echo "       PEER_NAME=$NAME"
 echo "       PEER_EW_IP=$EW_IP"
 echo ""
-echo "       # a) apply OUR remote-secret so its istiod-gloo can read our API"
-echo "       kubectl --context \$OTHER_CTX apply -f /tmp/peer-bundle-\${PEER_NAME}/istio-remote-secret-\${PEER_NAME}.yaml"
-echo ""
-echo "       # b) install a Remote entry on its peering chart pointing at us"
+echo "       # install a Remote entry on its peering chart pointing at us."
+echo "       # That is the whole peering step: no remote secret, because"
+echo "       # discovery is istiod-to-istiod xDS through the east-west GW."
 echo "       helm upgrade --install remote-peers \\"
 echo "         oci://us-docker.pkg.dev/soloio-img/istio-helm/peering \\"
 echo "         --kube-context \$OTHER_CTX --namespace istio-eastwest \\"

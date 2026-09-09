@@ -3,11 +3,18 @@
 #
 # Each cluster gets an east-west gateway (HBONE :15008 + XDS :15012) exposed on
 # an internet-facing NLB — that is the cross-region fabric. Then each cluster
-# learns the other's gateway (remote peering ref, using the peer's NLB DNS) and
-# gets a remote secret so istiod can discover the peer's endpoints.
+# learns the other's gateway (remote peering ref, using the peer's NLB DNS), and
+# istiod discovers the peer's services and workloads over the mTLS xDS
+# connection to that gateway.
+#
+# There are deliberately NO remote secrets here. In the Solo distribution the two
+# control planes exchange federated service and workload information over xDS on
+# :15012, so neither region's istiod ever holds a kubeconfig for the other or
+# reaches its Kubernetes API. Community Istio is the one that needs remote
+# secrets and API access into every cluster. This script asserts the absence.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
-require_license; require_aws
+require_license; require_aws; require_istioctl
 
 CTX1="$(ctx_of "$NAME1" "$REGION1")"; CTX2="$(ctx_of "$NAME2" "$REGION2")"
 [[ -n "$CTX1" && -n "$CTX2" ]] || die "missing kube contexts"
@@ -29,15 +36,15 @@ eastwest:
         # in-tree controller (no AWS LB Controller on a stock eksctl cluster):
         # this single annotation makes the LB an internet-facing NLB
         service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-    spec:
-      type: LoadBalancer
-      ports:
-        - name: tls-hbone
-          port: 15008
-          protocol: TCP
-        - name: tls-xds
-          port: 15012
-          protocol: TCP
+    # Deliberately NO spec.ports here. The Service is created and owned by
+    # istiod's east-west controller (ownerRef Gateway/istio-eastwest,
+    # gateway.istio.io/managed=istio.io-eastwest-controller), and the controller
+    # decides which ports it publishes and where they target. Supplying a
+    # spec.ports list replaces that: a hand-written tls-xds:15012 entry targets
+    # port 15012 on the gateway pod, and the gateway does not listen there, so
+    # the NLB target group for 15012 fails its health checks and the peer's
+    # istiod gets "connection refused" dialling :15012. Set annotations only,
+    # which is what the validated two-EKS peering setup does.
 remote:
   create: false
 EOF
@@ -87,13 +94,58 @@ EOF
 remote_ref "$CTX1" "$NAME1" "$NAME2" "$HOST2"
 remote_ref "$CTX2" "$NAME2" "$NAME1" "$HOST1"
 
-step "Cross-applying remote secrets (control-plane discovery)"
-istioctl create-remote-secret --context "$CTX1" --name "$NAME1" | kubectl --context "$CTX2" apply -f - >/dev/null
-istioctl create-remote-secret --context "$CTX2" --name "$NAME2" | kubectl --context "$CTX1" apply -f - >/dev/null
-ok "remote secrets applied both ways"
+# No remote secrets. This is the whole point of peering: discovery rides the
+# istiod-to-istiod xDS connection, so neither cluster is given a kubeconfig or
+# any access to the other's Kubernetes API. Assert it rather than assume it —
+# istiod also has DISABLE_LEGACY_MULTICLUSTER=true, so a stray secret from an
+# older run of this lab would be ignored, and a silently-ignored secret is
+# exactly the thing that made this lab's "no API access" claim untrue before.
+step "Assert no remote secrets exist (peering must not need Kube API access)"
+for pair in "$CTX1:$NAME1" "$CTX2:$NAME2"; do
+  IFS=: read -r ctx name <<<"$pair"
+  found="$(kubectl --context "$ctx" -n istio-system get secrets \
+    -l 'istio/multiCluster=true' -o name 2>/dev/null || true)"
+  # older/hand-built secrets are labelled networking.istio.io/remote instead
+  found+="$(kubectl --context "$ctx" -n istio-system get secrets \
+    -o name 2>/dev/null | grep '^secret/istio-remote-secret-' || true)"
+  if [[ -n "$found" ]]; then
+    echo "$found" >&2
+    die "[$name] a remote secret is present — this lab peers over xDS and must not use remote secrets. Delete it and re-run."
+  fi
+  ok "[$name] no remote secret"
+done
 
-echo
-step "Peering status"
-istioctl --context "$CTX1" remote-clusters 2>/dev/null || true
-istioctl --context "$CTX2" remote-clusters 2>/dev/null || true
-ok "peering configured — allow ~1-2 min for the gateways to sync"
+# `remote-clusters` is the LEGACY remote-secret inventory: with peering it lists
+# only the local cluster, because the peer is known through the xDS peering
+# subsystem rather than a kubeconfig Secret. Printed for the record; the real
+# assertion is `multicluster check` below.
+step "Legacy remote-secret inventory (expected: local cluster only)"
+"$ISTIOCTL" --context "$CTX1" remote-clusters 2>/dev/null || true
+"$ISTIOCTL" --context "$CTX2" remote-clusters 2>/dev/null || true
+
+# Poll, do not check once. The remote peer refs above point at NLB DNS names, and
+# an AWS NLB is routinely a few minutes behind the Gateway going Programmed.
+# Checking immediately reports a disconnected mesh for a setup that is merely
+# still coming up.
+#
+# Assert on the Peers Check LINE, not on the exit code. `multicluster check`
+# exits non-zero for warnings as well as failures, and this install always
+# carries two harmless ones (License Check is not evaluated on a plain-Helm
+# istiod, and the env-var check is advisory), so an exit-code loop here can never
+# succeed even when both clusters are fully peered. Both directions must report
+# connected: a one-way check passes while return traffic has nowhere to go.
+step "Check peering converges (NLB DNS lags the gateway becoming ready)"
+__mc_out="$(mktemp)"; trap 'rm -f "$__mc_out"' EXIT
+__end=$(( $(date +%s) + 900 ))
+__peers=0
+while [[ $(date +%s) -lt $__end ]]; do
+  "$ISTIOCTL" multicluster check --contexts "$CTX1,$CTX2" >"$__mc_out" 2>&1 || true
+  __peers="$(grep -cE '✅ Peers Check: all clusters connected' "$__mc_out" || true)"
+  [[ "$__peers" -ge 2 ]] && break
+  echo "  not converged yet ($__peers/2 clusters report peers connected), retrying in 20s"
+  sleep 20
+done
+cat "$__mc_out"
+[[ "$__peers" -ge 2 ]] \
+  || die "peering did not converge within 15m — only $__peers/2 clusters report 'Peers Check: all clusters connected'"
+ok "peered over xDS, no remote secrets, no cross-cluster Kube API access"

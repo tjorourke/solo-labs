@@ -12,6 +12,41 @@ Built to answer three multi-region questions from a real customer PoC:
 - **Cloud:** AWS, two regions (`eu-central-1`, `eu-west-1`). **Billed infrastructure** — run `teardown.sh` when done.
 - **Validated live on:** Solo Istio `1.29.3-solo`, kgateway `v2.2.0`, AWS Global Accelerator + Route53 health checks, EKS `1.33`.
 
+## Status: peering is not converging on 1.30.4-solo (2026-09-09)
+
+The scripts were corrected in this order and each fix is verified on live EKS:
+
+1. The image tag now keeps its `-solo` suffix. `lib.sh` was stripping it, a 1.29-line
+   convention, so on the 1.30 pin the lab installed the **community** Istio build. On the Solo
+   build the licence validates (`License Check: license is valid for multicluster`) and
+   `solo.io/service-scope=global` publishes (`Shared Services Check: 1 globally shared service(s)`);
+   on the community build neither happens and multicluster only works via remote secrets.
+2. `platforms.peering.enabled: true` on the istiod chart, which is what renders
+   `ENABLE_PEERING_DISCOVERY=true`.
+3. `01-istio.sh` is idempotent again (the `SOLO_LICENSE_KEY` strip has to happen *before* the
+   chart runs, or a re-run fails server-side apply).
+4. The remote secrets are gone, and `02-peering.sh` asserts none exist.
+5. `03-app.sh` / `04` / `06` now assert their outcome instead of printing logs.
+
+**Open blocker.** With the Solo build, istiod-to-istiod xDS does not establish across the
+internet-facing NLBs: the peer's istiod gets `connection refused` dialling `<peer>:15012`. Evidence
+gathered on both clusters:
+
+- The east-west `Gateway` has the `xds-tls:15012/TLS` listener, `Accepted=True Programmed=True`,
+  and both the Gateway and its Service carry `istio.io/expose-istiod: "15012"`.
+- The Service is the one istiod's east-west controller creates and owns
+  (`gateway.istio.io/managed=istio.io-eastwest-controller`), publishing `tls-xds 15012 -> 15012`.
+- `istioctl proxy-config listener` on the gateway pod shows listeners on **15008, 15021, 15090
+  only** — nothing bound on 15012 — so the NLB target group for the 15012 nodePort fails its TCP
+  health checks while 15008 and 15021 are healthy.
+- Not caused by the Service values: reproduced after deleting the Service and letting the
+  controller recreate it, and after a gateway rollout restart.
+
+`agentgw-multi-cluster-kind` peers with no remote secrets and passes, so the model itself is right;
+this is specific to this lab's LoadBalancer/multi-network shape. Next step is to compare against a
+NodePort-peered setup (`preferredDataplaneServiceType`) or raise the 15012 exposure with Solo.
+Until it converges, do not record a validated build for this lab.
+
 ## Never run this against the wrong AWS account
 
 `secrets-envs.sh` exports `AWS_PROFILE` as a side effect. To stop that silently choosing the account, every
@@ -42,7 +77,7 @@ export SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh   # SOLO_ISTIO_LICENSE_K
 
 # 1. mesh + peering + app
 ./scripts/01-istio.sh          # Solo ambient on both, plain Helm, shared root CA
-./scripts/02-peering.sh        # east-west NLBs + istiod peering + remote secrets
+./scripts/02-peering.sh        # east-west NLBs + istiod-to-istiod xDS peering (no remote secrets)
 ./scripts/03-app.sh            # region-echo as a global service in both regions
 
 # 2. the demos

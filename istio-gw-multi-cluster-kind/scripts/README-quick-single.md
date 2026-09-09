@@ -6,7 +6,8 @@ stand up `east` on one machine (e.g. a laptop), `west` on a second machine
 machine runs `quick-single.sh` once.
 
 `quick.sh` is the right choice when both clusters live on one host — it does
-the full peering + remote-secret cross-apply for you in one invocation.
+the full peering (east-west gateways + `multicluster link`) for you in one
+invocation.
 `quick-single.sh` is the right choice when each half lives on a different
 host, because the cross-cluster steps need to be deferred until after both
 machines are up.
@@ -70,7 +71,7 @@ you don't need to memorise the flow.
 | Docker Desktop ≥ 8 CPU / 16 GB  | Hosts the kind cluster (control-plane + worker)                      |
 | `kind`                          | Cluster orchestrator                                                 |
 | `kubectl` + `helm`              | Operate the cluster                                                  |
-| `istioctl` (Solo build)         | `multicluster expose` (emits the east-west GW + remote-secret YAML)  |
+| `istioctl` (Solo build)         | `multicluster expose` (creates the east-west GW), `multicluster check` |
 | `openssl`                       | Generates the shared root CA + per-cluster intermediate              |
 | `gcloud` (authenticated)        | `gcloud auth configure-docker us-docker.pkg.dev` so the Solo Istio images can be pulled |
 
@@ -123,9 +124,9 @@ before proceeding on the second machine.
 7. `PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false` on `istiod-gloo` +
    `L7_ENABLED=true` on `ztunnel`.
 8. East-west gateway via `istioctl multicluster expose -n istio-gateways`
-   (LoadBalancer, MetalLB IP). The same call also emits the **remote-secret
-   YAML** for this cluster — captured into the peering bundle below instead
-   of being piped into the peer cluster as `quick.sh` does.
+   (LoadBalancer, MetalLB IP). Its **address** is what goes into the peering
+   bundle below; that address is all a peer needs, on `:15008` for HBONE and
+   `:15012` for the istiod-to-istiod xDS connection.
 9. `topology.istio.io/network=<name>` on `istio-system`.
 10. Smoke test — `istiod-gloo` Available, `ztunnel` fully scheduled,
     east-west GW has an LB IP.
@@ -138,16 +139,17 @@ containing:
 
 | File                                 | Purpose                                                                                        |
 |--------------------------------------|------------------------------------------------------------------------------------------------|
-| `istio-remote-secret-<name>.yaml`    | kubeconfig Secret (bound to `istio-reader-service-account`) that the **peer** istiod applies to discover this cluster's k8s API. This is exactly the YAML that `istioctl multicluster expose` would have piped into the peer in the same-host setup. |
-| `eastwest-ip.txt`                    | This cluster's east-west GW external LB IP — useful as a sanity reference; the istio-Gateway peering flow doesn't need a helm `remote` entry because the remote-secret carries everything. |
+| `eastwest-ip.txt`                    | This cluster's east-west GW external LB IP. **This is the whole contract.** The peer writes an `istio-remote` Gateway pointing at it, and both the data plane (`:15008` HBONE) and the peer's istiod (`:15012` xDS) use that one address. |
 | `cluster-name.txt`                   | This cluster's name (also used as the `network`).                                              |
 | `root-ca.crt` + `root-ca.key`        | Shared root CA so the second machine's intermediate chains back to the same root.              |
 
 Ship `peer-bundle-<name>.tar.gz` to the other machine. The script's summary
-prints the exact `scp` + `kubectl apply` commands you'll need on the
-receiving side. Compared to the agentgw variant, this flavour is simpler:
-**one `kubectl apply -f istio-remote-secret-<name>.yaml` per direction** is
-all the peering needs — no second helm release.
+prints the exact `scp` + `peer-with.sh` commands you'll need on the receiving
+side. Note what the bundle does **not** contain: any credential for this
+cluster. There is no remote secret and no kubeconfig, because peering in the
+Solo distribution never reaches the peer's Kubernetes API. Discovery rides the
+istiod-to-istiod xDS connection to the east-west gateway, so **one
+`istio-remote` peer Gateway per direction** is all the peering needs.
 
 ## Configuration via env vars
 
@@ -177,16 +179,16 @@ GW on each host's LAN-reachable address. Common patterns:
 * **Linux hosts** instead of macOS — the kind bridge is reachable from the
   LAN with a single host-level static route, so no tunnels needed.
 
-You **also** need this cluster's **kube API server** reachable from the peer
-for Service / Endpoint discovery. The captured `istio-remote-secret-<name>.yaml`
-is a kubeconfig with `server: https://kind-<name>-control-plane:6443` — that
-hostname won't resolve from another host. Before applying the secret on the
-peer, hand-edit the `server:` field to a LAN-reachable endpoint (the kind
-node port that Docker Desktop publishes on `127.0.0.1:<random>` is the
-easiest path, optionally fronted by a tunnel).
+You do **not** need this cluster's kube API server reachable from the peer.
+That is the one thing peering removes: the two control planes federate over
+mTLS xDS through the east-west gateway, so istiod never watches the remote
+Kubernetes API and no kubeconfig crosses the wire. Set
+`DISABLE_LEGACY_MULTICLUSTER=true` on istiod and it will not even look at a
+remote secret.
 
-The peering bundle's `eastwest-ip.txt` is provided for reference — it's the
-IP that needs LAN reachability for the data-plane HBONE traffic to flow.
+What does need LAN reachability is the address in `eastwest-ip.txt`, on
+**`:15008`** (HBONE data plane) and **`:15012`** (xDS control plane). Those two
+ports between the two hosts are the entire cross-host requirement.
 
 ## Idempotency
 
@@ -204,12 +206,12 @@ it always reflects the current east-west IP.
 
 Deletes the kind cluster and removes the entire `certs/` directory. If you're
 tearing down only one machine in the peering, the other side will keep a
-stale `istio-remote-secret` pointing at a dead cluster — clean it up on the
-surviving machine with:
+stale `istio-remote` peer Gateway pointing at a dead cluster — clean it up on
+the surviving machine with:
 
 ```bash
-kubectl --context kind-<surviving> -n istio-system \
-  delete secret istio-remote-secret-<gone-cluster>
+kubectl --context kind-<surviving> -n istio-gateways \
+  delete gateway istio-remote-peer-<gone-cluster>
 ```
 
 ## Troubleshooting
@@ -219,15 +221,16 @@ kubectl --context kind-<surviving> -n istio-system \
 | `ERROR: '<name>' is not a valid cluster name`                        | Cluster name must match `^[a-z][a-z0-9-]*[a-z0-9]$` (k8s DNS label).                                            |
 | `Installing CRDs with version before v1.5.0 is prohibited`           | Gateway API v1.5.0 leaked onto the cluster. Stay on v1.4.0 (the default), or delete the `safe-upgrades.gateway.networking.k8s.io` ValidatingAdmissionPolicy before SMC reconciles. |
 | `License Check: found invalid license for multicluster` (istioctl)   | Solo Istio licence JWT is `"lt": "trial"`. Multicluster needs `"lt": "ent"` — request from your Solo contact.   |
-| Cross-host peering hangs at `Number of remote clusters: 0`           | Peer's istiod-gloo can't reach this cluster's kube API server. The `server:` URL in the applied `istio-remote-secret` points at an in-cluster hostname — see [Networking caveat](#networking-caveat--kind--macos--cross-host). |
-| `istioctl multicluster check` shows clusters connected but pod-to-pod returns 503 | Peer's ztunnel can't reach this cluster's east-west GW on 15008. Verify the LB IP is published on a routable LAN address and the peer's `istio-remote-secret` (or your tunnel) is pointed at it. |
+| Cross-host peering never converges (`istioctl multicluster check` fails on peers) | Peer's istiod can't reach this cluster's east-west GW on **15012**, so the xDS connection the two control planes federate over never establishes. Check the LAN publish and the peer Gateway's address — see [Networking caveat](#networking-caveat--kind--macos--cross-host). Nothing here involves the kube API. |
+| `istioctl multicluster check` shows clusters connected but pod-to-pod returns 503 | Peer's ztunnel can't reach this cluster's east-west GW on **15008**. Verify the LB IP is published on a routable LAN address and that the peer Gateway (or your tunnel) points at it. |
 
 ## Cross-host helpers — `expose-ew-on-host.sh` + `peer-with.sh`
 
 The networking caveat above (Docker-bridge east-west IP not routable from
 another host) has two parts: (1) publish the east-west GW on a LAN-reachable
-address, and (2) point the peer's istiod / data plane at it. Two helpers
-automate both halves of that.
+address, and (2) point the peer's `istio-remote` Gateway at it, which covers
+both its istiod (`:15012`) and its data plane (`:15008`). Two helpers automate
+both halves of that.
 
 ### `scripts/expose-ew-on-host.sh`
 
@@ -272,10 +275,10 @@ What it does:
    the bundle's `root-ca.crt` SHA256. If they differ, bails with a clear
    error — the two clusters' intermediates must chain to the same root or
    cross-cluster mTLS will silently fail.
-3. Decodes the embedded kubeconfig in `istio-remote-secret-<peer>.yaml`,
-   rewrites its `server:` URL to the peer's LAN-reachable kube-API endpoint
-   (defaults to `<peer-ew-host>:6443`; override with `PEER_API_HOST_PORT`),
-   re-encodes, and applies on the local cluster.
+3. Applies no credential at all. There is no remote secret in the bundle and
+   none is created: the peer Gateway in the next step carries both the HBONE
+   endpoint (`:15008`) and the xDS endpoint (`:15012`) that the two control
+   planes federate over, so the peer's kube API is never contacted.
 4. Creates an `istio-remote` Gateway CR
    (`istio-remote-peer-<peer-name>` in `istio-gateways`) pointing at the
    peer's LAN endpoint with listeners on HBONE (port from the third arg) and

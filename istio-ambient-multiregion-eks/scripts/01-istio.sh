@@ -88,6 +88,17 @@ GWC
   step "[$name] Helm: base / istiod / cni / ztunnel ($SOLO_ISTIO_VERSION)"
   helm --kube-context "$ctx" upgrade -i istio-base "$ISTIO_HELM_REPO/base" \
     -n istio-system --version "$ISTIO_HELM_VERSION" --set defaultRevision=default --wait >/dev/null
+
+  # Strip the imperatively-patched SOLO_LICENSE_KEY BEFORE the chart runs, not
+  # after. The patch further down replaces that env var with a secretKeyRef;
+  # on a re-run helm's server-side apply then merges its own literal `value`
+  # onto the live `valueFrom` entry of the same name and the API server rejects
+  # the Deployment ("may not be specified when `value` is not empty"). Removing
+  # it first makes this script idempotent, which matters because quick.sh
+  # deliberately reuses existing clusters.
+  kubectl --context "$ctx" -n istio-system set env deploy/istiod \
+    SOLO_LICENSE_KEY- >/dev/null 2>&1 || true
+
   helm --kube-context "$ctx" upgrade -i istiod "$ISTIO_HELM_REPO/istiod" \
     -n istio-system --version "$ISTIO_HELM_VERSION" --wait -f - >/dev/null <<EOF
 profile: ambient
@@ -101,11 +112,30 @@ istio_cni:
   enabled: true
 license:
   value: ${SOLO_ISTIO_LICENSE_KEY}
+platforms:
+  # The documented switch for multicluster support, and it is load-bearing here:
+  # it is what renders ENABLE_PEERING_DISCOVERY=true onto istiod (verified by
+  # reading the Deployment env back on a live 1.30.4-solo cluster). Without it
+  # the two control planes still connect (Peers Check goes green) but
+  # cross-cluster SERVICE discovery never happens, and multicluster check with
+  # --verbose reports ENABLE_PEERING_DISCOVERY as invalid. The Gloo Operator
+  # sets this for you; a plain-Helm install does not.
+  # (No backticks in here: this is an unquoted heredoc, so a backtick would be
+  # command substitution and its output would land in the Helm values.)
+  peering:
+    enabled: true
 env:
   # ambient peering requirement (from the verified two-cluster lab)
   PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES: "false"
   # activates the eastwest gateway controller (istio-eastwest GatewayClass)
   AMBIENT_ENABLE_MULTI_NETWORK: "true"
+  # Peering, not remote secrets. istiod discovers the peer over the mTLS xDS
+  # connection to its east-west gateway (:15012) and never watches the peer's
+  # Kubernetes API. This var makes istiod IGNORE remote secrets outright, so the
+  # "no cross-cluster API access" claim is enforced rather than merely intended.
+  DISABLE_LEGACY_MULTICLUSTER: "true"
+  # IPs for the <svc>.<ns>.mesh.internal global hostnames peering publishes
+  PILOT_ENABLE_IP_AUTOALLOCATE: "true"
 meshConfig:
   accessLogFile: /dev/stdout
 EOF

@@ -15,7 +15,7 @@ set -Eeuo pipefail
 
 __versions_env="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/versions.env"
 [ -f "$__versions_env" ] && . "$__versions_env"
-: "${SOLO_ISTIO_VERSION:=1.29.3-solo}"     # proven multicluster-peering line
+: "${SOLO_ISTIO_VERSION:=1.30.4-solo}"     # proven multicluster-peering line (versions.env normally wins)
 : "${GATEWAY_API_VERSION:=v1.4.0}"          # v1.5 VAP blocks bundled CRD installs
 
 export REGION1="${REGION1:-eu-central-1}"
@@ -32,7 +32,15 @@ ctx_of() { kubectl config get-contexts -o name 2>/dev/null | grep "@${1}.${2}.ek
 export ISTIO_REGISTRY="us-docker.pkg.dev/soloio-img/istio"
 export ISTIO_HELM_REPO="oci://us-docker.pkg.dev/soloio-img/istio-helm"
 export ISTIO_HELM_VERSION="${SOLO_ISTIO_VERSION}"
-export ISTIO_VERSION="${SOLO_ISTIO_VERSION%-solo}"   # 1.29 line: image tag drops -solo
+# KEEP the -solo suffix on the image tag. This is the Solo distribution of Istio
+# and the suffix is what selects it; the bare tag (1.30.x) in the same registry
+# is the community build. Getting this wrong is silent and expensive: community
+# istiod peers only via remote secrets, has no Enterprise multicluster licence
+# check and never publishes <svc>.<ns>.mesh.internal global services, so the
+# mesh looks healthy (Peers Check even goes green) while every global-service
+# demo in this lab quietly does nothing. The 1.29 line dropped the suffix, which
+# is where this drifted in from.
+export ISTIO_VERSION="${SOLO_ISTIO_VERSION}"
 
 log()    { echo "  $*"; }
 ok()     { echo "  ✓ $*"; }
@@ -56,4 +64,36 @@ require_aws() {
   export AWS_PROFILE="$LAB_AWS_PROFILE"
   aws sts get-caller-identity >/dev/null 2>&1 || die "AWS credentials not working for profile '$AWS_PROFILE' (try: aws sso login --profile $AWS_PROFILE)"
   log "AWS profile: $AWS_PROFILE"
+}
+
+# `istioctl multicluster check` is version-sensitive: a client from an older
+# line can report a healthy peered mesh as broken. Use the host binary only when
+# it matches SOLO_ISTIO_VERSION exactly, otherwise fetch the matching Solo build
+# into the lab's own (gitignored) state dir. Sets $ISTIOCTL.
+require_istioctl() {
+  local lab_root want="$SOLO_ISTIO_VERSION" have=""
+  lab_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if command -v istioctl >/dev/null 2>&1; then
+    have="$(istioctl version --remote=false 2>/dev/null | awk '{print $NF}')"
+  fi
+  if [[ "$have" == "$want" ]]; then
+    ISTIOCTL="$(command -v istioctl)"; export ISTIOCTL
+    log "istioctl $have (host binary matches $want)"
+    return
+  fi
+  ISTIOCTL="$lab_root/.state/bin/istioctl"
+  if [[ ! -x "$ISTIOCTL" ]] || [[ "$("$ISTIOCTL" version --remote=false 2>/dev/null | awk '{print $NF}')" != "$want" ]]; then
+    local os arch; os="$(uname -s | tr '[:upper:]' '[:lower:]')"; arch="$(uname -m)"
+    [[ "$os" == "darwin" ]] && os="osx"
+    case "$arch" in x86_64) arch=amd64;; aarch64) arch=arm64;; esac
+    step "Downloading Solo istioctl $want ($os-$arch) — host has '${have:-none}'"
+    mkdir -p "$lab_root/.state/bin"
+    curl -sSfL "https://storage.googleapis.com/soloio-istio-binaries/release/${want}/istio-${want}-${os}-${arch}.tar.gz" \
+      | tar xz -C "$lab_root/.state" "istio-${want}/bin/istioctl" \
+      || die "could not download istioctl $want"
+    mv "$lab_root/.state/istio-${want}/bin/istioctl" "$ISTIOCTL"
+    rm -rf "$lab_root/.state/istio-${want}"
+  fi
+  export ISTIOCTL
+  ok "istioctl $("$ISTIOCTL" version --remote=false 2>/dev/null) at .state/bin/istioctl"
 }

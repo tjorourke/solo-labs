@@ -6,7 +6,7 @@
 # Differs from quick.sh:
 #   * Builds exactly ONE cluster (free-form name supplied by the user).
 #   * Skips every cross-cluster step (`istioctl multicluster expose` against
-#     the peer, remote-secret cross-apply, the "remote cluster" log probe)
+#     the peer, the peer-Gateway link, the "remote cluster" log probe)
 #     because the other cluster lives on a different host.
 #   * Reuses certs/root-ca.{crt,key} when present, so the SAME root CA can be
 #     copied between machines (cross-cluster mTLS requires identical roots).
@@ -447,18 +447,23 @@ log_ok "istiod-gloo + ztunnel rollout complete"
 
 # ── Step 8: Expose this cluster's east-west gateway ──────────────────────────
 # `istioctl multicluster expose` is idempotent: it creates the east-west GW in
-# istio-gateways and emits a remote-secret YAML on stdout (the kubeconfig that
-# the PEER cluster will apply so its istiod can discover Services on THIS one).
-# In the two-cluster quick.sh we pipe that into the other cluster directly; in
-# the single-cluster flow we capture it into the peer bundle for shipping.
+# istio-gateways, which is what the peer connects to. The peer needs this
+# cluster's east-west ADDRESS, nothing more: discovery rides the istiod-to-istiod
+# xDS connection through that gateway on :15012, so the peer is never given a
+# kubeconfig or any access to this cluster's Kubernetes API. (The command also
+# prints a remote-secret YAML for the community-Istio flow; this lab does not
+# use it, and istiod runs with DISABLE_LEGACY_MULTICLUSTER=true so it would be
+# ignored anyway.)
 
 step "Waiting for istiod pod to be Running"
 kubectl --context "$CTX" -n istio-system wait \
   --for=condition=Ready pod -l app=istiod --timeout=120s >/dev/null
 
 step "Exposing cluster east-west via istioctl"
-REMOTE_SECRET_YAML="$(istioctl --context "$CTX" multicluster expose -n istio-gateways 2>/dev/null)"
-[[ -n "$REMOTE_SECRET_YAML" ]] || die "istioctl multicluster expose produced no output"
+istioctl --context "$CTX" multicluster expose -n istio-gateways >/dev/null 2>&1 \
+  || die "istioctl multicluster expose failed"
+kubectl --context "$CTX" -n istio-gateways get svc istio-eastwest >/dev/null 2>&1 \
+  || die "istioctl multicluster expose did not create the istio-eastwest service"
 log_ok "[$NAME] east-west gateway exposed"
 
 step "Waiting for east-west gateway LB IP"
@@ -509,21 +514,23 @@ else
 fi
 
 # ── Peering bundle for the OTHER machine ─────────────────────────────────────
-# The other machine needs:
+# The other machine needs exactly two things:
 #   1. our root-ca.crt + root-ca.key (so its intermediate CA chains back to the
 #      SAME root — required for cross-cluster mTLS).
-#   2. our istio-remote-secret-<NAME> kubeconfig Secret (the YAML emitted by
-#      `istioctl multicluster expose` above) — its istiod-gloo applies this
-#      to discover our k8s API and Services.
-#   3. our east-west GW external LB IP + cluster/network name (so its peering
-#      points back at us).
+#   2. our east-west GW external LB IP + cluster/network name, so it can write an
+#      istio-remote peer Gateway pointing at us. That address is the whole
+#      contract: istiod connects to it over mTLS xDS on :15012 and the control
+#      planes federate services and workloads over that connection.
+#
+# Deliberately NOT in the bundle: any credential for this cluster. There is no
+# remote secret and no kubeconfig, because peering never reaches the peer's
+# Kubernetes API. Shipping a bundle with no secret in it is the point.
 
 step "Building peering bundle for the other machine"
 BUNDLE_DIR="$CERTS_DIR/peer-bundle-${NAME}"
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR"
 
-printf '%s\n' "$REMOTE_SECRET_YAML" > "$BUNDLE_DIR/istio-remote-secret-${NAME}.yaml"
 echo -n "$EW_IP" > "$BUNDLE_DIR/eastwest-ip.txt"
 echo -n "$NAME"  > "$BUNDLE_DIR/cluster-name.txt"
 cp "$CERTS_DIR/root-ca.crt" "$BUNDLE_DIR/root-ca.crt"
@@ -570,13 +577,13 @@ echo ""
 echo "       ./scripts/quick-single.sh west-mini"
 echo ""
 echo "  4. Once the OTHER cluster is up, finish the peering on it by"
-echo "     consuming the bundle from THIS machine. The remote-secret"
-echo "     captured here is exactly the YAML that 'istioctl multicluster"
-echo "     expose' would have piped into the peer in the same-host setup:"
+echo "     pointing it at THIS cluster's east-west address. That is an"
+echo "     istio-remote peer Gateway, the same object 'istioctl multicluster"
+echo "     link' writes in the same-host setup. No credential is involved:"
 echo ""
 echo "       OTHER_CTX=kind-west-mini   # whatever you named the other cluster"
-echo "       kubectl --context \$OTHER_CTX apply \\"
-echo "         -f /tmp/peer-bundle-${NAME}/istio-remote-secret-${NAME}.yaml"
+echo "       ./scripts/peer-with.sh west-mini \\"
+echo "         /tmp/peer-bundle-${NAME}.tar.gz ${EW_IP}:15008"
 echo ""
 echo "  5. Do the SYMMETRIC step from the other direction: ship the OTHER"
 echo "     machine's peer-bundle-<name>.tar.gz back to THIS machine and run"
@@ -586,8 +593,7 @@ echo ""
 echo "  6. Verify on either side (should report both clusters connected):"
 echo ""
 echo "       istioctl --context $CTX multicluster check"
-echo "       kubectl --context $CTX -n istio-system logs deploy/istiod-gloo \\"
-echo "         | grep 'remote cluster'"
+echo "       istioctl --context $CTX remote-clusters   # SECRET column stays empty"
 echo ""
 echo "${YEL}  Networking caveat:${RST} the OTHER machine must be able to reach"
 echo "  THIS machine's east-west IP ($EW_IP) on TCP 15008 + 15012 + 15021."
@@ -596,15 +602,15 @@ echo "  routable from another host. For a real cross-host demo you need to"
 echo "  either:"
 echo "    * run on Linux with a routable bridge / host-network, or"
 echo "    * front the east-west Service with a port-forward / tunnel that"
-echo "      publishes the gateway ports on the host's LAN IP, then"
-echo "      hand-edit the peer-bundle's istio-remote-secret YAML to point"
-echo "      at that LAN IP instead of the in-cluster API server."
+echo "      publishes the gateway ports on the host's LAN IP, then point the"
+echo "      peer Gateway at that LAN IP (expose-ew-on-host.sh + peer-with.sh"
+echo "      below do exactly this)."
 echo ""
 echo "${YEL}────────────────────────────────────────────────────────────────────${RST}"
 echo "${YEL}  Helper scripts for the cross-host networking step${RST}"
 echo "${YEL}────────────────────────────────────────────────────────────────────${RST}"
 echo ""
-echo "  Two helpers automate the LAN tunnel + remote-secret rewrite:"
+echo "  Two helpers automate the LAN tunnel + peer Gateway:"
 echo ""
 echo "    ./scripts/expose-ew-on-host.sh $NAME"
 echo "        Launches alpine/socat Docker containers (on the kind bridge)"
@@ -613,10 +619,10 @@ echo "        so the peer can reach the east-west GW across the wire."
 echo ""
 echo "    ./scripts/peer-with.sh <local-name> <bundle.tar.gz> <peer-host:15008>"
 echo "        Run on the OTHER machine after THIS one's peer bundle has been"
-echo "        copied across. Verifies the shared root CA, rewrites the bundle's"
-echo "        kubeconfig server URL to a LAN-reachable kube-API endpoint,"
-echo "        applies the remote-secret, and creates the istio-remote Gateway"
-echo "        CR that points the local data plane at the peer's east-west GW."
+echo "        copied across. Verifies the shared root CA and creates the"
+echo "        istio-remote Gateway CR that points both the local data plane"
+echo "        (:15008 HBONE) and the local istiod (:15012 xDS) at the peer's"
+echo "        east-west gateway. No kubeconfig, no API access to the peer."
 echo ""
 echo "  Tear the LAN tunnels down with:"
 echo "    ./scripts/expose-ew-on-host.sh down $NAME"
