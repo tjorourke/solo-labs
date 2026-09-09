@@ -6,8 +6,16 @@ and the caller does not have to know which is which.
 
 Part 2 of [vLLM Semantic Router on agentgateway](../vllm-semantic-router-agentgateway/).
 Part 1 runs on kind with a simulator and mock LoRA adapters and shows a router picking
-an adapter behind one backend. This runs on real GPUs with two real models, on **Solo
-Enterprise for agentgateway**, and shows the decision selecting a different upstream.
+an adapter behind one backend. This runs on real GPUs with two real models and shows the decision selecting a
+different upstream.
+
+**Editions.** Nothing in the routing needs Enterprise. Every field used here is on the
+OSS agentgateway CRDs (`spec.traffic.phase` with `PreRouting`,
+`spec.traffic.transformation`, `spec.traffic.extProc.processingOptions`, and
+`spec.ai.provider`), and no Enterprise-only field appears in it. The lab was built and
+validated on Solo Enterprise because that is what the parent cluster runs, and the
+console and cost views are Enterprise. `yaml-oss/` holds the converted manifests, not
+yet run live, so the Versions footer records the Enterprise build only.
 
 ## The scenario
 
@@ -84,8 +92,9 @@ With a card each, FP8 is a throughput and load-time choice: half the load time a
 roughly 60 GB of KV headroom instead of 30.
 
 vLLM is not an operator and ships no CRD. One process serves one model, so `vllm` and
-`vllm-qwen` are two independent Deployments. The declarative part is the Solo layer:
-one `EnterpriseAgentgatewayBackend` per model, one policy, one route.
+`vllm-qwen` are two independent Deployments. The gateway config is the declarative part:
+one `AgentgatewayBackend` per model, one policy, one route. Those are the OSS kinds; the
+Enterprise set is the same shape with an `Enterprise` prefix.
 
 ## Deploy it
 

@@ -1,0 +1,66 @@
+# OSS conversion. Same routing, upstream agentgateway CRDs.
+#
+# Mechanical from the Enterprise manifests in ../yaml:
+#   enterpriseagentgateway.solo.io/v1alpha1 -> agentgateway.dev/v1alpha1
+#   EnterpriseAgentgatewayPolicy            -> AgentgatewayPolicy
+#   EnterpriseAgentgatewayBackend           -> AgentgatewayBackend
+#   gatewayClassName: enterprise-agentgateway -> agentgateway
+#
+# Every field this lab uses is present on the OSS CRDs, checked with kubectl explain:
+# spec.traffic.phase (PreRouting), spec.traffic.transformation and
+# spec.traffic.extProc.processingOptions on the policy, and
+# spec.ai.provider.openai.model with host and path on the backend. None of the
+# Enterprise-only fields (entPromptGuard, entRateLimit, entExtAuth, entWAF,
+# entBudgetEnforcement, entMcp, tokenExchange, workloadIdentity) appears anywhere here.
+#
+# NOT YET RUN LIVE ON OSS. The lab was built and validated on Solo Enterprise, and the
+# cluster it runs on has only the enterprise-agentgateway GatewayClass installed, so
+# these files are an API-level conversion rather than a tested one. The vSR ExtProc
+# half is separately proven on OSS upstream by the kind lab in
+# ../../vllm-semantic-router-agentgateway-kind. Run these before claiming an OSS build
+# in the Versions footer.
+
+# The semantic-classification route. Same object as yaml/30, matching the router's header instead of
+# the one the transformation writes.
+#
+# Everything else is unchanged: the same two backends, the same two models, the same
+# fall-through to the catch-all in the parent lab. Only the header name differs, which
+# is the clearest possible statement of the point this lab makes. Swapping who decides
+# is a one-line change to the routing table.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: model-routing-internal
+  namespace: agentgateway-system
+spec:
+  hostnames:
+    - sovereign-gateway-internal.agentgateway-system.svc.cluster.local
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+      sectionName: http
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            # Set by the semantic router on the REQUEST. The similarly named
+            # x-vsr-selected-model is a response header and matching it never works.
+            - type: RegularExpression
+              name: x-selected-model
+              value: '^qwen.*'
+      backendRefs:
+        - name: vllm-qwen
+          group: agentgateway.dev
+          kind: AgentgatewayBackend
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - type: RegularExpression
+              name: x-selected-model
+              value: '^mistral.*'
+      backendRefs:
+        - name: vllm-mistral
+          group: agentgateway.dev
+          kind: AgentgatewayBackend

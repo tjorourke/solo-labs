@@ -1,0 +1,83 @@
+# OSS conversion. Same routing, upstream agentgateway CRDs.
+#
+# Mechanical from the Enterprise manifests in ../yaml:
+#   enterpriseagentgateway.solo.io/v1alpha1 -> agentgateway.dev/v1alpha1
+#   EnterpriseAgentgatewayPolicy            -> AgentgatewayPolicy
+#   EnterpriseAgentgatewayBackend           -> AgentgatewayBackend
+#   gatewayClassName: enterprise-agentgateway -> agentgateway
+#
+# Every field this lab uses is present on the OSS CRDs, checked with kubectl explain:
+# spec.traffic.phase (PreRouting), spec.traffic.transformation and
+# spec.traffic.extProc.processingOptions on the policy, and
+# spec.ai.provider.openai.model with host and path on the backend. None of the
+# Enterprise-only fields (entPromptGuard, entRateLimit, entExtAuth, entWAF,
+# entBudgetEnforcement, entMcp, tokenExchange, workloadIdentity) appears anywhere here.
+#
+# NOT YET RUN LIVE ON OSS. The lab was built and validated on Solo Enterprise, and the
+# cluster it runs on has only the enterprise-agentgateway GatewayClass installed, so
+# these files are an API-level conversion rather than a tested one. The vSR ExtProc
+# half is separately proven on OSS upstream by the kind lab in
+# ../../vllm-semantic-router-agentgateway-kind. Run these before claiming an OSS build
+# in the Versions footer.
+
+# Lift the requested model name out of the JSON body into a header the router can
+# match on. `json(request.body)` parses the buffered body; coalesce gives a value
+# for requests that omit the field entirely, so the match below is total and the
+# policy cannot 500 on a malformed request.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: extract-model-internal
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+  traffic:
+    phase: PreRouting
+    transformation:
+      request:
+        set:
+          - name: x-model
+            # Two of the three options in one expression, and the order matters.
+            #
+            # If the client named a concrete model, that wins: a team that has
+            # already picked is not overridden by a guess. Only "auto", or a request
+            # with no model field at all, is classified.
+            #
+            # The classifier itself is a regex over the LAST message, not the first.
+            # The first message in a real conversation is usually a system prompt,
+            # and in a multi-turn chat the first user turn stops being what the
+            # request is about after turn two. Matching messages[0] passes a demo and
+            # then routes the whole conversation on its opening line.
+            #
+            # This is a HEURISTIC and it should be presented as one. It costs nothing
+            # and no extra component, it is auditable in one line, and it is wrong on
+            # anything that discusses code without using the words. That is the
+            # argument for the semantic router, not against this: swap this
+            # expression for the router's ExtProc decision and the HTTPRoute below
+            # does not change at all.
+            # The regex is written TWICE, over two different shapes of the same
+            # field, and that is not redundancy. OpenAI's chat API allows
+            # `content` to be either a plain string or a list of typed parts, and
+            # real clients differ: curl and most SDKs send a string, while ADK and
+            # LiteLLM-based agents send `[{"type":"text","text":"..."}]`.
+            #
+            # Matching only the string shape does not error on the list shape. It
+            # returns false, the expression falls to the default, and every request
+            # from those agents quietly lands on the general model. Measured here:
+            # identical coding prompts routed to Qwen over curl and to Mistral from
+            # the agent, with 200s and sensible answers in both cases. Nothing in
+            # the logs says "classifier missed", because as far as the gateway is
+            # concerned it did classify.
+            #
+            # The `||` covers both. CEL evaluates left to right and absorbs the
+            # error from whichever shape does not apply.
+            value: |
+              coalesce(json(request.body).model, "auto") != "auto"
+                ? json(request.body).model
+                : ((json(request.body).messages[size(json(request.body).messages) - 1].content.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)")
+                    || json(request.body).messages[size(json(request.body).messages) - 1].content[0].text.matches("(?i)(code|function|python|javascript|refactor|debug|compile|regex|sql query|unit test)"))
+                    ? "qwen3-coder-30b"
+                    : "mistral-small-3.2-24b")

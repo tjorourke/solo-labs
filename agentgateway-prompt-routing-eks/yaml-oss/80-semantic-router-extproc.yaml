@@ -1,0 +1,82 @@
+# OSS conversion. Same routing, upstream agentgateway CRDs.
+#
+# Mechanical from the Enterprise manifests in ../yaml:
+#   enterpriseagentgateway.solo.io/v1alpha1 -> agentgateway.dev/v1alpha1
+#   EnterpriseAgentgatewayPolicy            -> AgentgatewayPolicy
+#   EnterpriseAgentgatewayBackend           -> AgentgatewayBackend
+#   gatewayClassName: enterprise-agentgateway -> agentgateway
+#
+# Every field this lab uses is present on the OSS CRDs, checked with kubectl explain:
+# spec.traffic.phase (PreRouting), spec.traffic.transformation and
+# spec.traffic.extProc.processingOptions on the policy, and
+# spec.ai.provider.openai.model with host and path on the backend. None of the
+# Enterprise-only fields (entPromptGuard, entRateLimit, entExtAuth, entWAF,
+# entBudgetEnforcement, entMcp, tokenExchange, workloadIdentity) appears anywhere here.
+#
+# NOT YET RUN LIVE ON OSS. The lab was built and validated on Solo Enterprise, and the
+# cluster it runs on has only the enterprise-agentgateway GatewayClass installed, so
+# these files are an API-level conversion rather than a tested one. The vSR ExtProc
+# half is separately proven on OSS upstream by the kind lab in
+# ../../vllm-semantic-router-agentgateway-kind. Run these before claiming an OSS build
+# in the Versions footer.
+
+# Semantic classification: hand the decision to the semantic router.
+#
+# Applying this file plus yaml/81 turns semantic classification on. Re-applying yaml/20 plus yaml/30
+# returns to the keyword classifier, so the A/B is two commands either way:
+#
+#   kubectl apply -f yaml/80-semantic-router-extproc.yaml -f yaml/81-httproute-vsr.yaml
+#   kubectl apply -f yaml/20-routing-policy.yaml          -f yaml/30-httproute.yaml
+#
+# THERE IS NO TRANSFORMATION IN THIS POLICY, AND THAT IS NOT AN OMISSION.
+#
+# Within one PreRouting policy the transformation is evaluated BEFORE the external
+# processor, and the processor's body rewrite is applied after the backend has
+# already pinned its own model name. Keeping both in one policy produces a request
+# whose route was chosen by the regex and whose body was rewritten by the router, and
+# when those two disagree the backend is handed a model it does not serve and answers
+# 400. Measured: a CrashLoopBackOff prompt routed to the general model and arrived
+# there asking for the code model.
+#
+# So this policy does not read the body at all. The router publishes its decision as a
+# request header and the route in yaml/81 matches that header instead.
+#
+# THE HEADER IS `x-selected-model`. Not `x-vsr-selected-model`, which is a response
+# header carrying the same value for debugging. Matching the response name produces a
+# route that never matches, every request falls through to the default backend, and
+# nothing anywhere reports an error.
+#
+# WHY requestBodyMode: Buffered IS MANDATORY. The router needs the whole prompt to
+# classify it. The field defaults to FullDuplexStreamed, and on the default the router
+# still classifies while its output is dropped, so every request quietly serves the
+# default model.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: extract-model-internal
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: sovereign-gateway-internal
+  traffic:
+    # The router runs before the route is chosen, which is the only reason its header
+    # is available to match on. At the default PostRouting the backend is already
+    # selected and the decision changes nothing.
+    phase: PreRouting
+    extProc:
+      backendRef:
+        name: semantic-router
+        namespace: agentgateway-system
+        port: 50051
+      # A classifier outage must not become a gateway outage. On failure the request
+      # continues without the header and falls through to the default backend.
+      failureMode: FailOpen
+      processingOptions:
+        requestHeaderMode: Send
+        requestBodyMode: Buffered
+        responseHeaderMode: Send
+        responseBodyMode: Buffered
+        allowModeOverride: true
