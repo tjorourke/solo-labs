@@ -5,7 +5,7 @@
 # model field to the name pinned here before forwarding.
 #
 # `model` must match the vLLM `--served-model-name` exactly, and the HTTPRoute in
-# yaml/30 matches on a header whose value is one of these two names. Change a name in
+# yaml-oss/30 matches on a header whose value is one of these two names. Change a name in
 # one place and the route stops matching, with no error anywhere.
 #
 # `ai.provider` is singular deliberately. Prompt guards bind to the single-provider

@@ -4,18 +4,19 @@ Two open-weight models on two GPUs behind one endpoint, with the gateway choosin
 one answers. A finance question goes to Mistral, a coding question goes to Qwen3-Coder,
 and the caller does not have to know which is which.
 
-Part 2 of [vLLM Semantic Router on agentgateway](../vllm-semantic-router-agentgateway/).
-Part 1 runs on kind with a simulator and mock LoRA adapters and shows a router picking
-an adapter behind one backend. This runs on real GPUs with two real models and shows the decision selecting a
-different upstream.
+Standalone. It builds its own EKS cluster, its own GPU nodes and its own gateway, and
+shares nothing with any other lab. If you want the same routing on kind with a simulator
+instead of real cards, that is
+[vLLM Semantic Router on agentgateway](../vllm-semantic-router-agentgateway/).
 
 **Editions.** Nothing in the routing needs Enterprise. Every field used here is on the
 OSS agentgateway CRDs (`spec.traffic.phase` with `PreRouting`,
 `spec.traffic.transformation`, `spec.traffic.extProc.processingOptions`, and
-`spec.ai.provider`), and no Enterprise-only field appears in it. The lab was built and
-validated on Solo Enterprise because that is what the parent cluster runs, and the
-console and cost views are Enterprise. `yaml-oss/` holds the converted manifests, not
-yet run live, so the Versions footer records the Enterprise build only.
+`spec.ai.provider`), so the scripts run the OSS manifests in `yaml-oss/` and the lab was
+validated end to end on upstream agentgateway v1.3.0-alpha.1, and separately on Solo
+Enterprise. `yaml/` holds the Enterprise set: the same files with the group and kind
+swapped, plus `extProc.failureMode: FailOpen`, the one field here that OSS does not
+have.
 
 ## The scenario
 
@@ -115,7 +116,7 @@ That runs six steps, each also runnable on its own:
 | Step | What it does | Time |
 |---|---|---|
 | `eksctl create cluster -f eks/cluster.yaml` | EKS 1.34, a platform nodegroup and two `g7e.2xlarge` in one AZ | ~20 min |
-| `scripts/01-gateway.sh` | Gateway API experimental channel, then OSS agentgateway | ~2 min |
+| `scripts/01-gateway.sh` | a default StorageClass, the Gateway API experimental channel, then OSS agentgateway | ~2 min |
 | `scripts/02-models.sh` | both vLLM deployments; first run pulls ~76 GB of weights | ~30 min |
 | `scripts/03-routing.sh` | gateway, a backend per model, the PreRouting policy, the route | ~1 min |
 | `scripts/04-kagent.sh` | kagent and the three agents | ~5 min |
@@ -236,7 +237,7 @@ command in the previous section prints the model that served each request as you
 | **The header is `x-selected-model`** | `x-vsr-selected-model` is a *response* header with the same value. Matching it gives a route that never matches, with no error anywhere. |
 | **Read both content shapes** | `content` can be a string or a list of typed parts. curl sends a string, ADK and LiteLLM agents send parts. Matching only the string shape silently sends all agent traffic to the default model. |
 | **The vSR chart PVC** | defaults to a `standard` StorageClass that does not exist on EKS, so the pod reports an unbound claim rather than a config error. `yaml/70` sets `gp3`. |
-| **kagent admission here** | Agent creation is reserved to the kagent control plane, hence the `--as`. The agents also need `a2aConfig.skills` (a card with no skills list is rejected at startup), `imageRegistry: ghcr.io` and an explicit `resources` block. Drop the last three on a cluster without those policies. |
+| **kagent agents need a skill** | An agent card with no `a2aConfig.skills` list is rejected by the runtime at startup, and the failure looks like a broken image rather than a rejected card. On a cluster that reserves Agent creation to the kagent control plane, add `--as=system:serviceaccount:kagent:kagent-controller`; this one does not. |
 
 ## Teardown
 

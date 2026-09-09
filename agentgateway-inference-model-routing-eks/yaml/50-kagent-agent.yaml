@@ -9,14 +9,12 @@
 # system prompt, but keeping the words out of it means a stray match cannot make the
 # demo look better than it is.
 #
-# ON A CLUSTER THAT RESTRICTS AGENT CREATION. Some clusters restrict Agent creation to the
-# kagent control plane, so a plain `kubectl apply` is refused. Create it as the
-# controller service account, which is the identity the control plane itself uses:
+# This cluster has no admission policy over kagent, so a plain `kubectl apply` creates the
+# Agent. Some clusters reserve Agent creation to the kagent control plane and refuse it.
+# There, create it as the identity the control plane itself uses:
 #
 #   kubectl apply -f yaml/50-kagent-agent.yaml \
 #     --as=system:serviceaccount:kagent:kagent-controller
-#
-# On a cluster without that restriction, apply it normally.
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
@@ -49,13 +47,12 @@ spec:
             - What is IFRS 9 stage 2 impairment?
             - Write a Python function to reverse a linked list.
     deployment:
-      # The controller defaults to cr.kagent.dev, which this cluster's
-      # registry allowlist does not carry. The same image is published on ghcr.io,
-      # which is allowlisted, so point the agent at it rather than widening the
-      # policy. Drop this on a cluster without a registry allowlist.
+      # The controller defaults to cr.kagent.dev. Pinning ghcr.io keeps the pull off a
+      # registry a locked-down cluster is unlikely to allowlist, and the image is the
+      # same one. Drop it if you would rather take the default.
       imageRegistry: ghcr.io
-      # That cluster also enforces CPU and memory limits on every container, so an
-      # agent with no resources block is refused at admission.
+      # Explicit requests and limits, because a cluster that enforces them refuses an
+      # agent without them, and these keep the agent pods small.
       resources:
         requests: {cpu: 100m, memory: 256Mi}
         limits: {cpu: "1", memory: 1Gi}

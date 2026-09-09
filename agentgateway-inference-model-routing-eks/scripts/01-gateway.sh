@@ -38,6 +38,14 @@ NS=agentgateway-system
 
 banner() { echo; echo "==> $*"; }
 
+# eksctl marks no default StorageClass, and the in-tree gp2 class it leaves behind is not
+# default either. Anything that does not name a class then sits Pending on "no storage
+# class is set" - kagent's bundled Postgres does exactly that, and the kagent controller
+# crash-loops against a database whose volume never arrives. Mark one before anything
+# needs it.
+banner "default StorageClass"
+kubectl apply -f "$HERE/yaml/02-default-storageclass.yaml"
+
 banner "Gateway API $GWAPI_VERSION, experimental channel"
 kubectl apply --server-side --force-conflicts \
   -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GWAPI_VERSION}/experimental-install.yaml" >/dev/null

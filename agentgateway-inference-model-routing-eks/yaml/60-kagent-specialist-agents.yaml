@@ -24,7 +24,7 @@
 # named model and only classifies "auto", so naming a model here is the supported way
 # to opt out.
 #
-# Apply as the control plane on a cluster with admission policies:
+# On a cluster that reserves Agent creation to the kagent control plane, apply as it:
 #   kubectl apply -f yaml/60-kagent-specialist-agents.yaml \
 #     --as=system:serviceaccount:kagent:kagent-controller
 ---
@@ -79,9 +79,8 @@ spec:
             - What is IFRS 9 stage 2 impairment?
             - Explain the difference between CVA and DVA.
     deployment:
-      # Both settings are for this cluster's admission policies: its registry
-      # allowlist does not carry the kagent default, and it requires limits on every
-      # container. Drop them elsewhere.
+      # Same two settings as the shared agent: pin the image registry, and give the pod
+      # explicit requests and limits.
       imageRegistry: ghcr.io
       resources:
         requests: {cpu: 100m, memory: 256Mi}
