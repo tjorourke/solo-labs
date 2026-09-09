@@ -54,10 +54,21 @@ All three are deployed here. Three kagent agents cover both patterns:
 
 ## Prerequisites
 
-- A Kubernetes cluster with agentgateway installed and the Gateway API **experimental**
-  channel applied. Written and run on EKS in eu-west-2; nothing is EKS-specific beyond
-  the nodegroup commands.
-- **Two** GPU nodes, one per model, each with enough VRAM for its model.
+- An AWS account, `eksctl`, `kubectl`, `helm` and the AWS CLI. Nothing else: the lab
+  builds its own cluster.
+- Quota for two `g7e.2xlarge` in one AZ. London capacity moves hour to hour, so hold
+  them with an On-Demand Capacity Reservation before a rehearsal rather than hoping:
+
+  ```bash
+  aws ec2 create-capacity-reservation --instance-type g7e.2xlarge \
+    --instance-platform Linux/UNIX --availability-zone eu-west-2a --instance-count 2 \
+    --instance-match-criteria open --end-date-type limited --end-date <when you finish>
+  ```
+
+  `instance-match-criteria=open` means the nodegroup consumes it with no extra config.
+  Always set an end date: a reservation bills the full hourly rate with nothing in it.
+- About **$11.70/hr** while both GPUs are up, and a few dollars a day for the rest.
+
 
 ## The mechanism
 
@@ -92,69 +103,50 @@ Enterprise set is the same shape with an `Enterprise` prefix.
 
 ## Deploy it
 
-Six steps on an EKS cluster that already has agentgateway, all wrapped as
-`scripts/quick.sh up`.
-
-**What the gateway install has to include.** This lab does not install agentgateway;
-your cluster build does. The **Gateway API experimental channel** is required, because
-ExtProc rides on it and the standard channel does not carry it. Nothing else needs
-enabling: AI backends are part of the gateway, and `inferenceExtension.enabled` is for
-`InferencePool` routing across replicas of one model, which this lab does not use. On
-OSS that is `experimental-install.yaml` plus the `agentgateway-crds` and `agentgateway`
-charts; on Enterprise the same with the `enterprise-` charts and a licence key.
+One command builds everything from an empty AWS account:
 
 ```bash
-# 1. two GPU nodes, one per model. The nodegroup ships at 0 and the nightly backstop
-#    returns it there, so assume you start from zero. maxSize must move with desiredSize,
-#    because the cluster build gpu.sh hardcodes maxSize=1 and the second node would be capped.
-aws eks update-nodegroup-config --region eu-west-2 --cluster-name <your-cluster>   --nodegroup-name gpu-od --scaling-config minSize=0,maxSize=2,desiredSize=2
-
-# 2. both models, one per card. Neither file fetches weights: Qwen's init container
-#    pulls ~31 GB from Hugging Face, Mistral expects a copy already on its PVC.
-kubectl apply -f yaml/00-mistral-model.yaml
-kubectl apply -f yaml/01-qwen-model.yaml
-kubectl rollout status deploy/vllm      -n models --timeout=1500s
-kubectl rollout status deploy/vllm-qwen -n models --timeout=1500s
-
-# 3. a backend per model (only Qwen; Mistral's exists in the cluster build)
-kubectl apply -f yaml/10-backends.yaml
-
-# 4. the policy and the route
-kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
-kubectl get enterpriseagentgatewaybackends,enterpriseagentgatewaypolicies -n agentgateway-system
-
-# 5. the agents: one asking for auto, two naming a model
-kubectl apply -f yaml/40-kagent-modelconfig.yaml
-kubectl apply -f yaml/50-kagent-agent.yaml -f yaml/60-kagent-specialist-agents.yaml \
-  --as=system:serviceaccount:kagent:kagent-controller
-
-# 6. the semantic router (optional). First start downloads the classifier weights.
-helm upgrade --install semantic-router \
-  oci://ghcr.io/vllm-project/charts/semantic-router \
-  -n agentgateway-system --version v0.0.0-latest \
-  -f yaml/70-semantic-router-values.yaml
-kubectl rollout status deploy/semantic-router -n agentgateway-system --timeout=1800s
-kubectl apply -f yaml/80-semantic-router-extproc.yaml -f yaml/81-httproute-vsr.yaml
+export AWS_PROFILE=<your-profile>
+./scripts/quick.sh up
 ```
 
-Two vLLM flags on the Qwen Deployment are not optional: `VLLM_USE_DEEP_GEMM=0` with
-`VLLM_MOE_USE_DEEP_GEMM=0`, and `--enable-auto-tool-choice --tool-call-parser=qwen3_coder`.
-Check the backends report `ACCEPTED` and the policy `ATTACHED`; a policy that fails to
-attach leaves the header unset and every request serves the default model with a 200.
+That runs six steps, each also runnable on its own:
 
-`yaml/70` maps the classifier's built-in MMLU-Pro domains onto the two models, so there
-is no training to do for this split: `economics` and `business` to the general model,
-`computer science` and `engineering` to the code model, everything else and anything
-below the confidence threshold to the default.
+| Step | What it does | Time |
+|---|---|---|
+| `eksctl create cluster -f eks/cluster.yaml` | EKS 1.34, a platform nodegroup and two `g7e.2xlarge` in one AZ | ~20 min |
+| `scripts/01-gateway.sh` | Gateway API experimental channel, then OSS agentgateway | ~2 min |
+| `scripts/02-models.sh` | both vLLM deployments; first run pulls ~76 GB of weights | ~30 min |
+| `scripts/03-routing.sh` | gateway, a backend per model, the PreRouting policy, the route | ~1 min |
+| `scripts/04-kagent.sh` | kagent and the three agents | ~5 min |
+| `scripts/05-semantic-router.sh` | vSR and the policy that hands it the decision | ~5 min |
 
-### Switching between the classifiers
+**The experimental Gateway API channel is required.** ExtProc rides on it and the
+standard channel does not carry it. `01-gateway.sh` applies
+`experimental-install.yaml` and sets `KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES=true`
+on the controller; with only one of those the semantic router step reports the policy
+Accepted and nothing happens.
+
+Nothing else needs enabling. AI backends are part of the gateway, and
+`inferenceExtension.enabled` is for `InferencePool` routing across replicas of one
+model, which this lab does not use.
+
+### Stopping the meter
+
+The GPUs are the cost, about $11.70/hr for the pair. Everything else idles cheaply.
 
 ```bash
-# semantic
-kubectl apply -f yaml/80-semantic-router-extproc.yaml -f yaml/81-httproute-vsr.yaml
-# keyword
-kubectl apply -f yaml/20-routing-policy.yaml -f yaml/30-httproute.yaml
+./scripts/gpu.sh down     # end of session; weights stay on their volumes
+./scripts/gpu.sh up       # back in a few minutes, no re-download
+./scripts/quick.sh teardown   # delete the cluster entirely
 ```
+
+### Enterprise instead of OSS
+
+The manifests in `yaml-oss/` are the OSS CRDs and are what the scripts apply. `yaml/`
+holds the Enterprise set: same shapes with an `Enterprise` prefix on the kinds and
+`gatewayClassName: enterprise-agentgateway`. One field differs, and only Enterprise has
+it: `extProc.failureMode`, which the OSS CRD rejects outright.
 
 ## Testing
 
