@@ -56,13 +56,16 @@ case "${1:-}" in
     scale_gpu 2
     wait_gpu_nodes 2
 
-    banner "the coding model (first run pulls ~31 GB of weights)"
+    banner "both models (Qwen's first run pulls ~31 GB of weights)"
+    kubectl apply -f "$HERE/yaml/00-mistral-model.yaml"
     kubectl apply -f "$HERE/yaml/01-qwen-model.yaml"
+    kubectl rollout status deploy/vllm -n models --timeout=1500s
     # 25 minutes: the weight pull, then a 9 GB image pull on a cold node, then the
     # load and CUDA graph capture. Observed end to end at about 12 minutes.
     kubectl rollout status deploy/vllm-qwen -n models --timeout=1500s
 
-    banner "backends, routing policy and route"
+    banner "gateway, backends, routing policy and route"
+    kubectl apply -f "$HERE/yaml/05-gateway.yaml"
     kubectl apply -f "$HERE/yaml/10-backends.yaml"
     kubectl apply -f "$HERE/yaml/20-routing-policy.yaml"
     kubectl apply -f "$HERE/yaml/30-httproute.yaml"
@@ -87,6 +90,7 @@ case "${1:-}" in
     kubectl delete -f "$HERE/yaml/20-routing-policy.yaml" --ignore-not-found
     kubectl delete -f "$HERE/yaml/10-backends.yaml" --ignore-not-found
     kubectl delete -f "$HERE/yaml/01-qwen-model.yaml" --ignore-not-found
+    kubectl delete -f "$HERE/yaml/05-gateway.yaml" --ignore-not-found
 
     banner "back to one GPU node"
     # Back to 1, not 0: the parent lab's Mistral is still running on the other card

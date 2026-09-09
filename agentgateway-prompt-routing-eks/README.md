@@ -109,9 +109,11 @@ charts; on Enterprise the same with the `enterprise-` charts and a licence key.
 #    because the cluster build gpu.sh hardcodes maxSize=1 and the second node would be capped.
 aws eks update-nodegroup-config --region eu-west-2 --cluster-name <your-cluster>   --nodegroup-name gpu-od --scaling-config minSize=0,maxSize=2,desiredSize=2
 
-# 2. the second model. Mistral already runs from the cluster build on the first card.
-#    First run pulls ~31 GB; the rollout took about 12 minutes.
+# 2. both models, one per card. Neither file fetches weights: Qwen's init container
+#    pulls ~31 GB from Hugging Face, Mistral expects a copy already on its PVC.
+kubectl apply -f yaml/00-mistral-model.yaml
 kubectl apply -f yaml/01-qwen-model.yaml
+kubectl rollout status deploy/vllm      -n models --timeout=1500s
 kubectl rollout status deploy/vllm-qwen -n models --timeout=1500s
 
 # 3. a backend per model (only Qwen; Mistral's exists in the cluster build)
