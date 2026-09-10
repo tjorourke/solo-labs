@@ -1,7 +1,7 @@
-# Complexity-aware inference routing on agentgateway
+# Prompt-aware model routing, Part 2: complexity-aware routing
 
 A bank runs two models on two GPUs behind one endpoint.
-[Prompt-aware model routing](../agentgateway-inference-model-routing-eks/) routes by
+[Part 1](../agentgateway-inference-model-routing-eks/) routes by
 subject: finance questions to the general model, engineering questions to the code model.
 
 Engineering questions are not all the same kind of question. Some want a definition, some

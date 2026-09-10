@@ -1,4 +1,4 @@
-# Prompt-aware model routing on agentgateway (EKS, real GPUs)
+# Prompt-aware model routing, Part 1: two models across two GPUs
 
 Two open-weight models on two GPUs behind one endpoint, with the gateway routing each
 request to the model that suits it: from an explicit client choice, from its own routing
@@ -273,7 +273,7 @@ command in the previous section prints the model that served each request as you
 ## When the topic is not enough
 
 Routing on the topic runs out when two prompts share one. That is
-[complexity-aware inference routing](../agentgateway-inference-signal-routing-eks/), which runs
+[Part 2](../agentgateway-inference-signal-routing-eks/), which runs
 on this cluster and these two models and adds a second signal to the router.
 
 ## Teardown
