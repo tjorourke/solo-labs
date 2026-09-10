@@ -7,6 +7,9 @@
 #
 #   ./scripts/ask.sh "Roll a 20-sided die and tell me if it is prime."
 #   AS_USER=bob ./scripts/ask.sh "..."      # different Keycloak user
+#   AGENT_PREFIX=prtriagejava EXEC_FROM=prtriage ./scripts/ask.sh "..."
+#                                           # target a non-python agent, exec from one
+#                                           # whose image has python3
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
@@ -16,8 +19,17 @@ AS_USER="${AS_USER:-admin-user}"; AS_PASSWORD="${AS_PASSWORD:-password}"
 [[ -n "$AGENT" ]] || die "no kagent Agent matching '${AGENT_PREFIX:-agentdemo}' — is it deployed?"
 PROMPT="${*:-Roll a 20-sided die and tell me whether the result is a prime number.}"
 
-POD="$(kc -n kagent get pods -l "app.kubernetes.io/name=$AGENT" -o name 2>/dev/null | head -1)"
-[[ -n "$POD" ]] || die "no running pod for agent '$AGENT' — check: kubectl -n kagent get pods"
+# The token mint + A2A call run inside a pod via kubectl exec, so that pod needs
+# python3. The agent's own pod is the obvious place and is what we default to, but a
+# BYO agent in another language will not have python3 in its image (the Java agent
+# does not). EXEC_FROM points the exec at a pod that does, while the A2A URL below
+# still targets $AGENT.
+EXEC_FROM="${EXEC_FROM:-$AGENT}"
+POD="$(kc -n kagent get pods -l "app.kubernetes.io/name=$EXEC_FROM" -o name 2>/dev/null | head -1)"
+[[ -n "$POD" ]] || die "no running pod for '$EXEC_FROM' — check: kubectl -n kagent get pods"
+if ! kc -n kagent exec "${POD#*/}" -- sh -c 'command -v python3 >/dev/null 2>&1'; then
+  die "pod '$EXEC_FROM' has no python3 — set EXEC_FROM to an agent whose image does, e.g. EXEC_FROM=prtriage"
+fi
 
 echo "Asking '$AGENT' as $AS_USER (OIDC) ..."
 # Mint from the IN-CLUSTER Keycloak URL (the agent pod can't resolve the

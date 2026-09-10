@@ -5,20 +5,23 @@
 #   make build     multi-stage docker build (maven -> jre)
 #   make push      into the kind registry
 #   make publish   register it in AgentRegistry with arctl
-#   make run       run it in the cluster as a Job and follow the output
-#   make all       build, push, publish, run
+#   make deploy    deploy it onto kagent as a pod, like the Python agent
+#   make ask       prompt it through kagent's A2A endpoint
+#   make run       run it as a one-shot Job instead (what the notebook uses)
+#   make all       build, push, publish, deploy, ask
 #   make clean     remove the Job and the catalogue entry
 
 IMAGE   ?= localhost:5001/prtriage-java:latest
+DEMO_REPO ?= tjorourke/kagent
 CTX     ?= kind-mesh1
 NS      ?= kagent
 SRC     := src/main/java/io/solo/demo/ReleaseReport.java
 JOBYAML := ../yaml/50-java-agent-job.yaml
 KC      := kubectl --context $(CTX)
 
-.PHONY: all show build push publish run logs clean
+.PHONY: all show build push publish deploy ask run logs clean
 
-all: build push publish run
+all: build push publish deploy ask
 
 ## the part worth putting on a screen
 show:
@@ -51,7 +54,25 @@ publish:
 	arctl apply -f agent.yaml
 	@arctl get agents
 
-## Run it as a Job. A DEPLOYED kagent agent has to serve A2A on
+## Deploy it onto kagent as a long-lived pod, the same shape as the Python agent.
+## SERVE=true starts the A2A server so the readiness probe on
+## /.well-known/agent-card.json passes and the controller can reach it.
+deploy: publish
+	@echo "== deploying onto kagent via AgentRegistry =="
+	arctl apply -f ../yaml/60-java-deploy-kagent.yaml
+	@until $(KC) -n $(NS) get deploy/prtriagejava >/dev/null 2>&1; do sleep 2; done
+	$(KC) -n $(NS) rollout status deploy/prtriagejava --timeout=240s
+	@$(KC) -n $(NS) get agent prtriagejava
+
+## Prompt it through kagent's OIDC-protected A2A endpoint, exactly like the Python
+## agent. EXEC_FROM points the token mint at a pod that has python3, since this image
+## does not.
+ask: PROMPT ?= Give me the release report for $(DEMO_REPO), all open pull requests.
+ask:
+	@cd ../../agentregistry && AGENT_PREFIX=prtriagejava EXEC_FROM=prtriage \
+	  ./scripts/ask.sh "$(PROMPT)"
+
+## Run it as a one-shot Job instead, which is what the notebook uses for the numbers. A DEPLOYED kagent agent has to serve A2A on
 ## /.well-known/agent-card.json, and this is a batch program, so a Job is the honest
 ## shape for it. Everything about the gateway is identical either way.
 run:
@@ -68,5 +89,6 @@ logs:
 
 clean:
 	-$(KC) -n $(NS) delete job prtriage-java --ignore-not-found
+	-arctl delete deployment prtriagejava
 	-arctl delete agent prtriagejava
 	rm -f skill.md

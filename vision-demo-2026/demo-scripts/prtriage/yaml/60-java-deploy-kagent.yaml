@@ -1,0 +1,19 @@
+# Deploy the Java agent onto the kagent runtime, exactly as the Python one is deployed.
+#
+# SERVE=true is the only difference between this and a batch run: it starts the A2A
+# server, so the pod serves /.well-known/agent-card.json for kagent's readiness probe
+# and answers message/send through the controller.
+#
+# Not here, and worth pointing at: no GitHub credential, and no MCP wiring. The
+# registry derives MCP_SERVERS_CONFIG from the approved server on the Agent record,
+# and the model key is injected in-cluster from Secret/kagent-anthropic.
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: prtriagejava
+spec:
+  targetRef:  { kind: Agent,   name: prtriagejava }
+  runtimeRef: { kind: Runtime, name: kind-kagent }
+  env:
+    SERVE: "true"
+    PORT: "8080"

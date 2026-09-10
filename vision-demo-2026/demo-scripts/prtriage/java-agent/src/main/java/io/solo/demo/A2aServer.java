@@ -1,6 +1,7 @@
 package io.solo.demo;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.adk.agents.LlmAgent;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -9,7 +10,9 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -84,16 +87,51 @@ final class A2aServer {
       Console.failed(answer);
     }
 
-    var part = Json.object().put("kind", "text").put("text", answer);
-    var artifact = Json.object().put("artifactId", "report");
-    artifact.putArray("parts").add(part);
-    var result = Json.object();
-    result.putArray("artifacts").add(artifact);
-
     return Json.write(Json.object()
         .put("jsonrpc", "2.0")
         .putRawValue("id", raw(id))
-        .set("result", result));
+        .set("result", task(request, answer)));
+  }
+
+  /**
+   * A2A message/send returns either a Message or a Task, and the receiver switches on
+   * the "kind" discriminator. Omit it and kagent's controller rejects the response with
+   * "unsupported result kind" even though the answer itself is perfectly good, which is
+   * a confusing half hour if you have not read the spec.
+   */
+  private ObjectNode task(JsonNode request, String answer) {
+    var part = Json.object().put("kind", "text").put("text", answer);
+
+    var artifact = Json.object().put("artifactId", "report").put("name", "report");
+    artifact.putArray("parts").add(part);
+
+    var message = Json.object()
+        .put("kind", "message")
+        .put("role", "agent")
+        .put("messageId", UUID.randomUUID().toString());
+    message.putArray("parts").add(part.deepCopy());
+
+    var status = Json.object()
+        .put("state", "completed")
+        .put("timestamp", Instant.now().toString());
+    status.set("message", message);
+
+    var task = Json.object()
+        .put("kind", "task")
+        .put("id", text(request, "taskId").orElseGet(() -> UUID.randomUUID().toString()))
+        .put("contextId", text(request, "contextId").orElseGet(() -> UUID.randomUUID().toString()));
+    task.set("status", status);
+    task.putArray("artifacts").add(artifact);
+    task.putArray("history");
+    return task;
+  }
+
+  /** First value of a named field anywhere in the request, if it is there at all. */
+  private static Optional<String> text(JsonNode request, String field) {
+    return Optional.of(request.findValuesAsText(field))
+        .filter(values -> !values.isEmpty())
+        .map(values -> values.get(0))
+        .filter(value -> !value.isBlank());
   }
 
   /** The user's question is the first text part of the A2A message. */

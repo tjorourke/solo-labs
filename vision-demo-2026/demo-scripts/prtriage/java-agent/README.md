@@ -13,12 +13,14 @@ Maven and the JDK run inside the image. The machine driving the demo needs Docke
 nothing else.
 
 ```bash
-make show      # the six lines that wire ADK to the gateway
+make show      # the method that wires ADK to the gateway
 make build     # multi-stage docker build (maven -> jre)
 make push      # into the kind registry
 make publish   # register it in AgentRegistry with arctl
-make run       # run it in the cluster as a Job and print the output
-make all       # all of the above
+make deploy    # deploy onto kagent as a pod, the same shape as the Python agent
+make ask       # prompt it through kagent's OIDC-protected A2A endpoint
+make run       # run it as a one-shot Job instead, which is what the notebook uses
+make all       # build, push, publish, deploy, ask
 make clean
 ```
 
@@ -74,14 +76,38 @@ jar rather than trusting a memory of the API:
 
 The build compiled first time as a result.
 
-## Two honest limitations
+## It runs as a proper kagent agent
 
-**It holds no GitHub credential, and it also holds no A2A server.** AgentRegistry will
-publish this agent and `arctl apply` a Deployment for it, but the kagent readiness probe
-is `http-get /.well-known/agent-card.json`, so a batch program will never come up Ready.
-Running it as a Job is the honest shape. Making it a deployed kagent agent means
-implementing A2A plus the controller callback in Java, which is a project rather than a
-demo beat.
+`SERVE=true` starts the A2A server in `A2aServer.java`, so this is a long-lived pod
+serving `/.well-known/agent-card.json`, exactly like the Python agent. Verified:
+
+```
+$ kubectl -n kagent get agent prtriage prtriagejava
+NAME           TYPE   RUNTIME   READY   ACCEPTED
+prtriage       BYO              True    True
+prtriagejava   BYO              True    True
+```
+
+Both prompted the same way through the controller, both returning the same report.
+
+Two things learned getting there, and neither is documented anywhere obvious:
+
+**A2A `message/send` must return a `Message` or a `Task`, discriminated by a `kind`
+field.** Return artifacts without it and kagent's controller rejects a perfectly good
+answer with `failed to unmarshal rpc result: unsupported result kind`. The agent had
+already done the work and produced the right text. That is a confusing half hour if you
+have not read the spec, so `A2aServer.task()` builds a full Task with `kind`, `id`,
+`contextId`, a completed `status` and the artifact.
+
+**There is no A2A SDK for Java on Maven Central**, at least under any of the obvious
+coordinates. The contract is small enough not to need one: two endpoints, and the whole
+server is under two hundred lines with no dependency beyond the Jackson that ADK
+already brings.
+
+`ask.sh` needed one change to reach a non-Python agent. It mints the OIDC token by
+`kubectl exec`-ing into the target pod and running `python3`, which a Java image does
+not have, so `EXEC_FROM=prtriage` points the exec at a pod that does while the A2A URL
+still targets the Java agent.
 
 **`arctl init` cannot scaffold this.** As of `v2026.6.1` it scaffolds ADK with Python
 only: `--language java`, `go` and `typescript` are all rejected with "no agent framework".
