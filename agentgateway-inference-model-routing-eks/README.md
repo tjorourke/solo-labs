@@ -270,6 +270,12 @@ command in the previous section prints the model that served each request as you
 | **The vSR chart PVC** | defaults to a `standard` StorageClass that does not exist on EKS, so the pod reports an unbound claim rather than a config error. `yaml/70` sets `gp3`. |
 | **kagent agents need a skill** | An agent card with no `a2aConfig.skills` list is rejected by the runtime at startup, and the failure looks like a broken image rather than a rejected card. On a cluster that reserves Agent creation to the kagent control plane, add `--as=system:serviceaccount:kagent:kagent-controller`; this one does not. |
 
+## When the topic is not enough
+
+Routing on the topic runs out when two prompts share one. That is
+[complexity-aware inference routing](../agentgateway-inference-signal-routing-eks/), which runs
+on this cluster and these two models and adds a second signal to the router.
+
 ## Teardown
 
 ```bash
