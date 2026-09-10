@@ -26,9 +26,15 @@ for node in $(kind get nodes --name mesh1); do
   docker exec "$node" crictl rmi "$IMAGE" >/dev/null 2>&1 || true
 done
 
+# On a first run the agent has not been deployed yet (that is the next step), so
+# there is nothing to restart and nothing to verify. Only reload if it is running.
+if ! $K -n kagent get deploy/prtriage >/dev/null 2>&1; then
+  echo "✓ image built and pushed; the agent is not deployed yet, so deploy it next"
+  exit 0
+fi
+
 echo "== restart and wait =="
-$K -n kagent rollout restart deploy/prtriage >/dev/null
-$K -n kagent rollout status deploy/prtriage --timeout=240s >/dev/null
+"$HERE/reload-agent.sh" >/dev/null
 
 POD="$($K -n kagent get pods -l app.kubernetes.io/name=prtriage -o name | head -1)"
 if $K -n kagent exec "${POD#*/}" -- grep -q "today is not defined" /app/prtriage/prompts.json 2>/dev/null; then

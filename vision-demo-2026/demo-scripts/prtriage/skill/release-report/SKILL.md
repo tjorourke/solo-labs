@@ -14,7 +14,12 @@ agent has to rediscover them.
 The GitHub tools reach you through agentgateway. When the gateway offers a
 `run_code` tool, use it: write one JavaScript program that fetches and filters
 everything, and return only the finished answer. Do not call one tool per pull
-request. A twenty-pull-request report is one program, not forty-one turns.
+request. A twenty-pull-request report is three programs, not forty-one turns.
+
+This is not only about speed. Gathering one pull request at a time puts every raw API
+response into the conversation, and by the time you come to write the report the
+review data is tens of thousands of tokens behind you and easy to lose. Filter in the
+program, where the data cannot drift out of reach.
 
 When `run_code` is not offered, call the individual tools instead.
 
@@ -30,9 +35,11 @@ The sandbox is deliberately small. It is not Node, and it is not your agent.
   `RegExp`, `BigInt`.
 - Not available: `Date`, `Map`, `Set`, `console`, `fetch`, `require`, `process`,
   `setTimeout`. Use plain objects instead of `Map`.
-- A program may make at most **20** upstream tool calls. Budget them: one
-  `list_pull_requests` plus two calls per pull request means at most nine pull
-  requests per program. If more are needed, run a second program.
+- A program may make at most **20** upstream tool calls, and exceeding it throws away
+  the whole program. Budget with headroom: one `list_pull_requests` plus two calls per
+  pull request means **eight** pull requests per program, which is 17 calls. Nine is
+  19 and leaves you one slip from losing the run. If more are needed, run a second
+  program.
 - Filter, sort and aggregate inside the program. Return the smallest value that
   answers the question, never a raw tool response.
 
