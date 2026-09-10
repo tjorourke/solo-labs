@@ -31,6 +31,9 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 ## Before you start
 
 1. `source demo-scripts/env.sh 8`, run the Connect cell, check the MCP endpoint prints.
+   `setup.sh` is cluster setup, not a beat: run it well before you present. It builds the
+   waypoint, both backends, the route and the catalogue entries, and you never touch it
+   on stage.
 2. Run beat 1 once to warm the path, then reset: the last cell puts `toolMode` back to
    `Standard` and deletes any policy.
 3. Confirm the repo still has twenty four open pull requests, four held, three drafts.
@@ -204,6 +207,10 @@ scrolling JSON does more work than any sentence here.
 
 > Same agent. Same image. Same catalogue. One field on the gateway backend.
 >
+> I am restarting the agent, and I want to be straight about why: this implementation
+> reads its MCP tool list once at startup and caches it. The image has not changed and
+> nothing was rebuilt. It just needs to ask the gateway again.
+>
 > `toolMode: CodeSearch`. The model no longer gets forty four tools. It gets two:
 > `get_tool` to look up an operation's schema, and `run_code` to run a program against
 > them.
@@ -267,45 +274,94 @@ the round trips and what the model has to carry.
 
 ---
 
-## Beat 6 · Take the write tools away
+## Beat 6 · Two agents, one integration, different permissions
 
-**Run:** the policy YAML cell, then the apply, then the denied program, then the agent.
+**Run:** the policy, then the release agent, then `identity-matrix.sh`, then
+`try-merge.sh` for both.
+
+**Say, while the policy goes on:**
+
+> The triage agent reads pull requests. A release agent needs to merge them. Both use
+> the same approved GitHub integration, the same image, and the same skill.
+>
+> This is enforced at the waypoint, and that detail matters. A waypoint receives the
+> connection from ztunnel and can read the peer certificate, so the identity in this
+> policy is who the workload provably is, not what it claims to be. An ingress gateway
+> cannot do that, because by then the connection has left the mesh. It is the same
+> reason Part 4 enforces its access policy at a waypoint.
+
+**Cue before the matrix:** the cell puts the tool surface back to `Standard` first, and
+say why if anyone notices. The matrix is about which tool *names* each identity can see,
+and in code mode the only tools are `get_tool` and `run_code`, so both agents would look
+identical whatever the policy said. The code-mode form of the same proof comes next and
+is stronger.
+
+**Then deploy the second agent and show the matrix:**
+
+> Second agent. Same image. Different identity.
+>
+> Now the same request to the same URL from each of their own pods. Same body, no
+> credentials anywhere. The only thing that differs is who is asking.
+
+```
+  identity          read PRs   merge tool   tools returned
+  triage agent      yes        hidden       list_pull_requests pull_request_read
+  release agent     yes        VISIBLE      ... merge_pull_request
+  another workload  DENIED     DENIED       (nothing)
+```
+
+> The triage agent cannot see the merge tool at all. The release agent can. Another
+> workload in the same namespace, with an identity the policy does not name, gets
+> nothing.
+
+### The enforcement proof, which is the bit that counts
+
+**Run `try-merge.sh` for both.**
 
 **Say:**
 
-> Back to the first slide. Seventeen write tools. This agent needs to read pull
-> requests.
+> An agent telling you it cannot merge is the model being agreeable. So this sends the
+> request the model would have made, straight at the gateway, from inside the agent's
+> own pod. It carries the real identity and it goes nowhere near the model.
+
+**Then read the two results out, slowly, because the contrast is the point:**
+
+> As the triage agent: unknown tool. Not a 403, and not a refusal from GitHub. The tool
+> does not exist for that identity, so the request never left the cluster.
 >
-> That is an `EnterpriseAgentgatewayPolicy`. It names the tools this agent may call, on
-> the MCP method name, and it is enforced on the agent's own identity.
-
-**Apply it, then run the denied program:**
-
-> Now watch what happens to the program. Not `403`. Not "permission denied".
+> As the release agent: the error names `api.github.com`. That request went all the way
+> to GitHub, and the only thing that stopped it was the pull request not existing.
 >
-> `merge_pull_request is not defined`.
+> Same request. Same gateway. Different identity.
+
+**Cue:** it targets a pull request number that does not exist deliberately. If policy
+ever failed to propagate, the worst case is a 404 rather than a merged fixture, and the
+error text tells you which happened. Say that if anyone asks whether you just merged
+something.
+
+### And the same thing in code mode, which is stronger
+
+**Run the code-mode cell.**
+
+> In code mode the generated API is built after the policy is applied. So for the triage
+> agent, `merge_pull_request` is not a function in the sandbox at all.
 >
-> The gateway builds that generated API after it applies the policy, so the denied
-> operation is not a function in the sandbox at all. The program cannot express the
-> call. There is nothing to deny, because there is nothing to try.
+> `merge_pull_request is not defined`. The program cannot express the call, rather than
+> making it and being refused.
 
-That direct call is the proof, and it never went near the model. Say so:
+**Then the credential point, in the corrected form:**
 
-> That request did not go through the agent at all. I sent it straight at the gateway.
-> An agent telling you it cannot merge is theatre; this is enforcement.
-
-**Then ask the agent itself, in the UI, for the theatre:**
-
-> Merge pull request 4, right now, use whatever tool you have.
-
-**When it says it cannot:**
-
-> And the token in that Secret still has every permission it had at the start of this
-> talk. It can merge. It can delete files.
->
-> GitHub's permissions bound what that credential can ever do. Gateway policy gives each
-> agent using the same integration a different set of tool permissions, which is a
+> And the credential has not moved. That PAT can merge and delete files for either of
+> them. GitHub's permissions bound what the credential can ever do; gateway policy gives
+> each agent using that one integration a different set of tool permissions, which is a
 > distinction GitHub has no way to express.
+
+**Finish on useful access, not on the denial:**
+
+> The triage agent still does its job.
+
+Run the report one more time and let it land. A demo that ends on a refusal leaves the
+room thinking about what they cannot do.
 
 **Close:**
 
@@ -313,8 +369,6 @@ That direct call is the proof, and it never went near the model. Say so:
 > agentgateway changed how it used tools and enforced what it could call.
 >
 > The agent image stayed the same.
-
----
 
 ## The numbers, if you get asked
 
@@ -345,10 +399,16 @@ tokens and two round trips, which is why the demo uses it.
 constructed by the gateway, and so is the generated API inside code mode. The agent's
 image and its prompt are unchanged across every beat.
 
-**"Could I not filter the tools in my own code?"** You can filter what you pass to the
-model. You cannot stop the agent calling a tool it decides to call, because that
-decision and that call both happen after your code has run. Beat 6 is enforced on the
-wire, on the agent's proven identity.
+**"Could I not filter the tools in my own code?"** Yes, and a careful team will. The
+difference is that the platform applies it once, outside the agent, the same way for
+every agent, and refuses a direct call that skips the model's tool list altogether.
+Beat 6's denied request never went near the model.
+
+**"Where does the identity come from?"** ztunnel, from the workload's SPIFFE
+certificate. The policy matches `source.identity.serviceAccount`, and the agent has no
+say in it. Worth knowing that this only works at a waypoint: at an ingress gateway the
+connection has left the mesh and the identity is gone, which is why the approved
+catalogue entry points agents at the in-cluster name.
 
 **"What is in the sandbox?"** `Math`, `JSON`, `Promise`, `Object`, `Array`, `String`,
 `Number`, `RegExp`, `BigInt`. Not `Date`, `fetch`, `Map`, `Set`, `console`, `process`,

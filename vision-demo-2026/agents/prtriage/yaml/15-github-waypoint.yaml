@@ -1,0 +1,85 @@
+# GitHub, fronted by a WAYPOINT inside the mesh, which is the only place an agent's own
+# identity is available to policy.
+#
+# Why not the ingress gateway. A waypoint receives HBONE from ztunnel and can read the
+# peer certificate, so `source.identity` is the calling workload's SPIFFE identity. By
+# the time a request reaches an ingress gateway the connection has left the mesh and
+# that identity is gone. This is the same reason demo-4's AccessPolicy is enforced at a
+# waypoint in front of its MCP servers.
+#
+# The ingress route in 10-github-backend.yaml stays: it is how the laptop demonstrates
+# the 44-tool inventory and the no-credential call in steps 1 and 2. Agents use this.
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-mcp
+  namespace: kagent
+  labels:
+    istio.io/use-waypoint: github-mcp-waypoint
+spec:
+  # No selector and no endpoints on purpose. This Service exists to give agents an
+  # in-cluster name to call and to give the waypoint something to attach to. Every
+  # request is answered by the waypoint, which never forwards to a pod.
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: github-mcp-waypoint
+  namespace: kagent
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: github-mcp
+  namespace: kagent
+spec:
+  entMcp:
+    toolMode: Standard
+    sessionRouting: Stateful
+    failureMode: FailClosed
+    targets:
+    - name: github
+      static:
+        host: api.githubcopilot.com
+        port: 443
+        path: /mcp/
+        protocol: StreamableHTTP
+        policies:
+          tls:
+            sni: api.githubcopilot.com
+          auth:
+            secretRef:
+              name: github-mcp-pat
+---
+# Attached to the SERVICE rather than to a Gateway. That is the GAMMA pattern, and it
+# is what makes the waypoint intercept in-mesh calls to
+# github-mcp.kagent.svc.cluster.local.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: github-mcp
+  namespace: kagent
+spec:
+  parentRefs:
+  - group: ""
+    kind: Service
+    name: github-mcp
+    port: 80
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: github-mcp
