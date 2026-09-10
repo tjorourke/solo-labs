@@ -27,7 +27,7 @@ case "$DEMO" in
     echo "  5  kagent substrate / gVisor  (substrate)"
     echo "  6  inference routing / GIE    (inference)"
     echo "  7  AI gateway                 (mesh1)"
-    echo "  8  github + MCP tool layer   (mesh1)"
+    echo "  8  build/ship/govern an agent (mesh1)"
     return 2 2>/dev/null || exit 2
     ;;
 esac
@@ -74,7 +74,7 @@ case "$DEMO" in
     export LB=$(kubectl --context kind-mesh1 -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}')
     export MCP="http://github-mcp.${LB}.sslip.io/"
     export ASK="demo-scripts/agentregistry/scripts/ask.sh"
-    echo "demo-8 · MCP endpoint: $MCP  ·  AgentRegistry UI: http://${AR_HOST}"
+    echo "demo-8 · build, ship, govern · MCP endpoint: $MCP  ·  AgentRegistry UI: http://${AR_HOST}"
     echo "  cwd is the suite root — \$PART8 yaml/scripts paths resolve from here"
     ;;
   5)

@@ -1,4 +1,6 @@
-# Part 8 · spoken guide
+# Part 8 · Build, ship and govern an agent
+
+Spoken guide.
 
 What to say, in order, while `demo-8-github-agent.ipynb` runs. Roughly twelve minutes.
 
