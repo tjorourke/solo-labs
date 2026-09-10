@@ -1,0 +1,31 @@
+# The same agent, in Java, on the same Google ADK, through the same gateway.
+#
+# Note what is NOT here: no GitHub credential. The gateway holds it. The only secret
+# this Job needs is the model key, exactly like its Python sibling.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: prtriage-java
+  namespace: kagent
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: agent
+        image: localhost:5001/prtriage-java:latest
+        imagePullPolicy: Always
+        env:
+        # exactly the variable AgentRegistry injects for the Python agent
+        - name: MCP_SERVERS_CONFIG
+          value: '[{"name":"github-mcp","type":"remote","url":"http://github-mcp.192.168.97.144.sslip.io/"}]' 
+        - name: DEMO_REPO
+          value: tjorourke/kagent
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef: { name: kagent-anthropic, key: ANTHROPIC_API_KEY }
+        resources:
+          requests: { cpu: 200m, memory: 512Mi }
+          limits:   { memory: 1Gi }

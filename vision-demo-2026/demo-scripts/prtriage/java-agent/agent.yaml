@@ -1,0 +1,17 @@
+# The catalogue entry for the Java agent. Identical in shape to the Python one, and it
+# points at the same approved MCP server, because AgentRegistry cares about what an
+# agent is allowed to call, not what language it is written in.
+apiVersion: ar.dev/v1alpha1
+kind: Agent
+metadata:
+  name: prtriagejava
+spec:
+  description: Release report agent, Java on Google ADK, through the same agentgateway as its Python sibling.
+  mcpServers:
+  - kind: MCPServer
+    name: github-mcp
+    tag: latest
+  modelName: claude-haiku-4-5
+  modelProvider: anthropic
+  source:
+    image: localhost:5001/prtriage-java:latest
