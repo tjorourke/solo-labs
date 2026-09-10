@@ -1,24 +1,8 @@
 # Two specialist agents, each pinned to a model. This is the client-declared option.
 #
-# WHY THIS EXISTS ALONGSIDE routing-demo. The two answer different questions and a
-# real deployment wants both.
-#
-#   routing-demo      one surface, mixed traffic, the gateway classifies. This is the
-#                     hard case and the reason semantic routing exists.
-#   finance-analyst   the caller already knows what it is for, so it says so.
-#   coding-assistant  same.
-#
-# WHAT YOU KEEP BY DOING IT THIS WAY. It looks like the model choice has moved out of
-# the platform and into the client, and it has not. The client picks an AGENT; the
-# platform picks the MODEL, because the ModelConfig is a platform-owned resource.
-# Repoint coding-assistant at a different model by editing one object and no agent,
-# prompt or client changes. You keep the property that matters and you delete the
-# guessing.
-#
-# WHAT IT COSTS. Someone has to pick the right agent. That is free when the caller is
-# an IDE plugin or a purpose-built app that already knows what it is, and it is not
-# free on a general chat surface where a human just types. That is the case
-# routing-demo covers.
+# The caller selects an agent; its ModelConfig names the model. Change the
+# ModelConfig to move a specialist to a different backend. Use routing-demo when
+# the caller wants the gateway to classify the prompt instead.
 #
 # These bypass classification by design: the PreRouting policy honours an explicitly
 # named model and only classifies "auto", so naming a model here is the supported way

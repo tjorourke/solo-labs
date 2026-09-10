@@ -1,31 +1,20 @@
 # The second model: Qwen3-Coder-30B-A3B-Instruct-FP8, on the second GPU card.
 #
-# WHY A SECOND MODEL. One model behind a gateway is a proxy; two models behind a
-# gateway is a decision. The
-# decision this pair demonstrates is the honest one: a coding prompt should not be
-# answered by a general instruct model when a code model is sitting next to it.
+# This is the coding backend. Mistral serves the lab's finance and general prompts.
 #
-# WHY A SEPARATE NODE AND NOT A SHARED CARD. The NVIDIA device plugin hands out whole
-# GPUs: the node advertises `nvidia.com/gpu: 1` and a second pod asking for a GPU on
-# that node stays Pending with "Insufficient nvidia.com/gpu". Sharing one card needs
-# time-slicing or MPS configured in the device plugin AND a hand-split
-# gpu-memory-utilization on both pods, which is two extra failure modes for a demo
-# that is not about GPU packing. The gpu-od nodegroup is therefore scaled to 2.
-# No affinity rules are needed: the scheduler puts this pod on the free-GPU node by
-# itself, because Mistral has already claimed the other one.
+# The NVIDIA device plugin allocates whole GPUs. A second GPU pod on a node with
+# nvidia.com/gpu: 1 stays Pending with "Insufficient nvidia.com/gpu". Each model
+# therefore gets its own node. No additional affinity rule is needed.
 #
-# WHY FP8 AND NOT bf16. Both fit now that each model owns a card (bf16 is ~61 GB on
-# a 96 GB card), so this is a throughput and load-time choice, not a capacity one:
-# FP8 is 31.2 GB against 61.1 GB, so it loads in half the time and leaves roughly
-# 60 GB for KV cache instead of 30. The card is Blackwell (RTX PRO 6000 Server), so
-# FP8 is native and not emulated.
+# FP8 weights occupy 31.2 GB, compared with 61.1 GB for bf16. Both fit on the 96 GB
+# card; FP8 reduces download size and leaves more memory for KV cache. The
+# Blackwell RTX PRO 6000 Server supports FP8 natively.
 #
-# TOOL CALLING IS REQUIRED HERE, not optional. kagent agents send `tools` on every
+# kagent agents send `tools` on every
 # request, and vLLM defaults tool_choice to "auto", so without a parser the model
 # returns 400: ""auto" tool choice requires --enable-auto-tool-choice and
-# --tool-call-parser to be set". The routing still works and the gateway still logs
-# a clean hand-off to this backend, so it looks like a routing success with a broken
-# model. `qwen3_coder` is a built-in parser choice in vLLM 0.27.1; the parser file
+# --tool-call-parser to be set". `qwen3_coder` is a built-in parser choice in vLLM
+# 0.27.1; the parser file
 # shipped in the model repo targets an older module path and does not load.
 ---
 apiVersion: v1

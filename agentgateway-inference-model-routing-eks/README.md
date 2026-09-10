@@ -39,7 +39,8 @@ prompt.
 
 ## Three ways a request reaches a model
 
-The routing table is identical in all three. Only the source of the decision changes.
+The backend mapping stays the same in all three. Semantic mode replaces the policy
+and changes the HTTPRoute's matched header from `x-model` to `x-selected-model`.
 
 | Option | Who decides | Cost |
 |---|---|---|
@@ -255,6 +256,35 @@ console.
 In the kagent console, pick `routing-demo` for the classified path or `finance-analyst`
 and `coding-assistant` for the declared one, and send the prompts above. The gateway log
 command in the previous section prints the model that served each request as you type.
+
+### Measuring latency
+
+The [page's timing section](https://www.mastertheagent.com/solo/agentgateway-inference-model-routing-eks/#timing)
+compares explicit, keyword and semantic routing with `scripts/measure-routing.py`.
+Both models and vSR must be ready. Run from this directory, with kubectl pointed at
+the lab cluster:
+
+```bash
+kubectl apply -f yaml-oss/20-routing-policy.yaml -f yaml-oss/30-httproute.yaml
+kubectl -n models exec -i deploy/vllm -c vllm -- \
+  python3 - explicit --samples 10 < scripts/measure-routing.py
+kubectl -n models exec -i deploy/vllm -c vllm -- \
+  python3 - keyword --samples 10 < scripts/measure-routing.py
+
+kubectl apply -f yaml-oss/80-semantic-router-extproc.yaml -f yaml-oss/81-httproute-vsr.yaml
+kubectl -n models exec -i deploy/vllm -c vllm -- \
+  python3 - semantic --samples 10 < scripts/measure-routing.py
+```
+
+The script does not change or inspect the policy. Each run warms up twice per prompt,
+then measures ten sequential streaming requests per prompt with temperature 0 and a
+64-token output limit. It reports median time to first text and total time, plus raw
+request IDs, response models and token counts when supplied. Check the policy and
+route and verify upstream endpoints in the gateway logs before comparing results.
+Timings start inside the pod, excluding kubectl exec startup. The difference between
+modes includes buffering, queueing and inference; it is not isolated classifier time.
+Record deployed versions and resources alongside the output, run on an idle cluster,
+and repeat in reverse mode order. There are no published comparative latency results yet.
 
 
 ## Things that will catch you

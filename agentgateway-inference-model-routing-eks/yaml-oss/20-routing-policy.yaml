@@ -18,9 +18,8 @@
 # set in ../yaml was run separately. Both builds are in the Versions footer.
 
 # Lift the requested model name out of the JSON body into a header the router can
-# match on. `json(request.body)` parses the buffered body; coalesce gives a value
-# for requests that omit the field entirely, so the match below is total and the
-# policy cannot 500 on a malformed request.
+# match on. coalesce treats an omitted model field as auto; the expression still
+# requires a valid messages array and text content in one of the supported shapes.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -37,58 +36,17 @@ spec:
       request:
         set:
           - name: x-model
-            # Two of the three options in one expression, and the order matters.
+            # Honour a concrete model name. Only auto or an omitted model is classified.
+            # Read the last message; messages[0] is usually the system prompt.
+            # For list content, this expression reads only the first part's text.
             #
-            # If the client named a concrete model, that wins: a team that has
-            # already picked is not overridden by a guess. Only "auto", or a request
-            # with no model field at all, is classified.
+            # type() selects the accessor before applying the regex. OR-ing a string
+            # match with a list accessor can error when the string match is false.
+            # Clients sending an empty list, non-text first part or tool-only message
+            # need additional handling beyond this lab's prompt shapes.
             #
-            # The classifier itself is a regex over the LAST message, not the first.
-            # The first message in a real conversation is usually a system prompt,
-            # and in a multi-turn chat the first user turn stops being what the
-            # request is about after turn two. Matching messages[0] passes a demo and
-            # then routes the whole conversation on its opening line.
-            #
-            # This is a HEURISTIC and it should be presented as one. It costs nothing
-            # and no extra component, it is auditable in one line, and it is wrong on
-            # anything that discusses code without using the words. That is the
-            # argument for the semantic router, not against this: swap this
-            # expression for the router's ExtProc decision and the HTTPRoute below
-            # does not change at all.
-            # The regex is written TWICE, over two different shapes of the same
-            # field, and that is not redundancy. OpenAI's chat API allows
-            # `content` to be either a plain string or a list of typed parts, and
-            # real clients differ: curl and most SDKs send a string, while ADK and
-            # LiteLLM-based agents send `[{"type":"text","text":"..."}]`.
-            #
-            # Matching only the string shape does not error on the list shape. It
-            # returns false, the expression falls to the default, and every request
-            # from those agents quietly lands on the general model. Measured here:
-            # identical coding prompts routed to Qwen over curl and to Mistral from
-            # the agent, with 200s and sensible answers in both cases. Nothing in
-            # the logs says "classifier missed", because as far as the gateway is
-            # concerned it did classify.
-            #
-            # The `||` covers both. CEL evaluates left to right and absorbs the
-            # error from whichever shape does not apply.
-            # WHY THE type() CHECK AND NOT AN ||.
-            #
-            # OpenAI's chat API allows `content` to be a plain string or a list of typed
-            # parts. curl and most SDKs send a string; ADK and LiteLLM-based agents send
-            # the list. The obvious fix is to test both and OR them:
-            #
-            #   content.matches(RE) || content[0].text.matches(RE)
-            #
-            # That is wrong, and it fails in a way that looks like it works. CEL's ||
-            # short-circuits, so when the LEFT side is true the right is never evaluated
-            # and the error from the wrong shape never happens. But when the left side is
-            # FALSE, the right side runs, indexing a string as a list, and the whole
-            # expression errors. The header is then never set, no route matches, and the
-            # request 404s. In other words: every prompt that SHOULD go to the default
-            # model breaks, and every prompt that matches a keyword works. Measured.
-            #
-            # type() resolves the shape first, so exactly one accessor is ever evaluated
-            # and neither shape can error.
+            # Semantic mode replaces this transformation with ExtProc and changes the
+            # HTTPRoute's matched header to x-selected-model. The backends stay the same.
             value: |
               coalesce(json(request.body).model, "auto") != "auto"
                 ? json(request.body).model

@@ -1,26 +1,24 @@
 # vLLM Semantic Router, configured for finance against coding. This is the semantic option.
 #
-# WHAT CHANGES AND WHAT DOES NOT. The HTTPRoute in yaml/30 is untouched, and so are
-# the two backends. The only change is WHO decides: instead of a regex in the
-# PreRouting transformation, the vSR domain classifier reads the prompt and rewrites
-# the body's model field. The gateway then routes on that exactly as before.
+# Semantic mode replaces the PreRouting transformation with ExtProc and applies
+# the route in 81, matching x-selected-model instead of x-model. The router sets
+# that request header and rewrites the body's model field. Both backends stay the same.
 #
-# WHY THE BUILT-IN DOMAINS ALREADY FIT. The classifier is fine-tuned on MMLU-Pro,
+# The classifier is fine-tuned on MMLU-Pro,
 # which gives it fourteen domains, and two pairs of them map cleanly onto this split:
 #
 #   economics + business          -> the general model   (finance, risk, reporting)
 #   computer science + engineering -> the code model     (code, infrastructure, debugging)
 #
-# So there is no training to do for this use case. Fine-tuning becomes worthwhile
-# when a bank wants a split the academic domains do not express, for example
-# separating regulatory reporting from trading analytics.
+# This lab uses the supplied classifier without additional training. A split such
+# as regulatory reporting versus trading analytics would need its own evaluation.
 #
-# NO LoRA HERE. The upstream example routes to LoRA adapters on one base model, so
+# The upstream example routes to LoRA adapters on one base model, so
 # every modelRef carries a lora_name. This lab routes to two separate models on two
 # separate GPUs, so modelRefs name the model and nothing else. Leaving a stray
 # lora_name in would ask vLLM for an adapter that does not exist.
 #
-# THE NAMES ARE A CONTRACT. `providers.models[].name` is what the router writes into
+# `providers.models[].name` is what the router writes into
 # the request body, so it has to match the vLLM --served-model-name AND the pattern
 # the HTTPRoute matches on. Change one of the three and the route silently stops
 # matching.
@@ -75,9 +73,7 @@ config:
 
   providers:
     defaults:
-      # Anything the classifier is not confident about lands here. The general model
-      # is the safe default: a finance question answered by the code model is a worse
-      # outcome than a coding question answered competently by the general one.
+      # Use Mistral when no routing decision selects a model.
       default_model: mistral-small-3.2-24b
       reasoning_families:
         qwen3:
@@ -127,8 +123,7 @@ config:
           - model: mistral-small-3.2-24b
             use_reasoning: false
 
-      # Priority 1 so it only wins when nothing above matched. Everything the bank
-      # asks that is neither finance nor engineering still gets a good answer.
+      # Priority 1 so this decision only wins when no higher-priority decision matches.
       - name: general_decision
         description: Everything else
         priority: 1
