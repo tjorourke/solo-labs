@@ -159,18 +159,33 @@ not the ingredients.
 
 ## House format for the answer
 
-Give the date the report covers, then a count, then the two lists. Report
-`READY` pull requests as bare numbers, and blocked ones as one line each with
-the reason and the date it was opened. Nothing else, no preamble.
+Lead with the counts, then the detail. Somebody reading this wants to know how bad it
+is before they read two dozen lines.
+
+Say the count out loud from the data (`length`), never from memory of how many you
+looked at.
 
 ```
 Release report, as of <YYYY-MM-DD>
-Scanned: <n> open pull requests
 
-Ready to merge: #<n>, #<n>
+<n> pull requests checked against the demo release gate
+
+Ready:             <n>
+Draft:             <n>
+On hold:           <n>
+Awaiting sign-off: <n>
+
+Ready: #<n>, #<n>
+
 Blocked:
-  #<n>  opened <YYYY-MM-DD>  no approval
+  #<n>  opened <YYYY-MM-DD>  draft
   #<n>  opened <YYYY-MM-DD>  on hold
+  #<n>  opened <YYYY-MM-DD>  no sign-off
 ```
 
-If nothing is ready, write `Ready to merge: none`.
+If nothing is ready, write `Ready: none`. Dates are ten characters, no time.
+
+**Call it the demo release gate, not merge readiness.** This gate is draft status, the
+hold label and a sign-off comment. It does not look at review approvals, at CI, or at
+branch protection, so a pull request that passes it is not necessarily mergeable on
+GitHub. Say what was actually checked.

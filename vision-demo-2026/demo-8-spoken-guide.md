@@ -8,12 +8,25 @@ seeded pull requests, `claude-haiku-4-5`, agentgateway `v2026.8.2`. The agent is
 
 The two claims that hold on every single run, and the only two to build on:
 
-1. Nineteen tool calls become two.
-2. Around 80,000 bytes through the model become a couple of dozen.
+1. Fourteen to nineteen tool calls become two.
+2. Fifty to eighty thousand bytes through the model become a couple of dozen.
+
+**Read both off the trace on the day.** They are an order of magnitude apart every run,
+which is the claim. The exact figure is not, because the model chooses how to batch.
 
 Do not claim it is faster. Both land around thirty seconds and somebody will time you.
 
 ---
+
+## Verify these two in rehearsal, they cannot be checked from a terminal
+
+1. **The Tracing tab actually draws the tree.** The Java agent now initialises the
+   OpenTelemetry SDK from the variables kagent injects, and its spans do land in the
+   table the UI reads: `call_llm` and `execute_tool <name>`, the same names the Python
+   agent produces. Confirmed in ClickHouse. What is not confirmed is the tab rendering
+   them, because that needs a browser. Look at it once before you rely on it.
+2. **The report a viewer sees in the UI**, as opposed to the one `ask.sh` prints. They
+   come from the same A2A response, but only one of them has been looked at.
 
 ## Before you start
 
@@ -43,14 +56,17 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 > Now look at the second list. Seventeen of those forty four can write.
 > `create_or_update_file`. `push_files`. `delete_file`. `merge_pull_request`.
 >
-> I did not choose any of that. I connected one server. And there is nothing in my
-> agent framework that has an opinion about it.
+> I did not choose any of that. I connected one server.
 
 **Cue:** read the three write tool names slowly. That is the moment the room goes quiet.
 
-**If asked "can't you just not pass those tools to the model?":** you can filter what
-you pass, but you cannot stop the agent calling a tool it decides to call, because that
-happens after your code has run. Hold that thought, we come back to it at the end.
+**If asked "can't you just not pass those tools to the model?":** yes, and a careful
+team will. Say it straight:
+>
+> You can filter the list inside each agent. What the platform does here is apply it
+> once, outside the agent, the same way for every agent, and refuse a direct call that
+> skips the model's tool list altogether. That last part is the bit agent-side filtering
+> cannot do, and we finish on it.
 
 ---
 
@@ -146,25 +162,36 @@ question, and open the Tracing tab.
 
 **When the answer lands, do not read the answer. Scroll the trace.**
 
-> This is the bit I want you to look at. Nineteen separate calls. One to list the pull
-> requests, then one per pull request to read its discussion. And every one of those
-> re-sends the whole conversation so far.
+> This is the bit I want you to look at. Read the count off the screen. One call to
+> list the pull requests, then one per pull request to read its discussion, and every
+> one of those re-sends the whole conversation so far.
 >
-> Keep scrolling. That is about eighty thousand bytes of raw GitHub JSON that went
-> through the model's context window to produce twenty four lines of report.
+> Keep scrolling. That is tens of thousands of bytes of raw GitHub JSON that went
+> through the model's context window to produce a four-line summary.
 >
 > Nineteen and not twenty five, by the way, because the approved skill tells it not to
 > fetch what cannot change the answer. A draft is already blocked, a held pull request
 > is already blocked, so reading their comments buys nothing. The registry saved seven
 > calls before the gateway did anything.
 
-**Then the count, which is your accuracy beat:**
+**Say what the gate actually is, before anyone asks:**
 
-> One more thing. Look at the top of the report. It says it scanned twenty five pull
-> requests. There are twenty four. It read them one at a time and lost count.
->
-> That is small and it is harmless. It is also the shape of the problem: anything the
-> model has to hold across nineteen turns is something it can get wrong.
+> To be clear about what "ready" means here. The gate is: not a draft, not held, and
+> signed off by a maintainer comment. It does not look at review approvals, or CI, or
+> branch protection. These are seeded pull requests so we can run the same inputs twice
+> and compare. So "ready" means it passes the demo release gate, not that GitHub would
+> let you merge it.
+
+**Then check the report rather than asserting it:**
+
+> And rather than take that report on trust, this reads the fixture straight from GitHub
+> by the same three rules and compares it line by line.
+
+**Whatever it says, say that.** Usually every verdict is right and the total is wrong,
+which is small, harmless and very telling: it read twenty four things one at a time and
+lost track of how many. Sometimes the count is right too, and the demo is unharmed,
+because the comparison is about tool overhead and where the data is handled. Do not
+script a mistake.
 
 **Cue:** the scroll is the demo. Take your time over it. Ten seconds of silently
 scrolling JSON does more work than any sentence here.
@@ -197,6 +224,13 @@ scrolling JSON does more work than any sentence here.
 
 > Anything the model has to hold is something it can lose. So we stopped giving it
 > things to hold.
+
+**And the caveat, which costs nothing and buys credibility:**
+
+> To be fair to it: code mode does not make the model correct. It writes JavaScript,
+> and JavaScript can be wrong. What it does is move the counting and the filtering
+> somewhere explicit and inspectable, and keep the raw data out of the context window
+> on the way.
 
 **Then the sandbox, thirty seconds:**
 
@@ -255,7 +289,12 @@ the round trips and what the model has to carry.
 > operation is not a function in the sandbox at all. The program cannot express the
 > call. There is nothing to deny, because there is nothing to try.
 
-**Then ask the agent itself, in the UI:**
+That direct call is the proof, and it never went near the model. Say so:
+
+> That request did not go through the agent at all. I sent it straight at the gateway.
+> An agent telling you it cannot merge is theatre; this is enforcement.
+
+**Then ask the agent itself, in the UI, for the theatre:**
 
 > Merge pull request 4, right now, use whatever tool you have.
 
@@ -264,16 +303,16 @@ the round trips and what the model has to carry.
 > And the token in that Secret still has every permission it had at the start of this
 > talk. It can merge. It can delete files.
 >
-> The gateway is what makes this agent read-only, and it does it per agent, which no
-> token scope can express.
+> GitHub's permissions bound what that credential can ever do. Gateway policy gives each
+> agent using the same integration a different set of tool permissions, which is a
+> distinction GitHub has no way to express.
 
 **Close:**
 
-> Three things happened, and none of them happened in the agent's code. It was built
-> and shipped from approved parts and never held a credential. The same job went from
-> nineteen round trips to two, and stopped getting the count wrong, because the data
-> stopped passing through the model. And seventeen write tools went away for this one
-> agent, without touching the token.
+> AgentRegistry supplied the approved integration. kagent deployed and ran the agent.
+> agentgateway changed how it used tools and enforced what it could call.
+>
+> The agent image stayed the same.
 
 ---
 
@@ -283,9 +322,9 @@ the round trips and what the model has to carry.
 |---|---|---|
 | tools the model holds | 45 | 2 |
 | schema tokens per turn | 14,572 | 1,300 |
-| model round trips | 19 | 2 |
-| bytes through the model | 80,379 | 24 |
-| counted the pull requests correctly | no, said 25 | yes, 24 |
+| model round trips | 14 to 19 | 2 |
+| bytes through the model | 55,852 to 80,379 | 24 |
+| matches the fixture | verdicts yes, count usually wrong | yes, checked |
 
 All four `toolMode` settings, and they are two independent choices rather than four
 flavours:
@@ -328,10 +367,11 @@ keeps the list short by a different route.
 be the same every run. Say so plainly, it costs nothing: live pull requests on a busy
 repository change hour to hour, and the numbers on my slides would stop matching.
 
-**"The CI is red on those pull requests."** Kagent's own workflows run on the fork and
-the fixture branches do not build. The gate here is draft, hold label and sign-off
-comment, and it does not look at checks. Avoid showing the GitHub pull request list and
-this never comes up.
+**"The CI is red on those pull requests."** It should not be any more: the seeder writes
+valid stubs so kagent's own workflows pass. If you are looking at pull requests seeded
+before that fix, reseed with `RESEED=1`. Either way the honest answer is that the demo
+gate does not look at checks, and you should say so rather than steer around the GitHub
+UI.
 
 ## What not to claim
 
