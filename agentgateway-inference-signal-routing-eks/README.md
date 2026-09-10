@@ -4,10 +4,10 @@ A bank runs two models on two GPUs behind one endpoint.
 [Prompt-aware model routing](../agentgateway-inference-model-routing-eks/) routes by
 subject: finance questions to the general model, engineering questions to the code model.
 
-Engineering traffic is not all one thing. Most of it is lookups, like what a flag does or
-how to pin a provider version. A smaller part is an engineer debugging a live incident,
-which is the work the second card was bought for. Both are engineering, so both land on
-the code model, and it works through the lookups in the same queue as the incident.
+Engineering questions are not all the same kind of question. Some want a definition, some
+want a diagnosis. You are running two models with different strengths and you would place
+those two differently, but subject routing cannot: both are engineering, so both go to
+the code model.
 
 Subject cannot separate them, because the subject is the same. This lab gives the router
 a second thing to go on. "Explain optimistic concurrency control in two sentences" goes
