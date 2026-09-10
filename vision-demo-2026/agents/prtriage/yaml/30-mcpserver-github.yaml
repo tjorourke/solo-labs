@@ -1,7 +1,15 @@
-# The approved catalogue entry for GitHub. Note the URL: it is the AGENTGATEWAY
-# route, not api.githubcopilot.com. A developer who picks this approved server
-# gets GitHub *through the policy enforcement point*, and there is no way to
-# express "GitHub, but skip the gateway" from the catalogue.
+# The approved catalogue entry for GitHub.
+#
+# The URL is the in-cluster waypoint, not api.githubcopilot.com and not the ingress
+# hostname. Two reasons, and both matter:
+#
+#   1. It is the only path where the agent's own SPIFFE identity reaches the policy
+#      point. A waypoint receives HBONE from ztunnel and reads the peer certificate;
+#      an ingress gateway has already lost that by the time it sees the request.
+#   2. It removes public DNS from the agent's hot path entirely.
+#
+# A developer who picks this out of the catalogue gets GitHub through the enforcement
+# point, and there is no catalogue entry that means "GitHub, but skip the gateway".
 apiVersion: ar.dev/v1alpha1
 kind: MCPServer
 metadata:
@@ -9,9 +17,9 @@ metadata:
 spec:
   title: GitHub (via agentgateway)
   description: >-
-    GitHub's hosted MCP server, fronted by agentgateway. The gateway holds the
-    PAT and enforces which tools an agent may call, so the agent needs no
-    GitHub credential of its own.
+    GitHub's hosted MCP server, fronted by an agentgateway waypoint. The gateway holds
+    the PAT and enforces which tools each agent may call, on the agent's own identity,
+    so the agent needs no GitHub credential of its own.
   remote:
     type: http
-    url: http://github-mcp.LB_PLACEHOLDER.sslip.io/
+    url: http://github-mcp.kagent.svc.cluster.local/

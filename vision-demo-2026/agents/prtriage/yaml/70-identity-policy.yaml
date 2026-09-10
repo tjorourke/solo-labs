@@ -1,0 +1,34 @@
+# Two agents, one GitHub integration, different permissions.
+#
+# This is enforced at an agentgateway WAYPOINT in the kagent namespace, which is the
+# only place the agent's identity is available: the waypoint receives HBONE from
+# ztunnel and can read the peer certificate, so `source.identity` is the agent's own
+# SPIFFE identity rather than something it asked to be called. An ingress gateway
+# cannot do this, because by then the connection has left the mesh.
+#
+# One policy and one expression on purpose. Two Allow policies on the same backend
+# raise a question about how they combine, and a demo should not depend on the answer.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: github-per-agent
+  namespace: kagent
+spec:
+  targetRefs:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayBackend
+    name: github-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          # The triage agent reads pull requests. It cannot see the merge tool at all.
+          # The release agent reads the same pull requests and can merge them.
+          # Anything without a mesh identity matches neither clause and is refused.
+          - >-
+            (source.identity.serviceAccount == "prtriagejava"
+               && mcp.tool.name in ["list_pull_requests", "pull_request_read", "run_code", "get_tool"])
+            || (source.identity.serviceAccount == "releasejava"
+               && mcp.tool.name in ["list_pull_requests", "pull_request_read", "run_code", "get_tool", "merge_pull_request"])

@@ -1,0 +1,27 @@
+# The second identity. Same image, same catalogue entry, same skill. The only thing
+# that differs is who it is, and the gateway gives it a different set of tools for it.
+apiVersion: ar.dev/v1alpha1
+kind: Agent
+metadata:
+  name: releasejava
+spec:
+  description: Release agent. Reads pull requests and may merge them.
+  mcpServers:
+  - kind: MCPServer
+    name: github-mcp
+    tag: latest
+  modelName: claude-haiku-4-5
+  modelProvider: anthropic
+  source:
+    image: localhost:5001/prtriage-java:latest
+---
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: releasejava
+spec:
+  targetRef:  { kind: Agent,   name: releasejava }
+  runtimeRef: { kind: Runtime, name: kind-kagent }
+  env:
+    SERVE: "true"
+    PORT: "8080"
