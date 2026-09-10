@@ -34,6 +34,10 @@ final class Console {
     System.out.println(text);
   }
 
+  static void tracing(String endpoint, String service) {
+    say("tracing on: %s as %s".formatted(endpoint, service));
+  }
+
   static void serving(int port) {
     say("A2A server listening on :%d (card at /.well-known/agent-card.json)".formatted(port));
   }

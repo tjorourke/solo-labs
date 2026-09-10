@@ -27,6 +27,8 @@ public final class ReleaseReport {
 
   public static void main(String[] args) throws Exception {
     var config = Config.fromEnvironment();
+    // Before the agent is built, so ADK's own spans have somewhere to go.
+    Telemetry.start(System.getenv().getOrDefault("KAGENT_NAME", "prtriage-java"));
 
     try (var gateway = new McpToolset(config.mcpEndpoint())) {
       var agent = agent(gateway, config);

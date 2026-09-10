@@ -30,6 +30,18 @@
       <artifactId>google-adk</artifactId>
       <version>${adk.version}</version>
     </dependency>
+    <!--
+      ADK creates spans (Tracing.traceToolExecution, traceCallLlm and friends) but they
+      go nowhere unless a global OpenTelemetry SDK is configured. This is the
+      autoconfigure extension: it reads the OTEL_* environment variables that kagent
+      already injects, so the kagent UI's Tracing tab gets a real span tree rather than
+      an empty one. Pinned to the version ADK itself depends on.
+    -->
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-sdk-extension-autoconfigure</artifactId>
+      <version>1.51.0</version>
+    </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
