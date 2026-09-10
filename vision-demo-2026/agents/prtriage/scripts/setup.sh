@@ -35,11 +35,21 @@ arctl apply -f "$HERE/../skill/release-report/skill.yaml"
 
 echo
 echo "== wait for the backend to be Accepted =="
-for i in $(seq 1 30); do
+st=""
+for _ in $(seq 1 30); do
   st="$($K -n agentgateway-system get enterpriseagentgatewaybackend github-mcp \
         -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null || true)"
-  [ "$st" = "True" ] && break; sleep 2
+  [ "$st" = "True" ] && break
+  sleep 2
 done
-echo "backend Accepted=$st"
+# Do not print success for whatever the loop happened to leave in $st. An unaccepted
+# backend fails later, in the middle of the demo, with a much less obvious message.
+if [ "$st" != "True" ]; then
+  echo "✗ the github-mcp backend is not Accepted after 60s (status='${st:-<none>}')"
+  $K -n agentgateway-system get enterpriseagentgatewaybackend github-mcp \
+    -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}' 2>/dev/null
+  exit 1
+fi
+echo "backend Accepted=True"
 echo
 echo "✓ Part 8 ready. MCP endpoint: http://github-mcp.${LB}.sslip.io/"

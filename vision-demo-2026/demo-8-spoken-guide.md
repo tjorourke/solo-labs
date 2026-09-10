@@ -4,12 +4,12 @@ What to say, in order, while `demo-8-github-agent.ipynb` runs. Roughly twelve mi
 
 The sentences in the **Say** blocks are meant to be said close to as written. Everything
 else is a cue. Numbers are measured on `mesh1` against `tjorourke/kagent`, twenty four
-seeded pull requests, `claude-haiku-4-5`, agentgateway `v2026.8.2`.
+seeded pull requests, `claude-haiku-4-5`, agentgateway `v2026.8.2`. The agent is **Java on Google ADK**.
 
 The two claims that hold on every single run, and the only two to build on:
 
 1. Nineteen tool calls become two.
-2. 75,588 bytes through the model become ten.
+2. Around 80,000 bytes through the model become a couple of dozen.
 
 Do not claim it is faster. Both land around thirty seconds and somebody will time you.
 
@@ -78,9 +78,9 @@ past it otherwise.
 
 ---
 
-## Beat 3 · Scaffold from the approved catalogue
+## Beat 3 · The catalogue, the skill, and the agent
 
-**Run:** the catalogue cell, then `scaffold-agent.sh`, then the agent.py cell.
+**Run:** `arctl get mcpserver github-mcp`, then the skill, then the `agent()` method.
 
 **Say, first about the catalogue:**
 
@@ -91,42 +91,54 @@ past it otherwise.
 > enforcement point, and there is no entry in that catalogue that means "GitHub, but
 > skip the gateway".
 
-**Then scaffold:**
-
-> One command. That writes a complete, runnable agent: the Python, the agent record,
-> the Dockerfile. And `--mcp github-mcp@latest` wires it to the approved server.
->
-> The scaffold ships two sample tools that roll dice, so we swap them out. What replaces
-> them is one tool called `today`, and it is the only local tool this agent has, because
-> the gateway's sandbox has no clock. Everything else it can do to GitHub comes from the
-> catalogue.
-
 **Then the skill, which is the part people underrate:**
 
 > The catalogue also holds skills, which are approved, versioned guidance. Read a couple
 > of lines of this one.
 >
-> The parameter is `pullNumber` and not `pull_number`. The sandbox has no `Date`. Labels
-> come back as strings or as objects. Never guess a repository.
+> The parameter is `pullNumber` and not `pull_number`. The sandbox has no `Date`. Never
+> guess a repository. Do not fetch what cannot change the answer.
 >
 > Every one of those lines is in there because a run failed without it. Somebody paid
 > for each of them once, and now every agent in the organisation gets them for free.
 
-**Cue:** if you only have time for one line, use "never guess a repository", then
-demonstrate it in beat 5b.
+**Then the agent, and this is the beat for a Java room:**
 
----
+> The agent is Java, on Google ADK, and the whole integration is this one method.
+>
+> A `StreamableHttpServerParameters` pointing at the gateway. An `McpToolset` built from
+> it. An `LlmAgent` with that toolset.
+>
+> Now look at what is not in there. No GitHub token. No tool list. No policy. The
+> gateway owns all three, so none of them are in this file, and none of them need a
+> rebuild when they change.
 
-## Beat 4 · Deploy it, run it, and read the trace
+**Cue:** the only local tool is `today`, and it is worth one sentence: the gateway's
+sandbox deliberately has no clock, so a program in there cannot work out the date.
 
-**Run:** the `Deployment` cell, then the rollout. Then switch to the kagent UI, pick
-**prtriage**, paste the question, and open the Tracing tab.
+**If asked why it is hand-written rather than scaffolded:** `arctl init` does ADK with
+Python only today, and `--language java` is rejected. The catalogue does not care,
+because an Agent record just references an image, which is what the next beat uses.
+
+**Then build it, in a container:**
+
+> Maven and the JDK run inside the image. There is no Java on this laptop at all.
+
+## Beat 4 · Publish it, deploy it, read the trace
+
+**Run:** `arctl apply -f agent.yaml`, then `arctl apply -f 60-java-deploy-kagent.yaml`,
+then wait for Ready. Then switch to the kagent UI, pick **prtriagejava**, paste the
+question, and open the Tracing tab.
 
 **Say while it deploys:**
 
-> One record. It names an agent and it names a runtime. AgentRegistry creates the kagent
-> Agent, derives the MCP wiring from the catalogue, and the controller brings it up.
-> No Helm chart, no hand-written pod spec.
+> Two commands. The first publishes the agent to the catalogue. The second is one record
+> naming the agent and the runtime.
+>
+> AgentRegistry does the rest: it creates the kagent Agent, derives the MCP wiring from
+> the approved server in the catalogue, and the controller brings the pod up. No Helm
+> chart, no hand-written pod spec. Exactly the same two commands a Python agent uses,
+> because the registry cares what an agent may call, not what language it is.
 
 **Then ask it the question in the UI, and while it runs:**
 
@@ -138,7 +150,7 @@ demonstrate it in beat 5b.
 > requests, then one per pull request to read its discussion. And every one of those
 > re-sends the whole conversation so far.
 >
-> Keep scrolling. That is seventy five thousand bytes of raw GitHub JSON that went
+> Keep scrolling. That is about eighty thousand bytes of raw GitHub JSON that went
 > through the model's context window to produce twenty four lines of report.
 >
 > Nineteen and not twenty five, by the way, because the approved skill tells it not to
@@ -157,8 +169,6 @@ demonstrate it in beat 5b.
 **Cue:** the scroll is the demo. Take your time over it. Ten seconds of silently
 scrolling JSON does more work than any sentence here.
 
----
-
 ## Beat 5 · One field
 
 **Run:** the `toolMode` patch, the `tools/list` cell, the reload, then the same question.
@@ -176,7 +186,8 @@ scrolling JSON does more work than any sentence here.
 > Two round trips. The date, then one program.
 >
 > That program made eighteen calls to GitHub, inside the gateway, and handed back the
-> finished report. Ten bytes crossed the context window. Not ten kilobytes. Ten bytes.
+> finished report. Twenty four bytes crossed the context window. Not twenty four
+> kilobytes. Twenty four bytes.
 >
 > Same verdicts on all twenty four pull requests. And the count is right this time, it
 > says twenty four, because the program counted them with `.length` instead of the model
@@ -221,53 +232,6 @@ the round trips and what the model has to carry.
 > looks right and is about somebody else's code.
 
 ---
-
-## Beat 5c · The same thing in Java
-
-For a Java room this is the beat that lands, and it costs ninety seconds. Everything
-is in `agents/prtriage/java-agent`, and nothing on your machine needs a JDK.
-
-**Show the code first:**
-
-```
-make show
-```
-
-**Say:**
-
-> That is the whole integration. A `StreamableHttpServerParameters` pointing at the
-> gateway, an `McpToolset` built from it, and an `LlmAgent` with that toolset. Google
-> ADK, in Java, six lines.
->
-> There is no GitHub token in there. No tool list. No policy. The gateway owns all
-> three, so none of them are in this file.
-
-**Then run it:**
-
-```
-make run
-```
-
-**Say, when the first lines appear:**
-
-> Tools the gateway handed this Java agent: two. `get_tool` and `run_code`. Same as
-> the Python one, because the mode is a property of the gateway and not of the agent.
->
-> Two model tool calls. Twenty four pull requests. Same verdicts, same count.
->
-> Same ADK. Same gateway. Same approved skill, the same file baked into both images.
-> Different language, and not one thing about the governance changed.
-
-**Two things to have ready if asked.**
-
-`arctl init` scaffolds ADK with Python only today, so the Java project is hand-written.
-The catalogue itself does not care: an Agent record references an image, which is why
-`make publish` registers the Java agent alongside the Python one.
-
-And this Java agent runs as a Job rather than a deployed kagent agent, because kagent's
-readiness probe wants an A2A agent card and this is a batch program. Say that plainly if
-it comes up. It is a limitation of this example, not of kagent, and the gateway story is
-identical either way.
 
 ## Beat 6 · Take the write tools away
 
@@ -320,7 +284,7 @@ identical either way.
 | tools the model holds | 45 | 2 |
 | schema tokens per turn | 14,572 | 1,300 |
 | model round trips | 19 | 2 |
-| bytes through the model | 75,588 | 10 |
+| bytes through the model | 80,379 | 24 |
 | counted the pull requests correctly | no, said 25 | yes, 24 |
 
 All four `toolMode` settings, and they are two independent choices rather than four
@@ -393,10 +357,15 @@ running pod.
 pod that is still terminating.
 
 **A rebuilt agent behaves as though nothing changed.** The image is `:latest` and kagent
-runs it `IfNotPresent`, so a push on the same tag can reuse the node's cached copy.
-`rebuild-agent.sh` drops the cached image and asserts the running pod has the current
-skill.
+runs it `IfNotPresent`, so a push on the same tag can reuse the node's cached copy. Drop
+it from the nodes and restart:
+`for n in $(kind get nodes --name mesh1); do docker exec $n crictl rmi localhost:5001/prtriage-java:latest; done`
 
 **The report is missing a pull request.** The program should build the report text
 itself, not hand rows back for the model to format. Twenty four rows transcribed by the
 model drops one. Check the skill still says so.
+
+**`ask.sh` dies with `python3: executable file not found`.** It mints the OIDC token by
+`kubectl exec`-ing into a pod, and the Java image has no Python. It now falls back to any
+pod in the namespace that has it, so this should not recur, but `EXEC_FROM=<agent>`
+forces a choice.

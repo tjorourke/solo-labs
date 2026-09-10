@@ -3,6 +3,7 @@ package io.solo.demo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.adk.agents.LlmAgent;
+import com.google.adk.events.Event;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -11,6 +12,8 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -79,9 +82,11 @@ final class A2aServer {
     var prompt = firstTextPart(request);
     Console.turn(turns.incrementAndGet(), prompt);
 
+    List<Event> events = List.of();
     String answer;
     try {
-      answer = Turn.finalText(Turn.of(agent, name).ask(prompt));
+      events = Turn.of(agent, name).ask(prompt);
+      answer = Turn.finalText(events);
     } catch (RuntimeException e) {
       answer = "the agent failed: " + e.getMessage();
       Console.failed(answer);
@@ -90,7 +95,7 @@ final class A2aServer {
     return Json.write(Json.object()
         .put("jsonrpc", "2.0")
         .putRawValue("id", raw(id))
-        .set("result", task(request, answer)));
+        .set("result", task(request, answer, events)));
   }
 
   /**
@@ -99,7 +104,7 @@ final class A2aServer {
    * "unsupported result kind" even though the answer itself is perfectly good, which is
    * a confusing half hour if you have not read the spec.
    */
-  private ObjectNode task(JsonNode request, String answer) {
+  private ObjectNode task(JsonNode request, String answer, List<Event> events) {
     var part = Json.object().put("kind", "text").put("text", answer);
 
     var artifact = Json.object().put("artifactId", "report").put("name", "report");
@@ -122,8 +127,39 @@ final class A2aServer {
         .put("contextId", text(request, "contextId").orElseGet(() -> UUID.randomUUID().toString()));
     task.set("status", status);
     task.putArray("artifacts").add(artifact);
-    task.putArray("history");
+    // The tool calls go in history as data parts, which is where an A2A client looks
+    // for them. Without this the caller sees the answer but not how it was reached, and
+    // the trace is the whole point of the demo.
+    var history = task.putArray("history");
+    for (var call : Turn.toolCalls(events)) {
+      var data = Json.object()
+          .put("name", call.name().orElse("unnamed"))
+          .put("id", call.id().orElse(""));
+      data.set("args", Json.MAPPER.valueToTree(call.args().orElse(Map.of())));
+      history.add(dataMessage(data));
+    }
+    // The responses matter as much as the calls: they are the payload that crossed the
+    // model's context window, and a client counting bytes has nowhere else to find it.
+    for (var response : Turn.toolResponses(events)) {
+      var data = Json.object()
+          .put("name", response.name().orElse("unnamed"))
+          .put("id", response.id().orElse(""));
+      data.set("response", Json.MAPPER.valueToTree(response.response().orElse(Map.of())));
+      history.add(dataMessage(data));
+    }
     return task;
+  }
+
+  /** One history entry: an agent message carrying a single data part. */
+  private static ObjectNode dataMessage(ObjectNode data) {
+    var dataPart = Json.object().put("kind", "data");
+    dataPart.set("data", data);
+    var entry = Json.object()
+        .put("kind", "message")
+        .put("role", "agent")
+        .put("messageId", UUID.randomUUID().toString());
+    entry.putArray("parts").add(dataPart);
+    return entry;
   }
 
   /** First value of a named field anywhere in the request, if it is there at all. */

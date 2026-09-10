@@ -7,9 +7,9 @@
 #
 #   ./scripts/ask.sh "Roll a 20-sided die and tell me if it is prime."
 #   AS_USER=bob ./scripts/ask.sh "..."      # different Keycloak user
-#   AGENT_PREFIX=prtriagejava EXEC_FROM=prtriage ./scripts/ask.sh "..."
-#                                           # target a non-python agent, exec from one
-#                                           # whose image has python3
+#   AGENT_PREFIX=prtriagejava ./scripts/ask.sh "..."
+#                                           # a non-python agent works too: the token
+#                                           # mint falls back to any pod with python3
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
@@ -20,23 +20,36 @@ AS_USER="${AS_USER:-admin-user}"; AS_PASSWORD="${AS_PASSWORD:-password}"
 PROMPT="${*:-Roll a 20-sided die and tell me whether the result is a prime number.}"
 
 # The token mint + A2A call run inside a pod via kubectl exec, so that pod needs
-# python3. The agent's own pod is the obvious place and is what we default to, but a
-# BYO agent in another language will not have python3 in its image (the Java agent
-# does not). EXEC_FROM points the exec at a pod that does, while the A2A URL below
-# still targets $AGENT.
-EXEC_FROM="${EXEC_FROM:-$AGENT}"
-POD="$(kc -n kagent get pods -l "app.kubernetes.io/name=$EXEC_FROM" -o name 2>/dev/null | head -1)"
-[[ -n "$POD" ]] || die "no running pod for '$EXEC_FROM' — check: kubectl -n kagent get pods"
-if ! kc -n kagent exec "${POD#*/}" -- sh -c 'command -v python3 >/dev/null 2>&1'; then
-  die "pod '$EXEC_FROM' has no python3 — set EXEC_FROM to an agent whose image does, e.g. EXEC_FROM=prtriage"
-fi
+# python3. The agent's own pod is the obvious place, but a BYO agent in another language
+# will not have python3 in its image (the Java agent does not), so if the target cannot
+# run it we look for any pod in the namespace that can. EXEC_FROM forces a choice.
+pick_exec_pod() {
+  local candidate pods
+  if [[ -n "${EXEC_FROM:-}" ]]; then
+    candidate="$(kc -n kagent get pods -l "app.kubernetes.io/name=$EXEC_FROM" -o name 2>/dev/null | head -1)"
+    [[ -n "$candidate" ]] || die "no running pod for EXEC_FROM='$EXEC_FROM'"
+    echo "${candidate#pod/}"; return
+  fi
+  # the agent's own pod first, then anything else in the namespace
+  pods="$(kc -n kagent get pods -l "app.kubernetes.io/name=$AGENT" -o name 2>/dev/null | head -1)
+$(kc -n kagent get pods --field-selector=status.phase=Running -o name 2>/dev/null)"
+  while read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    candidate="${candidate#pod/}"
+    if kc -n kagent exec "$candidate" -- sh -c 'command -v python3 >/dev/null 2>&1' 2>/dev/null; then
+      echo "$candidate"; return
+    fi
+  done <<< "$pods"
+  die "no pod in the kagent namespace has python3, which ask.sh needs to mint the token"
+}
+POD="$(pick_exec_pod)"
 
 echo "Asking '$AGENT' as $AS_USER (OIDC) ..."
 # Mint from the IN-CLUSTER Keycloak URL (the agent pod can't resolve the
 # browser-facing keycloak.localtest.me issuer). KC_HOSTNAME stamps the same
 # localtest.me `iss` on the token, which the controller validates.
 ISSUER="${KEYCLOAK_MINT_URL:-http://keycloak.${KEYCLOAK_NS}.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}}"
-kc -n kagent exec -i "${POD#*/}" -- python3 - "$AGENT" "$AS_USER" "$PROMPT" "$ISSUER" "$KAGENT_CLI_CLIENT" "$AS_PASSWORD" "${ASK_TRACE:-1}" <<'PY'
+kc -n kagent exec -i "$POD" -- python3 - "$AGENT" "$AS_USER" "$PROMPT" "$ISSUER" "$KAGENT_CLI_CLIENT" "$AS_PASSWORD" "${ASK_TRACE:-1}" <<'PY'
 import sys, json, urllib.request, urllib.parse
 agent, user, prompt, issuer, client, password = sys.argv[1:7]
 trace = (sys.argv[7] if len(sys.argv) > 7 else "1") != "0"

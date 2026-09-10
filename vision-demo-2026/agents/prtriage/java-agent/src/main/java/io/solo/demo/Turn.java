@@ -5,6 +5,8 @@ import com.google.adk.agents.RunConfig;
 import com.google.adk.events.Event;
 import com.google.adk.runner.InMemoryRunner;
 import com.google.genai.types.Content;
+import com.google.genai.types.FunctionCall;
+import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
 
 import java.util.List;
@@ -31,6 +33,30 @@ record Turn(InMemoryRunner runner, String appName) {
             RunConfig.builder().build())
         .toList()
         .blockingGet();
+  }
+
+  /** The function calls the model made, in order, as {name, args, id} triples. */
+  static List<FunctionCall> toolCalls(List<Event> events) {
+    return events.stream()
+        .flatMap(event -> event.content().stream())
+        .flatMap(content -> content.parts().stream())
+        .flatMap(List::stream)
+        .flatMap(part -> part.functionCall().stream())
+        .toList();
+  }
+
+  /**
+   * The tool RESPONSES, which are the interesting half: this is the payload that
+   * crossed the model's context window on the way to the answer. Without them an A2A
+   * client can see what was called but not what it cost.
+   */
+  static List<FunctionResponse> toolResponses(List<Event> events) {
+    return events.stream()
+        .flatMap(event -> event.content().stream())
+        .flatMap(content -> content.parts().stream())
+        .flatMap(List::stream)
+        .flatMap(part -> part.functionResponse().stream())
+        .toList();
   }
 
   static String finalText(List<Event> events) {

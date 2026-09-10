@@ -1,25 +1,25 @@
-# The Java agent: build, publish, run. No JDK or Maven needed on this machine, the
-# container does both.
+# The Part 8 agent. Java, on Google ADK, through agentgateway.
 #
-#   make show      the six lines that wire ADK to the gateway
+# No JDK or Maven on this machine: the container does both.
+#
+#   make show      the method that wires ADK to the gateway
 #   make build     multi-stage docker build (maven -> jre)
 #   make push      into the kind registry
 #   make publish   register it in AgentRegistry with arctl
-#   make deploy    deploy it onto kagent as a pod, like the Python agent
+#   make deploy    deploy it onto kagent as a pod, via AgentRegistry
 #   make ask       prompt it through kagent's A2A endpoint
-#   make run       run it as a one-shot Job instead (what the notebook uses)
 #   make all       build, push, publish, deploy, ask
-#   make clean     remove the Job and the catalogue entry
+#   make logs      what the agent logged, where the A2A turns show up
+#   make clean     remove the deployment and the catalogue entry
 
 IMAGE   ?= localhost:5001/prtriage-java:latest
 DEMO_REPO ?= tjorourke/kagent
 CTX     ?= kind-mesh1
 NS      ?= kagent
 SRC     := src/main/java/io/solo/demo/ReleaseReport.java
-JOBYAML := ../yaml/50-java-agent-job.yaml
 KC      := kubectl --context $(CTX)
 
-.PHONY: all show build push publish deploy ask run logs clean
+.PHONY: all show build push publish deploy ask logs clean
 
 all: build push publish deploy ask
 
@@ -61,34 +61,26 @@ deploy: publish
 	@echo "== deploying onto kagent via AgentRegistry =="
 	arctl apply -f ../yaml/60-java-deploy-kagent.yaml
 	@until $(KC) -n $(NS) get deploy/prtriagejava >/dev/null 2>&1; do sleep 2; done
-	$(KC) -n $(NS) rollout status deploy/prtriagejava --timeout=240s
+	@$(KC) -n $(NS) rollout status deploy/prtriagejava --timeout=240s
+	@# The Deployment rolling out is not the same as kagent calling the agent Ready:
+	@# the controller has to fetch the agent card first. Wait for the real thing, or
+	@# the next line prints READY=False and looks like a failure.
+	@$(KC) -n $(NS) wait --for=condition=Ready agent/prtriagejava --timeout=120s >/dev/null
 	@$(KC) -n $(NS) get agent prtriagejava
 
-## Prompt it through kagent's OIDC-protected A2A endpoint, exactly like the Python
-## agent. EXEC_FROM points the token mint at a pod that has python3, since this image
-## does not.
+## Prompt it through kagent's OIDC-protected A2A endpoint. ask.sh mints the OIDC token
+## from inside a pod and needs python3 to do it, which this image does not have, so it
+## finds one in the namespace that does. Set EXEC_FROM to force a particular pod.
 ask: PROMPT ?= Give me the release report for $(DEMO_REPO), all open pull requests.
 ask:
-	@cd ../../../demo-scripts/agentregistry && AGENT_PREFIX=prtriagejava EXEC_FROM=prtriage \
-	  ./scripts/ask.sh "$(PROMPT)"
+	@cd ../../../demo-scripts/agentregistry && AGENT_PREFIX=prtriagejava \
+	  $(if $(EXEC_FROM),EXEC_FROM=$(EXEC_FROM),) ./scripts/ask.sh "$(PROMPT)"
 
-## Run it as a one-shot Job instead, which is what the notebook uses for the numbers. A DEPLOYED kagent agent has to serve A2A on
-## /.well-known/agent-card.json, and this is a batch program, so a Job is the honest
-## shape for it. Everything about the gateway is identical either way.
-run:
-	@echo "== running in-cluster =="
-	-$(KC) -n $(NS) delete job prtriage-java --ignore-not-found
-	$(KC) apply -f $(JOBYAML)
-	@echo "== waiting =="
-	@$(KC) -n $(NS) wait --for=condition=complete job/prtriage-java --timeout=300s \
-	  || $(KC) -n $(NS) wait --for=condition=failed job/prtriage-java --timeout=10s
-	@$(MAKE) --no-print-directory logs
-
+## What the agent itself logged, which is where the A2A turns show up.
 logs:
-	@$(KC) -n $(NS) logs job/prtriage-java 2>/dev/null | grep -vE '^\[main\] INFO|^SLF4J' || true
+	@$(KC) -n $(NS) logs deploy/prtriagejava --tail=40 2>/dev/null | grep -vE '^\[|SLF4J' || true
 
 clean:
-	-$(KC) -n $(NS) delete job prtriage-java --ignore-not-found
 	-arctl delete deployment prtriagejava
 	-arctl delete agent prtriagejava
 	rm -f skill.md

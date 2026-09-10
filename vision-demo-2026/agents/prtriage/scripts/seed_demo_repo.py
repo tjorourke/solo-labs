@@ -114,11 +114,21 @@ repo = call("GET", "")
 base = repo["default_branch"]
 print("== %s (fork of %s), base branch %s ==" % (REPO, (repo.get("parent") or {}).get("full_name"), base))
 
+# Branches whose pull request we deliberately closed during a reseed. They must not
+# count as "already there" below, or a reseed closes everything and then creates
+# nothing, leaving an empty repo and a demo with no data.
+reseeded = set()
 if RESEED == "1":
     for p in call("GET", "/pulls?state=open&per_page=100"):
         if p["head"]["ref"].startswith("demo/"):
             call("PATCH", "/pulls/%d" % p["number"], {"state": "closed"})
-            print("   closed #%d" % p["number"])
+            reseeded.add(p["head"]["ref"])
+            print("   closed #%d (%s)" % (p["number"], p["head"]["ref"]))
+    # the branches go too, otherwise creating the ref fails and the new PR has no head
+    for ref in sorted(reseeded):
+        call("DELETE", "/git/refs/heads/" + ref, tolerate=(404, 422))
+    if reseeded:
+        print("   deleted %d branch(es)" % len(reseeded))
 
 base_sha = call("GET", "/git/ref/heads/%s" % base)["object"]["sha"]
 for lb in ({"name": "needs-sign-off", "color": "fbca04",
@@ -127,7 +137,10 @@ for lb in ({"name": "needs-sign-off", "color": "fbca04",
             "description": "Held by a maintainer; do not merge"}):
     call("POST", "/labels", lb, tolerate=(422, 403, 404))
 
-existing = {p["head"]["ref"]: p["number"] for p in call("GET", "/pulls?state=all&per_page=100")}
+# state=all so a half-finished seed is resumable, minus anything this run just closed.
+existing = {p["head"]["ref"]: p["number"]
+            for p in call("GET", "/pulls?state=all&per_page=100")
+            if p["head"]["ref"] not in reseeded}
 made = []
 for f in json.load(open(FIXTURES)):
     br = f["branch"]

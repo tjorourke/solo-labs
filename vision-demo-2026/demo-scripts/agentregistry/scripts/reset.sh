@@ -7,7 +7,7 @@
 #   - the deployed MCP tool servers (my-mcp, everything-server) on kind-kagent
 #   - any AccessPolicy + the everything-server waypoint label
 #   - the Petstore OpenAPI backend, route and ConfigMap
-#   - the local ./agentdemo scaffold
+#   - the scaffolded projects under agents/ (agentdemo, dice-game)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib.sh
 . "$SCRIPT_DIR/lib.sh"
@@ -50,7 +50,10 @@ kc -n agentgateway-system delete configmap petstore-openapi                     
 ok "Petstore backend removed"
 
 step "Removing the local scaffold"
-rm -rf "$PROJECT_ROOT/agentdemo" "$PROJECT_ROOT/dice-game" "$LAB_ROOT/agentdemo"
+# PROJECT_ROOT is the suite's agents/ folder. The last path is where scaffolds used
+# to land before they were given a home, so old checkouts get cleaned up too.
+rm -rf "$PROJECT_ROOT/agentdemo" "$PROJECT_ROOT/dice-game" \
+       "$LAB_ROOT/agentdemo" "$PROJECT_ROOT/../agentdemo" "$PROJECT_ROOT/../dice-game"
 ok "clean — the platform + approved catalog remain up"
 
 echo "" >&2
