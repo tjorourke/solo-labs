@@ -41,6 +41,16 @@ image:
   # and a :latest image, and the two drift independently, so a floating pair can give you
   # an image that predates the v0.3 schema below, ignore all of it without error, and
   # start as a no-op router. The lab would pass while testing nothing. Pin both.
+  #
+  # THE DIGEST IS NOT THE v0.3.0 IMAGE, DELIBERATELY. `:v0.3.0` is a different digest and
+  # an older build (2026-06-05); this one is what `:latest` pointed at on 2026-08-09, and
+  # it is newer than the tag. It is pinned so it cannot move. Checked with:
+  #
+  #   docker buildx imagetools inspect ghcr.io/vllm-project/semantic-router/extproc:v0.3.0
+  #
+  # The image carries no source-revision label, so the exact commit behind it is unknown.
+  # Do not assume the v0.3.0 source tree describes this binary: it supports more than that
+  # tag's chart examples show.
   repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
   tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
 
