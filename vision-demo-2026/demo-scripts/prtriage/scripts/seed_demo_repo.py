@@ -42,12 +42,73 @@ def long_body(title, path):
             "- Backwards compatible: the field defaults to the previous behaviour.\n"
             "- No CRD change, so no chart bump is needed.\n\n</details>\n" % (title, rows))
 
+# Real pull requests carry real discussion, and that matters here for a reason beyond
+# looking authentic: the whole point of the demo is that gathering one pull request at
+# a time drags every raw response through the model's context. Toy one-line comments
+# make Standard mode look fine. These are the size review threads actually are.
+THREAD = [
+ ("Had a look through this. The change itself is small, but I want to be careful about "
+  "the ordering, because the same path is used by the streaming client and that one has "
+  "bitten us before.\n\nWalking through it:\n\n1. The guard runs before the config is "
+  "swapped, which is right, because the old value is what we need to compare against.\n"
+  "2. The error is wrapped rather than returned bare, so the caller keeps the context "
+  "about which listener it was.\n3. The metric is incremented once, on the failure path "
+  "only, so a healthy reload does not move the counter.\n\nWhat I could not convince "
+  "myself of from reading alone is what happens when two reloads land in the same "
+  "window. Is the second one guaranteed to see the first one's write, or is that only "
+  "true because the reconciler happens to be single threaded today? If it is the "
+  "latter, a comment saying so would save the next person the same twenty minutes."),
+ ("Tested this locally against a three node cluster and the behaviour matches the "
+  "description. Steps, for the record, since the last time we changed this area the "
+  "repro was lost:\n\n```\nkubectl apply -f config/samples/basic.yaml\nkubectl "
+  "rollout status deploy/controller\nkubectl patch cm/settings --type=merge -p "
+  "'{\"data\":{\"timeout\":\"5s\"}}'\nkubectl logs deploy/controller | grep reload\n"
+  "```\n\nBefore the change the third step logs a panic roughly one time in four. "
+  "After it, the reload is rejected cleanly and the previous config stays live, which "
+  "is the behaviour we want. I did not manage to reproduce the panic at all with the "
+  "patch applied, across about forty attempts.\n\nOne observation that is not a "
+  "blocker: the rejection message names the field but not the value, so an operator "
+  "reading it still has to go and look at the ConfigMap to see what they typed. Worth "
+  "including the offending value if it is not sensitive."),
+ ("Two smaller notes and one question.\n\nThe test table is missing the empty case. "
+  "There is a row for one listener and a row for many, but nothing for zero, and zero "
+  "is exactly the state during the first reconcile before anything is registered. That "
+  "is the path that used to panic, so it seems like the row worth having.\n\nNaming: "
+  "`reloadGuard` reads like it guards the reload, but it actually validates the "
+  "incoming config and the reload is what calls it. `validateIncoming` or similar "
+  "would tell the reader which side of the boundary it sits on.\n\nThe question: are "
+  "we intending to backport this? The same code exists on the release branch and the "
+  "panic is reachable there too. If yes, it is easier to do it now while the context "
+  "is fresh than in three weeks when someone hits it in the field."),
+ ("Pulled this into the integration environment for a day. No regressions in the "
+  "nightly run, and the reload latency is unchanged within noise (p50 was 41ms before "
+  "and 43ms after, p99 moved from 180ms to 176ms, so nothing real).\n\nI do want to "
+  "flag one thing for whoever reviews next, because it is easy to miss and it is not "
+  "this change's fault: the validation now rejects a config that the CRD schema still "
+  "accepts. That is the right way round, since rejecting late is better than panicking, "
+  "but it means the API will happily take something the controller then refuses, and "
+  "the only place that shows up is the controller log. If we care, the same constraint "
+  "wants to be a CEL rule on the CRD so the apply fails at the front door instead."),
+]
+
+# Exactly one pull request is signed off, and the sign-off is the FIRST thing in the
+# comment, because the rule is "starts with LGTM". The distractor below deliberately
+# uses the word mid-sentence on a different pull request: a report that calls that a
+# sign-off has not read the rule properly, and it is worth knowing that on a laptop
+# rather than on stage.
 SIGNOFF = ("LGTM. Read the test first and it is obvious: the assertion is on the bound, "
            "not the value, so it keeps working when the default changes. The docs match "
-           "the field name. Happy for this to go in.")
-HOLD = ("Left this in the queue for now. The change reads fine, but I want the failure "
-        "reproduced in a test before signing off, and the shared retry path makes me want "
-        "a second pair of eyes on the streaming client too.")
+           "the field name and the example compiles. Happy for this to go in as is.\n\n"
+           "For the record I checked the generated reference too, since that is the bit "
+           "that usually drifts, and the field description matches the Go comment.")
+DISTRACTOR = ("Mostly happy with the direction here. I would normally just say lgtm and "
+              "move on, but the shared retry path makes me want a second pair of eyes "
+              "before this goes in, so leaving it open deliberately rather than signing "
+              "it off.\n\nNothing below is a blocker, they are all things I would "
+              "rather fix now than explain later:\n\n- the jitter bound is a magic "
+              "number, and it appears twice\n- the log line fires on every attempt, "
+              "which will be noisy at the tail\n- the helper is exported but only used "
+              "in this package")
 
 repo = call("GET", "")
 base = repo["default_branch"]
@@ -95,10 +156,21 @@ for f in json.load(open(FIXTURES)):
         call("POST", "/issues/%d/labels" % n, {"labels": ["do-not-merge/hold"]},
              tolerate=(403, 404, 410, 422))
 
-    cm = call("POST", "/issues/%d/comments" % n,
-              {"body": SIGNOFF if f["signoff"] else HOLD}, tolerate=(403, 404, 410))
-    if isinstance(cm, dict) and cm.get("_error"):
-        print("     ! comment failed (issues disabled?) -> %s" % cm["_error"][:90])
+    # Several comments per pull request, so the discussion has the weight a real one
+    # has. Comment order matters for exactly one of them: the sign-off must be the
+    # thing that starts with LGTM.
+    bodies = list(THREAD[: 3 if not f["draft"] else 2])
+    if f["signoff"]:
+        bodies.append(SIGNOFF)
+    elif f["branch"].endswith("token-refresh"):
+        bodies.append(DISTRACTOR)     # says "lgtm" mid-sentence; must NOT count
+    for body in bodies:
+        cm = call("POST", "/issues/%d/comments" % n, {"body": body},
+                  tolerate=(403, 404, 410))
+        if isinstance(cm, dict) and cm.get("_error"):
+            print("     ! comment failed -> %s" % cm["_error"][:90]); break
+        time.sleep(0.4)
+
     if not f["signoff"] and not f["draft"]:
         lb = call("POST", "/issues/%d/labels" % n, {"labels": ["needs-sign-off"]},
                   tolerate=(403, 404, 410, 422))
