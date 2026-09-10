@@ -1,0 +1,13 @@
+apiVersion: ar.dev/v1alpha1
+kind: Skill
+metadata:
+  name: release-report
+spec:
+  description: How to judge open pull requests and format a release report, including the gateway code-mode sandbox rules.
+  title: Release report
+  source:
+    repository:
+      # the public mirror of this lab — `arctl pull skill release-report` clones from here
+      url: https://github.com/tjorourke/solo-labs.git
+      branch: main
+      subfolder: vision-demo-2026/demo-scripts/prtriage/skill/release-report

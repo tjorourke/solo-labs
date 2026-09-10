@@ -10,6 +10,8 @@
 - **Part 6 — Inference routing.** On its **own** `kind-inference` cluster: a standalone agentgateway fronts a vLLM-simulator pool; the GIE Endpoint Picker does KV-cache-aware routing to an `InferencePool`, with serving priority via `InferenceObjective`. (A mesh-integrated gateway can't route GIE pools, so it runs on its own non-mesh gateway.)
 - **Part 7 — The AI gateway.** On `mesh1`: one agentgateway in front of every model, key and tool. Corporate model names routed across Azure OpenAI, AWS Bedrock and Anthropic (frontier models only, inference stays in Part 6); failover priority groups; JWT identity stamped on every metric; group-based model access; per-user token limits; virtual keys with a declarative budget; realised-USD chargeback by user/team/BU; and an MCP hub with per-tool authorization. Needs the small extra standup below.
 
+- **Part 8 — The tool layer (GitHub + MCP).** On `mesh1`: agentgateway fronts **GitHub's hosted MCP server** (44 tools, 17 of them write) and holds the PAT, so the agent carries no GitHub credential; AgentRegistry publishes it as an approved tool server whose URL is the gateway; `arctl` scaffolds a `prtriage` agent against it, deployed on kagent. Then the same release-report question is run through all four `entMcp.toolMode` settings with the round trips, schema tokens and payload measured each time, and it finishes by taking the write tools away with an `EnterpriseAgentgatewayPolicy`. Needs the Part 4 standup plus `GITHUB_PAT` (read access is enough).
+
 The parts run **independently** — pick one per customer, or run all seven. This lab is a personal demo driver: no `index.html`, not on the site.
 
 ## Stack (validated live)
@@ -64,6 +66,7 @@ source demo-scripts/env.sh 4   # agentregistry + arctl login (mesh1)
 source demo-scripts/env.sh 5   # kagent substrate / gVisor  (substrate)
 source demo-scripts/env.sh 6   # inference routing / GIE    (inference)
 source demo-scripts/env.sh 7   # AI gateway                 (mesh1)
+source demo-scripts/env.sh 8   # github + MCP tool layer    (mesh1)
 ```
 
 Must be **sourced**, not executed (`./env.sh` runs in a subshell and the exports vanish).

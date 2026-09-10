@@ -1,0 +1,49 @@
+# GitHub's HOSTED MCP server, fronted by agentgateway.
+#
+# The whole point of this file: the PAT lives in ONE Secret that the GATEWAY
+# reads. It is injected upstream as `Authorization: Bearer <pat>` by
+# `policies.auth.secretRef`. The agent that calls this backend never holds a
+# GitHub credential of any kind, and cannot leak one it does not have.
+#
+# toolMode is the field the demo flips:
+#   Standard   (default) one MCP tool per GitHub operation - all 44 of them
+#   Search     `get_tool` / `invoke_tool`, the catalogue becomes searchable
+#   Code       a single `run_code` tool over a generated TypeScript API
+#   CodeSearch both
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: github-mcp
+  namespace: agentgateway-system
+spec:
+  entMcp:
+    toolMode: Standard
+    sessionRouting: Stateful          # the hosted server issues an Mcp-Session-Id
+    failureMode: FailClosed
+    targets:
+    - name: github
+      static:
+        host: api.githubcopilot.com
+        port: 443
+        path: /mcp/
+        protocol: StreamableHTTP
+        policies:
+          tls:
+            sni: api.githubcopilot.com
+          auth:
+            secretRef:
+              name: github-mcp-pat    # key: Authorization, value: the raw PAT
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: github-mcp
+  namespace: agentgateway-system
+spec:
+  parentRefs: [{ name: ar-ingress }]
+  hostnames: ["github-mcp.LB_PLACEHOLDER.sslip.io"]
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: github-mcp

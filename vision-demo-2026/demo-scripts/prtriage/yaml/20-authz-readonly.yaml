@@ -1,0 +1,26 @@
+# Least privilege for the pr-triage agent.
+#
+# GitHub's MCP server offers 44 tools and 17 of them WRITE: create_or_update_file,
+# delete_file, merge_pull_request, push_files, create_pull_request and more. A PAT
+# scope cannot say "this one agent may only read pull requests" - it is coarse, and
+# it is the same token for everyone who uses it. This policy says exactly that, per
+# agent, at the gateway.
+#
+# The report needs three tools. It gets three tools.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: github-readonly
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayBackend
+    name: github-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - 'mcp.tool.name in ["list_pull_requests", "pull_request_read", "run_code"]'

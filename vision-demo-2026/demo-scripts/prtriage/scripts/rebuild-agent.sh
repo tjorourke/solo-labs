@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# rebuild-agent.sh — rebuild the agent image and get it ACTUALLY running.
+#
+# The trap this works around: the agent image is `localhost:5001/prtriage:latest`
+# and kagent runs it with imagePullPolicy IfNotPresent. Push a new image on the
+# same tag and a rollout restart will happily reuse the node's cached copy, so
+# the agent keeps running the OLD prompts and you debug a change that was never
+# deployed. So we drop the cached image from every node before restarting.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAB_ROOT="$(cd "$HERE/../../.." && pwd)"
+IMAGE="${IMAGE:-localhost:5001/prtriage:latest}"
+K="kubectl --context kind-mesh1"
+
+echo "== bake the approved skill into the agent's prompts =="
+awk '/^---$/{c++;next} c>=2' "$HERE/../skill/release-report/SKILL.md" \
+  | jq -Rs '[{name:"release-report", content:.}]' \
+  > "$LAB_ROOT/prtriage/prtriage/prompts.json"
+
+echo "== build + push =="
+arctl build "$LAB_ROOT/prtriage" --push >/dev/null
+arctl apply -f "$LAB_ROOT/prtriage/agent.yaml" >/dev/null
+
+echo "== drop the stale cached image from the kind nodes =="
+for node in $(kind get nodes --name mesh1); do
+  docker exec "$node" crictl rmi "$IMAGE" >/dev/null 2>&1 || true
+done
+
+echo "== restart and wait =="
+$K -n kagent rollout restart deploy/prtriage >/dev/null
+$K -n kagent rollout status deploy/prtriage --timeout=240s >/dev/null
+
+POD="$($K -n kagent get pods -l app.kubernetes.io/name=prtriage -o name | head -1)"
+if $K -n kagent exec "${POD#*/}" -- grep -q "today is not defined" /app/prtriage/prompts.json 2>/dev/null; then
+  echo "✓ the running pod has the current skill"
+else
+  echo "✗ the running pod does NOT have the current skill - the image did not update"
+  exit 1
+fi

@@ -1,0 +1,17 @@
+# The approved catalogue entry for GitHub. Note the URL: it is the AGENTGATEWAY
+# route, not api.githubcopilot.com. A developer who picks this approved server
+# gets GitHub *through the policy enforcement point*, and there is no way to
+# express "GitHub, but skip the gateway" from the catalogue.
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: github-mcp
+spec:
+  title: GitHub (via agentgateway)
+  description: >-
+    GitHub's hosted MCP server, fronted by agentgateway. The gateway holds the
+    PAT and enforces which tools an agent may call, so the agent needs no
+    GitHub credential of its own.
+  remote:
+    type: http
+    url: http://github-mcp.LB_PLACEHOLDER.sslip.io/

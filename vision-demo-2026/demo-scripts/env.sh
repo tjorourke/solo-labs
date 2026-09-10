@@ -17,9 +17,9 @@ LAB_ROOT="$(cd "$(dirname "$_ENV_SRC")/.." && pwd)"
 
 DEMO="${1:-}"
 case "$DEMO" in
-  1|2|3|4|5|6|7) : ;;
+  1|2|3|4|5|6|7|8) : ;;
   *)
-    echo "usage: source demo-scripts/env.sh <1|2|3|4|5|6|7>"
+    echo "usage: source demo-scripts/env.sh <1|2|3|4|5|6|7|8>"
     echo "  1  istio ambient multicluster (mesh1+mesh2)"
     echo "  2  ztunnel L4 identity        (mesh1)"
     echo "  3  waypoint L7                (mesh1)"
@@ -27,6 +27,7 @@ case "$DEMO" in
     echo "  5  kagent substrate / gVisor  (substrate)"
     echo "  6  inference routing / GIE    (inference)"
     echo "  7  AI gateway                 (mesh1)"
+    echo "  8  github + MCP tool layer   (mesh1)"
     return 2 2>/dev/null || exit 2
     ;;
 esac
@@ -64,6 +65,17 @@ case "$DEMO" in
     source scripts/connect.sh
     echo "demo-4 · AgentRegistry UI: http://${AR_HOST} (admin-user / password)  ·  Keycloak admin console: http://${KEYCLOAK_HOST} (admin / admin)"
     echo "  cwd is demo-scripts/agentregistry — 'arctl apply -f yaml/...' paths are relative to here"
+    ;;
+  8)
+    cd "$LAB_ROOT" || return 1
+    # Part 8 drives arctl from the suite root (paths are $PART8-relative in the notebook)
+    source demo-scripts/agentregistry/scripts/connect.sh
+    export PART8=demo-scripts/prtriage
+    export LB=$(kubectl --context kind-mesh1 -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}')
+    export MCP="http://github-mcp.${LB}.sslip.io/"
+    export ASK="demo-scripts/agentregistry/scripts/ask.sh"
+    echo "demo-8 · MCP endpoint: $MCP  ·  AgentRegistry UI: http://${AR_HOST}"
+    echo "  cwd is the suite root — \$PART8 yaml/scripts paths resolve from here"
     ;;
   5)
     cd "$LAB_ROOT" || return 1
