@@ -1,0 +1,17 @@
+# The generated Service is a LoadBalancer by default, which stays pending on
+# kind. There is no typed service field on the parameters resource, so the
+# Service is reshaped with the `service` overlay: a strategic merge patch
+# applied to the rendered object. Ports merge on `port`, so naming port 80 here
+# patches the existing listener port rather than adding a second one.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: egress-gateway-params
+  namespace: agentgateway-system
+spec:
+  service:
+    spec:
+      type: NodePort
+      ports:
+      - port: 80
+        nodePort: 30081

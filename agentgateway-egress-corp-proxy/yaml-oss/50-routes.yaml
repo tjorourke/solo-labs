@@ -1,0 +1,76 @@
+# One path per egress shape, so a single curl picks the route out.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: egress-routes
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+  - name: egress-gateway
+  rules:
+  - matches:
+    - path: { type: PathPrefix, value: /direct }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-direct
+  - matches:
+    - path: { type: PathPrefix, value: /tunnel }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-squid
+  - matches:
+    - path: { type: PathPrefix, value: /tunnel-url }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-squid-url
+  - matches:
+    - path: { type: PathPrefix, value: /inspect-broken }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-mitm-untrusted
+  - matches:
+    - path: { type: PathPrefix, value: /inspect }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-mitm
+  - matches:
+    - path: { type: PathPrefix, value: /inspect-secret }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-mitm-secret
+  - matches:
+    - path: { type: PathPrefix, value: /proxy-auth }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-squid-auth
+  - matches:
+    - path: { type: PathPrefix, value: /proxy-tls }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-squid-tls
+  - matches:
+    - path: { type: PathPrefix, value: /airgap }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: jwks-airgap-via-squid
+  - matches:
+    - path: { type: PathPrefix, value: /airgap-direct }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: jwks-airgap-direct
+  - matches:
+    - path: { type: PathPrefix, value: /proxy-auth-missing }
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: api-via-squid-auth-missing

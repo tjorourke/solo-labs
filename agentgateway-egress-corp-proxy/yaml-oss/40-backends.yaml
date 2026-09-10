@@ -1,0 +1,292 @@
+# Every backend points at the same destination. What changes is how the gateway
+# gets there, and what it is asked to trust when it arrives.
+#
+# All of these live in agentgateway-system because caCertificateRefs is resolved
+# in the namespace of the resource that names it. A ConfigMap in another
+# namespace is simply not found.
+
+# ── 1. baseline: no proxy at all ─────────────────────────────────────────────
+# Straight to the destination, verified against the CA that signed it. If this
+# fails, nothing below is worth reading.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-direct
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+---
+# ── 2. plain CONNECT tunnel ──────────────────────────────────────────────────
+# Squid opens a tunnel and stays out of the TLS. The destination presents its
+# own certificate, so the trust configuration is unchanged from the baseline.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-squid
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+    tunnel:
+      backendRef:
+        kind: Service
+        name: squid
+        namespace: egress
+        port: 3128
+---
+# ── 3. the same proxy named as a URL instead of a reference ──────────────────
+# tunnel takes exactly one of backendRef or url. The URL form cannot carry
+# credentials (the schema rejects userinfo), so it suits an unauthenticated
+# proxy. mode: Connect forces a CONNECT tunnel rather than letting the gateway
+# choose absolute-form for plaintext destinations.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-squid-url
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+    tunnel:
+      url: http://squid.egress.svc.cluster.local:3128
+      mode: Connect
+---
+# ── 4. inspecting proxy, still trusting the destination's CA ─────────────────
+# This is the customer's broken state, reproduced on purpose. mitmproxy re-signs
+# with the corporate CA, the gateway checks against the destination's CA, and
+# the handshake fails. Expected to return 5xx.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-mitm-untrusted
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+    tunnel:
+      backendRef:
+        kind: Service
+        name: mitm
+        namespace: egress
+        port: 8080
+---
+# ── 5. inspecting proxy, trusting the corporate CA ───────────────────────────
+# The fix. Same path as above, verifying the certificate the proxy actually
+# presents. Note this REPLACES the trust store rather than adding to it: this
+# backend now trusts corp-ca and nothing else, which is correct when the proxy
+# re-signs everything.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-mitm
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: corp-ca
+    tunnel:
+      backendRef:
+        kind: Service
+        name: mitm
+        namespace: egress
+        port: 8080
+---
+# ── 6. the same, with the CA held in a Secret ────────────────────────────────
+# caCertificateRefs defaults to kind: ConfigMap. Secret is accepted too, and
+# either way the CA has to be under the key ca.crt.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-mitm-secret
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: corp-ca-secret
+        kind: Secret
+    tunnel:
+      backendRef:
+        kind: Service
+        name: mitm
+        namespace: egress
+        port: 8080
+---
+# ── 7. a proxy that demands credentials ──────────────────────────────────────
+# The credential belongs on the proxy's own backend, not on the destination.
+# The gateway turns it into Proxy-Authorization on the CONNECT request.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: corp-proxy-auth
+  namespace: agentgateway-system
+spec:
+  static:
+    host: squid-auth.egress.svc.cluster.local
+    port: 3128
+  policies:
+    auth:
+      secretRef:
+        name: proxy-credentials
+        key: authorization
+      location:
+        header:
+          name: authorization
+          prefix: "Basic "
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-squid-auth
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+    tunnel:
+      backendRef:
+        group: agentgateway.dev
+        kind: AgentgatewayBackend
+        name: corp-proxy-auth
+---
+# ── 8. TLS on the hop to the proxy ───────────────────────────────────────────
+# Two independent TLS configurations: one on the proxy's backend for the hop to
+# the proxy, one on the destination's backend for the tunnel inside it.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: corp-proxy-tls
+  namespace: agentgateway-system
+spec:
+  static:
+    host: squid-tls.egress.svc.cluster.local
+    port: 3130
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: corp-ca
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-squid-tls
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+    tunnel:
+      backendRef:
+        group: agentgateway.dev
+        kind: AgentgatewayBackend
+        name: corp-proxy-tls
+---
+# ── 9. a destination the gateway cannot resolve ──────────────────────────────
+# jwks.acme-external.internal has no DNS record anywhere the gateway can see.
+# The proxy resolves it, which is why a CONNECT tunnel works in an air-gapped
+# cluster where a direct connection cannot even get as far as a handshake.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: jwks-airgap-via-squid
+  namespace: agentgateway-system
+spec:
+  static:
+    host: jwks.acme-external.internal
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+    tunnel:
+      backendRef:
+        kind: Service
+        name: squid
+        namespace: egress
+        port: 3128
+---
+# ── 10. the same air-gapped destination with no proxy ────────────────────────
+# The control: expected to fail, because the name does not resolve.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: jwks-airgap-direct
+  namespace: agentgateway-system
+spec:
+  static:
+    host: jwks.acme-external.internal
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+---
+# ── 11. the authenticating proxy, with no credentials configured ─────────────
+# The control for scenario 7. Same proxy, but nothing puts Proxy-Authorization
+# on the CONNECT, so Squid answers 407 and the tunnel is never established.
+# Without this, a proxy that silently allowed anonymous CONNECT would make
+# scenario 7 look like it worked.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: corp-proxy-nocreds
+  namespace: agentgateway-system
+spec:
+  static:
+    host: squid-auth.egress.svc.cluster.local
+    port: 3128
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: api-via-squid-auth-missing
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.upstream.svc.cluster.local
+    port: 443
+  policies:
+    tls:
+      caCertificateRefs:
+      - name: upstream-ca
+    tunnel:
+      backendRef:
+        group: agentgateway.dev
+        kind: AgentgatewayBackend
+        name: corp-proxy-nocreds

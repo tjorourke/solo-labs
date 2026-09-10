@@ -1,0 +1,74 @@
+# The destination the gateway is trying to reach. It stands in for an external
+# API: it serves HTTPS on 443 with a certificate signed by upstream-ca, and it
+# echoes back the Host it was asked for so the tests can prove which path the
+# request actually took.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-nginx
+  namespace: upstream
+data:
+  nginx.conf: |
+    events {}
+    http {
+      log_format main '$remote_addr "$request" $status host=$host';
+      access_log /dev/stdout main;
+      server {
+        listen 8443 ssl;
+        http2 on;
+        ssl_certificate     /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
+        default_type application/json;
+        location / {
+          return 200 '{"upstream":"acme-external","host":"$host","path":"$request_uri"}\n';
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: upstream
+  labels: { app: api }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 8443
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: tls
+          mountPath: /etc/nginx/tls
+          readOnly: true
+        readinessProbe:
+          tcpSocket: { port: 8443 }
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      volumes:
+      - name: conf
+        configMap: { name: api-nginx }
+      - name: tls
+        secret: { secretName: api-tls }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: upstream
+spec:
+  selector: { app: api }
+  ports:
+  - name: https
+    port: 443
+    targetPort: 8443

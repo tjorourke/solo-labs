@@ -1,0 +1,228 @@
+# Two Squid forward proxies, and a TLS front door for one of them.
+#
+#   squid       plain CONNECT, open. The destination's TLS stays end to end,
+#               so the gateway still verifies against the upstream CA.
+#   squid-auth  same, but demands Proxy-Authorization.
+#   squid-tls   nginx terminating TLS in front of squid, so the hop from the
+#               gateway to the proxy is itself encrypted.
+#
+# Both Squids keep the image's stock squid.conf and add a drop-in under
+# /etc/squid/conf.d, which the stock config includes after `allow localhost`
+# and before the final `deny all`. Three things about that image:
+#   - it already tails /var/log/squid/*.log to stdout, so adding an
+#     `access_log stdio:/dev/stdout` line on top makes squid exit 1
+#   - it ships its own conf.d/debian.conf holding `http_access allow localnet`,
+#     and conf.d loads alphabetically. An auth drop-in named lab.conf sorts
+#     AFTER debian.conf, so the allow wins and authentication never runs.
+#     Hence 00-auth.conf.
+#   - a CONNECT tunnel is written to the access log when it CLOSES, not when it
+#     opens. agentgateway pools upstream connections, so a working tunnel logs
+#     nothing until the gateway pod is restarted or the connection times out.
+#
+# ACME_API_IP is substituted at apply time with the destination Service's
+# ClusterIP. It is what lets the proxy resolve a name the gateway cannot,
+# which is the air-gapped destination case.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: squid-conf
+  namespace: egress
+data:
+  # Nothing to add: the image's own debian.conf already allows localnet, which
+  # covers the 10.244.0.0/16 pod range. The file exists so the mount is uniform.
+  lab.conf: |
+    # intentionally empty
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: squid-auth-conf
+  namespace: egress
+data:
+  # 00- so this loads before debian.conf's `http_access allow localnet`.
+  00-auth.conf: |
+    auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/auth/passwd
+    auth_param basic children 2
+    auth_param basic realm corp-proxy
+    auth_param basic credentialsttl 1 minute
+    acl authenticated proxy_auth REQUIRED
+    # Anonymous clients are denied here, before anything can allow them, and
+    # Squid answers 407.
+    http_access deny !authenticated
+    http_access allow authenticated
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squid
+  namespace: egress
+  labels: { app: squid }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: squid }
+  template:
+    metadata:
+      labels: { app: squid }
+    spec:
+      # The proxy resolves the air-gapped destination on the gateway's behalf.
+      hostAliases:
+      - ip: "ACME_API_IP"
+        hostnames: ["jwks.acme-external.internal"]
+      containers:
+      - name: squid
+        image: ubuntu/squid:6.6-24.04_beta
+        ports:
+        - containerPort: 3128
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/squid/conf.d/lab.conf
+          subPath: lab.conf
+        readinessProbe:
+          tcpSocket: { port: 3128 }
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { memory: 512Mi }
+      volumes:
+      - name: conf
+        configMap: { name: squid-conf }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: squid
+  namespace: egress
+spec:
+  selector: { app: squid }
+  ports:
+  - name: proxy
+    port: 3128
+    targetPort: 3128
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squid-auth
+  namespace: egress
+  labels: { app: squid-auth }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: squid-auth }
+  template:
+    metadata:
+      labels: { app: squid-auth }
+    spec:
+      hostAliases:
+      - ip: "ACME_API_IP"
+        hostnames: ["jwks.acme-external.internal"]
+      containers:
+      - name: squid
+        image: ubuntu/squid:6.6-24.04_beta
+        ports:
+        - containerPort: 3128
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/squid/conf.d/00-auth.conf
+          subPath: 00-auth.conf
+        - name: auth
+          mountPath: /etc/squid/auth
+          readOnly: true
+        readinessProbe:
+          tcpSocket: { port: 3128 }
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { memory: 512Mi }
+      volumes:
+      - name: conf
+        configMap: { name: squid-auth-conf }
+      - name: auth
+        secret:
+          secretName: squid-passwd
+          items:
+          - key: passwd
+            path: passwd
+          defaultMode: 0644
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: squid-auth
+  namespace: egress
+spec:
+  selector: { app: squid-auth }
+  ports:
+  - name: proxy
+    port: 3128
+    targetPort: 3128
+---
+# TLS front door in front of the plain Squid. The gateway's hop to the proxy is
+# encrypted; the CONNECT tunnel inside it is unchanged.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: squid-tls-conf
+  namespace: egress
+data:
+  nginx.conf: |
+    events {}
+    stream {
+      server {
+        listen 3130 ssl;
+        ssl_certificate     /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
+        proxy_pass squid.egress.svc.cluster.local:3128;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squid-tls
+  namespace: egress
+  labels: { app: squid-tls }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: squid-tls }
+  template:
+    metadata:
+      labels: { app: squid-tls }
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 3130
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: tls
+          mountPath: /etc/nginx/tls
+          readOnly: true
+        readinessProbe:
+          tcpSocket: { port: 3130 }
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      volumes:
+      - name: conf
+        configMap: { name: squid-tls-conf }
+      - name: tls
+        secret: { secretName: proxy-tls }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: squid-tls
+  namespace: egress
+spec:
+  selector: { app: squid-tls }
+  ports:
+  - name: proxy-tls
+    port: 3130
+    targetPort: 3130
