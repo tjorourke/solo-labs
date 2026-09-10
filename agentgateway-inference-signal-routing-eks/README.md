@@ -1,4 +1,4 @@
-# Beyond domain routing: combining signals on agentgateway
+# Complexity-aware inference routing on agentgateway
 
 Two questions about the same subject, routed to different models. "Explain optimistic
 concurrency control in two sentences" goes to the general model. "Two writers report
