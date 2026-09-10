@@ -1,0 +1,110 @@
+# The whole of this lab. One vLLM Semantic Router values overlay, applied on top of the
+# model-routing lab's values file.
+#
+# WHAT DOES NOT CHANGE. The gateway, the AgentgatewayPolicy, the HTTPRoute, both
+# AgentgatewayBackends and both vLLM Deployments are untouched. agentgateway is already
+# routing on whatever model name the router puts in x-selected-model, and it does not
+# care how the router arrived at it. Everything below changes only who is asked and what
+# they are asked about.
+#
+# HELM REPLACES LISTS, IT DOES NOT MERGE THEM. `decisions` below therefore carries the
+# three decisions from the model-routing lab as well as the new one. Leave any of them out and they are
+# silently dropped: the router logs the shorter list and nothing reports an error.
+#
+# THE COMPLEXITY SIGNAL NEEDS NO EXTRA MODEL. It embeds the prompt with the mmbert model
+# already on the volume, embeds every candidate below once at startup, and scores the
+# prompt against both banks. `signal` is hard_score - easy_score, and `threshold` is the
+# line between easy and hard. There is no download and no second classifier to wait for.
+#
+# `easy` and `hard` take an object with a `candidates` list, not a bare list. A bare list
+# is rejected with `cannot unmarshal !!seq into config.ComplexityCandidates`.
+config:
+  routing:
+    signals:
+      complexity:
+        # The candidates are the definition of the signal. They are not test prompts, and
+        # they must not be reused as test prompts: tuning the bank against the results
+        # table and then quoting that table is not a measurement.
+        #
+        # Keep both banks on the same subjects. If the easy bank is all Python and the
+        # hard bank is all distributed systems, the signal learns the subject rather than
+        # the shape of the ask, and it will simply rediscover the domain.
+        - name: basic_request
+          description: Definitional and explanatory asks, against diagnostic ones
+          threshold: 0.0
+          easy:
+            candidates:
+              - Explain optimistic concurrency control in two sentences.
+              - What is the difference between readiness and liveness probes?
+              - Give a one-sentence definition of a race condition.
+              - Write a Python function that reverses a string.
+          hard:
+            candidates:
+              - Two writers report successful updates to the same record, but one update disappears. Diagnose the failure and propose a safe write protocol.
+              - Readiness stays green while requests fail only during rollouts. Explain what evidence would distinguish draining problems from application failures.
+              - Why can linearizable reads still fail to protect this read-modify-write operation?
+              - A distributed service uses optimistic concurrency across three writers; under load updates are lost. Analyse the race and propose a redesign.
+
+    decisions:
+      # THE NEW ONE. Two conditions, ANDed: the domain signal already there, plus the complexity
+      # signal above. `basic_request:easy` is the rule name and the band it returned;
+      # the other bands are `basic_request:medium` and `basic_request:hard`.
+      #
+      # Priority 50 against coding_decision's 10 is the whole point. A basic
+      # computer-science question matches both, and the router resolves that by
+      # priority, not by the order the decisions appear in this file.
+      - name: basic_technical_decision
+        description: Basic computer-science asks go to the general model
+        priority: 50
+        rules:
+          operator: AND
+          conditions:
+            - type: domain
+              name: computer science
+            - type: complexity
+              name: basic_request:easy
+        modelRefs:
+          - model: mistral-small-3.2-24b
+            use_reasoning: false
+
+      # The three from the model-routing lab, unchanged, and repeated only because of the list
+      # replacement described at the top of this file.
+      - name: coding_decision
+        description: Software, infrastructure and debugging questions
+        priority: 10
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: computer science
+            - type: domain
+              name: engineering
+        modelRefs:
+          - model: qwen3-coder-30b
+            use_reasoning: false
+
+      - name: finance_decision
+        description: Finance, regulation, risk and reporting questions
+        priority: 10
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: economics
+            - type: domain
+              name: business
+        modelRefs:
+          - model: mistral-small-3.2-24b
+            use_reasoning: false
+
+      - name: general_decision
+        description: Everything else
+        priority: 1
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: other
+        modelRefs:
+          - model: mistral-small-3.2-24b
+            use_reasoning: false
