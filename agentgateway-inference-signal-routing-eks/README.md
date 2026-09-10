@@ -53,13 +53,14 @@ signal = hard_score - easy_score
 `threshold` is the line between the bands. Above it the rule returns `hard`, below it
 `easy`, and near it `medium`. That is the whole mechanism.
 
-It is an estimate of how a request is phrased against examples you chose. It is not a
-measurement of whether a model can answer it. Two consequences worth stating plainly:
+The score compares phrasing against the examples you wrote. It says nothing about whether
+either model can answer the question.
 
-- The examples are the definition of the signal, so they need care and they must not be
-  reused as tests.
-- Keep both banks on the same subjects. If easy is all Python and hard is all distributed
-  systems, the signal learns the subject and quietly rediscovers the domain.
+Which makes one thing worth getting right when you write your own banks: keep both banks
+on the same subjects. Easy examples that are all Python and hard examples that are all
+distributed systems give you a signal that separates Python from distributed systems, not
+simple from complex. It will still route differently, so it looks like it is working, and
+what you have built is the domain signal you already had.
 
 ## Prerequisites
 
