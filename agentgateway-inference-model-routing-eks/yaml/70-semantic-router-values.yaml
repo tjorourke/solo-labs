@@ -2,7 +2,7 @@
 #
 # WHAT CHANGES AND WHAT DOES NOT. The HTTPRoute in yaml/30 is untouched, and so are
 # the two backends. The only change is WHO decides: instead of a regex in the
-# PreRouting transformation, a ModernBERT classifier reads the prompt and rewrites
+# PreRouting transformation, the vSR domain classifier reads the prompt and rewrites
 # the body's model field. The gateway then routes on that exactly as before.
 #
 # WHY THE BUILT-IN DOMAINS ALREADY FIT. The classifier is fine-tuned on MMLU-Pro,

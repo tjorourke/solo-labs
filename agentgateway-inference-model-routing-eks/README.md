@@ -1,8 +1,10 @@
 # Prompt-aware model routing on agentgateway (EKS, real GPUs)
 
-Two open-weight models on two GPUs behind one endpoint, with the gateway choosing which
-one answers. A finance question goes to Mistral, a coding question goes to Qwen3-Coder,
-and the caller does not have to know which is which.
+Two open-weight models on two GPUs behind one endpoint, with the gateway routing each
+request to the model that suits it: from an explicit client choice, from its own routing
+logic, or from a decision made by vLLM Semantic Router. A finance question goes to
+Mistral, a coding question goes to Qwen3-Coder, and the caller does not have to know
+which is which.
 
 Standalone. It builds its own EKS cluster, its own GPU nodes and its own gateway, and
 shares nothing with any other lab. If you want the same routing on kind with a simulator
@@ -43,7 +45,7 @@ The routing table is identical in all three. Only the source of the decision cha
 |---|---|---|
 | Client-declared | the client names a model | nothing |
 | Keyword match | the gateway matches words in the prompt | nothing, no new component |
-| Semantic | a classifier reads the meaning of the prompt | one more service, several GB of model weights |
+| Semantic | vLLM Semantic Router classifies the prompt and the gateway acts on it | one more service, several GB of model weights |
 
 All three are deployed here. Three kagent agents cover both patterns:
 
@@ -183,12 +185,20 @@ fires when it should not: "Model the credit risk function for our loan book" is 
 finance question that went to the code model because it contains `function`. No word
 added fixes that, and each one added makes another false positive more likely.
 
-The semantic router runs a fine-tuned mmBERT classifier over the whole prompt, so an
-unknown term like CrashLoopBackOff still classifies from its context, one misleading
-word does not carry the sentence, and a low-confidence prediction falls to the default
-model instead of guessing. It needs no training for this split: `economics` and
-`business` map to the general model, `computer science` and `engineering` to the code
-model.
+The semantic router runs its domain classifier, a small fine-tuned BERT-family model
+based on mmBERT, over the whole prompt, so an unknown term like CrashLoopBackOff still
+classifies from its context, one misleading word does not carry the sentence, and a
+low-confidence prediction falls to the default model instead of guessing. It needs no
+training for this split: `economics` and `business` map to the general model,
+`computer science` and `engineering` to the code model.
+
+Nine prompts is a demonstration, not a benchmark, and the lesson is not that keywords
+are bad. Keyword rules are a fine signal, and vSR can take them as one input among
+others. What does not hold up is making them the whole classifier.
+
+vSR itself does more than this. It can combine signals such as domain, complexity and
+privacy, apply routing policy, narrow the candidate models and choose the inference path
+from there. The lab uses domain classification only, so the mechanics stay visible.
 
 
 ### Seeing which model answered
