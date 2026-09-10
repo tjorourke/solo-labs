@@ -43,5 +43,14 @@ try:
     body = inner.get("error") or inner.get("success") or body
 except Exception:
     pass
-body = re.sub(r"\s+", " ", json.dumps(body) if not isinstance(body, str) else body)
-print("    " + body[:300])'
+# the sandbox reports a failure as {"error": {"message": "..."}}, so unwrap that too
+if isinstance(body, dict) and isinstance(body.get("message"), str):
+    body = body["message"]
+if not isinstance(body, str):
+    body = json.dumps(body)
+# The sandbox wraps the real cause in its own conversion error, and appends an eval
+# location. Neither means anything to a room, and both push the part that matters off
+# the line.
+body = re.sub(r"^Error: Error converting from js .*?: ", "Error: ", body)
+body = body.split(" at <eval>")[0]
+print("    " + re.sub(r"\s+", " ", body)[:220])'

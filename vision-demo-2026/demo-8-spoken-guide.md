@@ -6,12 +6,13 @@ What to say, in order, while `demo-8-github-agent.ipynb` runs. Roughly twelve mi
 
 The sentences in the **Say** blocks are meant to be said close to as written. Everything
 else is a cue. Numbers are measured on `mesh1` against `tjorourke/kagent`, twenty four
-seeded pull requests, `claude-haiku-4-5`, agentgateway `v2026.8.2`. The agent is **Java on Google ADK**.
+seeded pull requests, `claude-sonnet-4-5`, agentgateway `v2026.8.2`. The agent is **Java on
+Google ADK**.
 
 The two claims that hold on every single run, and the only two to build on:
 
-1. Fourteen to nineteen tool calls become two.
-2. Fifty to eighty thousand bytes through the model become a couple of dozen.
+1. Eighteen tool calls become one.
+2. Eighty thousand bytes through the model become two thousand.
 
 **Read both off the trace on the day.** They are an order of magnitude apart every run,
 which is the claim. The exact figure is not, because the model chooses how to batch.
@@ -32,13 +33,14 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 ## Before you start
 
-1. `source demo-scripts/env.sh 8`, then **`agents/prtriage/scripts/preflight.sh`**. It
-   checks the fixture counts, the catalogue, both agents, both MCP paths, model access,
-   stray policies left over from a previous run, and whether traces are landing. If it
-   says "ready to present", it is. If not, every failure line says what to fix.
-   `setup.sh` is cluster setup, not a beat: run it well before you present. It builds the
-   waypoint, both backends, the route and the catalogue entries, and you never touch it
-   on stage.
+1. Run the **Connect** cell at the bottom of the notebook, then **`preflight`**. Connect
+   puts `mcp`, `ask`, `try-merge` and the rest on `PATH` and writes a kubeconfig holding
+   only this cluster, which is why every cell can say plain `kubectl`. Preflight checks
+   the fixture counts, the catalogue, both agents, both MCP paths, model access, stray
+   policies left over from a previous run, and whether traces are landing. If it says
+   "ready to present", it is. If not, every failure line says what to fix. `setup` is
+   cluster setup, not a beat: run it well before you present. It builds the waypoint,
+   both backends, the route and the catalogue entries, and you never touch it on stage.
 2. Run beat 1 once to warm the path, then reset: the last cell puts `toolMode` back to
    `Standard` and deletes any policy.
 3. Confirm the repo still has twenty four open pull requests, four held, three drafts.
@@ -57,9 +59,9 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 > I wanted an agent that could tell me which pull requests were ready to merge. So I
 > connected GitHub's MCP server, which is one server, and this is what turned up.
 >
-> Forty four tools. A hundred and twenty four kilobytes of tool definitions. Fourteen
-> and a half thousand tokens, and that is in the context on every single turn, before
-> anyone has typed a question.
+> Forty four tools. Fourteen and a half thousand tokens of tool definitions, counted by
+> Anthropic's own endpoint rather than estimated, and that is in the context on every
+> single turn, before anyone has typed a question.
 >
 > Now look at the second list. Seventeen of those forty four can write.
 > `create_or_update_file`. `push_files`. `delete_file`. `merge_pull_request`.
@@ -78,14 +80,14 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 ## Beat 2 · The gateway holds the credential
 
-**Run:** the backend YAML cell, then the no-credential call.
+**Run:** the backend cell, then the no-credential call.
 
 **Say:**
 
 > Before we build anything, one piece of plumbing. That is agentgateway in front of
-> GitHub's MCP server. Two fields matter. `protocol: StreamableHTTP`, because GitHub's
-> server is hosted and speaks that. And `policies.auth.secretRef`, which is where the
-> token lives.
+> GitHub's MCP server, read straight out of the cluster. Two fields matter.
+> `protocol: StreamableHTTP`, because GitHub's server is hosted and speaks that. And
+> `policies.auth.secretRef`, which is where the token lives.
 >
 > The token is in one Kubernetes Secret that the gateway reads. Watch this call. Content
 > type, accept, and nothing else. No authorization header at all.
@@ -102,12 +104,14 @@ past it otherwise.
 
 ## Beat 3 · The catalogue, the skill, and the agent
 
-**Run:** `arctl get mcpserver github-mcp`, then the skill, then the `agent()` method.
+**Run:** `arctl get mcpserver` and `arctl get skill`, then the skill's headings, then
+`make -C agents/prtriage/java-agent show`.
 
 **Say, first about the catalogue:**
 
-> This is AgentRegistry, and it holds what has been approved. Look at the URL on that
-> approved GitHub entry. It is the gateway. It is not `api.githubcopilot.com`.
+> This is AgentRegistry, and it holds what has been approved: the servers, the skills,
+> the agents. The approved GitHub entry points at the gateway, in the cluster. There is
+> no entry that means `api.githubcopilot.com` directly.
 >
 > So a developer who picks GitHub out of the catalogue gets GitHub through the
 > enforcement point, and there is no entry in that catalogue that means "GitHub, but
@@ -115,11 +119,11 @@ past it otherwise.
 
 **Then the skill, which is the part people underrate:**
 
-> The catalogue also holds skills, which are approved, versioned guidance. Read a couple
-> of lines of this one.
+> The catalogue also holds skills, which are approved, versioned guidance. These are the
+> headings of this one, and each heading is a rule.
 >
-> The parameter is `pullNumber` and not `pull_number`. The sandbox has no `Date`. Never
-> guess a repository. Do not fetch what cannot change the answer.
+> Never guess the repository. Gather the data in one program. Do not fetch what cannot
+> change the answer. Let the program write the report.
 >
 > Every one of those lines is in there because a run failed without it. Somebody paid
 > for each of them once, and now every agent in the organisation gets them for free.
@@ -147,9 +151,9 @@ does not care, an Agent record just references an image.
 
 ## Beat 4 · Publish it, deploy it, read the trace
 
-**Run:** `arctl apply -f agent.yaml`, then `arctl apply -f 60-java-deploy-kagent.yaml`,
-then wait for Ready. Then switch to the kagent UI, pick **prtriagejava**, paste the
-question, and open the Tracing tab.
+**Run:** `make -C agents/prtriage/java-agent deploy`, which echoes the two `arctl apply`
+commands as it runs them and then waits for Ready. Then switch to the kagent UI, pick
+**prtriagejava**, paste the question, and open the Tracing tab.
 
 **Say while it deploys:**
 
@@ -174,7 +178,7 @@ question, and open the Tracing tab.
 > Keep scrolling. That is tens of thousands of bytes of raw GitHub JSON that went
 > through the model's context window to produce a four-line summary.
 >
-> Nineteen and not twenty five, by the way, because the approved skill tells it not to
+> Eighteen and not twenty five, by the way, because the approved skill tells it not to
 > fetch what cannot change the answer. A draft is already blocked, a held pull request
 > is already blocked, so reading their comments buys nothing. The registry saved seven
 > calls before the gateway did anything.
@@ -189,16 +193,19 @@ question, and open the Tracing tab.
 > And rather than trust that report, this reads the fixture straight from GitHub and
 > compares it line by line.
 
-**Whatever it says, say that.** Usually the verdicts are right and the count is wrong.
-Sometimes the count is right too, and nothing is lost, because the comparison is about
-tool overhead. Never script a mistake.
+**Whatever it says, say that, and move on in one sentence.** Five runs in six it matches
+the fixture exactly, and the beat is the eighteen round trips either way. The sixth drops
+a row from the report or mislabels one, because writing twenty four rows by hand is the
+model's job in this mode. If that is the run you get, say so plainly and let the next
+beat answer it. Never script a mistake, and never lean on getting one.
 
 **Cue:** the scroll is the demo. Take your time over it. Ten seconds of silently
 scrolling JSON does more work than any sentence here.
 
 ## Beat 5 · One field
 
-**Run:** the `toolMode` patch, the `tools/list` cell, the reload, then the same question.
+**Run:** the `toolMode` patch cell, which also waits and reloads, then the `tools/list`
+cell, then the same question.
 
 **Say:**
 
@@ -206,19 +213,20 @@ scrolling JSON does more work than any sentence here.
 >
 > `toolMode: CodeSearch`. The model no longer gets forty four tools. It gets two:
 > `get_tool` to look up an operation's schema, and `run_code` to run a program against
-> them.
+> them. And the agent restarts, because it reads its tool list once at startup. Same
+> image digest, and the line says so.
 
 **Ask the same question again. When it lands:**
 
-> Two round trips. The date, then one program.
+> One round trip. One program.
 >
 > That program made eighteen calls to GitHub, inside the gateway, and handed back the
-> finished report. Twenty four bytes crossed the context window. Not twenty four
-> kilobytes. Twenty four bytes.
+> finished report. Two thousand bytes crossed the context window instead of eighty
+> thousand, and the two thousand is the report itself.
 >
-> Same verdicts on all twenty four pull requests. And the count is right this time, it
-> says twenty four, because the program counted them with `.length` instead of the model
-> keeping a tally across nineteen turns.
+> Same verdicts on all twenty four pull requests, and every row is there, because the
+> program wrote the report with the data in front of it instead of the model
+> transcribing twenty four lines from eighteen turns ago.
 
 **Then the line the whole talk is built on:**
 
@@ -267,8 +275,8 @@ the round trips and what the model has to carry.
 
 ## Beat 6 · Two agents, one integration, different permissions
 
-**Run:** the policy, then the release agent, then `identity-matrix.sh`, then
-`try-merge.sh` for both.
+**Run:** the policy, then the release agent, then `identity-matrix`, then `try-merge`
+for both.
 
 **Say, while the policy goes on:**
 
@@ -281,30 +289,31 @@ the round trips and what the model has to carry.
 > cannot do that, because by then the connection has left the mesh. It is the same
 > reason Part 4 enforces its access policy at a waypoint.
 
-**Cue:** the cell puts the surface back to `Standard` first, because the matrix is about
-tool names. Nothing to say out loud.
-
 **Then deploy the second agent and show the matrix:**
 
 > Second agent. Same image. Different identity.
 >
-> Now the same request to the same URL from each of their own pods. Same body, no
-> credentials anywhere. The only thing that differs is who is asking.
+> Each of them runs the same one-line program in the gateway's sandbox, from its own
+> pod, asking which GitHub functions exist in there. Same URL, same body, no credentials
+> anywhere. The only thing that differs is who is asking.
 
 ```
-  identity          read PRs   merge tool   tools returned
-  triage agent      yes        hidden       list_pull_requests pull_request_read
-  release agent     yes        VISIBLE      ... merge_pull_request
-  another workload  DENIED     DENIED       (nothing)
+  identity           read PRs   merge        functions in its sandbox
+  triage agent       yes        not defined  list_pull_requests pull_request_read
+  release agent      yes        DEFINED      ... merge_pull_request ...
+  another workload   DENIED     DENIED       (refused)
 ```
 
-> The triage agent cannot see the merge tool at all. The release agent can. Another
-> workload in the same namespace, with an identity the policy does not name, gets
-> nothing.
+> For the triage agent `merge_pull_request` is not a function that exists. The release
+> agent has it. Another workload in the same namespace, with an identity the policy does
+> not name, gets nothing at all.
+>
+> The gateway generates that API after it applies the policy, so this table is the
+> policy, read back out of the sandbox.
 
 ### The enforcement proof, which is the bit that counts
 
-**Run `try-merge.sh` for both.**
+**Run `try-merge` for both.**
 
 **Say:**
 
@@ -314,26 +323,17 @@ tool names. Nothing to say out loud.
 
 **Then read the two results out, slowly, because the contrast is the point:**
 
-> As the triage agent: unknown tool. Not a 403, and not a refusal from GitHub. The tool
-> does not exist for that identity, so the request never left the cluster.
+> As the triage agent: `merge_pull_request is not defined`. Not a 403, and not a refusal
+> from GitHub. The program cannot express the call, so nothing left the cluster.
 >
-> As the release agent: the error names `api.github.com`. That request went all the way
-> to GitHub, and the only thing that stopped it was the pull request not existing.
+> As the release agent: the error names `api.github.com`, and it is a 404. That request
+> went all the way to GitHub, and the only thing that stopped it was the pull request
+> not existing.
 >
 > Same request. Same gateway. Different identity.
 
 **Cue:** the pull request number does not exist, so a policy failure could only 404.
 Only mention it if someone asks whether you just merged something.
-
-### And the same thing in code mode, which is stronger
-
-**Run the code-mode cell.**
-
-> In code mode the generated API is built after the policy is applied. So for the triage
-> agent, `merge_pull_request` is not a function in the sandbox at all.
->
-> `merge_pull_request is not defined`. The program cannot express the call, rather than
-> making it and being refused.
 
 **Then the credential point, in the corrected form:**
 
@@ -360,11 +360,11 @@ room thinking about what they cannot do.
 
 | | Standard | CodeSearch |
 |---|---|---|
-| tools the model holds | 45 | 2 |
+| tools the model holds | 45 | 3 |
 | schema tokens per turn | 14,572 | 1,300 |
-| model round trips | 14 to 19 | 2 |
-| bytes through the model | 55,852 to 80,379 | 24 |
-| matches the fixture | verdicts yes, count usually wrong | yes, checked |
+| model round trips | 18 | 1 |
+| bytes through the model | 82,956 | 2,077 |
+| matches the fixture | five runs in six | six in six |
 
 All four `toolMode` settings, and they are two independent choices rather than four
 flavours:
@@ -375,9 +375,10 @@ flavours:
 | one program, many operations | `CodeSearch` | `Code` |
 
 `Search` cuts the catalogue to two tools and 986 tokens, and still takes one call per
-operation. `Code` cuts the round trips and carries all forty four signatures in
-`run_code`'s description, which is 6,302 tokens. `CodeSearch` does both, at 1,300
-tokens and two round trips, which is why the demo uses it.
+operation, so it measured 21 round trips and 90,233 bytes. `Code` cuts the round trips
+and carries all forty four signatures in `run_code`'s description, which is 6,302
+tokens. `CodeSearch` does both, at 1,300 tokens and one round trip, which is why the
+demo uses it.
 
 ## Questions you will get
 
@@ -420,10 +421,10 @@ that the demo gate does not look at checks: it is draft, hold label and sign-off
 ## What not to claim
 
 1. Not faster. Both modes land around thirty seconds at this size.
-2. Do not stage the bigger accuracy failure live. Against a live upstream repo the
-   default mode twice reported pull requests as ready to merge that had no approval at
-   all, and once dropped one and reported seven of eight. It is real, it is measured,
-   and it is stochastic. Use it as evidence, demonstrate the miscount instead.
+2. Do not build the beat on the default mode getting it wrong. It gets it right five
+   runs in six, and the sixth fails differently each time: a dropped row, a mislabelled
+   verdict, a total that does not match. Real, measured, and stochastic. The check cell
+   reports whichever you got, in one line; the beat is the round trips.
 3. Do not say OSS cannot shape tool lists. It can filter which tools a backend exposes.
    Replacing the list with meta tools is the Enterprise part.
 
@@ -434,16 +435,21 @@ that the demo gate does not look at checks: it is draft, hold label and sign-off
 address. Run `agents/prtriage/scripts/fix-cluster-dns.sh`.
 
 **A `toolMode` change seems to do nothing.** The agent lists its tools once at startup.
-`agents/prtriage/scripts/reload-agent.sh` restarts it and waits for exactly one
-running pod.
+`reload-agent` restarts it and waits for exactly one running pod.
 
 **`cannot exec in a deleted state`.** Same script. It happens when a prompt lands on a
 pod that is still terminating.
 
 **A rebuilt agent behaves as though nothing changed.** The image is `:latest` and kagent
-runs it `IfNotPresent`, so a push on the same tag can reuse the node's cached copy. Drop
-it from the nodes and restart:
-`for n in $(kind get nodes --name mesh1); do docker exec $n crictl rmi localhost:5001/prtriage-java:latest; done`
+runs it `IfNotPresent`, so a push on the same tag could reuse the node's cached copy.
+`make push` now drops it from every node, and `reload-agent` compares the digest it
+built with the digest the pod came back on and fails loudly if they differ. If you see
+that failure, run `make -C agents/prtriage/java-agent push` again.
+
+**`tool_use ids were found without tool_result blocks`.** The model emitted two tool
+calls in one turn, or retried a program that threw. The skill tells it to send one call
+per turn and to wrap a returned object in parentheses, which is what triggered it. Ask
+again; a new question gets a new session.
 
 **The report is missing a pull request.** The program should build the report text
 itself, not hand rows back for the model to format. Twenty four rows transcribed by the

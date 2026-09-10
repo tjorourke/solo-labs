@@ -54,6 +54,13 @@ The sandbox is deliberately small. It is not Node, and it is not your agent.
   literal in the program.
 - Available: `Math`, `JSON`, `Promise`, `Object`, `Array`, `String`, `Number`,
   `RegExp`, `BigInt`.
+- The program's value is its last expression. To return an object, wrap it in
+  parentheses: `({number: 12, title: t})`. A bare `{number: 12}` in statement position
+  is a block with a label in it, not an object, and the program comes back empty or
+  throws. That failure sends the model round again, and a retry is where a turn is most
+  likely to break.
+- Emit one tool call per turn. Two in the same turn is how a conversation ends up with
+  a tool call that has no result attached to it, and the next request is rejected.
 - Not available: `Date`, `Map`, `Set`, `console`, `fetch`, `require`, `process`,
   `setTimeout`. Use plain objects instead of `Map`.
 - A program may make at most **20** upstream tool calls (a sandbox limit, and only a
