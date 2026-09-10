@@ -1,17 +1,18 @@
 # Complexity-aware inference routing on agentgateway
 
-A bank runs its own GPUs and one internal assistant.
-[Prompt-aware model routing](../agentgateway-inference-model-routing-eks/) splits its
-traffic by subject: finance to the general model, engineering to the code model. That
-holds up until you look at what engineering sends. Most of it is quick lookups. A small
-part is someone working an incident. Both are engineering, so both go to the code model,
-and the specialist card spends its capacity on definitions while the incident question
-shares a queue with them.
+A bank runs two models on two GPUs behind one endpoint.
+[Prompt-aware model routing](../agentgateway-inference-model-routing-eks/) routes by
+subject: finance questions to the general model, engineering questions to the code model.
 
-The subject cannot separate those, because it is the same subject. This lab gives the
-router a second thing to go on. "Explain optimistic concurrency control in two sentences"
-goes to the general model; "two writers report successful updates but one disappears,
-diagnose it" goes to the code model.
+Engineering traffic is not all one thing. Most of it is lookups, like what a flag does or
+how to pin a provider version. A smaller part is an engineer debugging a live incident,
+which is the work the second card was bought for. Both are engineering, so both land on
+the code model, and it works through the lookups in the same queue as the incident.
+
+Subject cannot separate them, because the subject is the same. This lab gives the router
+a second thing to go on. "Explain optimistic concurrency control in two sentences" goes
+to the general model; "two writers report successful updates but one disappears, diagnose
+it" goes to the code model.
 
 It layers on that lab and keeps the cluster, the two GPUs, the gateway and the semantic
 router exactly as they were. One signal, one decision, and a router config change. No new
