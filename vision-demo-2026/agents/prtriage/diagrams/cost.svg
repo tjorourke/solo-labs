@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 268" style="width:100%;max-width:1000px;height:auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+  <rect x="0" y="0" width="740" height="268" rx="10" fill="#f8fafc"/>
+  <text x="370" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">What connecting one MCP server costs</text>
+  <defs><marker id="b1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#334155"/></marker></defs>
+
+  <rect x="20" y="86" width="150" height="72" rx="9" fill="#e2e8f0" stroke="#64748b" stroke-width="1.4"/>
+  <text x="95" y="114" text-anchor="middle" font-size="11.5" font-weight="700" fill="#334155">GitHub MCP</text>
+  <text x="95" y="134" text-anchor="middle" font-size="10" fill="#475569">one server</text>
+
+  <line x1="170" y1="122" x2="212" y2="122" stroke="#334155" stroke-width="1.8" marker-end="url(#b1)"/>
+
+  <rect x="216" y="70" width="290" height="104" rx="9" fill="#fff" stroke="#94a3b8" stroke-width="1.6"/>
+  <text x="361" y="94" text-anchor="middle" font-size="11.5" font-weight="700" fill="#334155">the model's context, every turn</text>
+  <text x="361" y="124" text-anchor="middle" font-size="26" font-weight="700" fill="#0f172a">44 tools</text>
+  <text x="361" y="150" text-anchor="middle" font-size="12" fill="#475569">14,572 tokens before anyone types</text>
+
+  <line x1="506" y1="122" x2="548" y2="122" stroke="#334155" stroke-width="1.8" marker-end="url(#b1)"/>
+
+  <rect x="552" y="86" width="168" height="72" rx="9" fill="#fee2e2" stroke="#dc2626" stroke-width="1.8"/>
+  <text x="636" y="112" text-anchor="middle" font-size="22" font-weight="700" fill="#7f1d1d">17</text>
+  <text x="636" y="132" text-anchor="middle" font-size="10.5" font-weight="700" fill="#991b1b">can write to your repo</text>
+  <text x="636" y="148" text-anchor="middle" font-size="9.5" fill="#b91c1c">nobody chose this</text>
+
+  <rect x="20" y="196" width="700" height="48" rx="8" fill="#fff" stroke="#cbd5e1"/>
+  <text x="36" y="216" font-size="10.5" font-weight="700" fill="#334155">among them</text>
+  <text x="36" y="234" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" fill="#991b1b">delete_file    push_files    merge_pull_request    create_or_update_file</text>
+</svg>
