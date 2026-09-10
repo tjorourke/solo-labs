@@ -18,7 +18,10 @@ helm_()   { helm --kube-context "$CTX" "$@"; }
 
 banner() { echo; echo "==> $*"; }
 
-VSR_VERSION="${VSR_VERSION:-v0.0.0-latest}"
+# Pinned. Upstream also publishes a rolling v0.0.0-latest chart, and a chart that drifts
+# ahead of the v0.3 config in yaml/70 can ignore it without an error and start as a no-op
+# router. yaml/70 pins the image by digest for the same reason.
+VSR_VERSION="${VSR_VERSION:-0.3.0}"
 
 banner "semantic router $VSR_VERSION"
 helm_ upgrade --install semantic-router \

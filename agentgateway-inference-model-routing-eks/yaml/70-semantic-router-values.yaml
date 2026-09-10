@@ -36,10 +36,11 @@ persistence:
   size: 20Gi
 
 image:
-  # Pinned by digest. Upstream publishes the chart as v0.0.0-latest and the image as
-  # :latest and the two drift independently, so a floating tag can pull an image that
-  # predates the v0.3 schema below, ignore all of it without error, and start as a
-  # no-op router. The lab would pass while testing nothing.
+  # Pinned by digest, and the chart is pinned to 0.3.0 alongside it (see
+  # scripts/05-semantic-router.sh). Upstream also publishes a rolling v0.0.0-latest chart
+  # and a :latest image, and the two drift independently, so a floating pair can give you
+  # an image that predates the v0.3 schema below, ignore all of it without error, and
+  # start as a no-op router. The lab would pass while testing nothing. Pin both.
   repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
   tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
 
