@@ -43,8 +43,8 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
    `Standard` and deletes any policy.
 3. Confirm the repo still has twenty four open pull requests, four held, three drafts.
 4. Have the `tools/list` output captured to a file as a fallback.
-5. Windows you want open: the notebook, the kagent UI, and a terminal. You do not need
-   the GitHub UI, and there is a reason to avoid it in beat 1.
+5. Windows you want open: the notebook, the kagent UI, a terminal, and optionally the
+   pull request list at `github.com/tjorourke/kagent/pulls`, which is clean.
 
 ---
 
@@ -413,11 +413,9 @@ keeps the list short by a different route.
 be the same every run. Say so plainly, it costs nothing: live pull requests on a busy
 repository change hour to hour, and the numbers on my slides would stop matching.
 
-**"The CI is red on those pull requests."** It should not be any more: the seeder writes
-valid stubs so kagent's own workflows pass. If you are looking at pull requests seeded
-before that fix, reseed with `RESEED=1`. Either way the honest answer is that the demo
-gate does not look at checks, and you should say so rather than steer around the GitHub
-UI.
+**"What about CI?"** The reseeded pull requests carry no check status at all, so there
+are no red ticks to explain and the GitHub UI is safe to project. The honest answer is
+that the demo gate does not look at checks: it is draft, hold label and sign-off.
 
 ## What not to claim
 

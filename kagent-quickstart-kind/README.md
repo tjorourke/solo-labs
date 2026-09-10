@@ -1,13 +1,13 @@
 # kagent-quickstart-kind
 
-**The kagent companion to `agentgateway-quickstart-kind`. From an empty cluster to a working,
-governed, observable Solo Enterprise for kagent, step by step — every step mapped to the docs.**
+**The kagent companion to `agentgateway-quickstart-kind`. From an empty cluster to Solo Enterprise for kagent
+with governance and observability, step by step: every step mapped to the docs.**
 
 The walkthrough is the lab page (`index.html`), published on
 [mastertheagent.com](https://mastertheagent.com/). It runs on `kind` here, but the same
 commands work on any Kubernetes cluster: point `kubectl` at it and skip the cluster step.
 
-This lab is **kagent only** — no AgentRegistry. It installs Solo Enterprise for kagent,
+This lab is **kagent only**: no AgentRegistry. It installs Solo Enterprise for kagent,
 runs an MCP tool server, deploys agents two ways (declarative and BYO / ADK), governs their
 tools with AccessPolicies, shows traces in the UI, and (Beta) runs an agent in a gVisor
 Sandbox.

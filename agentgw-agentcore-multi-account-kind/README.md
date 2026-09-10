@@ -70,9 +70,9 @@ The numbered scripts run individually in order: `10-tofu`, `20-cluster`,
 
 ## Layout
 
-- `tofu/` — both accounts: per-env module (AgentRegistryAccess role + invoke role +
+- `tofu/`: both accounts: per-env module (AgentRegistryAccess role + invoke role +
   ExternalId), plus the two source-identity IAM users in account A.
-- `scripts/` — numbered setup + proof scripts, `quick.sh` orchestrator.
-- `yaml/portfolio-routes.yaml.tmpl` — the 4 backends, 4 routes, 2 JWT policies.
-- `kind/cluster.yaml`, `yaml/keycloak/` — platform plumbing.
-- `deploy/.env.tofu`, `deploy/.env.runtimes` — generated, gitignored, never commit.
+- `scripts/`: numbered setup + proof scripts, `quick.sh` orchestrator.
+- `yaml/portfolio-routes.yaml.tmpl`: the 4 backends, 4 routes, 2 JWT policies.
+- `kind/cluster.yaml`, `yaml/keycloak/`: kind cluster and Keycloak configuration.
+- `deploy/.env.tofu`, `deploy/.env.runtimes`: generated, gitignored, never commit.

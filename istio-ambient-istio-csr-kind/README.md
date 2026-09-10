@@ -1,11 +1,11 @@
 # Vault + istio-csr: sidecars on RSA, ambient on EC
 
 Sidecars ask the mesh CA for RSA certificates. ztunnel can only ask for
-ECDSA P-256 — there is no RSA option in ztunnel. So when the mesh CA is
+ECDSA P-256: there is no RSA option in ztunnel. So when the mesh CA is
 HashiCorp Vault behind cert-manager istio-csr and the signing role is locked
 to `key_type=rsa` (RSA-4096 root, RSA-4096 intermediate, the way an estate
 that standardised on RSA years ago actually runs), the sidecar estate works
-perfectly for years — and the very first ambient enrolment is rejected on
+perfectly for years, and the very first ambient enrolment is rejected on
 the spot:
 
 ```
@@ -14,11 +14,11 @@ role requires keys of type rsa
 
 The lab proves the safe way through, live:
 
-1. **RSA baseline** — Istio in sidecar mode, istiod's built-in CA off,
+1. **RSA baseline**: Istio in sidecar mode, istiod's built-in CA off,
    `caAddress` pointed at istio-csr, everything signed by Vault. Two app
    namespaces under STRICT mTLS: `ledger` (never migrates) and `payments`
    (will migrate), clients calling across the boundary every 2s.
-2. **Ambient control plane arrives under load** — istio-csr gains
+2. **Ambient control plane arrives under load**: istio-csr gains
    `caTrustedNodeAccounts` (the ambient impersonation model), istiod flips to
    `profile=ambient`, CNI + ztunnel install. fortio runs across the whole
    change and scores 100%; the ledger workload keeps the exact same
@@ -32,19 +32,19 @@ The lab proves the safe way through, live:
    accept HBONE mTLS from ambient callers, and their fresh certs are still
    RSA, proving the rsa-only role keeps serving sidecars after ambient
    arrives. Do this roll before any namespace they talk to migrates.
-3. **The rejection, somewhere safe** — a scratch `preflight` namespace is the
+3. **The rejection, somewhere safe**: a scratch `preflight` namespace is the
    first thing enrolled into ambient. ztunnel's EC CSR is refused by the
    RSA-only role; the preserved CertificateRequest carries the exact Vault
    error. This is the dev rehearsal that saves the production estate.
-4. **The fix is `key_type=any`, not `ec`** — key type is chosen by the
+4. **The fix is `key_type=any`, not `ec`**: key type is chosen by the
    client: sidecars keep sending RSA, ztunnel sends EC, and the role just has
    to permit both. Flip to `any`: preflight gets its EC cert, ledger's RSA
    cert is untouched (same serial).
-5. **Migrate `payments`** — namespace label flip + rolling restart, fortio
+5. **Migrate `payments`**: namespace label flip + rolling restart, fortio
    scoring 100% across it. Afterwards: EC certs in ztunnel for payments, RSA
    in Envoy for ledger, and sidecar-to-ambient mTLS working in both
    directions.
-6. **The sidecar outage** — set the role to `key_type=ec` and the very next
+6. **The sidecar outage**: set the role to `key_type=ec` and the very next
    sidecar issuance in ledger fails (`role requires keys of type ec`): new
    pods stick at not-ready immediately, and every existing sidecar follows
    within one cert TTL when its renewal bounces. That is why the migration
@@ -80,49 +80,49 @@ and each one ends by pointing at the next.
 
 ## What each script does
 
-- **`01-setup.sh`** — builds the starting world: kind cluster, cert-manager,
+- **`01-setup.sh`**: builds the starting world: kind cluster, cert-manager,
   Vault (dev mode), the all-RSA PKI (root, intermediate, signing role locked
   to `key_type=rsa`), the cert-manager Vault Issuer (Kubernetes auth, no
   stored token), istio-csr, and Istio in sidecar mode with its built-in CA
   disabled (`ENABLE_CA_SERVER=false`) and `caAddress` pointed at istio-csr.
   From here Vault is the only signer in the cluster.
-- **`02-deploy-apps.sh`** — deploys `ledger` and `payments` (both sidecar),
+- **`02-deploy-apps.sh`**: deploys `ledger` and `payments` (both sidecar),
   clients curling across namespaces every 2s, fortio, and mesh-wide STRICT
   mTLS. The pods going Ready is itself the proof the Vault CA path works.
-- **`03-show-certs.sh`** — the certificate inventory, read from the live
+- **`03-show-certs.sh`**: the certificate inventory, read from the live
   serving state (Envoy SDS for sidecars, ztunnel for ambient): data plane,
   key algorithm, serial and issuer per workload. Run it at any point; run it
   at the end for the finale table.
-- **`04-enable-ambient.sh`** — the ambient control plane arrives: istio-csr
+- **`04-enable-ambient.sh`**: the ambient control plane arrives: istio-csr
   gains `caTrustedNodeAccounts=istio-system/ztunnel` (the ambient
   impersonation model, istio-csr ≥ v0.12.0), istiod flips to
   `profile=ambient`, CNI and ztunnel install with the same `caAddress`.
   Nothing is enrolled, ztunnel sends zero CSRs, no app restarts.
-- **`05-interop-roll.sh`** — one rolling restart of the sidecar namespace.
+- **`05-interop-roll.sh`**: one rolling restart of the sidecar namespace.
   Sidecars injected before the ambient profile lack
   `ISTIO_META_ENABLE_HBONE`, so ztunnel could only reach them in plaintext,
   which STRICT rejects. Shows the HBONE flag on the new pods, istiod's
   PROTOCOL=HBONE advertisement, and that the fresh certs are still RSA.
-- **`06-preflight-break.sh`** — the step that is supposed to fail. Enrols
+- **`06-preflight-break.sh`**: the step that is supposed to fail. Enrols
   the scratch `preflight` namespace into ambient; ztunnel's EC CSR is
   rejected by the rsa-only role, and the script shows the preserved
   CertificateRequest carrying Vault's exact error and ztunnel's own log.
-- **`07-vault-allow-ec.sh`** — the fix: rewrites the role with
+- **`07-vault-allow-ec.sh`**: the fix: rewrites the role with
   `key_type=any`, waits for ztunnel's retry to collect preflight's EC cert,
   and proves ledger's RSA cert is untouched (same serial).
-- **`08-migrate-payments.sh`** — the real migration, with fortio running:
+- **`08-migrate-payments.sh`**: the real migration, with fortio running:
   namespace label flip, rolling restart, scoreboard, then the after-state
   (no sidecars, EC certs in ztunnel, live 200s in both directions across the
   two data planes).
-- **`09-sidecar-outage.sh`** — what `key_type=ec` would do: a new ledger
+- **`09-sidecar-outage.sh`**: what `key_type=ec` would do: a new ledger
   replica's RSA CSR bounces and the pod sticks at not-ready, and every
   existing sidecar is one cert renewal away from the same fate. Repairs with
   `any` and shows the stuck pod heal itself.
-- **`99-teardown.sh`** — deletes the kind cluster.
-- **`vault-pki.sh`** — the PKI engine the others call: `bootstrap`,
+- **`99-teardown.sh`**: deletes the kind cluster.
+- **`vault-pki.sh`**: the PKI engine the others call: `bootstrap`,
   `role rsa|any|ec`, `show`, all via `kubectl exec` into the Vault pod (no
   local vault CLI needed).
-- **`e2e.sh`** — the whole arc as one automated run with assertions; exits
+- **`e2e.sh`**: the whole arc as one automated run with assertions; exits
   non-zero if any step's proof fails. This is what validates the lab.
 
 ## What's in yaml/
@@ -136,7 +136,7 @@ and each one ends by pointing at the next.
 Versions: Istio 1.30.3 (upstream), cert-manager v1.21.1, istio-csr v0.16.0
 (ambient support needs ≥ v0.12.0), Vault chart 0.34.0.
 
-Vault runs in dev mode (in-memory, HTTP, root token `root`) — right for a
+Vault runs in dev mode (in-memory, HTTP, root token `root`): right for a
 lab, never for production. The Issuer authenticates with a short-lived
 audience-scoped ServiceAccount token; no Vault token is stored in the cluster.
 
@@ -161,12 +161,12 @@ the Vault audit trail (preserved CertificateRequests arguably improve it).
 
 ## References
 
-- [Vault PKI secrets engine API](https://developer.hashicorp.com/vault/api-docs/secret/pki) —
+- [Vault PKI secrets engine API](https://developer.hashicorp.com/vault/api-docs/secret/pki):
   the role's `key_type` accepts `rsa`, `ec`, `ed25519` and `any`, and
   `key_bits` is "ignored ... in signing operations when `key_type=any`".
   `any` applies to the `sign` endpoints (client-generated keys, which is all
   istio-csr and cert-manager ever use); it cannot be used where Vault
   generates the key itself (`issue`, root/intermediate generation).
-- [cert-manager istio-csr](https://cert-manager.io/docs/usage/istio-csr/) —
+- [cert-manager istio-csr](https://cert-manager.io/docs/usage/istio-csr/):
   ambient support (trusted CA node accounts) needs istio-csr ≥ v0.12.0.
 

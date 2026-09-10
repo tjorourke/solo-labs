@@ -4,15 +4,15 @@
 `arctl`, end to end on a kind cluster. Part 2
 ([agentregistry-governance-kind](../agentregistry-governance-kind/)) reuses
 this cluster for registry governance: OIDC, role mapping, AccessPolicies, and
-per-team catalog visibility.
+per-team catalogue visibility.
 
-1. `arctl init` scaffolds the three artifact kinds: the **textkit** MCP server
+1. `arctl init` scaffolds the three artefact kinds: the **textkit** MCP server
    (FastMCP, `word_count` + `extract_links`), the **summary-style** skill, and
    the **summarizer** agent (ADK Python, Anthropic `claude-haiku-4-5`).
 2. `arctl run` proves the agent + MCP + skill together locally, no cluster.
 3. `arctl build --push` builds the scaffolded Dockerfiles into OCI images and
    pushes them to a local registry (`localhost:5001`).
-4. `arctl apply` publishes all three artifacts to the AgentRegistry catalog.
+4. `arctl apply` publishes all three artefacts to the AgentRegistry catalogue.
 5. A Kubernetes `Runtime` + AgentRegistry `Deployment` host the agent on
    **Solo Enterprise for kagent**, and the hosted agent is tested through the
    controller's OIDC-protected A2A endpoint with a real Keycloak token.
@@ -38,10 +38,10 @@ export SOLO_LICENSE_KEY=...            # Solo Enterprise for kagent
 
 ## Layout
 
-- `scripts/` — numbered setup steps plus `quick.sh` (orchestrator) and
+- `scripts/`: numbered setup steps plus `quick.sh` (orchestrator) and
   `ask.sh` (mint alice's Keycloak token, call the agent over A2A).
-- `artifacts/` — the three `arctl init` projects: `textkit/` (MCP),
+- `artifacts/`: the three `arctl init` projects: `textkit/` (MCP),
   `summary-style/` (skill), `summarizer/` (agent).
-- `yaml/` — the AgentRegistry `Runtime`/`Deployment` shapes and the Keycloak
+- `yaml/`: the AgentRegistry `Runtime`/`Deployment` shapes and the Keycloak
   install (realm `solo`, users alice/bob/carol).
-- `kind/` — the cluster config.
+- `kind/`: the cluster config.

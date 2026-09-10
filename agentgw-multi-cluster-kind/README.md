@@ -1,10 +1,12 @@
-# Solo AgentGateway Ambient Multicluster — Standup (kind)
+<a id="solo-agentgateway-ambient-multicluster--standup-kind"></a>
+# Solo AgentGateway Ambient Multicluster: Standup (kind)
 
 Two kind clusters (`east-ag` + `west-ag`) on this Mac, peered over HBONE, with
 Solo Istio Ambient + Solo Enterprise agentgateway. See `index.html` for the
 full lab; this README covers the nightly-build switch on `scripts/quick.sh`.
 
-## What `AGW_NIGHTLY=true` swaps under the hood
+<a id="what-agw_nightlytrue-swaps-under-the-hood"></a>
+## Nightly-build overrides with `AGW_NIGHTLY=true`
 
 From `scripts/quick.sh:44-48`:
 

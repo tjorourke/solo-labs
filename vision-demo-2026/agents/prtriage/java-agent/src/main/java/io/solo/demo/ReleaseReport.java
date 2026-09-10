@@ -1,11 +1,13 @@
 package io.solo.demo;
 
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.google.adk.agents.Instruction;
 import com.google.adk.agents.LlmAgent;
 import com.google.adk.models.Claude;
 import com.google.adk.tools.Annotations;
 import com.google.adk.tools.FunctionTool;
 import com.google.adk.tools.mcp.McpToolset;
+import io.reactivex.rxjava3.core.Single;
 
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -49,14 +51,24 @@ public final class ReleaseReport {
     var anthropic = AnthropicOkHttpClient.builder()
         .apiKey(config.anthropicApiKey())
         .build();
+    var skill = config.instruction();
 
     return LlmAgent.builder()
         .name("prtriage_java")
         .description(DESCRIPTION)
         .model(new Claude(config.modelName(), anthropic))
-        .instruction(config.instruction())
+        // An Instruction.Provider is evaluated per turn, so the date is right on a pod
+        // that has been up for a week. A plain instruction() string is fixed at
+        // startup, and a report headed with the wrong date is wrong in the one place
+        // everybody reads.
+        .instruction(new Instruction.Provider(ctx -> Single.just(skill + dateNote())))
         .tools(gateway, FunctionTool.create(ReleaseReport.class, "today"))
         .build();
+  }
+
+  private static String dateNote() {
+    return "\n\nToday is %s (UTC). Date the report with it."
+        .formatted(LocalDate.now(ZoneOffset.UTC));
   }
 
   /**

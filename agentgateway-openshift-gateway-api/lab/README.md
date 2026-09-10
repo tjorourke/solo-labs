@@ -1,4 +1,5 @@
-# Lab: migrate an OpenShift app from the built-in gateway to agentgateway (zero downtime)
+<a id="lab-migrate-an-openshift-app-from-the-built-in-gateway-to-agentgateway-zero-downtime"></a>
+# Lab: migrate an OpenShift app from the built-in gateway to agentgateway
 
 This lab provisions a real OpenShift cluster on AWS, runs a sample app behind
 OpenShift's own Gateway API implementation, then migrates it live to
@@ -8,8 +9,8 @@ It is the validated, hands-on companion to the field guide
 
 Everything here was run end to end on a fresh cluster. The headline result:
 **agentgateway runs on OpenShift's cluster-managed Gateway API 1.3.0 with no CRD
-changes, coexists with OpenShift's own gateway, and the migration moved live
-traffic with zero dropped requests** (`evidence/availability-evidence.log`,
+changes, coexists with OpenShift's own gateway, and the captured migration returned
+HTTP 200 for all 103 monitored requests** (`evidence/availability-evidence.log`,
 103/103 requests `200`, `fail=0`).
 
 ## What was validated
@@ -127,7 +128,7 @@ On OpenShift, the install is exactly three pieces, the same on 1.2.1, 1.3.0 and
 3. `enterprise-agentgateway` control plane (with `licensing.licenseKey`).
 Then grant the gateway's service account `anyuid` so the proxy schedules.
 
-**ListenerSet / `installEnterpriseListenerSetCRD` — verified, and not what the
+**ListenerSet / `installEnterpriseListenerSetCRD`: verified, and not what the
 chart-source suggests.** The agentgateway CRD chart *source* carries an
 `installEnterpriseListenerSetCRD` value, but the **released `v2026.6.1` chart does
 not ship `EnterpriseListenerSet`**: the value is not recognised (a no-op) and no

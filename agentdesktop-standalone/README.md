@@ -8,7 +8,7 @@ Read the lab: <https://www.masterthemesh.com/solo/agentdesktop-standalone/>
 
 ## What the lab covers
 
-- The business value, with the controller fleet inventory view.
+- The controller fleet inventory view.
 - What Agentdesktop is and where it sits relative to MDM and the gateway.
 - Running the standalone example: Dex plus agentgateway in Docker, one YAML file,
   no Kubernetes and no controller.

@@ -1,52 +1,48 @@
 #!/usr/bin/env bash
-# identity-matrix.sh — one GitHub integration, three callers, three answers.
+# identity-matrix.sh — one GitHub integration, three callers, three sets of tools.
 #
-# Runs the same tools/list against the same waypoint from each caller and prints what
-# each is allowed to see. The point is that nothing about the request differs except
-# who is making it: same URL, same body, no credentials anywhere.
-#
-#   triage agent   reads pull requests, cannot see the merge tool
-#   release agent  reads the same pull requests, can see the merge tool
-#   no identity    refused outright, because it matches neither clause
+# Each caller runs the SAME one-line program in the gateway's sandbox, asking which
+# GitHub functions exist in there. Nothing about the request differs except who makes
+# it: same URL, same body, no credentials anywhere. The gateway generates the functions
+# per caller from its authorization policy, so the answer is the policy, read back.
 set -euo pipefail
-K="kubectl --context ${CTX:-kind-mesh1}"
-NS="${NS:-kagent}"
-URL="http://github-mcp.${NS}.svc.cluster.local/"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-tools_seen() { # tools_seen <deployment>
-  $K -n "$NS" exec "deploy/$1" -- sh -c '
-    INIT='"'"'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"matrix","version":"1"}}}'"'"'
-    SID=$(wget -qS -O /dev/null --header="Content-Type: application/json" \
-      --header="Accept: application/json, text/event-stream" --post-data="$INIT" '"$URL"' 2>&1 \
-      | grep -i "mcp-session-id" | awk "{print \$2}")
-    wget -qO- --header="Content-Type: application/json" --header="Accept: application/json, text/event-stream" \
-      ${SID:+--header="Mcp-Session-Id: $SID"} \
-      --post-data='"'"'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'"'"' '"$URL"' 2>&1 \
-      | sed "s/^data: //" | grep -o "\"name\":\"[a-z_]*\"" | sed "s/\"name\"://;s/\"//g" | sort | tr "\n" " "' 2>/dev/null || true
+# Object.keys(globalThis) is how a program sees its own tool surface. The sandbox has no
+# console and no way out, so this is the only way to ask it.
+cat > /tmp/probe-params.json <<'JSON'
+{"name": "run_code",
+ "arguments": {"code": "Object.keys(globalThis).filter(k => typeof globalThis[k] === 'function').sort()"}}
+JSON
+
+functions_for() { # functions_for <deployment>
+  "$HERE/mcp-from-pod.sh" "$1" tools/call /tmp/probe-params.json \
+    | grep -o '"success":\[[^]]*\]' | grep -o '"[a-z_]*"' | tr -d '"' | grep -v '^success$' \
+    | sort | tr '\n' ' '
 }
 
-row() { # row <label> <tools...>
-  local label="$1"; shift
-  local tools="$*"
-  local read="no" merge="hidden"
-  [[ "$tools" == *list_pull_requests* ]] && read="yes"
-  [[ "$tools" == *merge_pull_request* ]] && merge="VISIBLE"
-  [[ -z "${tools// }" ]] && { read="DENIED"; merge="DENIED"; }
-  printf "  %-22s %-12s %-10s %s\n" "$label" "$read" "$merge" "${tools:-(nothing)}"
+row() { # row <label> <functions...>
+  local label="$1"; shift; local fns="$*"
+  local read="no" merge="not defined"
+  [[ "$fns" == *list_pull_requests* ]] && read="yes"
+  [[ "$fns" == *merge_pull_request* ]] && merge="DEFINED"
+  [[ -z "${fns// }" ]] && { read="DENIED"; merge="DENIED"; }
+  printf "  %-18s %-10s %-12s %s\n" "$label" "$read" "$merge" "${fns:-(refused)}"
 }
 
 echo
-printf "  %-22s %-12s %-10s %s\n" "identity" "read PRs" "merge tool" "tools returned"
-printf "  %-22s %-12s %-10s %s\n" "----------------------" "------------" "----------" "--------------"
-row "triage agent"  "$(tools_seen prtriagejava)"
-row "release agent" "$(tools_seen releasejava)"
+printf "  %-18s %-10s %-12s %s\n" "identity" "read PRs" "merge"  "functions in its sandbox"
+printf "  %-18s %-10s %-12s %s\n" "------------------" "--------" "-----------" "------------------------"
+row "triage agent"  "$(functions_for prtriagejava)"
+row "release agent" "$(functions_for releasejava)"
 
-# A caller with no mesh identity. my-mcp is an ordinary pod in the namespace: it is in
-# the mesh, so it HAS an identity, just not one the policy names. That is the honest
-# third row, and it is the common case: some other workload that found the endpoint.
-if $K -n "$NS" get deploy/my-mcp >/dev/null 2>&1; then
-  row "another workload" "$(tools_seen my-mcp)"
+# my-mcp is an ordinary pod in the namespace. It IS in the mesh, so it has an identity,
+# just not one the policy names. That is the honest third row and the common case: some
+# other workload that found the endpoint.
+K="kubectl --context ${CTX:-kind-mesh1}"
+if $K -n "${NS:-kagent}" get deploy/my-mcp >/dev/null 2>&1; then
+  row "another workload" "$(functions_for my-mcp)"
 else
-  echo "  (deploy/my-mcp not present, so the unnamed-identity row is skipped)"
+  echo "  (deploy/my-mcp is not present, so the unnamed-identity row is skipped)"
 fi
 echo

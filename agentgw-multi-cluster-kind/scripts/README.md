@@ -1,11 +1,12 @@
-# `quick.sh` — Enterprise AgentGateway multicluster standup on kind
+<a id="quicksh--enterprise-agentgateway-multicluster-standup-on-kind"></a>
+# `quick.sh`: Enterprise AgentGateway multicluster standup on kind
 
 End-to-end platform setup for the
 [agentgw-multi-cluster-kind](https://www.masterthemesh.com/solo/agentgw-multi-cluster-kind/)
 lab. Stands up two ambient kind clusters (`east-ag`, `west-ag`) peered over
 HBONE, installs Solo Istio Ambient via Gloo Operator + `ServiceMeshController`,
 and installs Solo Enterprise agentgateway as the north-south ingress controller.
-Platform-only — workloads are deployed by the follow-on labs
+Platform-only: workloads are deployed by the follow-on labs
 ([cloud-connectivity](https://www.masterthemesh.com/solo/agentgw-cloud-connectivity/),
 [agentic-mcp](https://www.masterthemesh.com/solo/agentgw-agentic-mcp/)).
 
@@ -63,7 +64,7 @@ peering connect but won't enable global service rewriting.
 5. Solo Istio Ambient 1.29.2 via Gloo Operator 0.5.2 + `ServiceMeshController`.
 6. `SOLO_LICENSE_KEY` env wired onto `istiod-gloo` via `secretKeyRef` →
    `solo-istio-license` Secret in `istio-system`. `pilot-discovery` only reads
-   this env var (not `LICENSE_KEY` / `GLOO_LICENSE_KEY` / mount paths) — without
+   this env var (not `LICENSE_KEY` / `GLOO_LICENSE_KEY` / mount paths), without
    it the multicluster feature gate stays closed.
 7. `PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false` on `istiod-gloo` +
    `L7_ENABLED=true` on `ztunnel` (required for Ambient peering, not exposed by
@@ -78,7 +79,7 @@ peering connect but won't enable global service rewriting.
     be ignored anyway.
 11. Solo Enterprise agentgateway control plane + CRDs at the version selected
     by `AGW_VERSION` / `AGW_REGISTRY` / `AGW_NIGHTLY`.
-12. Smoke test — `istiod-gloo` Available, `ztunnel` Ready on every node,
+12. Smoke test: `istiod-gloo` Available, `ztunnel` Ready on every node,
     east-west GW has an LB IP, peering verified.
 
 ## Configuration via env vars
@@ -89,15 +90,16 @@ peering connect but won't enable global service rewriting.
 | `SECRETS_FILE`       | `/Users/tomorourke/code/solo/secrets/secrets-envs.sh`                                     | Sourced before the licence-env check.                                                                    |
 | `SOLO_ISTIO_VERSION` | `1.29.2-solo`                                                                             | Solo Istio image tag. SMC's `.spec.version` is derived as `${SOLO_ISTIO_VERSION%-solo}`.                 |
 | `GLOO_OPERATOR_VERSION` | `0.5.2`                                                                                | Helm chart version for the Gloo Operator.                                                                |
-| `GATEWAY_API_VERSION`| `v1.4.0`                                                                                  | Standard Gateway API release. **Stay on 1.4.x** — 1.5.0 ships a `safe-upgrades` admission policy that blocks SMC's bundled CRD apply. |
+| `GATEWAY_API_VERSION`| `v1.4.0`                                                                                  | Standard Gateway API release. **Stay on 1.4.x**: 1.5.0 ships a `safe-upgrades` admission policy that blocks SMC's bundled CRD apply. |
 | `AGW_VERSION`        | `v2.3.3`                                                                                  | Enterprise agentgateway chart tag (v-prefixed at 2.2+).                                                  |
 | `AGW_REGISTRY`       | `oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts`                      | OCI helm repo. Override to test pre-release or air-gapped builds.                                        |
-| `AGW_IMAGE_REGISTRY` | *(empty)*                                                                                 | When set, the script pre-pulls the controller + dataplane images on the host and `docker save | ctr import`s them into both kind clusters — required for any registry the kind nodes can't anonymously pull from. |
+| `AGW_IMAGE_REGISTRY` | *(empty)*                                                                                 | When set, the script pre-pulls the controller + dataplane images on the host and `docker save | ctr import`s them into both kind clusters: required for any registry the kind nodes can't anonymously pull from. |
 | `AGW_NIGHTLY`        | `false`                                                                                   | When `true`, overrides the three vars above to install the verified-fixed nightly (see next section).    |
 | `METALLB_VERSION`    | `v0.14.9`                                                                                 | MetalLB chart version.                                                                                   |
 | `GLOO_MESH_VERSION`  | `2.12.0`                                                                                  | Optional Gloo Mesh management plane (only installed if `GLOO_MESH_LICENSE_KEY` is set).                  |
 
-## `AGW_NIGHTLY=true` — verified-fixed nightly
+<a id="agw_nightlytrue--verified-fixed-nightly"></a>
+## `AGW_NIGHTLY=true`: verified-fixed nightly
 
 The released `v2.3.3` agentgateway dataplane NACKs istiod's synthetic
 cross-cluster `WorkloadEntry` as `"unknown address type"`. Cross-cluster ingress
@@ -124,13 +126,13 @@ proxy xDS logs.
 AGW_NIGHTLY=true ./scripts/quick.sh
 ```
 
-Anyone with the standup already up can swap the build in place — see the
+Anyone with the standup already up can swap the build in place: see the
 [Appendix](https://www.masterthemesh.com/solo/agentgw-multi-cluster-kind/#appendix)
 on the lab page for the manual commands.
 
 ## Idempotency
 
-The script is fully idempotent — re-run as many times as you like. Image pulls
+The script is fully idempotent: re-run as many times as you like. Image pulls
 are cached, kind clusters are skipped if they already exist, helm releases use
 `upgrade --install`, and env-var patches are guarded with an existence check
 before being added (so duplicates aren't appended on re-runs). The slowest
@@ -150,9 +152,9 @@ remains (kind reuses it on the next run).
 
 | Symptom                                                              | Cause + fix                                                                                                     |
 |----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| `Error from server (NotFound): deployments.apps "istiod-gloo" not found` | `wait_deploy` ran before the SMC reconciler created the Deployment. The helper now polls for existence first — this should not happen on the current script. If it does, re-run; the resource will exist on the second attempt. |
+| `Error from server (NotFound): deployments.apps "istiod-gloo" not found` | `wait_deploy` ran before the SMC reconciler created the Deployment. The helper now polls for existence first: this should not happen on the current script. If it does, re-run; the resource will exist on the second attempt. |
 | `Installing CRDs with version before v1.5.0 is prohibited`           | Gateway API v1.5.0 leaked onto the cluster. Stay on v1.4.0 (the default), or delete the `safe-upgrades.gateway.networking.k8s.io` ValidatingAdmissionPolicy + binding before SMC reconciles. |
-| `License Check: found invalid license for multicluster` (istioctl)    | The Solo Istio licence JWT is `"lt": "trial"` (or another non-`ent` tier). Multicluster needs `"lt": "ent"` — request from your Solo contact. |
+| `License Check: found invalid license for multicluster` (istioctl)    | The Solo Istio licence JWT is `"lt": "trial"` (or another non-`ent` tier). Multicluster needs `"lt": "ent"`: request from your Solo contact. |
 | `Failed to pull image ... 403 Forbidden` on the agentgateway pod      | The chart is on a private registry. Set `AGW_IMAGE_REGISTRY` (or use `AGW_NIGHTLY=true`) so the script pre-pulls + side-loads the images into the kind nodes. |
 | `BASELINE: HTTP 503` on cross-cluster failover                       | Agentgateway dataplane NACK on synthetic `WorkloadEntry`. Install the nightly (`AGW_NIGHTLY=true`) or use the parallel `istio` Gateway pattern (see `yaml/side-by-side/istio-gateway.yaml`). |
 

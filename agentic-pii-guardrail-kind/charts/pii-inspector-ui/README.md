@@ -1,4 +1,5 @@
-# pii-inspector-ui — Helm chart
+<a id="pii-inspector-ui--helm-chart"></a>
+# pii-inspector-ui: Helm chart
 
 Drop-in side-by-side **prompt / what-the-LLM-saw / what-came-back** UI for any
 agentgateway LLM route. Use it to validate built-in `promptGuard` masks, custom
@@ -9,8 +10,8 @@ Two modes:
 
 | Mode | Set `webhook.url` | What you see |
 |---|---|---|
-| **With webhook** (recommended for guardrail dev) | yes — your webhook's `/events` admin endpoint | Three columns: original prompt, what the LLM actually received after redaction, what came back. Includes a per-request audit row with the matched patterns. |
-| **Generic gateway** (no webhook implemented yet) | no | Two columns: prompt, response. Useful as a smoke-test client for an LLM route — also tells you when the gateway returns 4xx (`Reject` from a built-in regex shows up as the raw 403 body). |
+| **With webhook** (recommended for guardrail dev) | yes: your webhook's `/events` admin endpoint | Three columns: original prompt, what the LLM actually received after redaction, what came back. Includes a per-request audit row with the matched patterns. |
+| **Generic gateway** (no webhook implemented yet) | no | Two columns: prompt, response. Useful as a smoke-test client for an LLM route: also tells you when the gateway returns 4xx (`Reject` from a built-in regex shows up as the raw 403 body). |
 
 Two LLM wire formats:
 
@@ -19,7 +20,7 @@ Two LLM wire formats:
 | `anthropic-messages` (default) | `/v1/messages` | Anthropic native | `content[].text` blocks |
 | `openai-chat` | `/v1/chat/completions` | OpenAI Chat Completions | `choices[].message.content` |
 
-The same image binary speaks both — flip the env var, point at the right path.
+The same image binary speaks both: flip the env var, point at the right path.
 
 ## Source
 
@@ -118,7 +119,7 @@ helm install inspector ./charts/pii-inspector-ui -n my-ai \
 ## Wiring it up to your gateway
 
 For the inspector to talk to a gateway in another namespace, no
-`ReferenceGrant` is needed — it's a normal pod making outbound HTTP. Just
+`ReferenceGrant` is needed: it's a normal pod making outbound HTTP. Just
 make sure your Service DNS resolves from `my-ai-demo` (or whatever
 namespace you install the inspector into).
 
@@ -128,10 +129,10 @@ hop is cluster-internal or external.
 
 ## What the webhook needs to expose for trace mode
 
-Two endpoints — both are JSON, both are documented in
+Two endpoints: both are JSON, both are documented in
 [`src/guardrail-webhook/app.py`](../../src/guardrail-webhook/app.py):
 
-1. **The standard Solo Guardrail Webhook API** — `/request` and `/response`.
+1. **The standard Solo Guardrail Webhook API**: `/request` and `/response`.
    These are what agentgateway calls. The inspector does not call these.
 2. **`GET /events?limit=<n>`** — an *admin* endpoint, not part of the AGW
    contract. Returns the audit ring as a JSON array, newest first:
@@ -179,7 +180,7 @@ kubectl -n my-ai-demo logs deploy/inspector-pii-inspector-ui --tail=1
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Column 3 empty + red badge "empty completion text" | LLM returned 200 but no text content blocks (e.g. tool-use only, or refusal) | Expand "raw HTTP body" under column 3 — the raw response from your gateway is always there. |
+| Column 3 empty + red badge "empty completion text" | LLM returned 200 but no text content blocks (e.g. tool-use only, or refusal) | Expand "raw HTTP body" under column 3: the raw response from your gateway is always there. |
 | Column 2 always says "no webhook configured" even though you set `webhook.url` | Inspector pod didn't pick up the value | `kubectl ... rollout restart deploy/inspector-pii-inspector-ui` and check the boot log. |
 | Column 2 always says "pass" even when you sent obvious PII | Your gateway isn't applying the guardrail policy | Check the policy is `Accepted: True, Attached: True` against the route the inspector hits. |
 | Send fails with `connection refused` | `agw.url` wrong, or Service in another namespace not resolvable | Verify with `kubectl run --rm -it tmp --image=curlimages/curl -- curl -v $AGW_URL/v1/messages`. |

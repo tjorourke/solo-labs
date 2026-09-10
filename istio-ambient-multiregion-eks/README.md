@@ -4,12 +4,12 @@
 
 Built to answer three multi-region questions from a real customer PoC:
 
-1. **Automated regional failover** — traffic to a service in `eu-central-1` re-routes to `eu-west-1` when local pods are unhealthy or the region is unreachable.
-2. **Locality-weighted routing** — the mesh prefers the closest healthy region (and why there is no latency probe).
-3. **Scale (1000 tenants)** — what actually scales when there is no management plane in the discovery path.
+1. **Automated regional failover**: traffic to a service in `eu-central-1` re-routes to `eu-west-1` when local pods are unhealthy or the region is unreachable.
+2. **Locality-weighted routing**: the mesh prefers the closest healthy region (and why there is no latency probe).
+3. **Scale (1000 tenants)**: what actually scales when there is no management plane in the discovery path.
 
 - **Edition:** Enterprise (Solo Istio Helm charts, multicluster peering needs a Solo licence).
-- **Cloud:** AWS, two regions (`eu-central-1`, `eu-west-1`). **Billed infrastructure** — run `teardown.sh` when done.
+- **Cloud:** AWS, two regions (`eu-central-1`, `eu-west-1`). **Billed infrastructure**: run `teardown.sh` when done.
 - **Validated live on:** Solo Istio `1.29.3-solo`, kgateway `v2.2.0`, AWS Global Accelerator + Route53 health checks, EKS `1.33`.
 
 ## Status: peering is not converging on 1.30.4-solo (2026-09-09)
@@ -37,7 +37,7 @@ gathered on both clusters:
 - The Service is the one istiod's east-west controller creates and owns
   (`gateway.istio.io/managed=istio.io-eastwest-controller`), publishing `tls-xds 15012 -> 15012`.
 - `istioctl proxy-config listener` on the gateway pod shows listeners on **15008, 15021, 15090
-  only** — nothing bound on 15012 — so the NLB target group for the 15012 nodePort fails its TCP
+  only** (nothing bound on 15012) so the NLB target group for the 15012 nodePort fails its TCP
   health checks while 15008 and 15021 are healthy.
 - Not caused by the Service values: reproduced after deleting the Service and letting the
   controller recreate it, and after a gateway rollout restart.
@@ -112,17 +112,17 @@ HOSTED_ZONE_ID=<zone> RECORD_NAME=region-echo.<domain> ./scripts/teardown.sh   #
 ## What each demo proves
 
 1. **Mesh failover (`04`).** Client calls the same hostname throughout. Scale `region-echo` to 0 in one region → responses come from the other region over the east-west gateway → scale back → local again. Deterministic locality, no health-check config, cross-region bytes only during the outage.
-2. **Edge failover — two approaches, both live.**
+2. **Edge failover: two approaches, both live.**
    - **Global Accelerator (`05` + `07`)** — anycast static IPs over both regional NLBs. Kill the ingress in the region GA is serving this client → GA fails it out and serves the other in ~40s → restore. No DNS, no TTLs.
    - **Route 53 DNS (`08` + `09`)** — a failover record set (PRIMARY eu-central, SECONDARY eu-west), each tied to a health check. Kill the primary ingress → the record hands out the secondary NLB on the next resolution. Needs a hosted zone; cutover is health-check + record TTL + client caching.
-3. **Scale (`06`).** Ramp N tenant namespaces (global services) on both clusters; capture istiod push metrics, ztunnel memory, and time-to-discovery of a new global service from the peer. There is no management plane in this path — istiod per cluster is the thing that scales.
+3. **Scale (`06`).** Ramp N tenant namespaces (global services) on both clusters; capture istiod push metrics, ztunnel memory, and time-to-discovery of a new global service from the peer. There is no management plane in this path: istiod per cluster is the thing that scales.
 
 ## Gotchas found live (all fixed in the scripts)
 
 - **Plain Helm has no `istio-eastwest` GatewayClass** (the Gloo Operator ships it). Create it manually and set `AMBIENT_ENABLE_MULTI_NETWORK=true` on istiod, or the east-west gateway never programs. (`01`)
-- **NLBs give DNS names, not IPs** — the remote peer reference needs `addressType: Hostname`. (`02`)
+- **NLBs give DNS names, not IPs**: the remote peer reference needs `addressType: Hostname`. (`02`)
 - **kgateway needs the experimental `TLSRoute` CRD**, which the Gateway API standard-install omits; eksctl clusters also carry a `safe-upgrades` ValidatingAdmissionPolicy that blocks experimental CRDs. Remove the VAP, apply the CRD. (`05`)
-- **kgateway's `gateway.kgateway.dev/service-annotations` does not propagate** in v2.2.0 — use the standard `spec.infrastructure.annotations` to make the ingress an NLB. (`05`)
+- **kgateway's `gateway.kgateway.dev/service-annotations` does not propagate** in v2.2.0: use the standard `spec.infrastructure.annotations` to make the ingress an NLB. (`05`)
 - **Global Accelerator inherits the NLB's target-group health.** With `externalTrafficPolicy: Cluster` (default) the NLB health check passes on every node even with zero ingress pods, so GA never fails over. Set `externalTrafficPolicy: Local`. (`05`)
 - **Locality preference is the Service `spec.trafficDistribution` FIELD**, not the `networking.istio.io/traffic-distribution` annotation, which is ignored on this line. (`03`)
 

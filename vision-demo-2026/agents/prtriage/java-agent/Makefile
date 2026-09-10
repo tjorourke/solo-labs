@@ -12,6 +12,7 @@
 #   make logs      what the agent logged, where the A2A turns show up
 #   make clean     remove the deployment and the catalogue entry
 
+CLUSTER ?= mesh1
 IMAGE   ?= localhost:5001/prtriage-java:latest
 DEMO_REPO ?= tjorourke/kagent
 CTX     ?= kind-mesh1
@@ -19,7 +20,7 @@ NS      ?= kagent
 SRC     := src/main/java/io/solo/demo/ReleaseReport.java
 KC      := kubectl --context $(CTX)
 
-.PHONY: all show build push publish deploy ask logs clean
+.PHONY: all show build push publish deploy ask logs clean skill.md
 
 all: build push publish deploy ask
 
@@ -45,11 +46,19 @@ skill.md:
 
 build: skill.md
 	@echo "== building $(IMAGE) (maven runs inside the image) =="
-	docker build -t $(IMAGE) .
+	@# --progress=quiet: buildkit's default output is forty lines of layer chatter,
+	@# which is unreadable on a projector. The summary below says the same thing.
+	docker build --progress=quiet -t $(IMAGE) .
 
 push:
 	@echo "== pushing to the kind registry =="
 	docker push -q $(IMAGE)
+	@# The tag is :latest and the pods pull IfNotPresent, so a node that already has a
+	@# :latest keeps serving it and a restart quietly runs the PREVIOUS build. Drop it
+	@# from every node, or the next step demonstrates yesterday's agent.
+	@for n in $$(kind get nodes --name $(CLUSTER) 2>/dev/null); do \
+	   docker exec $$n crictl rmi $(IMAGE) >/dev/null 2>&1 || true; \
+	 done; echo "   cleared the cached image from the cluster nodes"
 
 ## register it in the catalogue. Same command as the Python agent.
 publish:
@@ -70,6 +79,8 @@ deploy: publish
 	@# the next line prints READY=False and looks like a failure.
 	@$(KC) -n $(NS) wait --for=condition=Ready agent/prtriagejava --timeout=120s >/dev/null
 	@$(KC) -n $(NS) get agent prtriagejava
+	@printf '   running image  %s\n' "$$($(KC) -n $(NS) get pod -l app.kubernetes.io/name=prtriagejava \
+	   -o jsonpath='{.items[0].status.containerStatuses[0].imageID}')"
 
 ## Prompt it through kagent's OIDC-protected A2A endpoint. ask.sh mints the OIDC token
 ## from inside a pod and needs python3 to do it, which this image does not have, so it

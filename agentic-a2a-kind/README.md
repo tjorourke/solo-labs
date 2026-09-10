@@ -7,13 +7,14 @@ the chain as an exchanged On-Behalf-Of (OBO) token, captured live off the wire.
 
 A single, standalone kind cluster running two declarative agents:
 
-- **sre-orchestrator** — the on-call agent. Triages cluster incidents and, when a
+- **sre-orchestrator**: the on-call agent. Triages cluster incidents and, when a
   problem looks database-related, delegates to the specialist over A2A by
   referencing it as a tool (`tools[].type: Agent`).
-- **dba-agent** — a database specialist. Diagnoses Postgres workload failures and
+- **dba-agent**: a database specialist. Diagnoses Postgres workload failures and
   advertises its skill on its A2A agent card (`a2aConfig.skills`).
 
-## The story
+<a id="the-story"></a>
+## The database incident
 
 A Postgres database (`orders/orders-db`) is broken on purpose: no
 `POSTGRES_PASSWORD`, so the container refuses to initialise and the pod
@@ -26,7 +27,7 @@ way.
 
 ## Bring it up
 
-Standalone cluster. Needs an Anthropic key and two enterprise licenses:
+Standalone cluster. Needs an Anthropic key and two enterprise licences:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -36,7 +37,7 @@ export AGENTGATEWAY_LICENSE_KEY=...     # enterprise agentgateway
 ```
 
 (The Solo charts are pulled from a Google Artifact Registry; `gcloud` must be
-installed and authenticated — the scripts run `helm registry login` for you.)
+installed and authenticated: the scripts run `helm registry login` for you.)
 
 ## See the exchange
 
@@ -65,7 +66,7 @@ back to the verified shape, clearly labelled.
 The **OBO token exchange and identity-driven authentication are verified end to
 end** (see `CLAUDE.md`). The `AccessPolicy` resources that scope the DBA down are
 applied but require kagent's Istio authz-translation layer to enforce, which is
-not installed in this single-cluster lab — documented in `CLAUDE.md` with how to
+not installed in this single-cluster lab: documented in `CLAUDE.md` with how to
 enable it.
 
 ## Reset / teardown
@@ -78,5 +79,5 @@ kubectl --context kind-a2a-obo -n orders rollout restart deploy/orders-db  # re-
 ## Notes
 
 - Needs `docker`, `kind`, `kubectl`, `helm`, `curl`, `gcloud`.
-- Fully standalone — its own `a2a-obo` kind cluster, no dependency on any other lab.
+- Fully standalone: its own `a2a-obo` kind cluster, no dependency on any other lab.
 - See `CLAUDE.md` for design notes and the end-to-end verification record.

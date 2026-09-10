@@ -1,16 +1,16 @@
 # vision-demo-2026
 
-**Customer demo suite for Solo Enterprise for Istio (ambient), one self-contained notebook per demo.** A mash-up of `agentgw-multi-cluster-kind` (the multicluster story, per the "Solo Enterprise for Istio" deck from slide 24) and `istio-ambient-cert-identity-kind` (the L4/L7 workload-identity story), with **one** setup script, inline architecture and state diagrams, and no per-part helm plumbing in the demo itself.
+**Customer demo suite for Solo Enterprise for Istio (ambient), one self-contained notebook per demo.** A mash-up of `agentgw-multi-cluster-kind` (the multicluster exercises, per the "Solo Enterprise for Istio" deck from slide 24) and `istio-ambient-cert-identity-kind` (the L4/L7 workload-identity exercises), with **one** setup script, inline architecture and state diagrams, and no per-part Helm installation steps in the demo itself.
 
 - **Part 1 — Multicluster.** Bookinfo on both clusters, east-west gateways + `istioctl multicluster link`, agentgateway ingress, global services (`solo.io/service-scope=global` → `*.mesh.internal`), cross-cluster failover, takeover of the local hostname (`solo.io/service-takeover=true`), then the same ingress doing canary + rate limit.
-- **Part 2 — L4 identity.** The petshop on `mesh1`: the certificate is the identity, authorise on it in ztunnel, identity-aware access logs, the shared-ServiceAccount gap, workload claims closing it — all at L4, no proxy in the path.
-- **Part 3 — Waypoint (L7).** Add the agentgateway waypoint to the petshop: JWT authorisation, canary routing and identity-keyed rate limiting. Needs the petshop from Part 2 §2.1.
+- **Part 2: L4 identity.** The petshop on `mesh1`: the certificate is the identity, authorise on it in ztunnel, identity-aware access logs, the shared-ServiceAccount gap, workload claims closing it: all at L4, no proxy in the path.
+- **Part 3: Waypoint (L7).** Add the agentgateway waypoint to the petshop: JWT authorisation, canary routing and identity-keyed rate limiting. Needs the petshop from Part 2 §2.1.
 - **Part 4 — AgentRegistry.** On `mesh1`: a governed catalog of approved MCP tool servers, skills and runtimes; scaffold a dice agent with `arctl`, build/publish, kick off the **AWS Bedrock AgentCore** push in the background, deploy to kagent; roll the dice and watch the tool-call trace land in the **kagent UI** (Tracing span tree); add a tool; lock it down with a waypoint AccessPolicy; turn a REST API into MCP tools (OpenAPI → MCP); then invoke the same agent on AgentCore. Needs the extra platform standup below (and AWS + a git repo for the AgentCore beats).
-- **Part 5 — Substrate (gVisor).** On its **own** `kind-substrate` cluster (kagent 0.5.6): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool`: catch `runsc` actually serving a turn, show that an idle actor is a snapshot with no process at all, watch one actor per session appear, bind extra actors in a few hundred milliseconds, and put the same three agents up as ordinary pod-backed `Agent`s to see what that costs. Isolated from Part 4 (which stays on kagent v0.4.3).
-- **Part 6 — Inference routing.** On its **own** `kind-inference` cluster: a standalone agentgateway fronts a vLLM-simulator pool; the GIE Endpoint Picker does KV-cache-aware routing to an `InferencePool`, with serving priority via `InferenceObjective`. (A mesh-integrated gateway can't route GIE pools, so it runs on its own non-mesh gateway.)
-- **Part 7 — The AI gateway.** On `mesh1`: one agentgateway in front of every model, key and tool. Corporate model names routed across Azure OpenAI, AWS Bedrock and Anthropic (frontier models only, inference stays in Part 6); failover priority groups; JWT identity stamped on every metric; group-based model access; per-user token limits; virtual keys with a declarative budget; realised-USD chargeback by user/team/BU; and an MCP hub with per-tool authorization. Needs the small extra standup below.
+- **Part 5: Substrate (gVisor).** On its **own** `kind-substrate` cluster (kagent 0.5.6): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool`: catch `runsc` actually serving a turn, show that an idle actor is a snapshot with no process at all, watch one actor per session appear, bind extra actors in a few hundred milliseconds, and put the same three agents up as ordinary pod-backed `Agent`s to see what that costs. Isolated from Part 4 (which stays on kagent v0.4.3).
+- **Part 6: Inference routing.** On its **own** `kind-inference` cluster: a standalone agentgateway fronts a vLLM-simulator pool; the GIE Endpoint Picker does KV-cache-aware routing to an `InferencePool`, with serving priority via `InferenceObjective`. (A mesh-integrated gateway can't route GIE pools, so it runs on its own non-mesh gateway.)
+- **Part 7: The AI gateway.** On `mesh1`: one agentgateway in front of every model, key and tool. Corporate model names routed across Azure OpenAI, AWS Bedrock and Anthropic (frontier models only, inference stays in Part 6); failover priority groups; JWT identity stamped on every metric; group-based model access; per-user token limits; virtual keys with a declarative budget; realised-USD chargeback by user/team/BU; and an MCP hub with per-tool authorisation. Needs the small extra standup below.
 
-- **Part 8 — Build, ship and govern an agent.** On `mesh1`: agentgateway fronts **GitHub's hosted MCP server** (44 tools, 17 of them write) and holds the PAT, so the agent carries no GitHub credential; AgentRegistry publishes it as an approved tool server whose URL is the gateway; `arctl` scaffolds a `prtriage` agent against it, deployed on kagent. Then the same release-report question is run through all four `entMcp.toolMode` settings with the round trips, schema tokens and payload measured each time, and it finishes by taking the write tools away with an `EnterpriseAgentgatewayPolicy`. Needs the Part 4 standup plus `GITHUB_PAT` (read access is enough).
+- **Part 8: Build, ship and govern an agent.** On `mesh1`: agentgateway fronts **GitHub's hosted MCP server** (44 tools, 17 of them write) and holds the PAT, so the agent carries no GitHub credential; AgentRegistry publishes it as an approved tool server whose URL is the gateway; `arctl` scaffolds a `prtriage` agent against it, deployed on kagent. Then the same release-report question is run through all four `entMcp.toolMode` settings with the round trips, schema tokens and payload measured each time, and it finishes by taking the write tools away with an `EnterpriseAgentgatewayPolicy`. Needs the Part 4 standup plus `GITHUB_PAT` (read access is enough).
 
 ### Where agent projects live
 
@@ -31,7 +31,7 @@ agents/prtriage/
 `PROJECT_ROOT` in `demo-scripts/agentregistry/scripts/lib.sh` is what points `arctl`
 there, so nothing scatters across the lab root.
 
-The parts run **independently** — pick one per customer, or run all seven. This lab is a personal demo driver: no `index.html`, not on the site.
+The parts run **independently**: pick one per customer, or run all seven. This lab is a personal demo driver: no `index.html`, not on the site.
 
 ## Stack (validated live)
 
@@ -40,12 +40,12 @@ The parts run **independently** — pick one per customer, or run all seven. Thi
 | Solo Istio (Helm charts + images, ambient) | `1.30.4-solo` |
 | Solo Enterprise for agentgateway (ingress + waypoint) | `v2026.8.2` |
 | Solo Enterprise for AgentRegistry | `2026.8.0` |
-| Solo Enterprise for kagent (Part 4) | `0.4.3` — held, see below |
+| Solo Enterprise for kagent (Part 4) | `0.4.3`: held, see below |
 | Solo Enterprise for kagent (Part 5) | `0.5.6` |
 | Solo Enterprise management (UI + telemetry) | `0.5.6` |
 | Gloo Platform (Gloo UI, mgmt on mesh1 + agents on both) | `2.13.3` |
 | Gateway API | `v1.5.1` |
-| kind clusters | `mesh1` + `mesh2` (unique — no clash with other labs) |
+| kind clusters | `mesh1` + `mesh2` (unique: no clash with other labs) |
 
 **Why Part 4's kagent is held at 0.4.3 while everything else is current.** On 0.5.6 with
 OIDC a `type: BYO` agent (the image `arctl` builds) deploys, runs and serves its agent
@@ -75,7 +75,7 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup.sh   # ~15
 Every notebook's Connect cell has a terminal twin. `source` it with the demo number and
 you get the same variables (`CTX`, `ISTIOCTL`, licences, …) and the right working
 directory, so you can paste the notebook's `kubectl` / `istioctl` / `helm` / `arctl` /
-`curl` lines straight into a shell — no Jupyter needed:
+`curl` lines straight into a shell: no Jupyter needed:
 
 ```bash
 source demo-scripts/env.sh 1   # istio ambient multicluster (mesh1 + mesh2)
@@ -90,14 +90,14 @@ source demo-scripts/env.sh 8   # github + MCP tool layer    (mesh1)
 
 Must be **sourced**, not executed (`./env.sh` runs in a subshell and the exports vanish).
 
-**Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak, and the kagent Enterprise UI + telemetry on the shared `management` release in `solo-cost`) — heavy, so it is a separate one-time standup after `./demo-scripts/setup.sh`:
+**Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak, and the kagent Enterprise UI + telemetry on the shared `management` release in `solo-cost`): heavy, so it is a separate one-time standup after `./demo-scripts/setup.sh`:
 
 ```bash
 SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/agentregistry/setup-mesh1.sh   # ~8 min
 # open demo-4-agentics-vision.ipynb → run its Connect cell
 ```
 
-**Part 7 only** needs a light standup on `mesh1` (two local model servers, the MCP everything-server, the `ai-gateway` Gateway + cost catalog, and a demo IdP keypair). It reads `ANTHROPIC_API_KEY` from the secrets file for the one live provider:
+**Part 7 only** needs a light standup on `mesh1` (two local model servers, the MCP everything-server, the `ai-gateway` Gateway + cost catalogue, and a demo IdP keypair). It reads `ANTHROPIC_API_KEY` from the secrets file for the one live provider:
 
 ```bash
 SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/llm-gateway.sh   # ~1 min
@@ -119,7 +119,7 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup-all-labs.s
 | `substrate` | 5 | ~2-3 GiB | kagent **0.5.6** + gVisor substrate, and where the coding harness runs |
 | `inference` | 6 | ~1.5 GiB | standalone (non-mesh) agentgateway + vLLM sim + GIE |
 
-Parts 5 and 6 are separate clusters because they need platform versions/config incompatible with mesh1. Between demos, `docker stop` a cluster's node containers to reclaim RAM — kind survives a stop/start.
+Parts 5 and 6 are separate clusters because they need platform versions/config incompatible with mesh1. Between demos, `docker stop` a cluster's node containers to reclaim RAM: kind survives a stop/start.
 
 Consoles are on the mesh1 LoadBalancer IP via `sslip.io` (no `/etc/hosts`): the Connect cell prints the AgentRegistry UI + Keycloak URLs.
 
@@ -137,7 +137,7 @@ Part 5 cluster:
 - **`agentdemo`** is `type: BYO`: the image you built with `arctl`, running as a pod.
 - **`agentdemo-cc`** is an `AgentHarness` with `backend: openclaw`, the claude-code
   family. It runs as a **gVisor actor on the WorkerPool**, not as a pod of its own,
-  because `AgentHarness` has a required `spec.substrate` — which is why it lives here
+  because `AgentHarness` has a required `spec.substrate`, which is why it lives here
   and not on mesh1.
 
 It answers for itself: *"I'm Claude Haiku 4.5 running as an OpenClaw agent inside a
@@ -170,7 +170,7 @@ already up, so nothing has to happen in order and re-running it mid-flight is ha
 `AGENTS=10 CHATS=60` in front of it tunes the load if you ever care.
 
 Both scripts resolve everything from their own location, so they run from the suite root,
-from `demo-scripts/`, or by absolute path — and neither changes your kubectl context: the
+from `demo-scripts/`, or by absolute path, and neither changes your kubectl context: the
 viewer gets its own pinned kubeconfig, so you can stay on `kind-mesh1` for demo 4 in the
 same terminal.
 
@@ -192,9 +192,9 @@ WorkerPool, so treat them as live actions during a demo.
 ```
 
 **Three levels of reset**, lightest to heaviest:
-- **Reset cell** (near the top of each notebook) — undoes that demo's steps so it can be re-run; safe on a fresh cluster.
-- **`./demo-scripts/reset.sh`** — hard reset the whole demo to square 1: removes every demo workload from both parts (bookinfo, petshop, warehouse) and reverts ztunnel to claims-off, but leaves the platform (mesh, agentgateway, Gloo UI, Keycloak) up and unlinks the clusters so demo-1 re-creates peering live. No rebuild — restart the demo from §1.1 / §2.1. Use this between demo runs, or to start Phase 2 clean.
-- **`./demo-scripts/setup.sh teardown`** — delete the clusters entirely (full ~20-min rebuild).
+- **Reset cell** (near the top of each notebook): undoes that demo's steps so it can be re-run; safe on a fresh cluster.
+- **`./demo-scripts/reset.sh`**: hard reset the whole demo to square 1: removes every demo workload from both parts (bookinfo, petshop, warehouse) and reverts ztunnel to claims-off, but leaves the platform (mesh, agentgateway, Gloo UI, Keycloak) up and unlinks the clusters so demo-1 re-creates peering live. No rebuild: restart the demo from §1.1 / §2.1. Use this between demo runs, or to start Phase 2 clean.
+- **`./demo-scripts/setup.sh teardown`**: delete the clusters entirely (full ~20-min rebuild).
 
 ## What setup.sh stands up
 

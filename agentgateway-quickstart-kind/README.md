@@ -1,6 +1,6 @@
 # agentgateway-quickstart-kind
 
-**The first lab to give a customer. From an empty cluster to a working, secured, observable Solo Enterprise for agentgateway, step by step, every step mapped to the official docs.**
+**The first lab to give a customer. From an empty cluster to a secured and observable Solo Enterprise for agentgateway, step by step, every step mapped to the official docs.**
 
 The walkthrough is the lab page (`index.html`), published at
 [mastertheagent.com](https://mastertheagent.com/). It runs on `kind` here, but the
@@ -20,7 +20,7 @@ A checklist at the top of the page tracks the six sections, each with its doc li
 6. **MCP AuthZ**: require a Keycloak JWT on `/mcp`, then per-tool RBAC (alice locked to one tool) ([docs](https://docs.solo.io/agentgateway/latest/security/jwt/))
 7. **Connect to LLMs**: front OpenAI and Anthropic, key stays in a Secret at the gateway ([docs](https://docs.solo.io/agentgateway/latest/llm/))
 8. **Observability**: attach a tracing policy so the gateway exports to the collector, then watch the UI dashboard ([docs](https://docs.solo.io/agentgateway/latest/observability/))
-9. **Cost management**: cost is automatic from the built-in catalog; add a custom dimension and see spend by it ([docs](https://docs.solo.io/agentgateway/latest/llm/cost-controls/cost-tracking/))
+9. **Cost management**: cost is automatic from the built-in catalogue; add a custom dimension and see spend by it ([docs](https://docs.solo.io/agentgateway/latest/llm/cost-controls/cost-tracking/))
 10. **Guardrails**: block requests carrying PII and mask PII in responses, with a prompt guard ([docs](https://docs.solo.io/agentgateway/latest/llm/))
 
 ## Prerequisites
@@ -72,7 +72,7 @@ The full walkthrough (with the Helm commands) is the lab page. The manifests it 
 - `yaml/gateway/httpbin-route.yaml`: sample app + `Gateway` + `HTTPRoute`
 - `yaml/mcp/mcp.yaml`: the official `everything` MCP reference server + `EnterpriseAgentgatewayBackend` + route
 - `yaml/mcp-code/backend.yaml`: Code Mode backend (`toolMode: Code`) + route at `/mcp-code`
-- `yaml/mcp-authz/policies.yaml`: JWT auth on `/mcp` + per-tool MCP authorization (alice restricted to `get-sum`)
+- `yaml/mcp-authz/policies.yaml`: JWT auth on `/mcp` + per-tool MCP authorisation (alice restricted to `get-sum`)
 - `yaml/observability/tracing.yaml`: tracing policy that exports the gateway's traces to the management collector (feeds the UI dashboard)
 - `yaml/llm/openai.yaml`, `yaml/llm/anthropic.yaml`: LLM backends + routes (key comes from a Secret you create from your env)
 - `yaml/cost/dimensions-values.yaml`: helm values that add a custom `Team` cost dimension (model/provider are built in)

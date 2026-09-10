@@ -1,11 +1,12 @@
-# `quick-single.sh` — Enterprise AgentGateway single-cluster standup on kind
+<a id="quick-singlesh--enterprise-agentgateway-single-cluster-standup-on-kind"></a>
+# `quick-single.sh`: Enterprise AgentGateway single-cluster standup on kind
 
 Companion to [`quick.sh`](./README.md) for the **cross-host peering** demo:
 stand up `east` on one machine (e.g. a laptop), `west` on a second machine
 (e.g. a mac mini), then peer the two clusters across the real LAN. Each
 machine runs `quick-single.sh` once.
 
-`quick.sh` is the right choice when both clusters live on one host — it does
+`quick.sh` is the right choice when both clusters live on one host: it does
 the full peering (east-west gateways + peer references) for you in one
 invocation.
 `quick-single.sh` is the right choice when each half lives on a different
@@ -56,7 +57,7 @@ The script validates the name against the k8s DNS-label regex
 └─────────────────────────────┘         └─────────────────────────────┘
 ```
 
-The script prints copy-paste kubectl + helm commands at the end of each run —
+The script prints copy-paste kubectl + helm commands at the end of each run:
 you don't need to memorise the flow.
 
 ## Prerequisites
@@ -73,7 +74,7 @@ export AGENTGATEWAY_LICENSE_KEY="eyJ..." # agentgateway control plane
 export SECRETS_FILE=/path/to/secrets-envs.sh
 ```
 
-Unlike `quick.sh`, `SECRETS_FILE` here has **no default** — you must export
+Unlike `quick.sh`, `SECRETS_FILE` here has **no default**: you must export
 the env vars directly or set `SECRETS_FILE` explicitly. This is intentional:
 the second machine almost certainly doesn't have your laptop's secrets path.
 
@@ -90,14 +91,14 @@ root. The script handles this automatically:
   intermediate. If `certs/root-ca.crt` already exists, the script silently
   reuses it without prompting.
 
-A yellow `NOTE` is printed up front when no root CA is found locally — read it
+A yellow `NOTE` is printed up front when no root CA is found locally: read it
 before proceeding on the second machine.
 
 ## What it builds (per machine)
 
 1. One kind cluster (`kind-<name>`, control-plane + worker), with pod
    `10.10.0.0/16` and service `10.96.0.0/16`. **No CIDR partitioning** between
-   machines is needed — each Docker bridge is independent, and cross-cluster
+   machines is needed: each Docker bridge is independent, and cross-cluster
    traffic egresses via the east-west GW's external LB IP (HBONE), never
    pod-IP to pod-IP.
 2. MetalLB pool `<bridge-base>.255.100-.110` on the local Docker bridge.
@@ -111,11 +112,11 @@ before proceeding on the second machine.
 7. `PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES=false` on `istiod-gloo` +
    `L7_ENABLED=true` on `ztunnel`.
 8. East-west HBONE gateway via the `peering` helm chart (LoadBalancer, MetalLB
-   IP). **Local only** — no peer Gateway / RemoteGateway CR yet; that's
+   IP). **Local only**: no peer Gateway / RemoteGateway CR yet; that's
    deferred until both machines are up.
 9. Solo Enterprise agentgateway CRDs + control plane (same registry / version
    knobs as `quick.sh`, including `AGW_NIGHTLY=true`).
-10. Smoke test — `istiod-gloo` Available, `ztunnel` fully scheduled, both
+10. Smoke test: `istiod-gloo` Available, `ztunnel` fully scheduled, both
     `enterprise-agentgateway*` GatewayClasses registered, east-west GW has an
     LB IP.
 11. **Peering bundle** at `certs/peer-bundle-<name>.tar.gz` (see next section).
@@ -127,7 +128,7 @@ containing:
 
 | File                                 | Purpose                                                                                        |
 |--------------------------------------|------------------------------------------------------------------------------------------------|
-| `eastwest-ip.txt`                    | This cluster's east-west GW external LB IP — the peer's helm `remote` entry points at this. **It is the whole contract:** `:15008` carries HBONE data plane, `:15012` carries the istiod-to-istiod xDS connection. |
+| `eastwest-ip.txt`                    | This cluster's east-west GW external LB IP: the peer's helm `remote` entry points at this. **It is the whole contract:** `:15008` carries HBONE data plane, `:15012` carries the istiod-to-istiod xDS connection. |
 | `cluster-name.txt`                   | This cluster's name (also used as the `network`).                                              |
 | `root-ca.crt` + `root-ca.key`        | Shared root CA so the second machine's intermediate chains back to the same root.              |
 
@@ -154,10 +155,11 @@ Same as [`quick.sh`](./README.md#configuration-via-env-vars). Notably:
 | `SOLO_ISTIO_VERSION` | `1.29.2-solo`                    | Solo Istio image tag.                                                                |
 | `AGW_VERSION`        | `v2.3.3`                         | Enterprise agentgateway chart tag.                                                   |
 | `AGW_NIGHTLY=true`   | unset                            | Switch to the verified-fixed nightly that resolves the cross-cluster failover gap.   |
-| `GATEWAY_API_VERSION`| `v1.4.0`                         | Stay on 1.4.x — 1.5.0 blocks SMC's CRD apply.                                        |
+| `GATEWAY_API_VERSION`| `v1.4.0`                         | Stay on 1.4.x: 1.5.0 blocks SMC's CRD apply.                                        |
 | `METALLB_VERSION`    | `v0.14.9`                        | MetalLB chart version.                                                               |
 
-## Networking caveat — kind + macOS + cross-host
+<a id="networking-caveat--kind--macos--cross-host"></a>
+## Networking caveat: kind + macOS + cross-host
 
 > [!WARNING]
 > The east-west GW LB IP that the script assigns lives on the local Docker
@@ -168,7 +170,7 @@ Same as [`quick.sh`](./README.md#configuration-via-env-vars). Notably:
 To run a real cross-host demo on macOS, you'll need to publish the east-west
 GW on each host's LAN-reachable address. Common patterns:
 
-* **`ssh -L` / `ssh -R` tunnels** for 15008 + 15012 — fine for a one-shot
+* **`ssh -L` / `ssh -R` tunnels** for 15008 + 15012: fine for a one-shot
   demo, but the in-bundle `eastwest-ip.txt` needs to be hand-replaced with
   the tunnel endpoint before applying the helm remote entry.
 * **`socat`** on each host forwarding `<lan-ip>:15008 → <bridge-ip>:15008`
@@ -176,12 +178,12 @@ GW on each host's LAN-reachable address. Common patterns:
   before consuming it on the peer.
 * **Tailscale / WireGuard** for routable overlay between hosts. Easiest if
   Docker bridges on both ends are advertised as subnet routes.
-* **Linux hosts** instead of macOS — the kind bridge is reachable from the
+* **Linux hosts** instead of macOS: the kind bridge is reachable from the
   LAN with a single host-level static route (or by exposing the LB Service
   via `--network host` style approaches), so no tunnels needed.
 
 The peering bundle's `eastwest-ip.txt` is the value to override when you've
-fronted the GW with a tunnel — every other field stays correct.
+fronted the GW with a tunnel: every other field stays correct.
 
 You do **not** need this cluster's kube API server reachable from the peer.
 That is the point of peering: istiod discovers the peer over xDS through the
@@ -206,14 +208,15 @@ the current east-west IP.
 
 Deletes the kind cluster and removes the entire `certs/` directory. If you're
 tearing down only one machine in the peering, the other side will keep its
-peer reference pointing at a dead cluster — clean that up on the surviving
+peer reference pointing at a dead cluster: clean that up on the surviving
 machine with:
 
 ```bash
 helm uninstall remote-peers --kube-context kind-<surviving> -n istio-eastwest
 ```
 
-## Cross-host helpers — `expose-ew-on-host.sh` + `peer-with.sh`
+<a id="cross-host-helpers--expose-ew-on-hostsh--peer-withsh"></a>
+## Cross-host helpers: `expose-ew-on-host.sh` + `peer-with.sh`
 
 The networking caveat above (Docker-bridge east-west IP not routable from
 another host) has two parts: (1) publish the east-west GW on a LAN-reachable
@@ -261,7 +264,7 @@ What it does:
 1. Extracts the bundle into a tempdir and validates its contents.
 2. Verifies the **local** `cacerts` secret's `root-cert.pem` SHA256 matches
    the bundle's `root-ca.crt` SHA256. If they differ, bails with a clear
-   error — the two clusters' intermediates must chain to the same root or
+   error: the two clusters' intermediates must chain to the same root or
    cross-cluster mTLS will silently fail.
 3. Applies no credential, because there is none to apply. The peer reference
    in the next step carries both the HBONE (`:15008`) and xDS (`:15012`)
@@ -270,7 +273,7 @@ What it does:
    add a `remote.items[]` entry pointing at `<peer-ew-host>:<port>` (HBONE)
    with XDS at `port+4` (override with `PEER_XDS_OFFSET`).
 
-Only does one direction — run the same command on the other machine with the
+Only does one direction: run the same command on the other machine with the
 roles swapped to complete the symmetric peering.
 
 Verify peering with `istioctl --context kind-<local> multicluster check`.
@@ -307,8 +310,8 @@ pass `PEER_API_HOST_PORT=<peer-lan-ip>:6443` to `peer-with.sh`.
 
 ## See also
 
-* [`README.md`](./README.md) — same-host two-cluster standup via `quick.sh`.
+* [`README.md`](./README.md): same-host two-cluster standup via `quick.sh`.
 * [`../../istio-gw-multi-cluster-kind/scripts/quick-single.sh`](../../istio-gw-multi-cluster-kind/scripts/quick-single.sh)
-  — the equivalent single-cluster standup for the istio-Gateway pattern (no
+ : the equivalent single-cluster standup for the istio-Gateway pattern (no
   agentgateway, uses `istioctl multicluster expose` instead of the peering
   helm chart for the east-west GW).

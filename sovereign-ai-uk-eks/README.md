@@ -3,12 +3,12 @@
 An open-weight European model (Mistral-Small-3.2-24B on vLLM) self-hosted on UK
 infrastructure (EKS, eu-west-2), with a zero-trust control at every layer around the
 data path: Istio ambient identity, a Vault CA unsealed by KMS, Solo Enterprise
-agentgateway as the one governed door, Kyverno and Pod Security Admission, kagent and
+agentgateway as the authenticated gateway endpoint, Kyverno and Pod Security Admission, kagent and
 AgentRegistry for the agents, all in one region.
 
 The write-up is a two-part lab:
-- **Part 1 — the architecture:** https://mastertheagent.com/solo/sovereign-ai-uk-eks/
-- **Part 2 — the exploits under test:** https://mastertheagent.com/solo/sovereign-ai-uk-eks/part-2/
+- **Part 1: the architecture:** https://mastertheagent.com/solo/sovereign-ai-uk-eks/
+- **Part 2: the exploits under test:** https://mastertheagent.com/solo/sovereign-ai-uk-eks/part-2/
 
 This README is how to **run** it.
 
@@ -67,7 +67,7 @@ aws eks update-kubeconfig --region eu-west-2 --name uk-sovereign-ai
 ./scripts/access.sh kubeconfig      # writes ./uk-sovereign-ai.kubeconfig
 ```
 
-**Consoles** — the UIs are behind the gateway on `*.sovereign.local`, which only resolves
+**Consoles**: the UIs are behind the gateway on `*.sovereign.local`, which only resolves
 through your hosts file. Add the line (run once; re-run `./scripts/access.sh hosts` if the
 gateway is recreated and its IP changes):
 ```bash
@@ -88,7 +88,7 @@ Users: **carol / carol** (admin) · **alice / alice** (platform) · **bob / bob*
 
 ## Ask the model
 
-Directly over a port-forward (no token needed — this is the in-cluster path):
+Directly over a port-forward (no token needed: this is the in-cluster path):
 ```bash
 kubectl -n models port-forward svc/vllm 8000:8000
 curl localhost:8000/v1/chat/completions -H 'content-type: application/json' \

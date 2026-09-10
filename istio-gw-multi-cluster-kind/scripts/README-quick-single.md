@@ -1,11 +1,12 @@
-# `quick-single.sh` — Solo Istio Ambient single-cluster standup on kind
+<a id="quick-singlesh--solo-istio-ambient-single-cluster-standup-on-kind"></a>
+# `quick-single.sh`: Solo Istio Ambient single-cluster standup on kind
 
 Companion to [`quick.sh`](./quick.sh) for the **cross-host peering** demo:
 stand up `east` on one machine (e.g. a laptop), `west` on a second machine
 (e.g. a mac mini), then peer the two clusters across the real LAN. Each
 machine runs `quick-single.sh` once.
 
-`quick.sh` is the right choice when both clusters live on one host — it does
+`quick.sh` is the right choice when both clusters live on one host: it does
 the full peering (east-west gateways + `multicluster link`) for you in one
 invocation.
 `quick-single.sh` is the right choice when each half lives on a different
@@ -15,7 +16,7 @@ machines are up.
 This is the **Solo Istio Gateway** flavour of the standup. The
 [`agentgw-multi-cluster-kind`](../../agentgw-multi-cluster-kind/scripts/)
 repo has the matching `quick-single.sh` for the **Enterprise agentgateway**
-flavour — pick whichever north-south ingress you want to demo. The Solo
+flavour: pick whichever north-south ingress you want to demo. The Solo
 Istio + Ambient platform underneath is identical.
 
 ## Usage
@@ -61,7 +62,7 @@ The script validates the name against the k8s DNS-label regex
 └─────────────────────────────┘         └─────────────────────────────┘
 ```
 
-The script prints copy-paste `kubectl apply` commands at the end of each run —
+The script prints copy-paste `kubectl apply` commands at the end of each run:
 you don't need to memorise the flow.
 
 ## Prerequisites
@@ -103,14 +104,14 @@ root. The script handles this automatically:
   intermediate. If `certs/root-ca.crt` already exists, the script silently
   reuses it without prompting.
 
-A yellow `NOTE` is printed up front when no root CA is found locally — read it
+A yellow `NOTE` is printed up front when no root CA is found locally: read it
 before proceeding on the second machine.
 
 ## What it builds (per machine)
 
 1. One kind cluster (`kind-<name>`, control-plane + worker), with pod
    `10.10.0.0/16` and service `10.96.0.0/16`. **No CIDR partitioning** between
-   machines is needed — each Docker bridge is independent, and cross-cluster
+   machines is needed: each Docker bridge is independent, and cross-cluster
    traffic egresses via the east-west GW's external LB IP (HBONE), never
    pod-IP to pod-IP.
 2. MetalLB pool `<bridge-base>.255.200-.210` on the local Docker bridge.
@@ -128,7 +129,7 @@ before proceeding on the second machine.
    bundle below; that address is all a peer needs, on `:15008` for HBONE and
    `:15012` for the istiod-to-istiod xDS connection.
 9. `topology.istio.io/network=<name>` on `istio-system`.
-10. Smoke test — `istiod-gloo` Available, `ztunnel` fully scheduled,
+10. Smoke test: `istiod-gloo` Available, `ztunnel` fully scheduled,
     east-west GW has an LB IP.
 11. **Peering bundle** at `certs/peer-bundle-<name>.tar.gz` (see next section).
 
@@ -158,10 +159,11 @@ istiod-to-istiod xDS connection to the east-west gateway, so **one
 | `SECRETS_FILE`          | `/Users/tomorourke/code/solo/secrets/secrets-envs.sh` | Sourced before the licence-env check.                            |
 | `SOLO_ISTIO_VERSION`    | `1.29.2-solo`                    | Solo Istio image tag. SMC's `.spec.version` is `${SOLO_ISTIO_VERSION%-solo}`.        |
 | `GLOO_OPERATOR_VERSION` | `0.5.2`                          | Helm chart version for the Gloo Operator.                                            |
-| `GATEWAY_API_VERSION`   | `v1.4.0`                         | Stay on 1.4.x — v1.5.0 ships a `safe-upgrades` admission policy that blocks SMC's CRD apply. |
+| `GATEWAY_API_VERSION`   | `v1.4.0`                         | Stay on 1.4.x: v1.5.0 ships a `safe-upgrades` admission policy that blocks SMC's CRD apply. |
 | `METALLB_VERSION`       | `v0.14.9`                        | MetalLB chart version.                                                               |
 
-## Networking caveat — kind + macOS + cross-host
+<a id="networking-caveat--kind--macos--cross-host"></a>
+## Networking caveat: kind + macOS + cross-host
 
 > [!WARNING]
 > The east-west GW LB IP that the script assigns lives on the local Docker
@@ -172,11 +174,11 @@ istiod-to-istiod xDS connection to the east-west gateway, so **one
 To run a real cross-host demo on macOS, you'll need to publish the east-west
 GW on each host's LAN-reachable address. Common patterns:
 
-* **`ssh -L` / `ssh -R` tunnels** for the gateway ports — fine for a one-shot
+* **`ssh -L` / `ssh -R` tunnels** for the gateway ports: fine for a one-shot
   demo.
 * **`socat`** on each host forwarding `<lan-ip>:<port> → <bridge-ip>:<port>`.
 * **Tailscale / WireGuard** for routable overlay between hosts.
-* **Linux hosts** instead of macOS — the kind bridge is reachable from the
+* **Linux hosts** instead of macOS: the kind bridge is reachable from the
   LAN with a single host-level static route, so no tunnels needed.
 
 You do **not** need this cluster's kube API server reachable from the peer.
@@ -206,7 +208,7 @@ it always reflects the current east-west IP.
 
 Deletes the kind cluster and removes the entire `certs/` directory. If you're
 tearing down only one machine in the peering, the other side will keep a
-stale `istio-remote` peer Gateway pointing at a dead cluster — clean it up on
+stale `istio-remote` peer Gateway pointing at a dead cluster: clean it up on
 the surviving machine with:
 
 ```bash
@@ -220,11 +222,12 @@ kubectl --context kind-<surviving> -n istio-gateways \
 |----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
 | `ERROR: '<name>' is not a valid cluster name`                        | Cluster name must match `^[a-z][a-z0-9-]*[a-z0-9]$` (k8s DNS label).                                            |
 | `Installing CRDs with version before v1.5.0 is prohibited`           | Gateway API v1.5.0 leaked onto the cluster. Stay on v1.4.0 (the default), or delete the `safe-upgrades.gateway.networking.k8s.io` ValidatingAdmissionPolicy before SMC reconciles. |
-| `License Check: found invalid license for multicluster` (istioctl)   | Solo Istio licence JWT is `"lt": "trial"`. Multicluster needs `"lt": "ent"` — request from your Solo contact.   |
-| Cross-host peering never converges (`istioctl multicluster check` fails on peers) | Peer's istiod can't reach this cluster's east-west GW on **15012**, so the xDS connection the two control planes federate over never establishes. Check the LAN publish and the peer Gateway's address — see [Networking caveat](#networking-caveat--kind--macos--cross-host). Nothing here involves the kube API. |
+| `License Check: found invalid license for multicluster` (istioctl)   | Solo Istio licence JWT is `"lt": "trial"`. Multicluster needs `"lt": "ent"`: request from your Solo contact.   |
+| Cross-host peering never converges (`istioctl multicluster check` fails on peers) | Peer's istiod can't reach this cluster's east-west GW on **15012**, so the xDS connection the two control planes federate over never establishes. Check the LAN publish and the peer Gateway's address: see [Networking caveat](#networking-caveat--kind--macos--cross-host). Nothing here involves the kube API. |
 | `istioctl multicluster check` shows clusters connected but pod-to-pod returns 503 | Peer's ztunnel can't reach this cluster's east-west GW on **15008**. Verify the LB IP is published on a routable LAN address and that the peer Gateway (or your tunnel) points at it. |
 
-## Cross-host helpers — `expose-ew-on-host.sh` + `peer-with.sh`
+<a id="cross-host-helpers--expose-ew-on-hostsh--peer-withsh"></a>
+## Cross-host helpers: `expose-ew-on-host.sh` + `peer-with.sh`
 
 The networking caveat above (Docker-bridge east-west IP not routable from
 another host) has two parts: (1) publish the east-west GW on a LAN-reachable
@@ -273,7 +276,7 @@ What it does:
 1. Extracts the bundle into a tempdir and validates its contents.
 2. Verifies the **local** `cacerts` secret's `root-cert.pem` SHA256 matches
    the bundle's `root-ca.crt` SHA256. If they differ, bails with a clear
-   error — the two clusters' intermediates must chain to the same root or
+   error: the two clusters' intermediates must chain to the same root or
    cross-cluster mTLS will silently fail.
 3. Applies no credential at all. There is no remote secret in the bundle and
    none is created: the peer Gateway in the next step carries both the HBONE
@@ -286,7 +289,7 @@ What it does:
    `istioctl multicluster link` produces in the same-host flow, with the LAN
    IP substituted for the unreachable bridge IP.
 
-Only does one direction — run the same command on the other machine with the
+Only does one direction: run the same command on the other machine with the
 roles swapped to complete the symmetric peering.
 
 Verify peering with `istioctl --context kind-<local> multicluster check`.
@@ -323,10 +326,10 @@ pass `PEER_API_HOST_PORT=<peer-lan-ip>:6443` to `peer-with.sh`.
 
 ## See also
 
-* [`quick.sh`](./quick.sh) — same-host two-cluster standup. Use this when both
+* [`quick.sh`](./quick.sh): same-host two-cluster standup. Use this when both
   clusters live on one machine.
 * [`../../agentgw-multi-cluster-kind/scripts/quick-single.sh`](../../agentgw-multi-cluster-kind/scripts/quick-single.sh)
-  — the equivalent single-cluster standup for the **Enterprise agentgateway**
+ : the equivalent single-cluster standup for the **Enterprise agentgateway**
   pattern (adds the agentgateway control plane on top of the same Solo Istio
   Ambient platform, and uses the `peering` helm chart for the east-west GW
   instead of `istioctl multicluster expose`).

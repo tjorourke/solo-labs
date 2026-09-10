@@ -2,8 +2,8 @@
 
 Route LLM traffic to a **self-hosted model pool** through agentgateway, and let the
 Gateway API Inference Extension (GIE) Endpoint Picker choose which replica serves
-each request from live vLLM metrics: **KV-cache usage and queue depth**. That is
-the caching story on a laptop. Route to the replica that already holds the
+each request from live vLLM metrics: **KV-cache usage and queue depth**. That demonstrates
+cache-aware routing on a laptop. Route to the replica that already holds the
 prompt's prefix in its KV cache so it skips prefill, and away from a saturated
 one. No GPU required.
 
@@ -19,7 +19,7 @@ One kind cluster:
 
 ## Run it
 
-Enterprise (default, needs a license):
+Enterprise (default, needs a licence):
 
 ```bash
 export SECRETS_FILE=/path/to/secrets-envs.sh   # exports AGENTGATEWAY_LICENSE_KEY
@@ -27,7 +27,7 @@ export SECRETS_FILE=/path/to/secrets-envs.sh   # exports AGENTGATEWAY_LICENSE_KE
 ./scripts/quick.sh test        # fire requests, see which replica the EPP picked
 ```
 
-OSS (no license):
+OSS (no licence):
 
 ```bash
 AGW_EDITION=oss ./scripts/quick.sh up

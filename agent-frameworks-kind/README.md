@@ -1,7 +1,7 @@
 # agent-frameworks-kind
 
-One Kubernetes SRE incident, one three-role crew, built five ways on the same
-enterprise stack — and all five run on Solo Enterprise for kagent and route every
+Compare five implementations of a three-role Kubernetes SRE workflow on the same
+enterprise stack, and all five run on Solo Enterprise for kagent and route every
 LLM call and tool call through enterprise agentgateway.
 
 The crews: a kagent-native declarative agent-team, and BYO crews in Google ADK,
@@ -32,9 +32,9 @@ applies it so `checkout` recovers.
 - docker, kind, kubectl, helm, gcloud (authenticated for the Solo public chart
   registry), openssl, python3, curl.
 - Secrets (export, or point `SECRETS_FILE` at a sourceable file):
-  - `ANTHROPIC_API_KEY` — the model behind the gateway
-  - `SOLO_LICENSE_KEY` — Solo Enterprise for kagent
-  - `AGENTGATEWAY_LICENSE_KEY` — enterprise agentgateway
+  - `ANTHROPIC_API_KEY`: the model behind the gateway
+  - `SOLO_LICENSE_KEY`: Solo Enterprise for kagent
+  - `AGENTGATEWAY_LICENSE_KEY`: enterprise agentgateway
 
 ## Quickstart
 

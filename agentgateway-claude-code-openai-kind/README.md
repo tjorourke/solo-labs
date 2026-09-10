@@ -3,7 +3,7 @@
 Serve the Anthropic Messages API with Solo Enterprise for agentgateway and
 translate it to an OpenAI model behind the gateway. Point Claude Code at it,
 keep the model credential in the cluster, and put JWT authentication and a CEL
-authorization rule in front. One kind cluster.
+authorisation rule in front. One kind cluster.
 
 The gateway serves `/v1/messages` (the Anthropic Messages API). The
 `ai.routes` map reads that path as Messages input, and because the backend's
@@ -15,8 +15,8 @@ way out. Claude Code never knows the model is not Anthropic.
 
 - `kind`, `kubectl`, `helm`, `docker`, `openssl`, `xxd`, `jq`, and an
   authenticated `gcloud` for the public chart registry.
-- `AGENTGATEWAY_LICENSE_KEY` — a Solo Enterprise agentgateway license.
-- `OPENAI_API_KEY` — the backend model credential. Becomes a cluster Secret and
+- `AGENTGATEWAY_LICENSE_KEY`: a Solo Enterprise agentgateway licence.
+- `OPENAI_API_KEY`: the backend model credential. Becomes a cluster Secret and
   nothing else. May also be read from a file via `OPENAI_KEY_FILE`.
 
 ## Run

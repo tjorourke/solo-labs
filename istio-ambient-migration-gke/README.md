@@ -12,8 +12,8 @@ diagrams and the migration checklist is at
   Enterprise agentgateway as the ingress.
 - A Vault-backed mesh CA (cert-manager + istio-csr) on an RSA-only signing role, so the RSA to EC
   transition ambient forces is rehearsed rather than discovered.
-- The `petstore` workload catalogue: an L7 namespace (canary + method authorization), an L4-only
-  namespace (Redis + identity authorization), and a legacy namespace that never migrates and holds
+- The `petstore` workload catalogue: an L7 namespace (canary + method authorisation), an L4-only
+  namespace (Redis + identity authorisation), and a legacy namespace that never migrates and holds
   both the sidecar caller and the load generator.
 - A second, identical cluster on community Istio, used purely as an A/B control.
 - An east-west bridge back to the ASM cluster over internal GCP LoadBalancers. On the new cluster the

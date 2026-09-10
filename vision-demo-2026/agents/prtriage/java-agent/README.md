@@ -93,11 +93,11 @@ Both prompted the same way through the controller, both returning the same repor
 Two things learned getting there, and neither is documented anywhere obvious:
 
 **A2A `message/send` must return a `Message` or a `Task`, discriminated by a `kind`
-field.** Return artifacts without it and kagent's controller rejects a perfectly good
+field.** Return artefacts without it and kagent's controller rejects a perfectly good
 answer with `failed to unmarshal rpc result: unsupported result kind`. The agent had
 already done the work and produced the right text. That is a confusing half hour if you
 have not read the spec, so `A2aServer.task()` builds a full Task with `kind`, `id`,
-`contextId`, a completed `status` and the artifact.
+`contextId`, a completed `status` and the artefact.
 
 **There is no A2A SDK for Java on Maven Central**, at least under any of the obvious
 coordinates. The contract is small enough not to need one: two endpoints, and the whole

@@ -64,8 +64,8 @@ routing path needs to prove out.
 ## Prerequisites
 
 - `kind`, `kubectl`, `helm`, `docker` (Docker Desktop / OrbStack running)
-- No license and no registry auth: the OSS charts pull anonymously.
-- `HF_TOKEN` (optional but recommended) — a HuggingFace token. On first start
+- No licence and no registry auth: the OSS charts pull anonymously.
+- `HF_TOKEN` (optional but recommended): a HuggingFace token. On first start
   the router downloads several GB of classification models from the HF Hub.
   Unauthenticated pulls are rate-limited and slow; an `HF_TOKEN` makes the
   download much faster. Without it, expect the router to sit at `0/1` for a

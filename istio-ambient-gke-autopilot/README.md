@@ -169,7 +169,7 @@ another ~20 minute cluster update.
 generator is a server-side dry-run, so an absent namespace fails the DaemonSet
 before Warden ever evaluates it. Nothing is emitted, and a script that treats
 empty output as "the workload was admitted" will then quietly reuse whatever
-allowlist file it already had — pinning an image you are not installing. The
+allowlist file it already had: pinning an image you are not installing. The
 admission failure that follows blames capabilities and hostPath and says
 nothing about the image.
 

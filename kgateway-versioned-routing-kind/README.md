@@ -21,10 +21,10 @@ reverse-proxying from the latest cluster.
 
 Two ways to choose a version, on two different headers, plus a default:
 
-1. **Explicit header** `x-version-override: v2` — client- or ops-controlled.
-2. **JWT claim** — the gateway validates a token and projects its `version`
+1. **Explicit header** `x-version-override: v2`: client- or ops-controlled.
+2. **JWT claim**: the gateway validates a token and projects its `version`
    claim into `x-target-version`, then routes on it.
-3. **Default to latest** — no override, no claim, you land on `app-latest`.
+3. **Default to latest**: no override, no claim, you land on `app-latest`.
 
 The tenant-to-version mapping lives in the IdP as a token claim, keyed off the
 tenant. A version rollover is an identity change (update the claim the IdP
@@ -88,7 +88,7 @@ You need `kind`, `kubectl`, `helm`, `docker`, `gcloud` (for the public chart
 registry), `openssl`, and `jq`, plus a Solo Enterprise for kgateway license
 key.
 
-This lab needs one secret: a Solo Enterprise for kgateway license key. It is
+This lab needs one secret: a Solo Enterprise for kgateway licence key. It is
 read from the first of `KGATEWAY_LICENSE_KEY`, `GLOO_GATEWAY_LICENSE_KEY` or
 `SOLO_LICENSE_KEY` that is set.
 

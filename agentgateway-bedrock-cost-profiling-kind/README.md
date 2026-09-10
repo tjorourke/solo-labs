@@ -7,9 +7,9 @@ provider and the model left unset serves every team, because the model comes
 from each request as that team's profile ARN. Usage is then attributable per
 team in two places:
 
-- **In the gateway, live** — `agentgateway_gen_ai_client_token_usage` splits by
+- **In the gateway, live**: `agentgateway_gen_ai_client_token_usage` splits by
   team via the `gen_ai_request_model` label (the team's profile ARN).
-- **In AWS, in dollars** — the profile's cost-allocation tag breaks out cost per
+- **In AWS, in dollars**: the profile's cost-allocation tag breaks out cost per
   team in AWS Cost Explorer.
 
 The page (`index.html`) explains what Bedrock Mantle is and how it relates,
@@ -26,7 +26,7 @@ deployment.
   few requests. Log in first: `aws sso login --profile <your-profile>`.
 - `AWS_PROFILE` must point at that account. The lab does not hardcode a profile;
   it uses whatever `AWS_PROFILE`/`SECRETS_FILE` provide. The profile may be SSO
-  (temporary creds) or a static IAM user — the credential Secret handles both.
+  (temporary creds) or a static IAM user: the credential Secret handles both.
 
 ## Run
 
@@ -43,7 +43,8 @@ export AGENTGATEWAY_LICENSE_KEY=...        # or rely on SECRETS_FILE
 Or step by step: `01-cluster.sh` → `02-agentgateway.sh` → `03-aws-profiles.sh`
 → `04-backend.sh` → `05-test.sh` → `06-metrics.sh`.
 
-## Pattern A — select the team from its JWT (ARN off the client)
+<a id="pattern-a--select-the-team-from-its-jwt-arn-off-the-client"></a>
+## Pattern A: select the team from its JWT (ARN off the client)
 
 `04`/`05` let the client send the profile ARN as the model (simplest). For
 production you don't want clients carrying ARNs. `07-jwt-teams.sh` adds the
@@ -88,4 +89,4 @@ explicitly:
 scripts/labs-e2e.sh --only agentgateway-bedrock-cost-profiling-kind
 ```
 
-`results/` (profile ARNs, metrics) is gitignored — it carries your AWS account id.
+`results/` (profile ARNs, metrics) is gitignored: it carries your AWS account id.

@@ -88,8 +88,15 @@ final class A2aServer {
       events = Turn.of(agent, name).ask(prompt);
       answer = Turn.finalText(events);
     } catch (RuntimeException e) {
-      answer = "the agent failed: " + e.getMessage();
+      // Name the type and the cause. Several of the exceptions that come out of the
+      // model and MCP layers carry a null message, and "the agent failed: null" tells
+      // whoever is standing in front of the room nothing at all.
+      var cause = e.getCause() == null ? e : e.getCause();
+      answer = "the agent failed: %s: %s".formatted(
+          cause.getClass().getSimpleName(),
+          cause.getMessage() == null ? "(no message)" : cause.getMessage());
       Console.failed(answer);
+      e.printStackTrace();
     }
 
     return Json.write(Json.object()

@@ -127,9 +127,9 @@ Then work through the demos. Each one explains itself as it runs.
 | Script | What it shows |
 | --- | --- |
 | `10-routing.sh` | Path matching, rewrites, header manipulation, retries, CORS, fault injection. Ordinary API traffic through the same binary. |
-| `11-auth.sh` | Cognito JWT validation and CEL authorization. Every refusal uses a real minted token, so 401 and 403 mean different things and you can see which. |
+| `11-auth.sh` | Cognito JWT validation and CEL authorisation. Every refusal uses a real minted token, so 401 and 403 mean different things and you can see which. |
 | `12-llm.sh` | Bedrock via the instance role, plus OpenAI and Anthropic. Virtual models, virtual keys, layered guardrails, per-request cost. |
-| `13-mcp.sh` | A hosted MCP server and a REST API multiplexed into one tool list, with per-tool authorization that filters `tools/list` as well as gating `tools/call`. |
+| `13-mcp.sh` | A hosted MCP server and a REST API multiplexed into one tool list, with per-tool authorisation that filters `tools/list` as well as gating `tools/call`. |
 | `15-ratelimit.sh` | The difference between a per-process limit and a real one. |
 | `20-ha-node-loss.sh` | Stop the gateway on a node, then destroy the instance and time the rebuild. |
 | `21-ha-mcp-session.sh` | Drive one MCP session at all three nodes directly, then break it by changing one node's session key. |
@@ -188,12 +188,12 @@ Sections:
 
 | Section | Contents |
 | --- | --- |
-| `config` | Startup-only. Addresses, the fleet-wide session key, Aurora, hybrid storage, the model cost catalog, tracing, logging. |
+| `config` | Startup-only. Addresses, the fleet-wide session key, Aurora, hybrid storage, the model cost catalogue, tracing, logging. |
 | `frontendPolicies` | The access log, including the node id so per-node attribution works in CloudWatch Logs Insights. |
 | `gateways` | One named gateway on one port. Everything attaches to it. |
 | `routes` | Node identity, a public API route, an authenticated one, a chaos route, A2A, and the MCP DCR route. |
 | `llm` | Three providers, virtual models doing weighted split and failover, virtual keys, layered guardrails. |
-| `mcp` | Two remote targets multiplexed, per-tool CEL authorization, OAuth resource metadata. |
+| `mcp` | Two remote targets multiplexed, per-tool CEL authorisation, OAuth resource metadata. |
 | `ui` | The admin UI published through the data-plane gateway behind Cognito OIDC. |
 
 ### Six conventions for writing this file

@@ -1,11 +1,12 @@
-# Agentic HITL — Two-layer Human-in-the-Loop on kind
+<a id="agentic-hitl--two-layer-human-in-the-loop-on-kind"></a>
+# Agentic HITL: Two-layer Human-in-the-Loop on kind
 
 Single-cluster lab showing **two distinct HITL surfaces** on one MCP-driven agent:
 
 | Layer | Approver | Surface | Mechanism |
 |---|---|---|---|
 | **Agent HITL** | End user, mid-conversation | kagent chat UI | `requireApproval` on the agent's MCP tool stanza |
-| **Gateway HITL** | Platform reviewer, out-of-band | Standalone approval queue UI | `AgentgatewayPolicy` with `extAuth` (PreRouting) — Check() parks until a decision arrives |
+| **Gateway HITL** | Platform reviewer, out-of-band | Standalone approval queue UI | `AgentgatewayPolicy` with `extAuth` (PreRouting): Check() parks until a decision arrives |
 
 The same `ops-tools` MCP server backs both. The gateway distinguishes the two tiers by **path** (`/mcp/public` vs `/mcp/privileged`), so we don't need body-inspection CEL.
 
@@ -46,7 +47,7 @@ The same `ops-tools` MCP server backs both. The gateway distinguishes the two ti
 |---|---|
 | `kind/cluster.yaml`            | Single-cluster kind config |
 | `scripts/01-cluster.sh`        | kind + metallb |
-| `scripts/02-agentgateway.sh`   | Enterprise agentgateway install (needs license) |
+| `scripts/02-agentgateway.sh`   | Enterprise agentgateway install (needs licence) |
 | `scripts/03-kagent.sh`         | kagent OSS install (needs OpenAI key) |
 | `scripts/04-mcp-and-hitl.sh`   | Build + kind-load 3 images; apply manifests |
 | `scripts/05-agents.sh`         | Apply both agents (declarative + LangGraph) |
@@ -68,7 +69,7 @@ The same `ops-tools` MCP server backs both. The gateway distinguishes the two ti
 | `KAGENT_VERSION`           | Defaults to latest. |
 | `SECRETS_FILE`             | Optional sourceable file that exports the above. |
 
-100% OSS — no licenses, no gcloud auth. Both kagent and agentgateway pull from public
+100% OSS: no licences, no gcloud auth. Both kagent and agentgateway pull from public
 container registries (`ghcr.io/kagent-dev/...` and `cr.agentgateway.dev/...`).
 
 ## Quickstart
@@ -102,5 +103,5 @@ See [`demo-scripts/runbook.md`](demo-scripts/runbook.md) for the live walkthroug
 
 ## See also
 
-- `CLAUDE.md` — design decisions, gotchas, integration gaps
-- [Human-in-the-Loop Subagents](https://kagent.dev/docs/kagent/examples/human-in-the-loop) — kagent docs
+- `CLAUDE.md`: design decisions, gotchas, integration gaps
+- [Human-in-the-Loop Subagents](https://kagent.dev/docs/kagent/examples/human-in-the-loop): kagent docs

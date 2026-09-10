@@ -6,7 +6,7 @@ my-mcp is a Model Context Protocol (MCP) server built with FastMCP featuring dyn
 
 - **Dynamic Tool Loading**: Tools are automatically discovered and loaded from `src/tools/`
 - **One Tool Per File**: Each tool is a single file with a function matching the filename
-- **FastMCP Integration**: Leverages FastMCP for robust MCP protocol handling
+- **FastMCP Integration**: Uses FastMCP for MCP protocol handling
 - **Configuration Management**: Tool-specific configuration via `mcp.yaml`
 - **Fail-Fast**: Server won't start if any tool fails to load
 - **Auto-Generated Tests**: Automatic test generation for tool validation

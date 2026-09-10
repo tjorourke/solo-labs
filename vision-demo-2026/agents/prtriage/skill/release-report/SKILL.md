@@ -28,7 +28,21 @@ response into the conversation, and by the time you come to write the report the
 review data is tens of thousands of tokens behind you and easy to lose. Filter in the
 program, where the data cannot drift out of reach.
 
-When `run_code` is not offered, call the individual tools instead.
+## When there is no `run_code` tool
+
+Look at what the gateway does offer. If it offers `get_tool` and `invoke_tool`, the
+operations are reached through those and the section below on them applies. Otherwise
+the operations are offered directly, as one tool each.
+
+Either way you are now calling one thing at a time, so read comments for **every** pull
+request that is neither a draft nor on hold. There is no call budget in
+this mode: the twenty-call limit below is a property of the sandbox a program runs in,
+and it does not apply to tools you call turn by turn. Twenty four pull requests with
+three drafts and four holds is one list call and seventeen comment reads, and all
+seventeen have to happen.
+
+A pull request whose comments you did not read has an unknown verdict, not a verdict of
+`no sign-off`. If you find yourself about to report one you did not read, read it.
 
 ## Rules for the program
 
@@ -42,7 +56,8 @@ The sandbox is deliberately small. It is not Node, and it is not your agent.
   `RegExp`, `BigInt`.
 - Not available: `Date`, `Map`, `Set`, `console`, `fetch`, `require`, `process`,
   `setTimeout`. Use plain objects instead of `Map`.
-- A program may make at most **20** upstream tool calls, and exceeding it throws away
+- A program may make at most **20** upstream tool calls (a sandbox limit, and only a
+  sandbox limit), and exceeding it throws away
   the whole program, so budget before you write. One `list_pull_requests` plus one `get_comments`
   for each pull request that still needs one (see below) means **nineteen** pull
   requests needing comments fit in the first program, and twenty in any program after
@@ -59,6 +74,18 @@ That is not a micro-optimisation, it is usually what makes the whole job fit. Tw
 four pull requests with three drafts and four holds is one list call plus seventeen
 comment reads, which is eighteen calls and fits in a single program. Fetch all
 twenty four and you are at twenty five, over the cap, and the program is discarded.
+
+### Read every one of them, and count
+
+The other half of that rule is that you must read **all** of the ones that qualify. A
+comment read is the only thing that can turn a verdict into `READY`, so a pull request
+you did not read is not "no sign-off", it is unknown, and reporting it as a verdict is
+wrong.
+
+Before you write the report, compare two numbers: how many pull requests are neither
+draft nor held, and how many comment reads you actually did. If the second is smaller,
+go back and read the rest. Do not fill the gap with an assumption, and do not stop
+early because the answers are long and repetitive.
 
 ### When the job does not fit in one program
 

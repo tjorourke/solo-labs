@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# ask "<question>" — put a question to the hosted agent over kagent's OIDC-protected
+# A2A endpoint. AGENT=releasejava picks the other agent.
+exec env AGENT_PREFIX="${AGENT:-prtriagejava}" \
+  "$(dirname "$0")/../../../demo-scripts/agentregistry/scripts/ask.sh" "$@"

@@ -144,6 +144,6 @@ not prove a rollback.
 ## Where this stops
 
 Every decision here has exactly one model in `modelRefs`, so there is no candidate
-selection to configure and no selector artifact to train. The router also supports
+selection to configure and no selector artefact to train. The router also supports
 projections, multi-candidate decisions and learned selectors. Those are a bigger subject
 and are not in scope.

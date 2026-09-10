@@ -1,4 +1,5 @@
-# agentic-verdict-hitl-kind — imposing HITL on an agent the developer built
+<a id="agentic-verdict-hitl-kind--imposing-hitl-on-an-agent-the-developer-built"></a>
+# agentic-verdict-hitl-kind: imposing HITL on an agent the developer built
 
 A developer builds two SRE agents with `arctl`. They are the same agent twice.
 An external review process decides one of them is higher risk. The platform team
@@ -15,7 +16,7 @@ Single kind cluster, Solo Enterprise throughout: **agentgateway 2026.7.1**,
 > team add it, based on a decision made somewhere else?
 
 One verdict in a ConfigMap, imposed by one Kyverno policy at admission. Both agent
-types end up at **kagent's own approval flow** — the same card, the same API. What
+types end up at **kagent's own approval flow**: the same card, the same API. What
 differs is only the field the policy has to set, which follows from `spec.type`:
 
 | Agent type | kagent sees | What the policy sets | Approve via |
@@ -23,14 +24,14 @@ differs is only the field the policy has to set, which follows from `spec.type`:
 | **Declarative** (ADK on kagent's runtime) | the tool list | `requireApproval` on the tool stanza | Solo Enterprise UI, or the kagent A2A API |
 | **BYO** (`arctl init agent`) | a pod | `KAGENT_REQUIRE_APPROVAL` in the pod env | the same UI, the same API |
 
-`requireApproval` lives on the tool list and `spec.byo` has no tool list — just
+`requireApproval` lives on the tool list and `spec.byo` has no tool list, just
 `deployment`. So for a BYO agent the policy sets an environment variable instead, and
 the agent's own ADK toolsets turn it into `require_confirmation`. ADK then emits the
 same `adk_request_confirmation` that kagent renders. **Nothing extra runs**: no
 gateway gate, no approval service, no second MCP route.
 
 `declarative.runtime` is "which ADK implementation to use", so a Declarative agent is
-still an ADK agent — you give up owning the image, not the framework. Prefer it when
+still an ADK agent: you give up owning the image, not the framework. Prefer it when
 you can; use BYO for opaque containers or an image you must build yourself.
 
 Neither the agents nor the MCP server know which tools are sensitive. That judgement
@@ -76,7 +77,7 @@ is the platform team's, and it lives in the register.
 ```
 
 Everything the agents reach goes through agentgateway: the MCP route, Keycloak, the
-AgentRegistry API and the Enterprise UI. No policy sits in front of the MCP server —
+AgentRegistry API and the Enterprise UI. No policy sits in front of the MCP server:
 a call that arrives there has already been approved.
 
 ## The verdict
@@ -114,7 +115,7 @@ let you ask the question about a register you have not written yet.
 
 The control works in both directions. Clearing `red`, or dropping a server from `gated`,
 **removes** the mutation from agents that already carry it. Without that the agent keeps
-pausing while labelled green — safe, and a lie. That is four `ungate-*` rules rather than
+pausing while labelled green: safe, and a lie. That is four `ungate-*` rules rather than
 a condition on the existing ones, because Kyverno's preconditions are a flat
 `all`/`any` and cannot express "out of scope *or* nothing gated" in one rule.
 
@@ -144,14 +145,14 @@ brew install kyverno
 
 Two matrices plus an idempotence check, over both agent types:
 
-- **posture** — who gets gated, under which `red`/`default` combination
-- **register** — *which* tools get gated, including the wildcard, a register entry
+- **posture**: who gets gated, under which `red`/`default` combination
+- **register**: *which* tools get gated, including the wildcard, a register entry
   naming a tool the agent does not have, a server the agent does not use, and an
   empty register
 
 The second matrix matters most, because the policy names no tool. If the register
 lookup breaks, the policy still applies cleanly and still labels every agent red, and
-gates nothing — a silent fail-open. So it is asserted directly rather than inferred
+gates nothing: a silent fail-open. So it is asserted directly rather than inferred
 from the policy applying without error.
 
 Run it after any edit to `yaml/kyverno/20-verdict-hitl.yaml`. The harness also checks
@@ -196,7 +197,7 @@ Then drive it. Same prompt, three agents:
 `approve.sh` makes the same A2A call the kagent UI makes when you click Approve: a
 follow-up `message/send` on the paused task with a `function_response` data part
 setting `confirmed`. There is no separate approvals REST endpoint. Or just open the
-kagent UI and click — `quick.sh status` prints the URL.
+kagent UI and click: `quick.sh status` prints the URL.
 
 Change who needs approval, without touching an agent:
 
@@ -229,16 +230,16 @@ In a real pipeline the register is read at first deploy and there is no extra st
 | `scripts/03-keycloak.sh` | Keycloak + the `agentregistry` realm, scrapes client secrets |
 | `scripts/04-kagent-registry.sh` | kagent Enterprise + AgentRegistry + Kyverno |
 | `scripts/05-mcp.sh` | the sre-tools MCP server and its route |
-| `scripts/06-agents.sh` | **the developer's phase** — build, publish, deploy both agents |
-| `scripts/07-verdict.sh` | **the platform team's phase** — the verdict lands |
+| `scripts/06-agents.sh` | **the developer's phase**: build, publish, deploy both agents |
+| `scripts/07-verdict.sh` | **the platform team's phase**: the verdict lands |
 | `scripts/ask.sh` | talk to any agent over kagent's OIDC-protected A2A endpoint |
-| `scripts/approve.sh` | approve/reject a pending call over the kagent A2A API — the same call the UI makes |
+| `scripts/approve.sh` | approve/reject a pending call over the kagent A2A API: the same call the UI makes |
 | `scripts/quick.sh` | `up` / `status` / `reset` / `down` |
-| `artifacts/AGENT_TEMPLATE.py` | the single source for BOTH agents — do not edit the copies |
+| `artifacts/AGENT_TEMPLATE.py` | the single source for BOTH agents: do not edit the copies |
 | `artifacts/sretriage/`, `artifacts/sreremediate/` | the two `arctl init` projects |
 | `src/sre-tools/` | Python MCP server, mock cluster with one OOM-looping workload |
 | `yaml/kyverno/05-rbac.yaml` | lets Kyverno read Gateway API resources |
-| `yaml/kyverno/20-verdict-hitl.yaml` | **the control** — one policy, both agent types, no tool names |
+| `yaml/kyverno/20-verdict-hitl.yaml` | **the control**: one policy, both agent types, no tool names |
 | `yaml/agents/declarative-native.yaml` | the kagent-native variant (Declarative + `requireApproval`) |
 | `yaml/agentgateway/10-mcp-routes.yaml` | the one MCP route every agent uses |
 | `scripts/test-policy.sh` | the policy's offline test matrix (Kyverno CLI) |
@@ -270,7 +271,7 @@ Full detail in [CLAUDE.md](./CLAUDE.md). The short list:
   resource and the deploy fails. Intersecting is also what lets one register cover a
   fleet with different tool sets.
 - **Match tool names exactly.** `contains()` against a comma-joined string lets an
-  entry called `scale` gate `scale_deployment` — the same class of bug as matching
+  entry called `scale` gate `scale_deployment`: the same class of bug as matching
   `sre` against `sreremediate` in the red list. The policy compares against a JMESPath
   list literal instead.
 - **`require_confirmation` gets the tool's ARGUMENTS, not its name.** ADK invokes the
@@ -280,7 +281,7 @@ Full detail in [CLAUDE.md](./CLAUDE.md). The short list:
   where the tool name is actually available.
 - **A `:latest` agent image with `imagePullPolicy: IfNotPresent` will not be re-pulled.**
   AgentRegistry sets that policy, so a rebuilt-and-pushed image is invisible: the pod
-  comes up healthy on OLD code and nothing reports a problem. This bit us for real — the
+  comes up healthy on OLD code and nothing reports a problem. This bit us for real: the
   green agent's image was left behind by a template change, and because a green agent's
   gating path is never exercised the drift stayed hidden until the register was switched
   to `red: "*"`, at which point the agent was correctly mutated, carried the right env

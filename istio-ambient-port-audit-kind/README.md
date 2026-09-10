@@ -1,7 +1,7 @@
 # Ambient port audit: which ports are open, which are used, which should go
 
 A compliance audit asks a blunt question about least privilege: is every port a
-service is authorized to reach actually one it uses, and is anything else left
+service is authorised to reach actually one it uses, and is anything else left
 open? Services accumulate ports over time (a listener for a new feature, a debug
 port from staging, a port some retired integration used), each one widens the
 AuthorizationPolicy in front of the service, and the policy almost never gets
@@ -21,7 +21,7 @@ nothing beyond what ztunnel already emits:
 - A **collector DaemonSet** (Python, own Docker image, stdlib only): one pod
   per node STREAMS its LOCAL ztunnel's access logs over a single
   `follow=true` log connection (each ztunnel only sees its own node's pods)
-  and merge-patches its OWN key in one central ConfigMap — on change,
+  and merge-patches its OWN key in one central ConfigMap: on change,
   debounced, with a 60s heartbeat. The key value is **gzip+base64** (a whole
   ConfigMap has one 1 MiB budget across all its keys, and port/pod sets
   compress ~60x on a real fleet). Merge patches on distinct keys are
@@ -57,7 +57,7 @@ trust domain.
 ## Prerequisites
 
 - docker, kind, kubectl, helm, jq, make
-- gcloud, authenticated (`gcloud auth login`) — the Solo Istio images are
+- gcloud, authenticated (`gcloud auth login`): the Solo Istio images are
   pulled from `us-docker.pkg.dev/soloio-img/istio` on the host and loaded
   into kind
 - a Solo Istio license: export `SOLO_ISTIO_LICENSE_KEY`, or point
@@ -98,7 +98,8 @@ kubectl --context kind-port-audit -n port-audit-system get cm port-audit-report 
   -o jsonpath='{.data.report\.json}' | jq .
 ```
 
-## The port story on svc-b
+<a id="the-port-story-on-svc-b"></a>
+## Ports on svc-b
 
 | Port | In the Service | In the policy | svc-a calls it | Report verdict |
 | ---- | -------------- | ------------- | -------------- | -------------- |

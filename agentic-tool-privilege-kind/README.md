@@ -7,34 +7,35 @@ call, so **one agent can do something the other can't**.
 
 Two agents diagnose the same locked database. Only one may fix it.
 
-- **dba-diagnoser** — identity `db-reader`. Can inspect the database and report a
+- **dba-diagnoser**: identity `db-reader`. Can inspect the database and report a
   Diagnosis. The privileged tool is invisible to it.
-- **sre-remediator** — identity `db-operator`. Same MCP server, but it may also call
+- **sre-remediator**: identity `db-operator`. Same MCP server, but it may also call
   `db_reset_credentials` and actually unlock the database.
 
 The boundary is enforced at the **enterprise agentgateway**, not in the agents.
-The gateway validates each agent's JWT and applies a per-tool authorization policy
+The gateway validates each agent's JWT and applies a per-tool authorisation policy
 keyed on the token's `groups` claim, so it filters `tools/list` and refuses
 `tools/call` per identity.
 
-## Mock Postgres — no real database
+<a id="mock-postgres--no-real-database"></a>
+## Mock Postgres: no real database
 
-The "orders" database is a small **MCP server that simulates Postgres** — it starts
+The "orders" database is a small **MCP server that simulates Postgres**: it starts
 locked (superuser password never set) and `db_reset_credentials` unlocks it. Nothing
 real to deploy; the incident is deterministic and re-arms on a pod restart.
 
 ## Why this is enterprise-only
 
 - `EnterpriseAgentgatewayPolicy` `backend.mcp.authorization` (per-tool CEL over the
-  JWT claims + tool name) and `jwtAuthentication` — no OSS equivalent.
+  JWT claims + tool name) and `jwtAuthentication`: no OSS equivalent.
 - Runs on Solo Enterprise for kagent + enterprise agentgateway + Keycloak.
 
-No Istio/ambient mesh is needed: the MCP authorization happens at the agentgateway
+No Istio/ambient mesh is needed: the MCP authorisation happens at the agentgateway
 in front of the tool server.
 
 ## Bring it up
 
-Separate kind cluster (`tool-privilege`), enterprise licenses required:
+Separate kind cluster (`tool-privilege`), enterprise licences required:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -56,7 +57,7 @@ installed and authenticated (`helm registry login` is run for you).
 ```
 
 `tools.sh` is the headline: the same MCP endpoint returns three tools to the reader
-and four to the operator. `prove.sh` fires the privileged tool with each identity —
+and four to the operator. `prove.sh` fires the privileged tool with each identity:
 refused for one, applied for the other, and the simulated database goes from
 `degraded` to `healthy`.
 
@@ -78,8 +79,8 @@ kubectl --context kind-tool-privilege -n mock-db rollout restart deploy/mock-db 
 ## Notes
 
 - Needs `docker`, `kind`, `kubectl`, `helm`, `curl`, `python3`, `gcloud`.
-- Standalone `tool-privilege` kind cluster — independent of Part 1's cluster.
+- Standalone `tool-privilege` kind cluster: independent of Part 1's cluster.
 - See `CLAUDE.md` for design notes and the end-to-end verification record.
-- Related: Part 1 (`agentic-structured-output-kind`) — the shared contract;
+- Related: Part 1 (`agentic-structured-output-kind`): the shared contract;
   `agentic-a2a-kind` — the user→agent OBO identity hop;
-  `agentic-mcp-rbac-kind` — per-user MCP tool RBAC at the gateway.
+  `agentic-mcp-rbac-kind`: per-user MCP tool RBAC at the gateway.

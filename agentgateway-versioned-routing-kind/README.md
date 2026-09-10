@@ -15,7 +15,8 @@ same edge cluster, alongside the kgateway install, in its own namespace.
 | `app-latest` | the "latest" versioned app. Echo server reporting `latest`.     |
 | `app-v2`     | a pinned older version. Echo server reporting `v2`.             |
 
-## The same result, a different mechanism
+<a id="the-same-result-a-different-mechanism"></a>
+## Compare the gateway configuration
 
 Both gateways give the identical, spoof-safe behaviour across all seven
 scenarios. What differs is how you express it:
@@ -81,7 +82,7 @@ agentgateway-versioned-routing-kind/
 
 ## Run it
 
-This lab needs one secret: a Solo Enterprise agentgateway license key. It is
+This lab needs one secret: a Solo Enterprise agentgateway licence key. It is
 read from `AGENTGATEWAY_LICENSE_KEY`.
 
 ```bash

@@ -43,7 +43,7 @@ Tear down with `scripts/cleanup.sh`.
 OpenMeter Cloud is now Kong Konnect, so this lab uses the **open-source,
 self-hosted** OpenMeter (Apache-2.0) via its docker-compose quickstart. It ships a
 preconfigured meter `api_requests_total` (`eventType: request`, `COUNT`, grouped by
-`method`/`route`) — which is exactly what this pipeline emits. API on `:48888`.
+`method`/`route`), which is exactly what this pipeline emits. API on `:48888`.
 
 ### 1. kind cluster + Gateway API
 
@@ -53,7 +53,8 @@ A single-node kind cluster, then the upstream Gateway API standard CRDs:
 kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
 ```
 
-### 2. OSS kgateway (no license)
+<a id="2-oss-kgateway-no-license"></a>
+### 2. OSS kgateway (no licence)
 
 ```bash
 helm upgrade -i kgateway-crds oci://cr.kgateway.dev/kgateway-dev/charts/kgateway-crds \
@@ -88,11 +89,11 @@ mapping that builds a CloudEvent (`type: request`, `subject`, `data.method/route
 Then two pieces of wiring and the policy (`yaml/04-collector-service.yaml`,
 `yaml/03-listenerpolicy.yaml`):
 
-- **`Service` on 4317** — the chart's default Service `targetPort` doesn't map to the
+- **`Service` on 4317**: the chart's default Service `targetPort` doesn't map to the
   `otel_log` port, so we expose `4317` explicitly (`otlp-collector` in `telemetry`).
-- **`ReferenceGrant`** — the `ListenerPolicy` lives in `kgateway-system` and the
+- **`ReferenceGrant`**: the `ListenerPolicy` lives in `kgateway-system` and the
   collector in `telemetry`; the cross-namespace `backendRef` needs a grant.
-- **`ListenerPolicy`** — `spec.default.httpSettings.accessLog[].openTelemetry`, pointing
+- **`ListenerPolicy`**: `spec.default.httpSettings.accessLog[].openTelemetry`, pointing
   its `grpcService.backendRef` at `otlp-collector:4317`, with `logName` set and the
   request attributes (`subject`, `method`, `route`, `status`, `id`) mapped from Envoy
   operators. This is the non-deprecated policy (`HTTPListenerPolicy` is deprecated).

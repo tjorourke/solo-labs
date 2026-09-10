@@ -1,4 +1,5 @@
-# Generated allowlists — reference copies, not inputs
+<a id="generated-allowlists--reference-copies-not-inputs"></a>
+# Generated allowlists: reference copies, not inputs
 
 These two files are the exact `WorkloadAllowlist` objects GKE Warden emitted on
 the verified run (Istio 1.30.4, GKE Autopilot v1.35.6-gke.1049000). They are here

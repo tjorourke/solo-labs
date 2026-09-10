@@ -7,21 +7,22 @@ A single kind cluster. kagent OSS provisions an **OpenClaw** sandbox through an
 and ask it, in plain English, to triage and remediate broken workloads. What it
 is allowed to *change* is decided by Kubernetes RBAC, not by the model.
 
-## The story
+<a id="the-story"></a>
+## The two broken deployments
 
 A `checkout` Deployment is broken on purpose (pinned to an image tag that does
 not exist → `ImagePullBackOff`) in **two** namespaces:
 
 | Namespace  | `autofix=true` label | What OpenClaw can do                          |
 | ---------- | -------------------- | --------------------------------------------- |
-| `incident` | **yes**              | **Fix it** — `kubectl set image`, pod recovers |
+| `incident` | **yes**              | **Fix it**: `kubectl set image`, pod recovers |
 | `payments` | no                   | **Triage only** — patch returns 403 → Slack    |
 
 OpenClaw can *read* every namespace (cluster-wide read), so it triages both. It
 can only *write* where a namespace is labelled `autofix=true`, because the fix
 permission is bound there and nowhere else. In `payments` the patch comes back
 **403 Forbidden** from Kubernetes, so the agent escalates to **Slack** instead of
-forcing the change. The guardrail is real RBAC — the agent cannot talk its way
+forcing the change. The guardrail is real RBAC: the agent cannot talk its way
 past it.
 
 ## What gets installed
@@ -49,7 +50,7 @@ export SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...   # optional
 ./scripts/quick.sh up
 ```
 
-`SLACK_WEBHOOK_URL` is optional — without it, the agent reports escalations in
+`SLACK_WEBHOOK_URL` is optional, without it, the agent reports escalations in
 its reply instead of posting to Slack. You can also keep both in a file and
 point `SECRETS_FILE` at it.
 
@@ -91,7 +92,7 @@ The harness also shows up in the kagent dashboard next to your agents:
 
 - Needs `docker`, `kind`, `kubectl`, `helm`. Anonymous image pulls only (no
   registry auth). First bring-up pulls a few large images (OpenShell gateway +
-  supervisor, kagent, the OpenClaw sandbox base) — give it a few minutes.
+  supervisor, kagent, the OpenClaw sandbox base): give it a few minutes.
 - The sandbox's kubeconfig uses a 24h token. Re-run `./scripts/05-equip-sandbox.sh`
   to refresh it (and the Slack webhook) without rebuilding the cluster.
 - See `CLAUDE.md` for the design decisions and the end-to-end verification record.

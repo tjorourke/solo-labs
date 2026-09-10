@@ -50,7 +50,10 @@ def reported():
         verdicts[int(n)] = v.strip().rstrip("*").strip()
     # Either wording, and only the list line: the compact summary also has a
     # "Ready:             2" count line, which must not be read as a pull request list.
-    ready = re.search(r"^\**Ready(?: to merge)?:\**\s*(#[\d,\s#]+)$", tail, re.M)
+    # \**$ at the end too: a model that bolds the whole line writes "**Ready: #35**",
+    # and without it the trailing asterisks break the match and the pull request reads
+    # as never reported.
+    ready = re.search(r"^\**Ready(?: to merge)?:\**\s*(#[\d,\s#]+?)\**$", tail, re.M)
     for n in re.findall(r"#(\d+)", ready.group(1) if ready else ""):
         verdicts[int(n)] = "READY"
     scanned = re.search(r"Scanned:\**\s*(\d+)", tail)
