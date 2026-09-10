@@ -1,14 +1,21 @@
 # Complexity-aware inference routing on agentgateway
 
-Two questions about the same subject, routed to different models. "Explain optimistic
-concurrency control in two sentences" goes to the general model. "Two writers report
-successful updates but one disappears, diagnose it" goes to the code model. Both are
-computer science, so the topic cannot be what separates them.
+A bank runs its own GPUs and one internal assistant.
+[Prompt-aware model routing](../agentgateway-inference-model-routing-eks/) splits its
+traffic by subject: finance to the general model, engineering to the code model. That
+holds up until you look at what engineering sends. Most of it is quick lookups. A small
+part is someone working an incident. Both are engineering, so both go to the code model,
+and the specialist card spends its capacity on definitions while the incident question
+shares a queue with them.
 
-Layers on [prompt-aware model routing](../agentgateway-inference-model-routing-eks/).
-That lab routes by topic and leaves the cluster, the two GPUs, the gateway and the
-semantic router in place. This one adds a second signal to the router and one decision
-that uses it. No new infrastructure, no second GPU, no new model.
+The subject cannot separate those, because it is the same subject. This lab gives the
+router a second thing to go on. "Explain optimistic concurrency control in two sentences"
+goes to the general model; "two writers report successful updates but one disappears,
+diagnose it" goes to the code model.
+
+It layers on that lab and keeps the cluster, the two GPUs, the gateway and the semantic
+router exactly as they were. One signal, one decision, and a router config change. No new
+infrastructure, no third GPU, no new model, and nothing on the gateway.
 
 **Editions.** Same as the lab it builds on. The gateway configuration is not touched at
 all here, so whichever edition of agentgateway is already running keeps working. The only
