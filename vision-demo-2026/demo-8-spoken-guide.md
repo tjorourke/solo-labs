@@ -222,6 +222,53 @@ the round trips and what the model has to carry.
 
 ---
 
+## Beat 5c · The same thing in Java
+
+For a Java room this is the beat that lands, and it costs ninety seconds. Everything
+is in `demo-scripts/prtriage/java-agent`, and nothing on your machine needs a JDK.
+
+**Show the code first:**
+
+```
+make show
+```
+
+**Say:**
+
+> That is the whole integration. A `StreamableHttpServerParameters` pointing at the
+> gateway, an `McpToolset` built from it, and an `LlmAgent` with that toolset. Google
+> ADK, in Java, six lines.
+>
+> There is no GitHub token in there. No tool list. No policy. The gateway owns all
+> three, so none of them are in this file.
+
+**Then run it:**
+
+```
+make run
+```
+
+**Say, when the first lines appear:**
+
+> Tools the gateway handed this Java agent: two. `get_tool` and `run_code`. Same as
+> the Python one, because the mode is a property of the gateway and not of the agent.
+>
+> Two model tool calls. Twenty four pull requests. Same verdicts, same count.
+>
+> Same ADK. Same gateway. Same approved skill, the same file baked into both images.
+> Different language, and not one thing about the governance changed.
+
+**Two things to have ready if asked.**
+
+`arctl init` scaffolds ADK with Python only today, so the Java project is hand-written.
+The catalogue itself does not care: an Agent record references an image, which is why
+`make publish` registers the Java agent alongside the Python one.
+
+And this Java agent runs as a Job rather than a deployed kagent agent, because kagent's
+readiness probe wants an A2A agent card and this is a batch program. Say that plainly if
+it comes up. It is a limitation of this example, not of kagent, and the gateway story is
+identical either way.
+
 ## Beat 6 · Take the write tools away
 
 **Run:** the policy YAML cell, then the apply, then the denied program, then the agent.

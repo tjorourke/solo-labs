@@ -25,14 +25,19 @@ show:
 	@echo
 	@echo "  ── the whole integration, from ReleaseReport.java ──"
 	@echo
-	@sed -n '/StreamableHttpServerParameters mcp =/,/\.build();/p' $(SRC) | sed 's/^/  /'
-	@echo
-	@sed -n '/LlmAgent agent = LlmAgent.builder()/,/\.build();/p' $(SRC) | sed 's/^/  /'
+	@sed -n '/private static LlmAgent agent(/,/^  }/p' $(SRC) | sed 's/^/  /'
 	@echo
 	@echo "  No GitHub token. No tool list. No policy. The gateway owns all three."
 	@echo
 
-build:
+## The approved skill has exactly one source, so it cannot drift between the two
+## agents. The docker build context cannot reach outside this directory, so we copy it
+## in here at build time rather than keeping a second edited copy under source control.
+skill.md: ../skill/release-report/SKILL.md
+	@awk '/^---$$/{c++;next} c>=2' $< > $@
+	@echo "== skill.md regenerated from the approved skill ($$(wc -c < $@ | tr -d " ") bytes) =="
+
+build: skill.md
 	@echo "== building $(IMAGE) (maven runs inside the image) =="
 	docker build -t $(IMAGE) .
 
@@ -64,3 +69,4 @@ logs:
 clean:
 	-$(KC) -n $(NS) delete job prtriage-java --ignore-not-found
 	-arctl delete agent prtriagejava
+	rm -f skill.md

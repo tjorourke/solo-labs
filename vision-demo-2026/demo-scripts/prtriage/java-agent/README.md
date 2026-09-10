@@ -43,6 +43,23 @@ model tool calls: 2
 Same twenty four pull requests, same verdicts, same correct count. The agent did not
 change, was not rebuilt, and does not know which mode it is in.
 
+## The files, and why each one is there
+
+| file | why |
+|---|---|
+| `src/.../ReleaseReport.java` | the wiring, and the whole point is how little is in it |
+| `src/.../Config.java` | everything the agent is told, and note there is no GitHub credential in it |
+| `src/.../OneShot.java` | ask once, print what it cost, exit. The shape `make run` uses |
+| `src/.../A2aServer.java` | the two endpoints kagent needs from a long-lived agent |
+| `src/.../Turn.java` | one question through an ADK runner |
+| `src/.../Console.java` | the demo's output, kept out of the agent code |
+| `src/.../Json.java` | Jackson comes in with ADK, so no JSON is parsed by hand |
+| `pom.xml` | one dependency, `google-adk`. MCP and Claude both come with it |
+| `Dockerfile` | multi-stage, so no JDK is needed on the machine |
+| `Makefile` | show, build, push, publish, run |
+| `agent.yaml` | the AgentRegistry catalogue entry |
+| `skill.md` | **generated** by the Makefile from the approved skill. Not under source control, because a second editable copy would drift |
+
 ## Verified API, not remembered API
 
 Everything here was checked against `com.google.adk:google-adk:1.9.0` by reading the
