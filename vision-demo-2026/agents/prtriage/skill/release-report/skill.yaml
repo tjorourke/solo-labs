@@ -10,4 +10,4 @@ spec:
       # the public mirror of this lab — `arctl pull skill release-report` clones from here
       url: https://github.com/tjorourke/solo-labs.git
       branch: main
-      subfolder: vision-demo-2026/demo-scripts/prtriage/skill/release-report
+      subfolder: vision-demo-2026/agents/prtriage/skill/release-report

@@ -69,7 +69,7 @@ deploy: publish
 ## does not.
 ask: PROMPT ?= Give me the release report for $(DEMO_REPO), all open pull requests.
 ask:
-	@cd ../../agentregistry && AGENT_PREFIX=prtriagejava EXEC_FROM=prtriage \
+	@cd ../../../demo-scripts/agentregistry && AGENT_PREFIX=prtriagejava EXEC_FROM=prtriage \
 	  ./scripts/ask.sh "$(PROMPT)"
 
 ## Run it as a one-shot Job instead, which is what the notebook uses for the numbers. A DEPLOYED kagent agent has to serve A2A on

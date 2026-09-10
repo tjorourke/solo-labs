@@ -225,7 +225,7 @@ the round trips and what the model has to carry.
 ## Beat 5c · The same thing in Java
 
 For a Java room this is the beat that lands, and it costs ninety seconds. Everything
-is in `demo-scripts/prtriage/java-agent`, and nothing on your machine needs a JDK.
+is in `agents/prtriage/java-agent`, and nothing on your machine needs a JDK.
 
 **Show the code first:**
 
@@ -383,10 +383,10 @@ this never comes up.
 
 **`Failed to create MCP session`.** DNS. The suite's endpoints are
 `*.<lb-ip>.sslip.io`, and resolvers with rebinding protection refuse to return a private
-address. Run `demo-scripts/prtriage/scripts/fix-cluster-dns.sh`.
+address. Run `agents/prtriage/scripts/fix-cluster-dns.sh`.
 
 **A `toolMode` change seems to do nothing.** The agent lists its tools once at startup.
-`demo-scripts/prtriage/scripts/reload-agent.sh` restarts it and waits for exactly one
+`agents/prtriage/scripts/reload-agent.sh` restarts it and waits for exactly one
 running pod.
 
 **`cannot exec in a deleted state`.** Same script. It happens when a prompt lands on a

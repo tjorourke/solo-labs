@@ -70,7 +70,7 @@ case "$DEMO" in
     cd "$LAB_ROOT" || return 1
     # Part 8 drives arctl from the suite root (paths are $PART8-relative in the notebook)
     source demo-scripts/agentregistry/scripts/connect.sh
-    export PART8=demo-scripts/prtriage
+    export PART8=agents/prtriage
     export LB=$(kubectl --context kind-mesh1 -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}')
     export MCP="http://github-mcp.${LB}.sslip.io/"
     export ASK="demo-scripts/agentregistry/scripts/ask.sh"

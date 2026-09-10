@@ -8,7 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"      # the agentregistry/ dir
 # where `arctl init agent` scaffolds: the SUITE root (vision-demo-2026),
 # so agentdemo/ appears in the editor next to the demo notebooks
-export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$LAB_ROOT/../.." && pwd)}"
+# Scaffolded agent projects land in the suite's agents/ folder rather than scattered
+# across the lab root, so agentdemo, dice-game and the Part 8 projects sit together.
+export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$LAB_ROOT/../.." && pwd)/agents}"
 
 # platform facts from the standup
 set -a

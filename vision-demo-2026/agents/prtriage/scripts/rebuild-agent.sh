@@ -8,18 +8,18 @@
 # deployed. So we drop the cached image from every node before restarting.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAB_ROOT="$(cd "$HERE/../../.." && pwd)"
+PROJECT="$(cd "$HERE/.." && pwd)/adk-python"
 IMAGE="${IMAGE:-localhost:5001/prtriage:latest}"
 K="kubectl --context kind-mesh1"
 
 echo "== bake the approved skill into the agent's prompts =="
 awk '/^---$/{c++;next} c>=2' "$HERE/../skill/release-report/SKILL.md" \
   | jq -Rs '[{name:"release-report", content:.}]' \
-  > "$LAB_ROOT/prtriage/prtriage/prompts.json"
+  > "$PROJECT/prtriage/prompts.json"
 
 echo "== build + push =="
-arctl build "$LAB_ROOT/prtriage" --push >/dev/null
-arctl apply -f "$LAB_ROOT/prtriage/agent.yaml" >/dev/null
+arctl build "$PROJECT" --push >/dev/null
+arctl apply -f "$PROJECT/agent.yaml" >/dev/null
 
 echo "== drop the stale cached image from the kind nodes =="
 for node in $(kind get nodes --name mesh1); do

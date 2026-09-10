@@ -12,6 +12,25 @@
 
 - **Part 8 — The tool layer (GitHub + MCP).** On `mesh1`: agentgateway fronts **GitHub's hosted MCP server** (44 tools, 17 of them write) and holds the PAT, so the agent carries no GitHub credential; AgentRegistry publishes it as an approved tool server whose URL is the gateway; `arctl` scaffolds a `prtriage` agent against it, deployed on kagent. Then the same release-report question is run through all four `entMcp.toolMode` settings with the round trips, schema tokens and payload measured each time, and it finishes by taking the write tools away with an `EnterpriseAgentgatewayPolicy`. Needs the Part 4 standup plus `GITHUB_PAT` (read access is enough).
 
+### Where agent projects live
+
+Every scaffolded agent project lands in **`agents/`** rather than at the lab root:
+`agents/agentdemo/` and `agents/dice-game/` from Part 4, and `agents/prtriage/` from
+Part 8, which holds both implementations of the same agent side by side:
+
+```
+agents/prtriage/
+  adk-python/     the arctl-scaffolded ADK Python agent  (generated, gitignored)
+  java-agent/     the same agent in Java on the same ADK
+  skill/          the one approved skill both of them use
+  scripts/        setup, seed, scaffold, rebuild, reload
+  yaml/           the gateway backend, the policy, the catalogue entry, the deploys
+  fixtures/       the frozen pull requests the demo reads
+```
+
+`PROJECT_ROOT` in `demo-scripts/agentregistry/scripts/lib.sh` is what points `arctl`
+there, so nothing scatters across the lab root.
+
 The parts run **independently** — pick one per customer, or run all seven. This lab is a personal demo driver: no `index.html`, not on the site.
 
 ## Stack (validated live)

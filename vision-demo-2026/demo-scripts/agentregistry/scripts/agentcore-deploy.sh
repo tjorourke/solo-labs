@@ -11,7 +11,7 @@ LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 arctl_login
 export AWS_REGION="${AWS_REGION:-us-east-1}"
-AGENT=agentdemo; PROJ="$PROJECT_ROOT/agentdemo"   # scaffolded at the lab root, not deploy/
+AGENT=agentdemo; PROJ="$PROJECT_ROOT/agentdemo"   # scaffolded under agents/, not deploy/
 # AgentCore publishes its OWN Agent record (with the ECR image), so it never
 # touches the kagent `agentdemo` Agent (which stays on the localhost image). That
 # keeps the two runtimes' images independent — no shared-record race — so this

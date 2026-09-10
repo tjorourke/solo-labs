@@ -9,29 +9,34 @@
 # scaffold.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAB_ROOT="$(cd "$HERE/../../.." && pwd)"
+AGENT_DIR="$(cd "$HERE/.." && pwd)"          # agents/prtriage
+PROJECT="$AGENT_DIR/adk-python"              # next to java-agent/
 FORCE="${FORCE:-}"
 
-if [ -d "$LAB_ROOT/prtriage" ] && [ -z "$FORCE" ]; then
-  echo "prtriage/ already scaffolded (FORCE=1 to start over)"
+if [ -d "$PROJECT" ] && [ -z "$FORCE" ]; then
+  echo "adk-python/ already scaffolded (FORCE=1 to start over)"
 else
-  rm -rf "$LAB_ROOT/prtriage"
+  rm -rf "$PROJECT" "$AGENT_DIR/prtriage"
+  # arctl names the project directory after the agent, and the agent has to stay
+  # `prtriage` because the image, the catalogue entry and the kagent Agent all use it.
+  # So scaffold and then rename the directory to sit alongside java-agent/.
   arctl init agent prtriage --framework adk --language python \
     --model-provider anthropic --model-name claude-haiku-4-5 \
     --mcp github-mcp@latest \
     --description "Reports which open pull requests are ready to merge and which are blocked." \
-    --output-dir "$LAB_ROOT" >/dev/null
-  echo "✓ scaffolded $LAB_ROOT/prtriage"
+    --output-dir "$AGENT_DIR" >/dev/null
+  mv "$AGENT_DIR/prtriage" "$PROJECT"
+  echo "✓ scaffolded $PROJECT"
 fi
 
 echo
 echo "== what the scaffold shipped as tools =="
-grep -oE '^(async )?def [a-z_]+' "$LAB_ROOT/prtriage/prtriage/agent.py" | sed 's/^/  /'
+grep -oE '^(async )?def [a-z_]+' "$PROJECT/prtriage/agent.py" | sed 's/^/  /'
 
-cp "$HERE/../agent/agent.py" "$LAB_ROOT/prtriage/prtriage/agent.py"
+cp "$HERE/../agent/agent.py" "$PROJECT/prtriage/agent.py"
 echo
 echo "== after the swap =="
-grep -oE '^(async )?def [a-z_]+' "$LAB_ROOT/prtriage/prtriage/agent.py" | sed 's/^/  /'
+grep -oE '^(async )?def [a-z_]+' "$PROJECT/prtriage/agent.py" | sed 's/^/  /'
 echo
 echo "  the dice samples are gone; 'today' is the only local tool, and every GitHub"
 echo "  capability arrives through the approved MCP server in the catalogue."
