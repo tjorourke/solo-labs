@@ -1,0 +1,66 @@
+[
+  {
+    "branch": "demo/fix-token-refresh",
+    "title": "fix(auth): refresh the upstream token before it expires, not after",
+    "file": "go/adk/pkg/auth/refresh_ahead.go",
+    "draft": false,
+    "signoff": false,
+    "hold": false
+  },
+  {
+    "branch": "demo/wip-batching",
+    "title": "feat(queue): batch outbound A2A writes (WIP, do not merge)",
+    "file": "go/adk/pkg/runner/batch_writer.go",
+    "draft": true,
+    "signoff": false,
+    "hold": false
+  },
+  {
+    "branch": "demo/fix-retry-backoff",
+    "title": "fix(client): jittered backoff so retries stop synchronising",
+    "file": "go/adk/pkg/client/backoff_jitter.go",
+    "draft": false,
+    "signoff": false,
+    "hold": true
+  },
+  {
+    "branch": "demo/docs-quickstart-tls",
+    "title": "docs: explain TLS origination in the ModelConfig quickstart",
+    "file": "python/packages/kagent-adk/docs/tls_origination.md",
+    "draft": false,
+    "signoff": true,
+    "hold": false
+  },
+  {
+    "branch": "demo/metrics-route-label",
+    "title": "feat(metrics): add a route label to the request counter",
+    "file": "go/core/internal/telemetry/route_label.go",
+    "draft": false,
+    "signoff": false,
+    "hold": false
+  },
+  {
+    "branch": "demo/fix-nil-listener",
+    "title": "fix(config): stop dereferencing a nil listener on reload",
+    "file": "go/core/internal/controller/reconciler/reload_guard.go",
+    "draft": false,
+    "signoff": false,
+    "hold": false
+  },
+  {
+    "branch": "demo/bump-yaml-parser",
+    "title": "chore(deps): bump the transitive yaml parser",
+    "file": "go/adk/pkg/models/yaml_parser_note.md",
+    "draft": false,
+    "signoff": false,
+    "hold": false
+  },
+  {
+    "branch": "demo/cache-max-age",
+    "title": "feat(cache): honour max-age on upstream model responses",
+    "file": "python/packages/kagent-adk/src/kagent/adk/cache_headers.py",
+    "draft": false,
+    "signoff": false,
+    "hold": false
+  }
+]

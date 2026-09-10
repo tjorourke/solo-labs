@@ -42,6 +42,9 @@ The sandbox is deliberately small. It is not Node, and it is not your agent.
   program.
 - Filter, sort and aggregate inside the program. Return the smallest value that
   answers the question, never a raw tool response.
+- **Never use `return` at the top level.** The program is a script, not a function, and
+  a top-level `return` fails to compile and costs you the whole run. Assign to a
+  variable and leave that variable as the last expression.
 
 ## If the server offers get_tool and invoke_tool
 
@@ -56,40 +59,53 @@ the pull request list is the largest response in this job.
 Getting these wrong costs a whole retry, so they are written down:
 
 - `list_pull_requests` returns an **array** of pull requests.
-- `pull_request_read` with `method: "get_reviews"` returns an **array** of
-  reviews, each with a `state` field.
-- `pull_request_read` with `method: "get_check_runs"` returns an **object**:
-  `{ total_count, check_runs: [ { name, status, conclusion } ] }`. Read
-  `.check_runs`, and guard with `Array.isArray` before calling `.filter` or
-  `.map` on anything.
+- `list_pull_requests` returns an **array**, and each item carries the `fields` you
+  asked for, including `labels`.
+- `pull_request_read` with `method: "get_comments"` returns an **array** of comments,
+  each with a `body`. Guard with `Array.isArray` before calling `.filter`, `.map` or
+  `.some` on anything.
 
 ## How to judge a pull request
 
-The parameter is `pullNumber`, not `pull_number`. Getting it wrong costs a retry.
+The parameter is `pullNumber`, not `pull_number`. Getting the name wrong costs a retry.
 
-Read reviews with `pull_request_read` (`method: "get_reviews"`) and checks with
-`pull_request_read` (`method: "get_check_runs"`).
+Two of the three signals arrive free in the pull request list, so ask for them:
 
-Then evaluate all three conditions **independently** and pick the first that is
-true. Do not chain them as `else if` on the response shape: a guard like
-`else if (Array.isArray(checks.check_runs))` is true whenever checks came back at
-all, which swallows the approval test and reports an unapproved pull request as
-READY. Compute the booleans first, then decide:
+- `list_pull_requests` with
+  `fields: ["number","title","draft","created_at","labels"]` gives you `draft` and
+  `labels` for every pull request in one call.
+- `pull_request_read` with `method: "get_comments"` gives you one pull request's
+  discussion. A pull request is signed off when a comment body starts with `LGTM`.
+
+Evaluate all three conditions **independently**, then take the first that is true. Do
+not chain them as `else if` on a response shape: a guard like
+`else if (Array.isArray(comments))` is true whenever comments came back at all, which
+swallows every test after it and reports a blocked pull request as READY. Compute the
+booleans first, then decide:
 
 ```js
-const isDraft  = pr.draft === true;
-const failing  = (Array.isArray(checks.check_runs) ? checks.check_runs : [])
-  .filter((c) => ["failure","timed_out","cancelled","action_required"].includes(c.conclusion));
-const approved = (Array.isArray(reviews) ? reviews : [])
-  .some((r) => r.state === "APPROVED");
+const isDraft   = pr.draft === true;
+const onHold    = (Array.isArray(pr.labels) ? pr.labels : [])
+  .some((l) => (typeof l === "string" ? l : l.name) === "do-not-merge/hold");
+const signedOff = (Array.isArray(comments) ? comments : [])
+  .some((c) => String(c.body || "").trim().toUpperCase().startsWith("LGTM"));
 
 let verdict = "READY";
 if (isDraft) verdict = "draft";
-else if (failing.length > 0) verdict = "checks failing (" + failing.length + ")";
-else if (!approved) verdict = "no approval";
+else if (onHold) verdict = "on hold";
+else if (!signedOff) verdict = "no sign-off";
 ```
 
-A review with state `COMMENTED` or `CHANGES_REQUESTED` is **not** an approval.
+`labels` may come back as strings or as objects with a `name`, so handle both.
+
+A comment that merely discusses the change is not a sign-off. Only `LGTM` at the start
+of a comment counts.
+
+Dates are `YYYY-MM-DD`, ten characters. `created_at` comes back as a full ISO
+timestamp, so cut it: `String(pr.created_at).slice(0, 10)`. Do not print the time.
+
+**Report every pull request you were given.** If the list returned eight, the report
+has eight lines across the two sections. Losing one is worse than being slow.
 
 ## House format for the answer
 
@@ -104,7 +120,7 @@ Scanned: <n> open pull requests
 Ready to merge: #<n>, #<n>
 Blocked:
   #<n>  opened <YYYY-MM-DD>  no approval
-  #<n>  opened <YYYY-MM-DD>  checks failing (2)
+  #<n>  opened <YYYY-MM-DD>  on hold
 ```
 
 If nothing is ready, write `Ready to merge: none`.
