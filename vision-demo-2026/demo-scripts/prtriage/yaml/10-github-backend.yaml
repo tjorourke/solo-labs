@@ -41,7 +41,11 @@ metadata:
   namespace: agentgateway-system
 spec:
   parentRefs: [{ name: ar-ingress }]
-  hostnames: ["github-mcp.LB_PLACEHOLDER.sslip.io"]
+  # the sslip.io name for humans and curl, and the gateway Service's own cluster
+  # name so the agent -> gateway hop never depends on public DNS at all
+  hostnames:
+  - "github-mcp.LB_PLACEHOLDER.sslip.io"
+  - "ar-ingress.agentgateway-system.svc.cluster.local"
   rules:
   - backendRefs:
     - group: enterpriseagentgateway.solo.io

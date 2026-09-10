@@ -12,6 +12,9 @@ K="kubectl --context kind-mesh1"
 PAT="${GITHUB_PAT:-${GITHUB_PORTLAB_TOKEN:-}}"
 [ -n "$PAT" ] || { echo "✗ set GITHUB_PAT (a GitHub PAT; read access is enough)"; exit 1; }
 
+echo "== make sure the cluster can resolve its own ingress names =="
+"$HERE/fix-cluster-dns.sh" >/dev/null 2>&1 || echo "  (dns fix skipped)"
+
 LB="$($K -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}')"
 [ -n "$LB" ] || { echo "✗ no ar-ingress address — is the Part 4 platform up?"; exit 1; }
 echo "== ar-ingress at $LB =="

@@ -36,6 +36,14 @@ The sandbox is deliberately small. It is not Node, and it is not your agent.
 - Filter, sort and aggregate inside the program. Return the smallest value that
   answers the question, never a raw tool response.
 
+## If the server offers get_tool and invoke_tool
+
+That is the gateway handing you a searchable catalogue instead of every tool at once.
+**Call `get_tool` for a tool before you first `invoke_tool` it**, and use the argument
+names it gives back. Do not guess them. Guessing `per_page` instead of `perPage`, or
+folding the owner into `repo` as `"owner/repo"`, costs a full retry of the call, and
+the pull request list is the largest response in this job.
+
 ## The response shapes, so you do not have to guess
 
 Getting these wrong costs a whole retry, so they are written down:
