@@ -30,7 +30,10 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 ## Before you start
 
-1. `source demo-scripts/env.sh 8`, run the Connect cell, check the MCP endpoint prints.
+1. `source demo-scripts/env.sh 8`, then **`agents/prtriage/scripts/preflight.sh`**. It
+   checks the fixture counts, the catalogue, both agents, both MCP paths, model access,
+   stray policies left over from a previous run, and whether traces are landing. If it
+   says "ready to present", it is. If not, every failure line says what to fix.
    `setup.sh` is cluster setup, not a beat: run it well before you present. It builds the
    waypoint, both backends, the route and the catalogue entries, and you never touch it
    on stage.
@@ -63,13 +66,11 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 **Cue:** read the three write tool names slowly. That is the moment the room goes quiet.
 
-**If asked "can't you just not pass those tools to the model?":** yes, and a careful
-team will. Say it straight:
->
-> You can filter the list inside each agent. What the platform does here is apply it
-> once, outside the agent, the same way for every agent, and refuse a direct call that
-> skips the model's tool list altogether. That last part is the bit agent-side filtering
-> cannot do, and we finish on it.
+**If asked "can't you filter those in your agent?":**
+
+> You can, and a careful team will. The platform does it once for every agent, and
+> refuses a direct call that skips the model's tool list. That last part is the bit
+> agent-side filtering cannot do, and we finish on it.
 
 ---
 
@@ -135,9 +136,8 @@ past it otherwise.
 **Cue:** the only local tool is `today`, and it is worth one sentence: the gateway's
 sandbox deliberately has no clock, so a program in there cannot work out the date.
 
-**If asked why it is hand-written rather than scaffolded:** `arctl init` does ADK with
-Python only today, and `--language java` is rejected. The catalogue does not care,
-because an Agent record just references an image, which is what the next beat uses.
+**If asked why it is hand-written:** `arctl init` does Python only today. The catalogue
+does not care, an Agent record just references an image.
 
 **Then build it, in a container:**
 
@@ -177,24 +177,19 @@ question, and open the Tracing tab.
 > is already blocked, so reading their comments buys nothing. The registry saved seven
 > calls before the gateway did anything.
 
-**Say what the gate actually is, before anyone asks:**
+**Say what the gate is, so "ready" is not overclaiming:**
 
-> To be clear about what "ready" means here. The gate is: not a draft, not held, and
-> signed off by a maintainer comment. It does not look at review approvals, or CI, or
-> branch protection. These are seeded pull requests so we can run the same inputs twice
-> and compare. So "ready" means it passes the demo release gate, not that GitHub would
-> let you merge it.
+> The gate here is: not a draft, not held, signed off. It does not look at approvals or
+> CI. These are seeded pull requests so the same inputs run twice.
 
-**Then check the report rather than asserting it:**
+**Then check it rather than assert it:**
 
-> And rather than take that report on trust, this reads the fixture straight from GitHub
-> by the same three rules and compares it line by line.
+> And rather than trust that report, this reads the fixture straight from GitHub and
+> compares it line by line.
 
-**Whatever it says, say that.** Usually every verdict is right and the total is wrong,
-which is small, harmless and very telling: it read twenty four things one at a time and
-lost track of how many. Sometimes the count is right too, and the demo is unharmed,
-because the comparison is about tool overhead and where the data is handled. Do not
-script a mistake.
+**Whatever it says, say that.** Usually the verdicts are right and the count is wrong.
+Sometimes the count is right too, and nothing is lost, because the comparison is about
+tool overhead. Never script a mistake.
 
 **Cue:** the scroll is the demo. Take your time over it. Ten seconds of silently
 scrolling JSON does more work than any sentence here.
@@ -206,10 +201,6 @@ scrolling JSON does more work than any sentence here.
 **Say:**
 
 > Same agent. Same image. Same catalogue. One field on the gateway backend.
->
-> I am restarting the agent, and I want to be straight about why: this implementation
-> reads its MCP tool list once at startup and caches it. The image has not changed and
-> nothing was rebuilt. It just needs to ask the gateway again.
 >
 > `toolMode: CodeSearch`. The model no longer gets forty four tools. It gets two:
 > `get_tool` to look up an operation's schema, and `run_code` to run a program against
@@ -232,12 +223,10 @@ scrolling JSON does more work than any sentence here.
 > Anything the model has to hold is something it can lose. So we stopped giving it
 > things to hold.
 
-**And the caveat, which costs nothing and buys credibility:**
+**One line of honesty, if the room looks sceptical:**
 
-> To be fair to it: code mode does not make the model correct. It writes JavaScript,
-> and JavaScript can be wrong. What it does is move the counting and the filtering
-> somewhere explicit and inspectable, and keep the raw data out of the context window
-> on the way.
+> This does not make the model correct. It writes JavaScript and JavaScript can be
+> wrong. What it does is keep the raw data out of the context window.
 
 **Then the sandbox, thirty seconds:**
 
@@ -290,11 +279,8 @@ the round trips and what the model has to carry.
 > cannot do that, because by then the connection has left the mesh. It is the same
 > reason Part 4 enforces its access policy at a waypoint.
 
-**Cue before the matrix:** the cell puts the tool surface back to `Standard` first, and
-say why if anyone notices. The matrix is about which tool *names* each identity can see,
-and in code mode the only tools are `get_tool` and `run_code`, so both agents would look
-identical whatever the policy said. The code-mode form of the same proof comes next and
-is stronger.
+**Cue:** the cell puts the surface back to `Standard` first, because the matrix is about
+tool names. Nothing to say out loud.
 
 **Then deploy the second agent and show the matrix:**
 
@@ -334,10 +320,8 @@ is stronger.
 >
 > Same request. Same gateway. Different identity.
 
-**Cue:** it targets a pull request number that does not exist deliberately. If policy
-ever failed to propagate, the worst case is a 404 rather than a merged fixture, and the
-error text tells you which happened. Say that if anyone asks whether you just merged
-something.
+**Cue:** the pull request number does not exist, so a policy failure could only 404.
+Only mention it if someone asks whether you just merged something.
 
 ### And the same thing in code mode, which is stronger
 
