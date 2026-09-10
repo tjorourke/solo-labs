@@ -33,12 +33,15 @@ show:
 	@echo "  No GitHub token. No tool list. No policy. The gateway owns all three."
 	@echo
 
-## The approved skill has exactly one source, so it cannot drift between the two
-## agents. The docker build context cannot reach outside this directory, so we copy it
-## in here at build time rather than keeping a second edited copy under source control.
-skill.md: ../skill/release-report/SKILL.md
-	@awk '/^---$$/{c++;next} c>=2' $< > $@
-	@echo "== skill.md regenerated from the approved skill ($$(wc -c < $@ | tr -d " ") bytes) =="
+## The approved skill comes FROM THE REGISTRY, the same way demo 4 pulls it. That is
+## the point of having a registry: the agent is built against a pinned, versioned
+## record rather than whatever happens to be in the working tree.
+##
+## LOCAL_SKILL=1 uses the working copy instead, which is what you want while editing
+## the skill, since a pull would fetch the last version that reached the mirror.
+skill.md:
+	@if [ -n "$(LOCAL_SKILL)" ]; then 	  echo "== skill.md from the LOCAL working copy (LOCAL_SKILL=1) =="; 	  awk '/^---$$/{c++;next} c>=2' ../skill/release-report/SKILL.md > $@; 	else 	  echo "== pulling the approved skill from AgentRegistry =="; 	  rm -rf .skill; 	  arctl pull skill release-report .skill >/dev/null || { 	    echo "   ! arctl pull failed. Is arctl logged in, and has the skill's source"; 	    echo "     repository been updated? Falling back to the local copy."; 	    awk '/^---$$/{c++;next} c>=2' ../skill/release-report/SKILL.md > $@; 	    exit 0; }; 	  awk '/^---$$/{c++;next} c>=2' .skill/SKILL.md > $@; 	  arctl get skill release-report -o yaml | sed -n 's/^ *subfolder: */   source: /p'; 	fi
+	@echo "   skill.md is $$(wc -c < $@ | tr -d ' ') bytes"
 
 build: skill.md
 	@echo "== building $(IMAGE) (maven runs inside the image) =="
@@ -83,4 +86,4 @@ logs:
 clean:
 	-arctl delete deployment prtriagejava
 	-arctl delete agent prtriagejava
-	rm -f skill.md
+	rm -rf skill.md .skill
