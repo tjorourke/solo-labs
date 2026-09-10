@@ -62,5 +62,133 @@
     "draft": false,
     "signoff": false,
     "hold": false
+  },
+  {
+    "branch": "demo/fix-span-export",
+    "title": "fix(adk): export a turn's spans before the terminal event leaves the process",
+    "file": "go/adk/pkg/telemetry/span_flush.go",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/feat-prompt-cache",
+    "title": "feat(models): add prompt caching for the Anthropic provider",
+    "file": "go/adk/pkg/models/anthropic_cache.go",
+    "draft": false,
+    "hold": false,
+    "signoff": true
+  },
+  {
+    "branch": "demo/fix-helm-metrics",
+    "title": "fix(helm): disable controller metrics when bindAddress is empty",
+    "file": "helm/kagent/templates/metrics_guard.yaml",
+    "draft": false,
+    "hold": true,
+    "signoff": false
+  },
+  {
+    "branch": "demo/feat-compaction",
+    "title": "feat(adk): honour spec.declarative.context.compaction in the Go runtime",
+    "file": "go/adk/pkg/agent/compaction_go.go",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/fix-task-admission",
+    "title": "fix: make A2A task admission atomic",
+    "file": "go/core/internal/a2a/admission.go",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/wip-sandbox-quota",
+    "title": "feat(substrate): per-namespace sandbox quota (WIP)",
+    "file": "go/core/internal/substrate/quota.go",
+    "draft": true,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/fix-oidc-redirect",
+    "title": "fix(sso): handle an expired token session redirect",
+    "file": "ui/src/auth/redirect_expired.ts",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/feat-tool-timeout",
+    "title": "feat(tools): per-tool timeout on RemoteMCPServer",
+    "file": "go/api/v1alpha2/tool_timeout.go",
+    "draft": false,
+    "hold": true,
+    "signoff": false
+  },
+  {
+    "branch": "demo/fix-crd-defaults",
+    "title": "fix(crds): stop regenerating defaults that were explicitly cleared",
+    "file": "go/api/config/crd/defaults_guard.go",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/feat-structured-out",
+    "title": "feat(adk): pass output_schema through to the BYO runtime",
+    "file": "python/packages/kagent-adk/src/kagent/adk/schema_passthrough.py",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/chore-bump-otel",
+    "title": "chore(deps): bump the OpenTelemetry collector contrib",
+    "file": "go/adk/pkg/telemetry/otel_version.md",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/fix-memory-leak",
+    "title": "fix(runner): release the session buffer when a turn is cancelled",
+    "file": "go/adk/pkg/runner/session_release.go",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/feat-agent-labels",
+    "title": "feat(controller): propagate Agent labels onto the Deployment",
+    "file": "go/core/internal/controller/label_propagation.go",
+    "draft": false,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/wip-multi-model",
+    "title": "feat(models): route a single agent across two providers (WIP)",
+    "file": "go/adk/pkg/models/multi_provider.go",
+    "draft": true,
+    "hold": false,
+    "signoff": false
+  },
+  {
+    "branch": "demo/fix-ui-pagination",
+    "title": "fix(ui): keep the cursor when the session list refreshes",
+    "file": "ui/src/sessions/cursor.ts",
+    "draft": false,
+    "hold": true,
+    "signoff": false
+  },
+  {
+    "branch": "demo/feat-health-probe",
+    "title": "feat(adk): add a readiness probe that checks the model endpoint",
+    "file": "go/adk/pkg/health/model_probe.go",
+    "draft": false,
+    "hold": false,
+    "signoff": false
   }
 ]

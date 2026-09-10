@@ -134,10 +134,24 @@ for f in json.load(open(FIXTURES)):
     if br in existing:
         print("  = #%-4s %s (already there)" % (existing[br], br)); made.append(existing[br]); continue
     call("POST", "/git/refs", {"ref": "refs/heads/" + br, "sha": base_sha}, tolerate=(422,))
-    content = base64.b64encode(
-        ("// %s\n// Fixture for the agentgateway MCP tool-layer demo.\n"
-         "// This branch exists so the demo returns the same report every run.\n"
-         % f["file"]).encode()).decode()
+    # A .go file containing only comments does not compile, and if the target repo
+    # runs CI the pull request picks up a red tick that has nothing to do with the
+    # demo and invites a question you cannot answer. Write something valid.
+    if f["file"].endswith(".go"):
+        pkg = f["file"].rsplit("/", 2)[-2].replace("-", "_")
+        body = ("// Fixture for the agentgateway MCP tool-layer demo.\n"
+                "// This branch exists so the demo returns the same report every run.\n"
+                "package %s\n" % pkg)
+    elif f["file"].endswith(".py"):
+        body = ('"""Fixture for the agentgateway MCP tool-layer demo."""\n'
+                "# This branch exists so the demo returns the same report every run.\n")
+    elif f["file"].endswith(".ts"):
+        body = ("// Fixture for the agentgateway MCP tool-layer demo.\n"
+                "export const demoFixture = true;\n")
+    else:
+        body = ("<!-- Fixture for the agentgateway MCP tool-layer demo. -->\n"
+                "This branch exists so the demo returns the same report every run.\n")
+    content = base64.b64encode(body.encode()).decode()
     put = call("PUT", "/contents/" + f["file"],
                {"message": f["title"], "content": content, "branch": br}, tolerate=(422,))
     head_sha = (put.get("commit") or {}).get("sha")
@@ -169,7 +183,7 @@ for f in json.load(open(FIXTURES)):
                   tolerate=(403, 404, 410))
         if isinstance(cm, dict) and cm.get("_error"):
             print("     ! comment failed -> %s" % cm["_error"][:90]); break
-        time.sleep(0.4)
+        time.sleep(0.15)
 
     if not f["signoff"] and not f["draft"]:
         lb = call("POST", "/issues/%d/labels" % n, {"labels": ["needs-sign-off"]},
@@ -178,7 +192,7 @@ for f in json.load(open(FIXTURES)):
             print("     ! label failed -> %s" % lb["_error"][:90])
     tag = " (draft)" if f["draft"] else (" (on hold)" if f["hold"] else (" LGTM" if f["signoff"] else ""))
     print("  + #%-4s %-26s%s" % (n, br, tag))
-    time.sleep(1)
+    time.sleep(0.3)
 
 openprs = call("GET", "/pulls?state=open&per_page=100")
 print("\n  open pull requests now: %d" % len(openprs))
