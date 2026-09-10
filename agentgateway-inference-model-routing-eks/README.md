@@ -153,6 +153,26 @@ it: `extProc.failureMode`, which the OSS CRD rejects outright.
 
 ## Testing
 
+`classify.sh` is the cheap one. It asks the semantic router to classify the nine prompts
+through its own API, so it needs no GPU nodes and costs nothing, and it proves the
+classifier plus the domain-to-model mapping in `yaml/70`:
+
+```bash
+./scripts/classify.sh
+```
+
+```
+PROMPT                                               SHOULD   CHOSE                    DOMAIN            CONF
+What is IFRS 9 stage 2 impairment?                   finance  ok   mistral-small-3.2-24b business          0.855
+Model the credit risk function for our loan book.    finance  ok   mistral-small-3.2-24b economics         0.993
+Why is my pod stuck in CrashLoopBackOff?             coding   ok   qwen3-coder-30b     computer science  1.000
+...
+semantic classifier: 9/9 correct
+```
+
+It does not prove the path: the ExtProc call at PreRouting, the `x-selected-model`
+header, the route match and the backend rewrite. That needs both models serving:
+
 ```bash
 ./scripts/test-classifiers.sh          # uses the current kubectl context
 KUBE_CONTEXT=my-ctx ./scripts/test-classifiers.sh

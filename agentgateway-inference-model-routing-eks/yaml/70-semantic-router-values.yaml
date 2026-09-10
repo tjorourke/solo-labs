@@ -44,6 +44,20 @@ image:
   repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
   tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
 
+# SET THE RESOURCES, DO NOT INHERIT THEM. The chart's packaged values.yaml is a
+# multi-document file and Helm takes the last document, so the effective default is a
+# 2Gi limit rather than the 7Gi the documented block near the top of it shows. The
+# mmBERT-32K intent classifier does not load in 2Gi: the pod is OOMKilled (exit 137)
+# part way through "Initializing mmBERT-32K intent classifier", crash-loops, and the
+# gateway then has an ExtProc backend that never answers. Measured on chart 0.3.0.
+resources:
+  requests:
+    cpu: "1"
+    memory: 3Gi
+  limits:
+    cpu: "2"
+    memory: 7Gi
+
 config:
   version: v0.3
 
