@@ -63,11 +63,10 @@ def reported():
 want = truth()
 got, scanned = reported()
 
-print("  fixture: %d open pull requests" % len(want))
 tally = {}
 for v in want.values():
     tally[v] = tally.get(v, 0) + 1
-print("  expected: " + ", ".join("%s %d" % (k, tally[k]) for k in sorted(tally)))
+EXPECTED = "  expected: " + ", ".join("%s %d" % (k, tally[k]) for k in sorted(tally))
 
 problems = []
 if scanned is not None and scanned != len(want):
@@ -100,8 +99,14 @@ for n, w, g in wrong:
     problems.append("#%d: fixture says '%s', report says '%s'" % (n, w, g))
 
 if problems:
+    print(EXPECTED)
     print("  ✗ the report does NOT match the fixture:")
     for p in problems:
         print("      - " + p)
     sys.exit(1)
-print("  ✓ every one of the %d pull requests matches the fixture" % len(want))
+print("  ✓ correct: all %d pull requests match the fixture "
+      "(%d ready, %d draft, %d held, %d awaiting)" % (
+      len(want), sum(1 for v in want.values() if v == "READY"),
+      sum(1 for v in want.values() if v == "draft"),
+      sum(1 for v in want.values() if v == "on hold"),
+      sum(1 for v in want.values() if v == "no sign-off")))

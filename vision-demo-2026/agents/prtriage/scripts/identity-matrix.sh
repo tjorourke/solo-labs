@@ -60,11 +60,11 @@ row() { # row <label> <deployment>
     printf "  %-18s %s\n" "$label" "not probed: $(sed -n '1s/^mcp-from-pod: //p' /tmp/probe-err)"
     return
   fi
-  read="no"; merge="not defined"
+  read="no"; merge="no"
   [[ "$fns" == *list_pull_requests* ]] && read="yes"
-  [[ "$fns" == *merge_pull_request* ]] && merge="DEFINED"
+  [[ "$fns" == *merge_pull_request* ]] && merge="yes"
   if [ -z "${fns// }" ]; then
-    read="DENIED"; merge="DENIED"; fns="(the gateway generated no functions at all)"
+    read="none"; merge="none"; fns="the gateway generated nothing for it"
   else
     # 93 names is a wall nobody can read on a projector. Past a handful, count them and
     # name the ones that matter.
@@ -72,12 +72,12 @@ row() { # row <label> <deployment>
     [ "$n" -gt 6 ] && fns="$n functions, including $(printf '%s' "$fns" | tr ' ' '\n' \
         | grep -E '^(merge_pull_request|delete_file|push_files|create_repository)$' | tr '\n' ' ')"
   fi
-  printf "  %-18s %-10s %-12s %s\n" "$label" "$read" "$merge" "$fns"
+  printf "  %-18s %-10s %-10s %s\n" "$label" "$read" "$merge" "$fns"
 }
 
 echo
-printf "  %-18s %-10s %-12s %s\n" "identity" "read PRs" "merge"  "functions in its sandbox"
-printf "  %-18s %-10s %-12s %s\n" "------------------" "--------" "-----------" "------------------------"
+printf "  %-18s %-10s %-10s %s\n" "agent" "can read" "can merge" "what the gateway generated for it"
+printf "  %-18s %-10s %-10s %s\n" "------------------" "--------" "---------" "---------------------------------"
 row "triage agent"     prtriagejava
 row "release agent"    releasejava
 # The third row is the common case: another team's agent, in the same namespace, wired

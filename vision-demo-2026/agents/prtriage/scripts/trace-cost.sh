@@ -10,7 +10,7 @@
 # zero, which flatters code mode by exactly the number the demo is about. So split the
 # transcript into entries first, then measure each entry.
 set -euo pipefail
-python3 - "$1" <<'PY'
+python3 - "$1" "${2:-this run}" <<'PY'
 import re, sys
 from collections import Counter
 text = open(sys.argv[1], errors="replace").read()
@@ -26,7 +26,7 @@ for (start, _), end in zip(marks, ends):
     if i != -1:
         payload += len(entry[i + 3:].rstrip())
 by = Counter(name for _, name in marks)
-print("  model round trips:          %d" % len(marks))
-print("  payload through the model:  %s bytes" % f"{payload:,}")
-print("  calls by tool:              %s" % ", ".join("%s x%d" % (k, v) for k, v in by.most_common()))
+label = sys.argv[2] if len(sys.argv) > 2 else "this run"
+print("  %-14s %2d round trips   %9s bytes through the model" % (label, len(marks), f"{payload:,}"))
+print("  %-14s %s" % ("", ", ".join("%s x%d" % (k, v) for k, v in by.most_common())))
 PY
