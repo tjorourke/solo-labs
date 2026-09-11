@@ -1,12 +1,13 @@
-# Part 2: splitting prefill from decode
+# agentgateway as an inference gateway, Part 2: prefill and decode on your own GPUs
 
 [Part 1](../agentgateway-inference-load-balancing-eks/) puts one model on two cards and
 asks which card should take the next request. Both cards do the same job, and the
 scheduler picks between them.
 
-This lab gives them different jobs. One card only reads prompts. The other only generates
-answers. The KV cache moves between them over the network, and a scheduler decides, per
-request, whether that is worth doing.
+This lab gives them different jobs. Once the model runs on GPUs you own, you get to decide
+what each card does: one only reads prompts, the other only generates answers. The KV cache
+moves between them over the network, and a scheduler decides, per request, whether that is
+worth doing.
 
 It layers on Part 1 and keeps the cluster, the two GPUs, the weights on their volumes and
 the Gateway exactly as they were. No new infrastructure, no third card, no re-download,

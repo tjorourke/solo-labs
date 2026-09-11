@@ -1,9 +1,12 @@
-# Two GPUs, one model: what the Endpoint Picker is actually for
+# agentgateway as an inference gateway: what the Endpoint Picker is actually for
 
-One model served on two GPU cards behind one endpoint, and a gateway that has to decide
-which card takes the next request. This lab measures what the Gateway API Inference
-Extension's Endpoint Picker buys you over the load balancing agentgateway already does,
-on two real cards.
+You are running the model yourself, on GPUs you pay for by the hour, and agentgateway is
+in front of them. That is what an inference gateway is: the same proxy, pointed at an
+`InferencePool` instead of a Service, so endpoint selection moves to something that reads
+the model servers directly rather than inferring load from the outside.
+
+This lab puts one model on two cards and measures what that actually buys over the load
+balancing agentgateway already does.
 
 Measured rather than assumed: **the queue signal earns its place, and the case for cache
 locality did not survive its own control.** Both results are below, including the one
