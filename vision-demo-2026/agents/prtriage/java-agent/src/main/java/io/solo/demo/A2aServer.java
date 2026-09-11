@@ -186,11 +186,10 @@ final class A2aServer {
             // observation, and it happens to be the answer.
             answer = toolsOffered()
                 .map(tools -> tools.isEmpty()
-                    ? "I could not complete this. The gateway generated no tools at all "
-                      + "for this agent, so there is nothing here to read pull requests with."
-                    : "I could not complete this. The gateway generated only these tools "
-                      + "for this agent: " + String.join(", ", tools)
-                      + " - and none of them reaches GitHub.")
+                    ? "This agent has no GitHub tools. The gateway generated none for it, so "
+                      + "there is nothing here to read pull requests with."
+                    : "This agent cannot reach GitHub. The only tools the gateway generated "
+                      + "for it are: " + String.join(", ", tools) + ".")
                 .orElseGet(() -> {
                   var rc = retry.getCause() == null ? retry : retry.getCause();
                   return "the agent failed: %s: %s".formatted(rc.getClass().getSimpleName(),
