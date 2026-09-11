@@ -1,0 +1,16 @@
+# The catalogue entry agents reference. Its URL is the waypoint Service, not
+# kagent-tools, so picking this server from the kagent UI or an Agent record means
+# going through the enforcement point. There is no entry that means "the tools, but
+# skip the gateway".
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: sre-tools
+  namespace: kagent
+spec:
+  description: Kubernetes read tools (get, describe, logs, events) via the agentgateway waypoint
+  protocol: STREAMABLE_HTTP
+  url: http://sre-tools.kagent.svc.cluster.local/mcp
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true

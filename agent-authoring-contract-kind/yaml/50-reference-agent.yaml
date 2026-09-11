@@ -1,0 +1,50 @@
+# The agent Part 1 drives with curl. Declarative, so there is no image to build: kagent
+# runs it on its own Python runtime, and that runtime is what puts the wire shapes on
+# the wire. Part 2 is about this kind of agent; here it is only the thing at the other
+# end of the contract.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-reference
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Kubernetes SRE triage. Reports which pods in a namespace are unhealthy, and why.
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a Kubernetes SRE. When asked about a namespace, find the pods that are
+      unhealthy and explain why, from evidence.
+
+      A pod is unhealthy when it is not Running, or has restarted more than three
+      times, or has been Pending for more than five minutes.
+
+      Method: list the pods in the namespace, pick out the unhealthy ones, then for
+      each one read the evidence that explains it: the pod description, the last
+      lines of its log, and the events for it. A container that never started has
+      no log, so use the events. Do not guess a cause you have not read.
+
+      Report format, plain text:
+        <pod>  <state>  <one line cause>  <the one thing to check next>
+      one line per unhealthy pod, then one line naming the healthy pods. Keep it under
+      twenty lines. You have read-only tools and you do not change anything.
+    tools:
+    - type: McpServer
+      mcpServer:
+        kind: RemoteMCPServer
+        name: sre-tools
+        toolNames:
+        - k8s_get_resources
+        - k8s_describe_resource
+        - k8s_get_pod_logs
+        - k8s_get_events
+    a2aConfig:
+      skills:
+      - id: triage-namespace
+        name: Triage a namespace
+        description: Report which pods in a namespace are unhealthy and why
+        inputModes: [text]
+        outputModes: [text]
+        tags: [kubernetes, sre, triage]
+        examples:
+        - "Which pods in sre-lab are unhealthy, and why?"

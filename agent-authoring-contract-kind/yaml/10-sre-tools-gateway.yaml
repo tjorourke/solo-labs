@@ -1,0 +1,72 @@
+# The tool server every agent in this series calls, fronted by an agentgateway waypoint.
+#
+# kagent ships a tool server (kagent-tools, about 140 tools, including delete, exec and
+# shell). No agent talks to it directly. Agents call sre-tools.kagent.svc.cluster.local,
+# a Service with no pods behind it: the label routes every in-mesh call to the waypoint,
+# and the waypoint forwards to kagent-tools. The waypoint is where the caller's identity
+# is known, because it receives HBONE from ztunnel and reads the peer certificate. That
+# is what 20-tool-policy.yaml keys on.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-tools
+  namespace: kagent
+  labels:
+    istio.io/use-waypoint: sre-tools-waypoint
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: sre-tools-waypoint
+  namespace: kagent
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: sre-tools
+  namespace: kagent
+spec:
+  entMcp:
+    toolMode: Standard
+    sessionRouting: Stateful
+    failureMode: FailClosed
+    targets:
+    - name: kagent-tools
+      static:
+        host: kagent-tools.kagent.svc.cluster.local
+        port: 8084
+        path: /mcp
+        protocol: StreamableHTTP
+---
+# Attached to the Service, not to the Gateway. That is what makes the waypoint intercept
+# in-mesh calls to sre-tools.kagent.svc.cluster.local.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sre-tools
+  namespace: kagent
+spec:
+  parentRefs:
+  - group: ""
+    kind: Service
+    name: sre-tools
+    port: 80
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: sre-tools

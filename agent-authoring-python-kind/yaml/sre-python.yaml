@@ -1,0 +1,39 @@
+# The agent as kagent sees it: an image, and the environment the runtime reads.
+#
+# type: BYO means kagent runs the image as is. The controller adds the projected token
+# the runtime uses to call back to the controller, the OTEL_* variables, the readiness
+# probe on /.well-known/agent-card.json, and a service account named after the agent,
+# which is the identity the tool gateway sees.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-python
+  namespace: kagent
+spec:
+  type: BYO
+  description: Kubernetes SRE triage, Python on the kagent ADK runtime.
+  byo:
+    deployment:
+      image: localhost:5001/sre-python:lab
+      imagePullPolicy: Always
+      env:
+      # The runtime scopes sessions and tasks by these three.
+      - name: KAGENT_NAME
+        value: sre-python
+      - name: KAGENT_NAMESPACE
+        value: kagent
+      - name: KAGENT_URL
+        value: http://kagent-controller.kagent:8083
+      # The model, read by agent.py.
+      - name: MODEL_PROVIDER
+        value: anthropic
+      - name: MODEL_NAME
+        value: claude-haiku-4-5
+      - name: ANTHROPIC_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: kagent-anthropic
+            key: ANTHROPIC_API_KEY
+      # The approved tool server: the agentgateway waypoint from Part 1.
+      - name: MCP_SERVERS_CONFIG
+        value: '[{"name":"sre-tools","type":"remote","url":"http://sre-tools.kagent.svc.cluster.local/mcp"}]'

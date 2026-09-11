@@ -1,0 +1,34 @@
+# Configuration is not enforcement. An agent that has been told to use sre-tools can
+# still open a connection to kagent-tools:8084 itself, and the tool policy never sees
+# it. This closes that path at L4 for every agent in the series: ztunnel reads the
+# caller's identity from its certificate and resets the connection before a byte of
+# HTTP is sent. The same identities reach the tools through the waypoint, which
+# forwards to kagent-tools as itself.
+#
+# TRUST_DOMAIN is substituted by scripts/platform.sh from the mesh configuration,
+# because ztunnel matches principals literally (mesh1/ns/kagent/sa/..., not
+# cluster.local/...). Add every new agent's service account here as well as to
+# 20-tool-policy.yaml.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kagent-tools-no-direct-agents
+  namespace: kagent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagent-tools
+  action: DENY
+  rules:
+  - from:
+    - source:
+        principals:
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-reference"
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-declarative"
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-declarative-go"
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-python"
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-go"
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-java"
+    to:
+    - operation:
+        ports: ["8084"]

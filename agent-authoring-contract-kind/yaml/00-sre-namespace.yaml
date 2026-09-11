@@ -1,0 +1,159 @@
+# The namespace every agent in this series is asked about.
+#
+# Seven workloads, four of them broken in four different ways, so the question
+# "which pods are unhealthy, and why?" has one right answer and it never changes:
+#
+#   checkout        CrashLoopBackOff   exits at start, missing DATABASE_URL
+#   search          ImagePullBackOff   image tag that does not exist
+#   report-worker   OOMKilled          buffers 200 MiB inside a 32 MiB limit
+#   ml-scorer       Pending            asks for 64 CPUs the cluster does not have
+#   payments-api, orders-api, catalogue      healthy
+#
+# The gate the agents are told to apply: a pod is unhealthy when it is not Running,
+# or has restarted more than three times, or has been Pending for over five minutes.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sre-lab
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: sre-lab
+  labels: { app: payments-api, tier: api }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: payments-api } }
+  template:
+    metadata: { labels: { app: payments-api, tier: api } }
+    spec:
+      containers:
+      - name: api
+        image: hashicorp/http-echo:1.0
+        args: ["-listen=:5678", "-text=payments ok"]
+        ports: [{ containerPort: 5678 }]
+        resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 32Mi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: sre-lab
+  labels: { app: orders-api, tier: api }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: orders-api } }
+  template:
+    metadata: { labels: { app: orders-api, tier: api } }
+    spec:
+      containers:
+      - name: api
+        image: hashicorp/http-echo:1.0
+        args: ["-listen=:5678", "-text=orders ok"]
+        ports: [{ containerPort: 5678 }]
+        resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 32Mi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalogue
+  namespace: sre-lab
+  labels: { app: catalogue, tier: api }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: catalogue } }
+  template:
+    metadata: { labels: { app: catalogue, tier: api } }
+    spec:
+      containers:
+      - name: api
+        image: hashicorp/http-echo:1.0
+        args: ["-listen=:5678", "-text=catalogue ok"]
+        ports: [{ containerPort: 5678 }]
+        resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 32Mi } }
+---
+# CrashLoopBackOff. The container reads its configuration, finds no DATABASE_URL, says
+# so on stdout and exits 1. The reason is in the log, which is where the agent has to look.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: sre-lab
+  labels: { app: checkout, tier: api }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: checkout } }
+  template:
+    metadata: { labels: { app: checkout, tier: api } }
+    spec:
+      containers:
+      - name: checkout
+        image: busybox:1.36
+        command: ["sh", "-c"]
+        args:
+        - |
+          echo "checkout 2.8.1 starting"
+          echo "FATAL: required setting DATABASE_URL is not set; refusing to start"
+          exit 1
+        resources: { requests: { cpu: 10m, memory: 8Mi }, limits: { memory: 16Mi } }
+---
+# ImagePullBackOff. The tag does not exist. The reason is in the events, not the log:
+# a container that never started has no log.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search
+  namespace: sre-lab
+  labels: { app: search, tier: api }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: search } }
+  template:
+    metadata: { labels: { app: search, tier: api } }
+    spec:
+      containers:
+      - name: search
+        image: hashicorp/http-echo:99.99.99
+        resources: { requests: { cpu: 10m, memory: 8Mi }, limits: { memory: 16Mi } }
+---
+# OOMKilled. tail has to hold the whole 200 MiB stream before it can print the last
+# byte, inside a 32 MiB limit. The kernel kills it, the pod restarts, and the
+# reason is on the container status, not in the log.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-worker
+  namespace: sre-lab
+  labels: { app: report-worker, tier: batch }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: report-worker } }
+  template:
+    metadata: { labels: { app: report-worker, tier: batch } }
+    spec:
+      containers:
+      - name: worker
+        image: busybox:1.36
+        command: ["sh", "-c", "echo 'report-worker: building the daily report'; head -c 200m /dev/zero | tail -c 1"]
+        resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 32Mi } }
+---
+# Pending. No node has 64 CPUs to give, so the scheduler never places it. The reason
+# is a FailedScheduling event on the pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-scorer
+  namespace: sre-lab
+  labels: { app: ml-scorer, tier: batch }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ml-scorer } }
+  template:
+    metadata: { labels: { app: ml-scorer, tier: batch } }
+    spec:
+      containers:
+      - name: scorer
+        image: busybox:1.36
+        command: ["sleep", "infinity"]
+        resources: { requests: { cpu: "64", memory: 64Mi } }

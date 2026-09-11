@@ -1,0 +1,29 @@
+# The Go agent as kagent runs it: a BYO Agent pointing at the image, with the
+# environment the code reads. kagent adds the rest to the pod itself: KAGENT_NAME,
+# KAGENT_NAMESPACE and KAGENT_URL, and the projected token the library authenticates
+# to the controller with. The model key comes from the cluster Secret.
+#
+# imagePullPolicy is Always because the tag is fixed: a rebuild pushes the same tag,
+# and a rollout restart pulls what was pushed rather than what a node already holds.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-go
+  namespace: kagent
+spec:
+  type: BYO
+  description: Kubernetes SRE triage in Go on the kagent Go ADK. Reports which pods in a namespace are unhealthy, and why.
+  byo:
+    deployment:
+      image: localhost:5001/sre-go:lab
+      imagePullPolicy: Always
+      env:
+      - name: MODEL_NAME
+        value: claude-haiku-4-5
+      - name: MCP_SERVERS_CONFIG
+        value: '[{"name":"sre-tools","type":"remote","url":"http://sre-tools.kagent.svc.cluster.local/mcp"}]'
+      - name: ANTHROPIC_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: kagent-anthropic
+            key: ANTHROPIC_API_KEY

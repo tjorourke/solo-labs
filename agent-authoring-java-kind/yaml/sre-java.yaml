@@ -1,0 +1,33 @@
+# The Java agent, hosted by kagent as a BYO agent: an image and its environment.
+#
+# kagent adds KAGENT_NAME, KAGENT_NAMESPACE, KAGENT_URL and the OTEL_* variables itself,
+# projects a service-account token at /var/run/secrets/tokens/kagent-token, and probes
+# /.well-known/agent-card.json for readiness. The rest is declared here. The MCP URL is
+# the sre-tools waypoint from Part 1, so the tools this agent gets are decided by the
+# gateway on the pod's identity, not by anything in this file.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-java
+  namespace: kagent
+spec:
+  type: BYO
+  description: Kubernetes SRE triage in Java on Google ADK. Reports which pods in a namespace are unhealthy, and why.
+  byo:
+    deployment:
+      image: localhost:5001/sre-java:lab
+      imagePullPolicy: Always
+      env:
+      - name: MODEL_PROVIDER
+        value: anthropic
+      - name: MODEL_NAME
+        value: claude-haiku-4-5
+      - name: MCP_SERVERS_CONFIG
+        value: '[{"name":"sre-tools","type":"remote","url":"http://sre-tools.kagent.svc.cluster.local/mcp"}]'
+      - name: PORT
+        value: "8080"
+      - name: ANTHROPIC_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: kagent-anthropic
+            key: ANTHROPIC_API_KEY

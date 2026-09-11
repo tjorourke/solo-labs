@@ -1,0 +1,11 @@
+# For editing and type-checking on a laptop. The container does not install from this:
+# the kagent-adk base image already carries google-adk, LiteLLM, the MCP client and the
+# kagent runtime, and imports the package straight from /app.
+[project]
+name = "sretriage"
+version = "1.0.0"
+description = "Kubernetes SRE triage agent for kagent, on Google ADK"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "google-adk==1.25.0",
+]

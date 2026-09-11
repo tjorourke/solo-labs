@@ -1,0 +1,32 @@
+# Which tools each agent in the series may call, decided on the agent's own identity.
+#
+# source.identity is the SPIFFE identity ztunnel put on the connection, so it is the
+# pod's service account and nothing the agent sent. Every agent built in this series
+# is named here and gets the same four read-only tools. Nothing else on kagent-tools
+# is reachable by any of them: k8s_delete_resource, k8s_execute_command and shell are
+# not refused, they are absent from tools/list. An agent that is not named gets no
+# tools at all.
+#
+# The controller is in the list because it reads tools/list to draw the UI.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: sre-tools-per-agent
+  namespace: kagent
+spec:
+  targetRefs:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayBackend
+    name: sre-tools
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - >-
+            source.identity.serviceAccount in
+              ["sre-reference", "sre-declarative", "sre-declarative-go",
+               "sre-python", "sre-go", "sre-java", "kagent-controller"]
+            && mcp.tool.name in
+              ["k8s_get_resources", "k8s_describe_resource", "k8s_get_pod_logs", "k8s_get_events"]
