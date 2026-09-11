@@ -11,8 +11,8 @@ Google ADK**.
 
 The two claims that hold on every single run, and the only two to build on:
 
-1. Eighteen tool calls become one.
-2. Eighty thousand bytes through the model become two thousand.
+1. Seventeen tool calls become one.
+2. Seventy seven thousand bytes through the model become two thousand.
 
 **Read both off the trace on the day.** They are an order of magnitude apart every run,
 which is the claim. The exact figure is not, because the model chooses how to batch.
@@ -64,12 +64,12 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 > I wanted an agent that could tell me which pull requests were ready to merge. So I
 > connected GitHub's MCP server, which is one server, and this is what turned up.
 >
-> Forty four tools. Fourteen and a half thousand tokens of tool definitions, counted by
+> Ninety three tools. Thirty one thousand tokens of tool definitions, counted by
 > Anthropic's own endpoint rather than estimated, and that is in the context on every
 > single turn, before anyone has typed a question.
 >
-> Now look at the second list. Seventeen of those forty four can write.
-> `create_or_update_file`. `push_files`. `delete_file`. `merge_pull_request`.
+> Thirty one of those ninety three can write. `create_or_update_file`. `push_files`.
+> `delete_file`. `merge_pull_request`. `actions_run_trigger`, which starts a CI job.
 >
 > I did not choose any of that. I connected one server.
 
@@ -365,10 +365,10 @@ room thinking about what they cannot do.
 
 | | Standard | CodeSearch |
 |---|---|---|
-| tools the model holds | 45 | 3 |
-| schema tokens per turn | 14,572 | 1,300 |
-| model round trips | 18 | 1 |
-| bytes through the model | 82,956 | 2,077 |
+| tools the model holds | 94 | 3 |
+| schema tokens per turn | 30,904 | 1,606 |
+| model round trips | 17 | 1 |
+| bytes through the model | 77,498 | 2,288 |
 | matches the fixture | five runs in six | six in six |
 
 All four `toolMode` settings, and they are two independent choices rather than four
@@ -379,17 +379,30 @@ flavours:
 | one operation per call | `Search` | `Standard` |
 | one program, many operations | `CodeSearch` | `Code` |
 
-`Search` cuts the catalogue to two tools and 986 tokens, and still takes one call per
-operation, so it measured 21 round trips and 90,233 bytes. `Code` cuts the round trips
-and carries all forty four signatures in `run_code`'s description, which is 6,302
-tokens. `CodeSearch` does both, at 1,300 tokens and one round trip, which is why the
-demo uses it.
+`Search` cuts the catalogue to two tools and 1,292 tokens, and still takes one call per
+operation. `Code` cuts the round trips and carries all ninety three signatures in
+`run_code`'s description, which is 11,748 tokens. `CodeSearch` does both, at 1,606
+tokens and one round trip, which is why the demo uses it.
+
+The scaling is the argument. Going from GitHub's default 44 tools to all 93 took
+`Standard` from 14,572 tokens a turn to 30,904. It took `CodeSearch` from 1,300 to
+1,606. Twice the tools, twice the tax, unless something else is holding them.
 
 ## Questions you will get
 
 **"Is this just prompt engineering?"** No. The tool list the model receives is
 constructed by the gateway, and so is the generated API inside code mode. The agent's
 image and its prompt are unchanged across every beat.
+
+**"Can't you just turn off the tools you don't need?"** GitHub lets you, and it is a
+better dial than people expect: `X-MCP-Toolsets: pull_requests` gets 10 tools,
+`/mcp/x/pull_requests/readonly` gets 3. Measured. Two things it cannot do. It is a
+toolset and not a tool, so `pull_requests` includes `merge_pull_request` unless you go
+read-only across the whole connection. And it is one answer for everyone on that
+connection, so it cannot give the triage agent and the release agent different lists,
+which is beat 6. The demo asks for all 93 deliberately, with a header the gateway sets,
+because that is what an organisation ends up with once one team needs Actions and
+another needs Dependabot.
 
 **"Could I not filter the tools in my own code?"** Yes, and a careful team will. The
 difference is that the platform applies it once, outside the agent, the same way for

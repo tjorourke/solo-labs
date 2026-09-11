@@ -124,7 +124,7 @@ done
 LB="$($K -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)"
 if [ -n "$LB" ] && [ -x /tmp/mcp.sh ]; then
   n="$(/tmp/mcp.sh "http://github-mcp.${LB}.sslip.io/" tools/list 2>/dev/null | grep -o '"name":"[a-z_]*"' | wc -l | tr -d ' ')"
-  want=44; [ "${M1:-Standard}" != "Standard" ] && want=2
+  want=93; [ "${M1:-Standard}" != "Standard" ] && want=2
   if [ "${n:-0}" = "$want" ]; then pass "ingress MCP path (laptop)" "$n tools, as ${M1:-Standard} expects"
   elif [ "${n:-0}" -gt 0 ]; then fail "ingress MCP path (laptop)" "$n tools, expected $want for ${M1:-Standard}"
   else fail "ingress MCP path (laptop)" "no tools returned"; fi
@@ -138,7 +138,7 @@ inmesh="$($K -n "$NS" exec deploy/prtriagejava -- sh -c '
   S=$(wget -qS -O /dev/null --header="Content-Type: application/json" --header="Accept: application/json, text/event-stream" --post-data="$I" $U 2>&1 | grep -i mcp-session-id | awk "{print \$2}")
   wget -qO- --header="Content-Type: application/json" --header="Accept: application/json, text/event-stream" ${S:+--header="Mcp-Session-Id: $S"} \
     --post-data='"'"'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'"'"' $U 2>&1 | grep -o "\"name\":\"[a-z_]*\"" | wc -l' 2>/dev/null | tr -d ' ')"
-wantm=44; [ "${M2:-Standard}" != "Standard" ] && wantm=2
+wantm=93; [ "${M2:-Standard}" != "Standard" ] && wantm=2
 if [ "${inmesh:-0}" = "$wantm" ]; then pass "in-mesh MCP path (agents)" "$inmesh tools via the waypoint"
 elif [ "${inmesh:-0}" -gt 0 ]; then fail "in-mesh MCP path (agents)" "$inmesh tools, expected $wantm for ${M2:-Standard}"
 else fail "in-mesh MCP path (agents)" "the waypoint returned nothing"; fi

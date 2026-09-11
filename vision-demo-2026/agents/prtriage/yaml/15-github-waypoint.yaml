@@ -46,6 +46,21 @@ metadata:
   name: github-mcp
   namespace: kagent
 spec:
+  # Ask GitHub for every toolset it has, not the default selection.
+  #
+  # Unasked, api.githubcopilot.com/mcp/ serves 44 tools. That is already GitHub being
+  # polite: the server has 93, and Actions, Dependabot, code scanning, discussions,
+  # gists, notifications and projects are all off until a client asks. A real
+  # organisation that wants any one of them turns them on for everybody, so 93 is the
+  # honest number to build the demo on.
+  #
+  # transformation values are CEL, so a literal string is quoted twice.
+  policies:
+    transformation:
+      request:
+        set:
+        - name: X-MCP-Toolsets
+          value: '"all"'
   entMcp:
     toolMode: Standard
     sessionRouting: Stateful
