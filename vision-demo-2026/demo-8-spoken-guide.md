@@ -367,6 +367,20 @@ question every platform team is actually asking.
 **Cue:** the agent does not hallucinate a report. Worth saying out loud, because the
 room will be wondering.
 
+**Then how the gateway knows, which is the question underneath all of it:**
+
+> Nothing in that request says who is calling. The agent has no credential and no name
+> to send, and there is no header it could set to claim one. What it has is a
+> certificate, issued to its pod, and ztunnel presents it. The waypoint terminates that
+> connection and reads the identity off the certificate.
+>
+> Those are the SPIFFE names on screen, counted by the gateway itself. That is the
+> thing the policy matches, and an agent cannot present one it was not issued.
+
+**Cue:** the identity column and the SPIFFE column are the same names. Point at both.
+An ingress gateway cannot do this, because by then the connection has left the mesh,
+which is why the approved catalogue entry sends agents to the in-cluster name.
+
 **Then the scoping, which is the bit to talk over:**
 
 > This agent is in the catalogue. It is wired to the same approved GitHub server. Every
