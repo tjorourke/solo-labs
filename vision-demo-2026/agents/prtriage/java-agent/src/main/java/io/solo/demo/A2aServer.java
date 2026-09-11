@@ -117,6 +117,7 @@ final class A2aServer {
     // Whoever the controller is acting for. It travels in the request metadata under one
     // of these names depending on the caller, and the session store needs it to file the
     // turn against the right conversation.
+    var invocationId = KagentSession.newInvocationId();
     var userId = header(exchange, "x-user-id")
         .or(() -> header(exchange, "x-kagent-user-id"))
         .or(() -> header(exchange, "kagent-user-id"))
@@ -207,9 +208,25 @@ final class A2aServer {
 
       // The UI reads the conversation from kagent's session store, not from this stream,
       // so both halves of the turn go in there too or the chat renders empty.
-      var invocationId = KagentSession.newInvocationId();
+
       KagentSession.record(contextId, userId, invocationId, "user", prompt);
       KagentSession.record(contextId, userId, invocationId, name + "_agent", answer);
+      // And the Task, which is the thing the UI actually lists a conversation from.
+      var stored = task(request, answer, events);
+      stored.put("id", taskId);
+      stored.put("contextId", contextId);
+      stored.set("metadata", kagentMetadata(contextId, userId, invocationId));
+      // The question goes at the FRONT of history. Without it the stored task holds only
+      // the answer, and the chat renders a reply to nothing.
+      var asked = Json.object()
+          .put("kind", "message").put("role", "user")
+          .put("messageId", text(request, "messageId").orElseGet(() -> UUID.randomUUID().toString()))
+          .put("contextId", contextId).put("taskId", taskId);
+      asked.putArray("parts").add(Json.object().put("kind", "text").put("text", prompt));
+      var withQuestion = Json.MAPPER.createArrayNode().add(asked);
+      stored.get("history").forEach(withQuestion::add);
+      stored.set("history", withQuestion);
+      KagentSession.recordTask(contextId, userId, stored);
 
       // 3. the answer as a message
       var agentMessage = Json.object()
@@ -219,9 +236,12 @@ final class A2aServer {
           .put("contextId", contextId)
           .put("taskId", taskId);
       agentMessage.putArray("parts").add(Json.object().put("kind", "text").put("text", answer));
+      agentMessage.set("metadata", kagentMetadata(contextId, userId, invocationId));
       var working = Json.object().put("state", "working").put("timestamp", Instant.now().toString());
       working.set("message", agentMessage);
-      frame(out, rpcId, statusUpdate(taskId, contextId, working, false, true));
+      var answerFrame = statusUpdate(taskId, contextId, working, false, false);
+      answerFrame.set("metadata", kagentMetadata(contextId, userId, invocationId));
+      frame(out, rpcId, answerFrame);
 
       // 4. and as an artifact
       var artifact = Json.object().put("artifactId", UUID.randomUUID().toString()).put("name", "report");
@@ -232,12 +252,34 @@ final class A2aServer {
           .put("contextId", contextId)
           .put("lastChunk", true);
       artifactUpdate.set("artifact", artifact);
+      artifactUpdate.set("metadata", kagentMetadata(contextId, userId, invocationId));
       frame(out, rpcId, artifactUpdate);
 
       // 5. final. Without this the client waits, and the session stays empty.
-      frame(out, rpcId, statusUpdate(taskId, contextId,
-          Json.object().put("state", "completed").put("timestamp", Instant.now().toString()), true, true));
+      var done = statusUpdate(taskId, contextId,
+          Json.object().put("state", "completed").put("timestamp", Instant.now().toString()), true, false);
+      done.set("metadata", kagentMetadata(contextId, userId, invocationId));
+      frame(out, rpcId, done);
     }
+  }
+
+  /**
+   * The bookkeeping kagent reads off a frame.
+   *
+   * This is not decoration: the UI renders a conversation from stored TASKS
+   * (/api/sessions/{id}/tasks), and the controller assembles those from the metadata on
+   * these frames. Send frames without it and the answer streams to the screen, the
+   * session is created, and the task list stays empty, so the chat is blank the moment
+   * you come back to it.
+   */
+  private ObjectNode kagentMetadata(String contextId, String userId, String invocationId) {
+    return Json.object()
+        .put("kagent_app_name", "kagent__NS__" + name)
+        .put("kagent_user_id", userId)
+        .put("kagent_session_id", contextId)
+        .put("kagent_invocation_id", invocationId)
+        .put("kagent_author", name + "_agent")
+        .put("kagent_adk_partial", false);
   }
 
   /** A status-update event, optionally carrying the kagent session bookkeeping. */

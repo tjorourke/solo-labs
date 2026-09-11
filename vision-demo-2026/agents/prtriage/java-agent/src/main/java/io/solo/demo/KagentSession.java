@@ -5,6 +5,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,6 +49,42 @@ final class KagentSession {
    * Record one message. author is "user" for the prompt, or the agent's name for the
    * answer; kagent renders anything that is not "user" as the agent side.
    */
+  /**
+   * Persist the finished turn as an A2A Task, which is what the UI renders.
+   *
+   * This is the piece that is easy to miss entirely. The controller PASSES THROUGH the
+   * A2A exchange to the agent and only ever READS tasks from its store, so nothing about
+   * answering correctly, streaming correctly, or writing session events causes a
+   * conversation to exist. The UI lists a chat from GET /api/sessions/{id}/tasks, and a
+   * task gets in there exactly one way: the agent posts it.
+   *
+   *   POST {KAGENT_URL}/api/tasks
+   *   Authorization: Bearer <the projected token at /var/run/secrets/tokens/kagent-token>
+   *   an A2A Task whose contextId is the session
+   */
+  static void recordTask(String sessionId, String userId, ObjectNode task) {
+    if (!available() || sessionId == null || sessionId.isBlank()) {
+      return;
+    }
+    try {
+      var uri = URI.create("%s/api/tasks?user_id=%s".formatted(
+          System.getenv("KAGENT_URL"), URLEncoder.encode(userId, StandardCharsets.UTF_8)));
+      var response = HTTP.send(HttpRequest.newBuilder(uri)
+          .header("Authorization", "Bearer " + Files.readString(TOKEN).trim())
+          .header("Content-Type", "application/json")
+          .header("X-user-id", userId)
+          .timeout(Duration.ofSeconds(20))
+          .POST(HttpRequest.BodyPublishers.ofString(Json.write(task)))
+          .build(), HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() >= 300) {
+        Console.failed("task store rejected the turn: %d %s"
+            .formatted(response.statusCode(), response.body()));
+      }
+    } catch (Exception e) {
+      Console.failed("could not write the task: " + e);
+    }
+  }
+
   /** An invocation id in kagent's own shape. One per turn, shared by both events. */
   static String newInvocationId() {
     return "e-" + UUID.randomUUID();
