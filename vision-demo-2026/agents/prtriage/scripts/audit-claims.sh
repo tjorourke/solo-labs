@@ -41,6 +41,29 @@ JSON
   "$HERE/mcp-from-pod.sh" "$1" tools/call /tmp/a-probe.json 2>/dev/null \
     | grep -o '"success":\[[^]]*\]' | grep -o '"[a-z_]*"' | tr -d '"' | grep -v '^success$' | tr '\n' ' '; }
 
+# Restore on ANY exit, including Ctrl+C. This drives toolMode and applies the identity
+# policy, so an audit that stops half way leaves the cluster in a state preflight calls
+# not ready, ten minutes before you present. It also means two of these running at once
+# fight each other: the second one reset the first one's mode mid-run and reported four
+# failures that were not real.
+restore() {
+  $K -n $NS delete enterpriseagentgatewaypolicy github-per-agent --ignore-not-found >/dev/null 2>&1
+  if [ -n "${RELEASE_WAS_DEPLOYED_BY_AUDIT:-}" ]; then
+    arctl delete deployment releasejava >/dev/null 2>&1; arctl delete agent releasejava >/dev/null 2>&1
+    $K -n $NS delete deploy releasejava --ignore-not-found >/dev/null 2>&1
+  fi
+  mode Standard
+  "$HERE/reload-agent.sh" prtriagejava >/dev/null 2>&1
+}
+trap restore EXIT INT TERM
+
+# One at a time, for the same reason.
+LOCK=/tmp/demo8-audit.lock
+if ! mkdir "$LOCK" 2>/dev/null; then
+  echo "  another audit is already running (remove $LOCK if that is wrong)"; exit 2
+fi
+trap 'restore; rmdir "$LOCK" 2>/dev/null' EXIT INT TERM
+
 echo; echo "  Claim audit · $REPO"
 
 # ─────────────────────────────────────────────── the tool surface and its cost
@@ -266,13 +289,6 @@ if [ -n "${FULL:-}" ]; then
 fi
 
 # ───────────────────────────────────────────────────────────── restore
-$K -n $NS delete enterpriseagentgatewaypolicy github-per-agent --ignore-not-found >/dev/null 2>&1
-if [ -n "${RELEASE_WAS_DEPLOYED_BY_AUDIT:-}" ]; then
-  arctl delete deployment releasejava >/dev/null 2>&1; arctl delete agent releasejava >/dev/null 2>&1
-  $K -n $NS delete deploy releasejava --ignore-not-found >/dev/null 2>&1
-fi
-mode Standard
-"$HERE/reload-agent.sh" prtriagejava >/dev/null 2>&1
 echo
 printf "  %d passed, %d failed\n\n" "$PASS" "$FAIL"
 exit $(( FAIL > 0 ))

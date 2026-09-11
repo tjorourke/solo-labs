@@ -97,6 +97,16 @@ M2="$($K -n "$NS" get enterpriseagentgatewaybackend github-mcp -o jsonpath='{.sp
   && pass "the two backends agree" "both ${M1:-Standard}" \
   || fail "the two backends agree" "ingress=$M1 mesh=$M2, the demo would measure the wrong one"
 
+# This runs before you walk on, so it has to assert the state step 1 needs, not merely a
+# self-consistent one. Left in CodeSearch after a run, everything below still lines up
+# and the opening beat shows two tools instead of ninety three.
+if [ "${M1:-Standard}" = "Standard" ] && [ "${M2:-Standard}" = "Standard" ]; then
+  pass "toolMode is where step 1 needs it" "Standard on both"
+else
+  fail "toolMode is where step 1 needs it" "ingress=${M1:-?} mesh=${M2:-?}: step 1 would show 2 tools"
+  note "fix: ./agents/prtriage/scripts/reset.sh"
+fi
+
 # ---------------------------------------------------------------- 4. the agents
 # changelogjava is checked like prtriagejava, not like releasejava: setup deploys it, so
 # if it is missing before you present, the refusal beat in step 6 has nothing to refuse.
@@ -160,7 +170,10 @@ $K -n "$NS" get secret kagent-anthropic >/dev/null 2>&1 \
 
 # ---------------------------------------------------------------- 7. policy state
 pol="$($K -n "$NS" get enterpriseagentgatewaypolicy github-per-agent -o jsonpath='{.metadata.name}' 2>/dev/null)"
-[ -n "$pol" ] && note "identity policy is already applied: step 6 will re-apply it, which is fine" \
+# Applied already means step 6 has nothing left to show: the matrix and the refusal are
+# the before-and-after of applying it.
+[ -n "$pol" ] && { fail "identity policy" "already applied: step 6 has nothing to reveal"
+                   note "fix: ./agents/prtriage/scripts/reset.sh"; } \
               || pass "identity policy" "absent, as it should be before step 6"
 
 # --------------------------------------------------- 7b. egress really is closed
