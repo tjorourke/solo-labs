@@ -77,6 +77,10 @@ final class A2aServer {
       body = new String(in.readAllBytes(), StandardCharsets.UTF_8);
     }
     var request = body.isBlank() ? Json.object() : Json.parse(body);
+    if (System.getenv("A2A_DEBUG") != null) {
+      System.out.println("  [debug] headers: " + exchange.getRequestHeaders().entrySet());
+      System.out.println("  [debug] body: " + body);
+    }
     if ("message/stream".equals(request.path("method").asText())) {
       messageStream(exchange, request);
     } else {
@@ -108,6 +112,24 @@ final class A2aServer {
     var taskId = UUID.randomUUID().toString();
     var contextId = text(request, "contextId").orElseGet(() -> UUID.randomUUID().toString());
     var rpcId = request.path("id");
+    // Whoever the controller is acting for. It travels in the request metadata under one
+    // of these names depending on the caller, and the session store needs it to file the
+    // turn against the right conversation.
+    var userId = header(exchange, "x-user-id")
+        .or(() -> header(exchange, "x-kagent-user-id"))
+        .or(() -> header(exchange, "kagent-user-id"))
+        .or(() -> text(request, "kagent_user_id"))
+        .or(() -> text(request, "user_id"))
+        .or(() -> text(request, "userId"))
+        .orElse("A2A_USER_" + contextId);
+    if (userId.startsWith("A2A_USER_")) {
+      // Only when we had to guess. kagent's controller sends X-user-id, and without it
+      // the session write fails as "Session not found", because the lookup is by
+      // (session, user) and it is the user half that is missing. That error names the
+      // session, so it sends you looking in entirely the wrong place.
+      Console.failed("no user id on the request, so the UI will not show this turn; "
+          + "headers were " + exchange.getRequestHeaders().keySet());
+    }
 
     var headers = exchange.getResponseHeaders();
     headers.add("Content-Type", "text/event-stream");
@@ -145,6 +167,11 @@ final class A2aServer {
         Console.failed(answer);
         e.printStackTrace();
       }
+
+      // The UI reads the conversation from kagent's session store, not from this stream,
+      // so both halves of the turn go in there too or the chat renders empty.
+      KagentSession.record(contextId, userId, "user", prompt);
+      KagentSession.record(contextId, userId, name, answer);
 
       // 3. the answer as a message
       var agentMessage = Json.object()
@@ -306,6 +333,11 @@ final class A2aServer {
   }
 
   /** First value of a named field anywhere in the request, if it is there at all. */
+  private static Optional<String> header(HttpExchange exchange, String name) {
+    return Optional.ofNullable(exchange.getRequestHeaders().getFirst(name))
+        .filter(v -> !v.isBlank());
+  }
+
   private static Optional<String> text(JsonNode request, String field) {
     return Optional.of(request.findValuesAsText(field))
         .filter(values -> !values.isEmpty())

@@ -1,0 +1,88 @@
+package io.solo.demo;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.UUID;
+
+/**
+ * Writes a turn into kagent's session store, which is the only thing the UI reads.
+ *
+ * WHY A BYO AGENT HAS TO DO THIS
+ * Answering A2A correctly is not enough to appear in the kagent UI. The UI does not draw
+ * the conversation from the stream it just received: it draws it from the events the
+ * controller has stored against that session. kagent's own Python runtime writes those
+ * as a side effect of running the agent, so a Python agent gets it for free and a BYO
+ * agent gets an empty chat, a spinner that never resolves, and no history on return.
+ *
+ * The contract, established against the running controller rather than from docs:
+ *
+ *   POST {KAGENT_URL}/api/sessions/{sessionId}/events?user_id={userId}
+ *   Authorization: Bearer <the projected token at /var/run/secrets/tokens/kagent-token>
+ *   {"id": "<uuid>", "data": "<the event, as a JSON STRING>"}
+ *
+ * The nesting is the part that bites: `data` is a string containing JSON, not an object.
+ * Post the event object directly and the call succeeds, returns the row, and stores an
+ * empty body, so the chat stays blank and nothing anywhere reports a problem.
+ */
+final class KagentSession {
+
+  private static final Path TOKEN = Path.of("/var/run/secrets/tokens/kagent-token");
+  private static final HttpClient HTTP = HttpClient.newBuilder()
+      .connectTimeout(Duration.ofSeconds(10)).build();
+
+  private KagentSession() {}
+
+  /** True when this agent is running under kagent and can write to the session store. */
+  static boolean available() {
+    return System.getenv("KAGENT_URL") != null && Files.isReadable(TOKEN);
+  }
+
+  /**
+   * Record one message. author is "user" for the prompt, or the agent's name for the
+   * answer; kagent renders anything that is not "user" as the agent side.
+   */
+  static void record(String sessionId, String userId, String author, String text) {
+    if (!available() || sessionId == null || sessionId.isBlank()
+        || userId == null || userId.isBlank()) {
+      return;
+    }
+    try {
+      var event = Json.object().put("author", author).put("invocationId", UUID.randomUUID().toString());
+      var content = Json.object().put("role", "user".equals(author) ? "user" : "model");
+      content.putArray("parts").add(Json.object().put("text", text));
+      event.set("content", content);
+
+      var body = Json.object()
+          .put("id", UUID.randomUUID().toString())
+          .put("data", Json.write(event));        // a STRING, deliberately
+
+      var uri = URI.create("%s/api/sessions/%s/events?user_id=%s".formatted(
+          System.getenv("KAGENT_URL"),
+          URLEncoder.encode(sessionId, StandardCharsets.UTF_8),
+          URLEncoder.encode(userId, StandardCharsets.UTF_8)));
+
+      var response = HTTP.send(HttpRequest.newBuilder(uri)
+          .header("Authorization", "Bearer " + Files.readString(TOKEN).trim())
+          .header("Content-Type", "application/json")
+          .timeout(Duration.ofSeconds(20))
+          .POST(HttpRequest.BodyPublishers.ofString(Json.write(body)))
+          .build(), HttpResponse.BodyHandlers.ofString());
+
+      // Say so when it fails. A silent failure here is invisible until someone opens the
+      // UI and finds an empty conversation, which is how this cost an afternoon.
+      if (response.statusCode() >= 300) {
+        Console.failed("session store rejected the %s event: %d %s"
+            .formatted(author, response.statusCode(), response.body()));
+      }
+    } catch (Exception e) {
+      Console.failed("could not write to the session store: " + e);
+    }
+  }
+}
