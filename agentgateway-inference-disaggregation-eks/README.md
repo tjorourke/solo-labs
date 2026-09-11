@@ -1,25 +1,20 @@
 # agentgateway as an inference gateway, Part 2: prefill and decode on your own GPUs
 
-[Part 1](../agentgateway-inference-load-balancing-eks/) puts one model on two cards and
-asks which card should take the next request. Both cards do the same job, and the
-scheduler picks between them.
+[Part 1](../agentgateway-inference-load-balancing-eks/) runs one model on two GPUs, with
+each replica handling complete requests. This lab separates prefill and decode across
+those GPUs, using llm-d to select workers and NIXL to transfer KV-cache blocks.
 
-This lab gives them different jobs. Once the model runs on GPUs you own, you get to decide
-what each card does: one only reads prompts, the other only generates answers. The KV cache
-moves between them over the network, and a scheduler decides, per request, whether that is
-worth doing.
+It reuses Part 1's cluster, weight volumes and gateway configuration. The scheduler
+decides per request whether to separate the phases or run both on the decode worker.
 
-It layers on Part 1 and keeps the cluster, the two GPUs, the weights on their volumes and
-the Gateway exactly as they were. No new infrastructure, no third card, no re-download,
-and **nothing changes on the gateway at all**.
+**Editions.** The lab uses the edition of agentgateway installed by Part 1. Its deployment
+steps do not change the gateway configuration.
 
-**Editions.** The gateway's configuration is not touched, so whichever edition of
-agentgateway is already running keeps working. The only file with an edition-specific
-field anywhere in this lab is the one it does not apply.
+## Prefill and decode
 
-## Why the two halves are different work
-
-An LLM answers in two phases, and they stress completely different parts of a GPU.
+Prefill builds the attention keys and values stored in the KV cache. Decode uses that
+state to generate subsequent tokens. Their typical bottlenecks differ, although model,
+batch size and context length affect both:
 
 | | Prefill | Decode |
 |---|---|---|
@@ -28,21 +23,15 @@ An LLM answers in two phases, and they stress completely different parts of a GP
 | Length | one pass, however long the prompt | one pass per output token |
 | Scales with | input length | output length and concurrency |
 
-Run them on one engine and they interfere. A 12,000 token prompt arrives, takes the card
-for a full forward pass, and every conversation already generating stops dead until it
-finishes. The user who asked the long question waits, which is fair. Everyone else waits
-too, which is not.
+When both phases share a GPU, prefill work can delay decode steps for requests already
+streaming. The size of the gaps depends on how the engine batches and schedules the work.
 
-Split them and the long prefill lands on a card that is not generating anything, so the
-stall does not happen. That is what this lab measures: **inter-token latency on short
-requests while a long one is in flight**, not time to first token.
+Moving prefill to another GPU reduces that interference, but adds a KV-cache transfer.
+This lab measures **inter-token latency on short requests while long prompts run in the
+background**, along with time to first token (TTFT). In these runs, the longest gaps
+decreased while median TTFT increased.
 
-Being straight about that: disaggregation does **not** improve time to first token, and
-on this hardware it makes it worse. The prompt goes to one card, the KV blocks come back
-over the network, and only then does generation begin. Anyone leading with TTFT on a
-two-card P/D demo is measuring the wrong thing.
-
-## What actually happens to a request
+## Request flow
 
 ```
 client ──▶ agentgateway ──ExtProc──▶ llm-d Endpoint Picker
@@ -68,27 +57,18 @@ client ──▶ agentgateway ──ExtProc──▶ llm-d Endpoint Picker
                                               and generates
 ```
 
-Three consequences.
+The gateway sends the request to the **routing sidecar on the decode pod**. If the picker
+also selects a prefill worker, the sidecar sends the prompt there and passes the returned
+KV-transfer details to the local decode engine.
 
-**The request always lands on the decode worker.** Not on the prefill worker, not on a
-proxy in the middle. The decode profile always runs and always returns an endpoint,
-because every request has to end up somewhere, and the place it ends up is where the
-answer is generated from.
+The decider uses an estimate of uncached prompt tokens. Requests below its threshold run
+both phases on the decode worker; those above it can use the prefill worker. Both modes
+use the same deployment.
 
-**Disaggregation is a per-request decision, not a deployment mode.** The decider looks at
-how much of the prompt is not already in cache. A short follow-up in a warm conversation
-runs prefill and decode locally on the decode worker. A cold 8,000 token document goes out
-to the prefill worker. The same two pods serve both, with no redeploy.
+## Why this needs a different Endpoint Picker
 
-**The gateway does not know any of this happened.** It calls an Endpoint Picker, gets an
-endpoint and some headers back, and dials it, which is what it does in Part 1. The picker
-changed; the gateway did not.
-
-## The Endpoint Picker is not the same one
-
-Part 1 runs the upstream picker from the Gateway API Inference Extension. It cannot do
-this, and not because it is behind. There is no prefill/decode plugin in GIE v1.4.0 at
-all: its scorers are queue, kv-cache-utilization, running-requests-size, lora-affinity,
+Part 1 runs the upstream picker from the Gateway API Inference Extension. GIE v1.4.0 has
+no prefill/decode plugin: its scorers are queue, kv-cache-utilization, running-requests-size, lora-affinity,
 prefix-cache and predicted-latency, its pickers are max-score, random and weighted-random,
 and it ships a single-profile handler. Disaggregation needs a handler that runs more than
 one profile per request.
@@ -120,37 +100,35 @@ schedulingProfiles:
 ```
 
 The `InferencePool` is the same API object as in Part 1, with `endpointPickerRef` pointing
-at this picker instead of the upstream one. Swapping the brain out from under an
-InferencePool is a supported thing to do, and it is the part worth noticing: the picker is
-a plugin point, not a fixed component.
+at this picker instead of the upstream one. agentgateway continues to call the service
+referenced by that field.
 
 One pool covers **both** roles. The role filters inside the picker separate them. Split
 prefill and decode into two pools and the disagg handler has nothing to choose between.
 
-## The A/B, and why it is a fair one
+## Compare monolithic and disaggregated requests
 
-`scripts/decider.sh` changes exactly one number:
+`scripts/decider.sh` sets the uncached-token threshold:
 
 ```bash
 ./scripts/decider.sh 999999   # nothing is worth disaggregating: monolithic
 ./scripts/decider.sh 16       # almost everything is: disaggregated
 ```
 
-Same two pods, same route, same picker, same gateway, same prompts. The monolithic run is
-not a different deployment, it is the same deployment declining to use the second card.
-That makes it an honest baseline for what disaggregation bought, which a separately built
-comparison would not be.
+Both runs use the same deployment and prompts. At the high threshold, both phases run
+on the decode worker and the prefill GPU is idle. At the low threshold, eligible requests
+use both workers. This isolates the handoff's effect, but does not compare against two
+GPUs both serving complete requests.
 
-Restarting the picker between runs is deliberate: it empties the prefix index, so neither
-run inherits what the other taught it.
+Restarting the picker between runs clears its prefix index, so each starts without
+entries from the previous run.
 
-## What proves it worked
+## Verify the prefill handoff
 
-Not a 200. `failureMode: FailOpen` means a picker that never ran still serves every
-request, monolithically, while the route reports Accepted and the Gateway reports
-Programmed.
+With `failureMode: FailOpen`, requests can succeed without the picker selecting a prefill
+worker. Accepted and Programmed statuses alone do not verify disaggregation.
 
-The proof is the shape of each pod's counters, which a healthy-looking 200 cannot fake:
+Compare each pod's counters before and after the run:
 
 ```
 pod               requests   prompt tok   gen tok
@@ -158,9 +136,8 @@ vllm-prefill             7        31266         7     <- all the prompt, exactly
 vllm-decode             12        31355      1631     <- all the generation
 ```
 
-Those are real numbers from a run on this cluster. Seven requests, seven generated
-tokens: a prefill worker reads a prompt and emits a single token before handing off.
-The monolithic arm of the same comparison:
+In this run, the prefill worker processed seven requests and generated one token per
+request before handing off. The monolithic run recorded:
 
 ```
 pod               requests   prompt tok   gen tok
@@ -168,18 +145,18 @@ vllm-prefill             0            0         0
 vllm-decode             15        46981      2233
 ```
 
-A prefill worker reads prompts and emits a single token. A decode worker generates. If the
-prefill pod's `prompt_tokens_total` did not move, nothing was disaggregated, whatever else
-anything says. `scripts/pd.py` reads those counters before and after each run and prints a
-verdict from them.
+The prefill pod processed no prompt tokens in the monolithic run. `scripts/pd.py` reads
+the counter deltas and reports whether the prefill worker was used.
 
 The other evidence is the picker's own log at `--v 4`, which names the profiles it ran per
 request. Two profile names is a disaggregated request; one is monolithic.
 
-## What it bought, measured
+## Streaming latency results
 
-Long prompts run in the background; short requests are measured alongside them and the
-gaps between their tokens recorded. Two `g7e.2xlarge`, KV transfer over TCP:
+Long prompts run in the background while the client records gaps between output chunks
+on short requests. A chunk can contain more than one token, so these measurements differ
+from vLLM's internal per-token latency metric. TTFT here measures the wait for the first
+content chunk. Two `g7e.2xlarge`, KV transfer over TCP:
 
 | Run | p50 gap | p95 gap | worst gap | TTFT p50 |
 |---|---|---|---|---|
@@ -188,20 +165,15 @@ gaps between their tokens recorded. Two `g7e.2xlarge`, KV transfer over TCP:
 | Disaggregated, run 1 | 9 ms | 10 ms | **20 ms** | 0.09 s |
 | Disaggregated, run 2 | 9 ms | 11 ms | **22 ms** | 0.09 s |
 
-Read the worst-gap column. The steady state is identical at 9 ms either way, because
-disaggregation does not make decode faster. What it does is bound the tail: disaggregated
-it stayed at 20 and 22 ms across runs, monolithic it spiked to 114 ms and 729 ms
-depending on where the long prefill landed. TTFT moved the wrong way, 0.04 s to 0.09 s,
-which is the transfer being paid for.
+Median output gaps were 9 ms in both modes. The largest gaps were 20 and 22 ms with
+disaggregation, compared with 114 and 729 ms in the monolithic runs. Median TTFT increased
+from 0.04 s to 0.09 s on the measured short requests. These are observations from two
+runs, not an upper bound on latency.
 
-So the trade is a predictable stream for everyone, bought with a slower first token for
-whoever sent the long prompt.
+## Network requirements for KV transfer
 
-## Hardware, honestly
-
-The KV cache has to get from one card to the other, and how fast that is dominates whether
-any of this pays. NIXL supports TCP and llm-d's own guidance is that high bandwidth
-networking (InfiniBand, RoCE, EFA) is strongly recommended for production.
+KV-cache transfer time depends on the network between workers. NIXL supports TCP, and
+llm-d recommends high-bandwidth networking (InfiniBand, RoCE, EFA) for production.
 
 This lab runs on Part 1's two `g7e.2xlarge`, and that size has **no EFA**. Verified in
 `eu-west-2`:
@@ -215,11 +187,9 @@ This lab runs on Part 1's two `g7e.2xlarge`, and that size has **no EFA**. Verif
 | `g7e.24xlarge` | 4 | 96 GB | yes | 800 Gbit | |
 | `g7e.48xlarge` | 8 | 96 GB | yes | 1600 Gbit | |
 
-So the KV transfer here runs over UCX on TCP. It works, and it is a supported
-configuration, and it is not the one you would build on.
-
-**To make it production-shaped**, change the nodegroup to two `g7e.8xlarge` and switch the
-NIXL backend, which is what llm-d's own AWS overlay does:
+This lab transfers KV blocks over UCX on TCP. To evaluate EFA, use an EFA-capable instance
+size such as `g7e.8xlarge` and configure the network and device support. The NIXL backend
+settings below follow llm-d's AWS overlay:
 
 ```yaml
 # in yaml/00-prefill.yaml and yaml/01-decode.yaml
@@ -232,30 +202,19 @@ securityContext:
 
 That is $18.32/hr for the pair instead of $11.70.
 
-## Two cards is not where P/D pays
-
-Say this out loud before showing anyone the numbers, because the mechanism works perfectly
-at this size and the economics do not.
+## What to evaluate at larger scale
 
 llm-d's own guidance is to reach for disaggregation on medium-to-large models, long inputs
 relative to outputs (10k in, 1k out, not 200 in, 200 out) and sparse MoE architectures. The
 reference deployment in their guide is eight prefill workers at TP=1 feeding two decode
-workers at TP=4, on `gpt-oss-120b`, over RDMA. It works by specialising a fleet: many
-cheap prefill workers, fewer heavily parallel decode workers, and the xPyD ratio tuned to
-your traffic's input-to-output ratio.
+workers at TP=4, on `gpt-oss-120b`, over RDMA. Prefill and decode use different parallelism
+settings, with the worker ratio tuned to the workload's input-to-output ratio.
 
-One prefill and one decode is the smallest arrangement that can demonstrate the mechanism
-and the largest that fits on two cards. What it can show honestly:
-
-- the decision being made per request, and the header that carries it
-- the KV cache actually moving, visible in each pod's counters
-- decode's inter-token latency holding up while a long prefill runs elsewhere
-
-What it cannot show is throughput per GPU improving, because there is no fleet to
-specialise and no ratio to tune. The model helps as much as it can here:
-Qwen3-Coder-30B-A3B is a sparse MoE, which is on llm-d's list, and the lab drives 12,000
-token prompts against 128 token answers, which is the input-heavy shape that benefits. Two
-cards over TCP is still two cards over TCP.
+This two-card setup demonstrates the handoff and measures streaming latency under prefill
+load. It does not establish a throughput-per-GPU or cost benefit. That needs a comparison
+using all GPUs in both modes, with worker ratios and parallelism tuned for the workload.
+Qwen3-Coder-30B-A3B is a sparse MoE model; these results cover its one-prefill, one-decode
+arrangement over TCP.
 
 ## Prerequisites
 
@@ -284,22 +243,23 @@ Teardown puts Part 1 back:
 ./scripts/99-restore.sh    # or: ./scripts/quick.sh teardown
 ```
 
-No cloud resources are created by this lab, so teardown costs nothing and frees nothing.
-Stop the meter with Part 1's `./scripts/gpu.sh down`.
+Teardown restores Part 1's workloads and leaves its cloud resources running. Stop the GPU
+instances with Part 1's `./scripts/gpu.sh down`, or use its full teardown to remove the
+cluster and volumes.
 
-## Things that will catch you
+## Troubleshooting
 
 | | |
 |---|---|
 | **`--allow-experimental-plugins`** | Without it the picker starts, reads the same config, logs no error, and runs a single default profile. Every request serves monolithically and the only symptom is a prefill pod whose counters never move. `01-deploy.sh` greps the EPP log for the handler rather than trusting the rollout. |
-| **Block sizes must match** | `--block-size=128` on both sides. NixlConnector refuses a pairing whose block sizes differ, and the error names neither pod. 128 rather than the default 16 because a KV transfer moves whole blocks and fewer, bigger transfers is what a TCP path wants. |
-| **Multi-Attach on the weight volumes** | gp3 is ReadWriteOnce. Part 1's StatefulSet has to be scaled to zero and its pods actually gone before these Deployments can mount the same volumes, and "scaled" is not "gone". Apply them too early and both pods sit in ContainerCreating on "Multi-Attach error for volume", which reads like a storage fault rather than a sequencing one. |
+| **Block sizes must match** | Set `--block-size=128` on both workers. NixlConnector rejects a pairing with different block sizes. The lab uses 128 instead of the default 16 to transfer fewer, larger blocks over TCP. |
+| **Multi-Attach on the weight volumes** | gp3 volumes use ReadWriteOnce. Scale Part 1's StatefulSet to zero and wait for its pods to terminate before starting these Deployments. Otherwise the new pods can remain in ContainerCreating with "Multi-Attach error for volume" while the old attachment is active. |
 | **`VLLM_NIXL_SIDE_CHANNEL_HOST`** | Must be the pod IP, from the downward API. vLLM publishes this address in the KVTransferParams it returns, and decode dials it over ZMQ for the NIXL metadata. Leave it unset and it advertises something unroutable from another pod, and every transfer times out with nothing in either log naming the address. |
 | **Keep-alive mismatch** | vLLM's default HTTP keep-alive is 5s and the sidecar's idle connection timeout is 90s, so a reused connection gets a TCP RST. The symptom is intermittent 502s under load that vanish when you retry by hand. `VLLM_HTTP_TIMEOUT_KEEP_ALIVE=120` on the prefill worker. |
 | **`/dev/shm` at the default 64 MB** | NIXL and UCX stage transfers through shared memory. Too small and it is a mid-transfer crash, not a startup error. Both pods mount a 20 Gi memory-backed emptyDir. |
-| **The first request of a pair is slow** | A cold NIXL pairing costs a handshake of a few seconds, once per prefill/decode pair. `pd.py` warms up with long requests before measuring, and the route's timeout is 600s so a clipped handshake does not look like a failure. |
+| **The first request of a pair is slow** | A cold NIXL pairing requires a handshake. `pd.py` sends warm-up requests before measuring, and the route allows 600s for startup and transfer. |
 | **`appProtocol: http2` on the EPP Service** | ExtProc is gRPC. Without it the gateway may negotiate HTTP/1.1, every scheduling call fails, and FailOpen turns that into silent monolithic serving. |
-| **The engine port is not the pod port** | The sidecar listens on 8000 and vLLM on 8200. Anything that dials 8200 directly bypasses the sidecar and can only ever run monolithic, including a readiness probe pointed at the wrong one. The probe here deliberately targets 8200, because probing through the sidecar reports Ready about eight minutes before the model has loaded. |
+| **Sidecar and engine ports** | The sidecar listens on 8000 and vLLM on 8200. Client traffic must use 8000 for the prefill handoff. The readiness probe checks 8200 directly so readiness depends on the model engine, rather than the sidecar starting. |
 | **The role label is what the filters match on** | `llm-d.ai/role: prefill` and `decode` are what `prefill-filter` and `decode-filter` select on. Get one wrong and a profile finds no candidates, which surfaces as everything quietly running monolithic. |
 | **NIXL needs to be in the image** | The published `vllm/vllm-openai` release images are built with `INSTALL_KV_CONNECTORS=true`, which installs nixl 1.3.1. The Dockerfile's own default for that arg is `false`, so an image built from source without it has no NixlConnector and fails at engine init on an unknown connector. Check before swapping the image. |
 

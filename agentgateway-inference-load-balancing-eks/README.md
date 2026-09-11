@@ -1,55 +1,39 @@
 # agentgateway as an inference gateway: what the Endpoint Picker is actually for
 
-You are running the model yourself, on GPUs you pay for by the hour, and agentgateway is
-in front of them. That is what an inference gateway is: the same proxy, pointed at an
-`InferencePool` instead of a Service, so endpoint selection moves to something that reads
-the model servers directly rather than inferring load from the outside.
+This lab runs Qwen3-Coder on two GPUs in EKS and compares agentgateway's own load balancing
+with the Gateway API Inference Extension's Endpoint Picker. The picker reads model-server
+metrics to choose a replica.
 
-This lab puts one model on two cards and measures what that actually buys over the load
-balancing agentgateway already does.
+In the queue-depth tests it avoided the saturated replica on every request. The cache
+tests were inconclusive: a random picker matched the prefix-aware profile's hit rate.
 
-Measured rather than assumed: **the queue signal earns its place, and the case for cache
-locality did not survive its own control.** Both results are below, including the one
-that did not work out.
-
-Standalone. It builds its own EKS cluster, its own GPU nodes and its own gateway, and
-shares nothing with any other lab. If you want the mechanism on kind with a simulator
-instead of real cards, that is
+The lab creates its own EKS cluster, GPU nodes and gateway. For a simulator-based version, see
 [agentgateway inference routing on kind](../agentgateway-inference-routing-kind/).
 
-**Editions.** Nothing here needs Enterprise. `InferencePool` routing is the same on both
+**Editions.** The lab uses OSS-compatible `InferencePool` routing on both editions
 (`inferenceExtension.enabled=true` on the gateway chart), and every manifest in `yaml/`
 uses only the shared `agentgateway.dev` and Gateway API Inference Extension APIs. The
 one per-edition difference is the GatewayClass name, substituted at apply time, so there
 is no separate `yaml-oss/`. Default is OSS; `AGW_EDITION=enterprise` runs the Solo build
 and needs a licence.
 
-## The baseline is not round-robin
+## The Service baseline
 
-Most write-ups on this subject, including an earlier draft of this one, open by saying
-round-robin is naive. That premise is wrong.
-
-Point an HTTPRoute at an ordinary Service and agentgateway does **not** round-robin. It
-picks two endpoints at random and takes the better-scored one, which is power of two
-choices, and the score is:
+With an HTTPRoute pointing at an ordinary Service, agentgateway uses **power of two
+choices**. It picks two endpoints at random and takes the better-scored one. The score is:
 
 ```
 health / (1 + latency * (1 + 0.1 * pending_requests))
 ```
 
-So the default already backs off a replica that is slow or has requests outstanding,
-using its own observed latency and in-flight counts. Any argument for the Endpoint
-Picker that starts with "round-robin is naive" is arguing against something that is not
-there.
+The default reduces traffic to a replica that is slow or has requests outstanding, using
+latency and in-flight counts observed by the gateway. The picker also reads model-server
+metrics, including load from other clients. The gateway only detects that load indirectly
+when it affects its own requests.
 
-Which sharpens the real question. The gateway can see how long a replica takes to answer
-it and how many of its own requests are outstanding. It cannot see anything that has not
-yet turned into latency it observed, and it cannot see anything about traffic it did not
-send.
+## Route to a Service or an InferencePool
 
-## What the picker adds, and how you switch it on
-
-One field on the route. `yaml/10-httproute-service.yaml`:
+The Service backend in `yaml/10-httproute-service.yaml`:
 
 ```yaml
 backendRefs:
@@ -76,16 +60,12 @@ The group is not optional. A `backendRef` with no `group` defaults to core, whic
 Service. The pool is named `vllm-pool` and the Service `vllm` on purpose, so a dropped
 group fails loudly instead of silently giving you the Service back.
 
-## The result that holds: queue depth
+## Queue-depth results
 
 `scripts/test.sh` runs the `skew` scenario. Background load is sent **directly** to one
 replica, bypassing the gateway entirely, and the measured requests then go through the
-gateway as normal. Nothing tells the gateway that replica is busy: no header, no drained
-endpoint, nothing unhealthy. It is simply busy, and the only way to know is to read its
-metrics.
-
-That is the case the gateway's own scoring cannot cover, because the load is traffic it
-never sent and never timed.
+gateway as normal. Both replicas remain available, with no routing hints added to the
+measured requests. The picker can read the background queue directly from server metrics.
 
 Measured on two `g7e.2xlarge`, 30 requests per run, the saturated replica being `vllm-0`:
 
@@ -96,27 +76,19 @@ Measured on two `g7e.2xlarge`, 30 requests per run, the saturated replica being 
 | InferencePool, `queue-only`, run 1 | **30** | **0** |
 | InferencePool, `queue-only`, run 2 | **30** | **0** |
 
-The gateway's own balancer puts 23% to 33% of requests onto a replica that is visibly
-backed up. The queue scorer puts none there. That is the lab.
+The Service route sent 23% to 33% of requests to the saturated replica. The queue-only
+profile sent all 30 requests to the idle replica in both runs. It reads
+`vllm:num_requests_waiting`, so it can account for the queue before the gateway observes
+a slow response.
 
-It also shows why: the picker reads `vllm:num_requests_waiting` off the server, so it
-knows about the queue before any of it has turned into latency the gateway could have
-measured.
+## Cache locality: the random control matched the default
 
-## The result that did not hold: cache locality
+The prefix scorer favours a replica estimated to hold the prompt's cached prefix, reducing
+prefill work. These tests compared its hit rate with the Service route and a random picker.
 
-Reported in full because the control is the interesting part.
-
-The pitch for the prefix scorer is that a replica which already holds a prompt's prefix
-in KV cache can skip prefill, so the scheduler should send the request there. It is a
-good story. Here is what happened.
-
-**First, it needs cache pressure to mean anything.** On a 96 GB card vLLM takes about
-55 GiB of KV cache, which is roughly 600,000 tokens. No lab workload comes close, so
-nothing is ever evicted, both replicas gradually end up holding everything, and every
-lookup hits regardless of who scheduled it. Measured that way, the picker and the Service
-backend both scored about 90% and were within three points of each other. Cache locality
-was free, so optimising for it won nothing.
+On a 96 GB card vLLM allocates about 55 GiB of KV cache, roughly 600,000 tokens. The test
+corpus fits on each replica, allowing both to cache it. With that allocation, the picker
+and Service backend both scored about 90%, within three percentage points of each other.
 
 So the lab pins `--kv-cache-memory=2147483648`, which gives 21,840 tokens, and
 `bench.py --docs 12` builds a corpus of about 36,000 tokens that no longer fits.
@@ -130,42 +102,36 @@ document order shuffled and at every concurrency from 1 to 6:
 | InferencePool, default profile (queue 2, kv 2, prefix 3) | 79-80% |
 | InferencePool, **`random` picker, no scoring at all** | **79%** |
 
-The control matches the weighted default. Whatever produces that gain, it is **not** the
-prefix scorer, because removing every scorer changes nothing. I could not establish the
-cause: it survives shuffling the document order, which rules out my load generator's
-cycling interacting with the scheduler's batch size, and it survives dropping concurrency
-to 1, which rules out the ExtProc hop simply slowing arrivals and easing cache pressure.
+The random control matches the weighted default, so the gain cannot be attributed to the
+prefix scorer. The cause remains unresolved. Shuffling document order and reducing
+concurrency to 1 retained the difference; neither test explained it through document-order
+correlation or the ExtProc hop slowing concurrent arrivals.
 
-So the number is in the lab and is not claimed as evidence for cache-aware routing.
-`epp-profiles/random.yaml` is there so you can reproduce the control yourself in one
-command. If you work out the mechanism, it is a better finding than the one I was
-looking for.
+Use `epp-profiles/random.yaml` to repeat the control alongside the default profile.
 
 ## What is on the two cards
 
-One model, two replicas, one card each: Qwen3-Coder-30B-A3B-Instruct-FP8, 31.2 GB of
-weights.
+Each GPU serves a replica of Qwen3-Coder-30B-A3B-Instruct-FP8, with 31.2 GB of weights.
 
-A StatefulSet, not two Deployments. gp3 is ReadWriteOnce so the replicas cannot share a
-volume, and `volumeClaimTemplates` gives each its own. `podManagementPolicy: Parallel`
+A StatefulSet's `volumeClaimTemplates` gives each replica its own ReadWriteOnce gp3
+volume. `podManagementPolicy: Parallel`
 matters: the default starts the second replica only after the first is Ready, which
 serialises two 31 GB downloads.
 
-Three settings are lab devices and are marked as such in the manifest. Do not copy them
-into anything real:
+These settings create queue and cache pressure for the tests. Size them for your workload
+in production:
 
 | Setting | Why |
 |---|---|
-| `--max-num-seqs=8` | A 96 GB card runs far more than eight sequences at once. If it does, no concurrency ever builds a queue, `vllm:num_requests_waiting` stays at zero on both replicas, and the queue scorer has nothing to score. |
-| `--kv-cache-memory=2147483648` | 2 GiB against the ~55 GiB the card would otherwise give. Without it nothing is ever evicted and the prefix scenario measures nothing. |
+| `--max-num-seqs=8` | Limits concurrent sequences so the test load creates a queue visible in `vllm:num_requests_waiting`. |
+| `--kv-cache-memory=2147483648` | Limits the cache to 2 GiB, so the test corpus exceeds its capacity and causes evictions. |
 | `--max-model-len=8192` | Has to come down with the cache. vLLM refuses to start if the cache cannot hold one request at full context length, and the error is a bare `ValueError` out of `_check_enough_kv_cache_memory` that names neither flag. |
 
 ## Prerequisites
 
-- An AWS account, `eksctl`, `kubectl`, `helm` and the AWS CLI. Nothing else: the lab
-  builds its own cluster.
-- Quota for two `g7e.2xlarge` in one AZ. London capacity moves hour to hour, so hold them
-  with an On-Demand Capacity Reservation before a rehearsal rather than hoping:
+- An AWS account, `eksctl`, `kubectl`, `helm` and the AWS CLI. The lab builds its own cluster.
+- Quota and capacity for two `g7e.2xlarge` in one AZ. An On-Demand Capacity Reservation
+  can reserve them for a scheduled run:
 
   ```bash
   aws ec2 create-capacity-reservation --instance-type g7e.2xlarge \
@@ -195,7 +161,7 @@ which needs the experimental channel for ExtProc policies. This one never writes
 ExtProc policy: the picker is reached over ExtProc too, but the gateway wires that itself
 from the InferencePool.
 
-### Stopping the meter
+### Stop the GPUs or delete the cluster
 
 ```bash
 ./scripts/gpu.sh down          # end of session; weights stay on their volumes
@@ -203,9 +169,8 @@ from the InferencePool.
 ./scripts/quick.sh teardown    # delete the cluster entirely
 ```
 
-`gpu.sh` scales to two or zero, never one. One card leaves the lab running and pointless:
-the picker scores a pool of one replica and returns it every time, which looks exactly
-like a working scheduler.
+`gpu.sh` scales to two or zero. The comparison needs two replicas; with one, every
+selection returns the same endpoint.
 
 ## Running it
 
@@ -229,9 +194,8 @@ By hand:
 
 ### Reading the output
 
-Read the **gateway-side split**, not the percentiles. On two cards with a few dozen
-requests, latency moves for all sorts of reasons that have nothing to do with the
-scheduler.
+Use the **gateway-side split** to check where measured requests went. A few dozen requests
+on two cards are not enough to attribute every latency difference to scheduling.
 
 ```
 gateway-side split (this run only, excludes any load sent direct to a replica):
@@ -240,32 +204,30 @@ gateway-side split (this run only, excludes any load sent direct to a replica):
   vllm-1   192.168.70.117
 ```
 
-That block is computed from the gateway's own access log rather than from the pods'
-counters, and for `skew` it is the only trustworthy number: the background load is sent
-direct to a replica, so that replica's counters include traffic the gateway never saw.
+This block uses the gateway's access log. For `skew`, the replica's own counters also
+include the direct background load, so they cannot isolate the measured gateway traffic.
 
-**Check the IP mapping printed underneath every time.** Restarting a pod gives it a new
-address, and reading a later run against an earlier mapping will tell you the baseline
-beat the picker when it did not. That is a mistake this lab made.
+**Check the IP mapping printed beneath each result.** A restart can change a pod's address.
+An earlier comparison used a stale mapping and attributed requests to the wrong replica.
 
-## Things that will catch you
+## Troubleshooting
 
 | | |
 |---|---|
-| **FailOpen hides a broken picker** | `failureMode: FailOpen` is right for inference and is also the setting that will cost you an afternoon. If the picker is unreachable the gateway quietly picks an endpoint itself: every request succeeds, the route is Accepted, the Gateway is Programmed, and you are measuring the Service path. `03-pool.sh` refuses to finish unless `inferencepool.selected_endpoint` appears in the access log. |
+| **FailOpen can conceal an unavailable picker** | With `failureMode: FailOpen`, the gateway selects an endpoint itself if the picker is unreachable. Successful responses and Accepted/Programmed statuses do not verify picker selection. `03-pool.sh` requires `inferencepool.selected_endpoint` in the access log. |
 | **The prefix counters are `_total`** | vLLM's own metrics docs list `vllm:prefix_cache_queries` and `vllm:prefix_cache_hits`. The Prometheus client appends `_total` to every Counter, so those are the logical names, not the wire names. Matching the documented name finds nothing, and a missing counter reads as zero rather than as an error, so the hit rate just prints `n/a` and looks like a model with caching switched off. |
 | **`gpu_cache_usage_perc` is gone** | The V1 engine exposes `vllm:kv_cache_usage_perc`. The old name survives in older simulators and copied config, and GIE v1.4.0's default mapping uses the new one. |
 | **The EPP chart asks for 4 CPU** | Sized for production scale testing. On a 4-vCPU node the picker never schedules, sits Pending, and the symptom is the FailOpen one above. `epp-profiles/base.yaml` lowers it and the cluster uses `m6i.2xlarge` platform nodes. |
-| **Cyclic document order flatters any scheduler** | A scheduler that assigns requests in runs gives one replica a run of *consecutive documents*, which is a smaller working set than the corpus and fits in a cache the whole corpus would not. It looks exactly like cache-aware routing. `bench.py --shuffle` removes the correlation, and every comparison worth believing uses it. |
+| **Document order can bias cache results** | Assigning consecutive requests to one replica can reduce its working set and improve cache hits without prefix scoring. Use `bench.py --shuffle` to test for document-order correlation. |
 | **A Service named `vllm` breaks vLLM** | It injects `VLLM_PORT=tcp://10.x.x.x:8000`, and vLLM parses `VLLM_*` as its own config. `enableServiceLinks: false` on the pod. |
 | **An interrupted weight download looks complete** | `config.json` is small and arrives first, so testing for it makes the next run skip a half-finished pull, and vLLM dies much later on "Weight files referenced in index but missing". The init container writes a marker only after the download returns. |
 | **DeepGEMM crash-loops Qwen FP8** | vLLM 0.27.1 auto-selects the DEEPGEMM FP8 MoE backend on the RTX PRO 6000 and dies at engine init with `Assertion error (layout.hpp:60): Unknown SF transformation`. `VLLM_USE_DEEP_GEMM=0` and `VLLM_MOE_USE_DEEP_GEMM=0`. |
 | **`InferenceObjective` is a different API group** | `InferencePool` has graduated to `inference.networking.k8s.io/v1`; `InferenceObjective` is still `inference.networking.x-k8s.io/v1alpha2`. A `poolRef` copying the objective's own apiVersion references nothing, with no error. |
 | **`huggingface_hub[hf_transfer]` no longer exists** | hub 1.31.0 dropped the extra, so pip warns and installs the base package. Harmless, and it implies an accelerated transfer that is not happening. Anonymous Hub pulls are also rate limited; set `HF_TOKEN` if 62 GB of parallel download stalls. |
 
-## What this lab does not do
+## Next: prefill and decode on separate GPUs
 
-Prefill and decode run on the same card here, which is how almost everyone runs vLLM.
+Each replica runs prefill and decode on the same card here.
 Splitting them across cards is
 [Part 2](../agentgateway-inference-disaggregation-eks/), which needs a different Endpoint
 Picker: upstream GIE v1.4.0 has no prefill/decode plugin at all.
