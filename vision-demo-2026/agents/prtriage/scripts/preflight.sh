@@ -144,6 +144,11 @@ else
   note "ingress path not checked (/tmp/mcp.sh absent: run the notebook's client cell)"
 fi
 
+# Retried, because reset.sh restarts the agent and an agent that has not finished
+# re-listing its tools reports the wrong count for a few seconds. A preflight that says
+# NOT ready for a reason that fixes itself is worse than no preflight.
+inmesh=""
+for _ in 1 2 3 4 5; do
 inmesh="$($K -n "$NS" exec deploy/prtriagejava -- sh -c '
   U=http://github-mcp.'"$NS"'.svc.cluster.local/
   I='"'"'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"pre","version":"1"}}}'"'"'
@@ -152,6 +157,9 @@ inmesh="$($K -n "$NS" exec deploy/prtriagejava -- sh -c '
     --post-data='"'"'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'"'"' $U 2>&1 | grep -o "\"name\":\"[a-z_]*\"" | wc -l' 2>/dev/null | tr -d ' ')"
 # The in-mesh count is what the policy leaves for prtriagejava, not the whole catalogue:
 # two GitHub tools in Standard, and the two meta tools in a code mode.
+  [ "${inmesh:-0}" = "2" ] && break
+  sleep 3
+done
 wantm=2
 if [ "${inmesh:-0}" = "$wantm" ]; then pass "in-mesh MCP path (agents)" "$inmesh tools for the triage agent, as the policy allows"
 elif [ "${inmesh:-0}" -gt 0 ]; then fail "in-mesh MCP path (agents)" "$inmesh tools, expected $wantm for ${M2:-Standard}"
