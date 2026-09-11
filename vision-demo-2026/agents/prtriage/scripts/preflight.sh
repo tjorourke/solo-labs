@@ -195,9 +195,9 @@ code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -X POST "http://git
        -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
        -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"pre","version":"1"}}}' 2>/dev/null)"
 case "$code" in
-  401|403) pass "published listener" "refuses an unauthenticated call ($code)" ;;
-  200)     fail "published listener" "OPEN: anyone reaching it gets the GitHub credential"
-           note "fix: kubectl apply -f agents/prtriage/yaml/12-ingress-jwt.yaml" ;;
+  200)     pass "published listener" "open, as step 2 expects. Step 2 closes it on stage" ;;
+  401|403) fail "published listener" "already authenticated ($code): step 2 has nothing to close"
+           note "fix: ./agents/prtriage/scripts/reset.sh" ;;
   *)       fail "published listener" "unexpected $code from the ingress" ;;
 esac
 

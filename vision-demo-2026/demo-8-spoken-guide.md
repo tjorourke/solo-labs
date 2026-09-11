@@ -110,6 +110,28 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 **Cue:** point at the curl line and say "no authorization header" out loud. People skim
 past it otherwise.
 
+**Then the two doors, which is the beat people remember:**
+
+> That backend has two ways in. Agents reach it on an in-cluster name, where the mesh hands
+> the gateway a certificate to check. It is also published, by an ordinary HTTPRoute, so a
+> person can reach it from a laptop.
+>
+> Publishing a route does not authenticate it. Watch me knock with nothing at all.
+>
+> Two hundred. Anything that can route to that address now has a session, and GitHub's
+> credential is sitting behind it. The per-agent policy I will show you in a few minutes is on
+> the other door, and it does nothing for this one.
+>
+> So one policy, on the route, and knock again. Four oh one.
+>
+> And a token. This says who I am. A workload proves itself with a certificate the mesh
+> issued it; a person proves it with this. Neither of them is the GitHub credential, which
+> has not moved and never will.
+
+**Cue:** this is the beat to slow down on. Everyone has shipped an open route beside a
+governed one. `./agents/prtriage/scripts/listener-audit.sh` lists every listener in a cluster
+and probes the published ones, and it is worth mentioning that it exists.
+
 ---
 
 ## Beat 3 · The catalogue, the skill, and the agent

@@ -94,13 +94,9 @@ echo
 # The per-agent policy is part of the platform, not a beat. A cluster where the rule is
 # only applied once the presenter reaches slide six is not how anyone runs anything, and
 # it leaves an agent nobody approved holding a credential until then.
-# The published listener needs its own proof of identity: a workload has a SPIFFE cert for the
-# waypoint to check, a human at a laptop has nothing. Without this the route hands the GitHub
-# credential to anyone who reaches the address.
-echo "== authentication on the published listener =="
-$K apply -f "$HERE/../yaml/12-ingress-jwt.yaml"
-echo
-
+# NOTE: yaml/12-ingress-jwt.yaml is deliberately NOT applied here. The published listener starts
+# open and step 2 closes it on stage, because "a route you publish is open until you authenticate
+# it" is a thing to be shown rather than asserted. reset.sh puts it back to open.
 echo "== the per-agent authorization policy =="
 $K apply -f "$HERE/../yaml/70-identity-policy.yaml"
 echo
