@@ -25,3 +25,7 @@ spec:
   env:
     SERVE: "true"
     PORT: "8080"
+    # The egress policy covers every agent it names, so each of them needs the model
+    # route too. Miss one and it dies with "Network is unreachable" the first time it
+    # thinks, which looks like the gateway refusing it and is not.
+    ANTHROPIC_BASE_URL: "http://anthropic.kagent.svc.cluster.local"
