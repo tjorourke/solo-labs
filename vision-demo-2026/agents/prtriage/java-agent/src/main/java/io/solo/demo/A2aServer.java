@@ -57,11 +57,71 @@ final class A2aServer {
   void start(int port) throws IOException, InterruptedException {
     var http = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
     http.createContext("/.well-known/agent-card.json", json(this::card));
-    http.createContext("/", json(this::messageSend));
+    http.createContext("/", this::root);
     http.setExecutor(Executors.newFixedThreadPool(4));
     http.start();
     Console.serving(port);
     Thread.currentThread().join();
+  }
+
+  /**
+   * The kagent UI streams. It calls message/stream and requires the response to be
+   * text/event-stream; answering with application/json makes the controller give up with
+   * "server did not respond with Content-Type 'text/event-stream'", and the UI shows a
+   * 500 while the terminal path works perfectly. So the root endpoint dispatches on the
+   * method rather than assuming everyone posts message/send.
+   */
+  private void root(HttpExchange exchange) throws IOException {
+    String body;
+    try (var in = exchange.getRequestBody()) {
+      body = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    }
+    var request = body.isBlank() ? Json.object() : Json.parse(body);
+    if ("message/stream".equals(request.path("method").asText())) {
+      messageStream(exchange, request);
+    } else {
+      send(exchange, 200, messageSend(request));
+    }
+  }
+
+  /**
+   * One turn, delivered as Server-Sent Events. The work is not incremental here (ADK
+   * hands back the events when the turn finishes), so this is a single frame carrying
+   * the same completed Task that message/send returns. That satisfies the streaming
+   * contract without pretending to stream tokens we do not have.
+   */
+  private void messageStream(HttpExchange exchange, JsonNode request) throws IOException {
+    var prompt = firstTextPart(request);
+    Console.turn(turns.incrementAndGet(), prompt);
+
+    List<Event> events = List.of();
+    String answer;
+    try {
+      events = Turn.of(agent, name).ask(prompt);
+      answer = Turn.finalText(events);
+    } catch (RuntimeException e) {
+      var cause = e.getCause() == null ? e : e.getCause();
+      answer = "the agent failed: %s: %s".formatted(
+          cause.getClass().getSimpleName(),
+          cause.getMessage() == null ? "(no message)" : cause.getMessage());
+      Console.failed(answer);
+      e.printStackTrace();
+    }
+
+    var frame = Json.write(Json.object()
+        .put("jsonrpc", "2.0")
+        .putRawValue("id", raw(request.path("id")))
+        .set("result", task(request, answer, events)));
+
+    var headers = exchange.getResponseHeaders();
+    headers.add("Content-Type", "text/event-stream");
+    headers.add("Cache-Control", "no-cache");
+    headers.add("Connection", "keep-alive");
+    exchange.sendResponseHeaders(200, 0);          // 0 = chunked, no length up front
+    try (var out = exchange.getResponseBody()) {
+      out.write(("data: " + frame + "\n\n").getBytes(StandardCharsets.UTF_8));
+      out.flush();
+    }
   }
 
   private String card(JsonNode request) {
@@ -76,7 +136,7 @@ final class A2aServer {
           .putRawValue("id", raw(id))
           .set("error", Json.object()
               .put("code", -32601)
-              .put("message", "only message/send is implemented")));
+              .put("message", "only message/send and message/stream are implemented")));
     }
 
     var prompt = firstTextPart(request);
