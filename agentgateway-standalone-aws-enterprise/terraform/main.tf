@@ -42,11 +42,26 @@ data "aws_availability_zones" "available" {
   }
 }
 
-# Amazon Linux 2023, arm64 (Graviton). The enterprise installer publishes
-# linux-arm64 builds of both binaries, so the fleet runs t4g and costs about 20%
-# less than the x86 equivalent.
-data "aws_ssm_parameter" "al2023_arm64" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+# Ubuntu 24.04 LTS, arm64 (Graviton). Part 1 runs Amazon Linux 2023 and this one
+# cannot, which is the single most useful thing this lab found:
+#
+#   The OSS binary is a static musl build and runs on anything. The enterprise
+#   binary is aarch64-unknown-linux-gnu, dynamically linked, and needs glibc 2.39.
+#   Amazon Linux 2023 ships glibc 2.34, so the installer succeeds, the binary
+#   lands, and then:
+#
+#     /usr/local/bin/agentgateway: /lib64/libc.so.6: version `GLIBC_2.39' not
+#     found (required by /usr/local/bin/agentgateway)
+#
+#   The installer's own message is "the downloaded agentgateway binary does not
+#   run on this system", which does not name glibc, so the first instinct is to
+#   suspect the architecture. It is not the architecture.
+#
+# Ubuntu 24.04 ships glibc 2.39 exactly, so it is the oldest LTS that works.
+# Verify before changing this:
+#   docker run --rm --platform linux/arm64 -v .:/x ubuntu:24.04 /x/agentgateway --version
+data "aws_ssm_parameter" "ubuntu2404_arm64" {
+  name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id"
 }
 
 data "aws_caller_identity" "current" {}

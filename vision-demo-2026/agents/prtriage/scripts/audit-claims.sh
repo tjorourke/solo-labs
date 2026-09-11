@@ -12,7 +12,12 @@
 #   FULL=1 ./scripts/audit-claims.sh   also runs the agent end to end in both modes
 #
 # It drives cluster state (toolMode, the identity policy) and puts it back at the end.
-set -uo pipefail
+# No pipefail. Every check here reads a specific condition, and pipefail turns a
+# `long-running-command | grep -q` into a FALSE FAILURE: grep exits at the first match,
+# the producer takes SIGPIPE, and the pipeline reports non-zero *because* it matched.
+# That is how C21 reported "not observed" while the line it wanted was in the log 62
+# times.
+set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATH="$HERE/../bin:$PATH"
 K="kubectl --context ${CTX:-kind-mesh1}"
@@ -174,10 +179,19 @@ echo "$m1" | grep -q 'not defined' \
 echo "$m2" | grep -q '404' \
   && ok C20 "the release agent's merge reaches GitHub" "GitHub answered 404" \
   || no C20 "the release agent's merge reaches GitHub" "$m2"
+# Generate the call, then wait for the line, rather than hoping one is still inside an
+# arbitrary tail. A check that depends on log volume fails at random, and a suite that
+# goes red at random is one nobody reads.
 sa=$($K -n $NS get deploy changelogjava -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null)
-$K -n $NS logs deploy/github-mcp-waypoint --tail=400 2>/dev/null | grep -q "sa/$sa" \
-  && ok C21 "the gateway reads the SPIFFE identity off the connection" "sa/$sa seen at the waypoint" \
-  || no C21 "the gateway reads the SPIFFE identity off the connection" "not observed"
+pod_functions changelogjava >/dev/null 2>&1
+seen=""
+for _ in $(seq 1 10); do
+  $K -n $NS logs deploy/github-mcp-waypoint --tail=2000 > /tmp/a-waypoint.log 2>/dev/null
+  grep -q "sa/${sa:-changelogjava}" /tmp/a-waypoint.log && { seen=yes; break; }
+  sleep 2
+done
+[ -n "$seen" ] && ok C21 "the gateway reads the SPIFFE identity off the connection" "sa/$sa seen at the waypoint" \
+               || no C21 "the gateway reads the SPIFFE identity off the connection" "not observed after 20s"
 arctl get agent changelogjava >/dev/null 2>&1 \
   && ok C22 "the refused agent IS in the catalogue" "being in the catalogue is not permission" \
   || no C22 "the refused agent IS in the catalogue" "not published"

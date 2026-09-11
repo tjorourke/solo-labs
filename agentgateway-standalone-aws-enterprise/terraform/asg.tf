@@ -6,7 +6,7 @@
 resource "aws_launch_template" "gateway" {
   name_prefix = "${local.name}-"
 
-  image_id      = data.aws_ssm_parameter.al2023_arm64.value
+  image_id      = data.aws_ssm_parameter.ubuntu2404_arm64.value
   instance_type = var.instance_type
 
   # No key_name on purpose. Shell access is SSM Session Manager only, and the

@@ -103,6 +103,47 @@ Two of those secrets are new in part 2 and both are deliberately fleet-wide:
 
 ---
 
+## The one that will catch you: glibc
+
+Part 1 runs on Amazon Linux 2023. Part 2 cannot, and the reason is worth knowing before
+you plan a rollout.
+
+The OSS binary is a **static musl build** and runs on anything. The enterprise binary is
+**`aarch64-unknown-linux-gnu`**, dynamically linked, and needs **glibc 2.39**. Amazon
+Linux 2023 ships **2.34**, so the installer succeeds, both binaries land in
+`/usr/local/bin`, and then nothing starts:
+
+```
+/usr/local/bin/agentgateway: /lib64/libm.so.6: version `GLIBC_2.35' not found
+/usr/local/bin/agentgateway: /lib64/libc.so.6: version `GLIBC_2.39' not found
+/usr/local/bin/agentgateway: /lib64/libc.so.6: version `GLIBC_2.38' not found
+```
+
+The installer's own message is `the downloaded agentgateway binary does not run on this
+system`, which does not mention glibc, so the first instinct is to suspect the
+architecture. It is not the architecture.
+
+So this lab runs **Ubuntu 24.04 LTS**, which ships glibc 2.39 exactly and is therefore the
+oldest LTS that works. Check any host before you commit to it, in one command and without
+building anything:
+
+```bash
+curl -fsSL -o agentgateway-enterprise-linux-arm64 \
+  https://storage.googleapis.com/enterprise-agentgateway-standalone/v2026.9.0/agentgateway-enterprise-linux-arm64
+chmod +x agentgateway-enterprise-linux-arm64
+
+docker run --rm --platform linux/arm64 -v "$PWD:/x:ro" ubuntu:24.04 \
+  /x/agentgateway-enterprise-linux-arm64 --version      # works
+docker run --rm --platform linux/arm64 -v "$PWD:/x:ro" amazonlinux:2023 \
+  /x/agentgateway-enterprise-linux-arm64 --version      # GLIBC_2.39 not found
+```
+
+If your estate is on RHEL 8, Amazon Linux 2023 or anything else below glibc 2.39, the
+container image is the way in: it carries its own userland, and the bundle image runs both
+processes under one launcher.
+
+---
+
 ## Before you start
 
 You need:

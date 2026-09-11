@@ -47,35 +47,43 @@ warn() { echo "WARN: $*" >&2; }
 # package name moves between Amazon Linux releases, so a miss there must not take
 # the gateway down with it.
 # ---------------------------------------------------------------------------
-dnf install -y jq tar gzip
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y jq curl unzip ca-certificates
 
-# A container runtime, for the third-party rate limit service. Amazon Linux 2023 ships
-# docker in the default repo; podman is not available on every architecture. Neither is
-# required for the gateway to serve, so a miss here must not stop the boot: the
-# remoteRateLimit policy is failOpen, so the fleet degrades to no global limit rather
-# than to no gateway.
+# The AWS CLI. Amazon Linux ships it; Ubuntu does not, and every boot step below
+# needs it: the runtime secret, the config sync and the signing key all come from
+# AWS APIs. Installed from the official archive rather than the distribution
+# package, which is v1 and does not speak secretsmanager the same way.
+if ! command -v aws >/dev/null; then
+  curl -fsSL -o /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip"
+  unzip -q /tmp/awscliv2.zip -d /tmp
+  /tmp/aws/install --update >/dev/null
+  rm -rf /tmp/aws /tmp/awscliv2.zip
+fi
+aws --version
+
+# A container runtime, for the third-party rate limit service. Not required for the
+# gateway to serve, so a miss here must not stop the boot: the remoteRateLimit policy
+# is failOpen, so the fleet degrades to no global limit rather than to no gateway.
 CONTAINER_RT=""
-for rt in docker podman; do
-  if dnf install -y "$rt" 2>/dev/null; then
-    CONTAINER_RT="$rt"
-    echo "container runtime: $rt"
-    break
-  fi
-done
-if [ "$CONTAINER_RT" = "docker" ]; then
+if apt-get install -y docker.io 2>/dev/null; then
+  CONTAINER_RT="docker"
   systemctl enable --now docker || warn "docker installed but would not start"
+  echo "container runtime: docker"
 fi
 [ -n "$CONTAINER_RT" ] || warn "no container runtime available; global rate limiting will be disabled on this node"
 
-# The psql client is only used by the lab's inspection scripts, and its package name
-# moves between Amazon Linux releases.
-for pg in postgresql16 postgresql15 postgresql; do
-  if dnf install -y "$pg" 2>/dev/null; then
-    echo "installed psql client from $pg"
-    break
-  fi
-done
+# The psql client is only used by the lab's inspection scripts.
+apt-get install -y postgresql-client-16 2>/dev/null || apt-get install -y postgresql-client 2>/dev/null || true
 command -v psql >/dev/null || warn "no psql client; the request-log inspection commands will not work on this node"
+
+# SSM is the only way into these instances: no SSH, and no port 22 in any security
+# group. Canonical's images carry the agent as a snap, so this is a check rather
+# than an install, but a node without it is a node nobody can inspect.
+snap list amazon-ssm-agent >/dev/null 2>&1 || snap install amazon-ssm-agent --classic || \
+  warn "amazon-ssm-agent is not installed; this node cannot be reached by the lab scripts"
+systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Identity of this node. Stamped into every access log line so per-node attribution
@@ -109,8 +117,14 @@ esac
 # it installs TWO binaries: the proxy, and agentgateway-sts for token exchange.
 # AGENTGATEWAY_VERSION pins the tag and AGENTGATEWAY_INSTALL_DIR puts them where
 # the systemd units expect them, so nothing depends on the invoking user's PATH.
-curl -fsSL https://run.solo.io/agentgateway/install \
-  | AGENTGATEWAY_VERSION="$AGW_VERSION" AGENTGATEWAY_INSTALL_DIR=/usr/local/bin sh
+if ! curl -fsSL https://run.solo.io/agentgateway/install \
+     | AGENTGATEWAY_VERSION="$AGW_VERSION" AGENTGATEWAY_INSTALL_DIR=/usr/local/bin sh; then
+  echo "the enterprise installer failed. If it said the binary 'does not run on this"
+  echo "system', check glibc rather than the architecture: the enterprise build is"
+  echo "aarch64-unknown-linux-gnu and needs 2.39, and this host has:"
+  ldd --version | head -1
+  exit 1
+fi
 
 chmod 0755 /usr/local/bin/agentgateway /usr/local/bin/agentgateway-sts
 
@@ -510,7 +524,10 @@ systemctl enable --now agentgateway.service
 # ---------------------------------------------------------------------------
 
 install_cloudwatch_agent() {
-  dnf install -y amazon-cloudwatch-agent
+  # Ubuntu has no package for it in the archive, so it comes from the S3 bundle.
+  curl -fsSL -o /tmp/amazon-cloudwatch-agent.deb \
+    "https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/arm64/latest/amazon-cloudwatch-agent.deb"
+  dpkg -i -E /tmp/amazon-cloudwatch-agent.deb
 
   cat >/opt/aws/amazon-cloudwatch-agent/etc/agentgateway.json <<EOF
 {
@@ -544,9 +561,9 @@ EOF
 }
 
 install_otel_collector() {
-  curl -fsSL -o /tmp/aws-otel-collector.rpm \
-    "https://aws-otel-collector.s3.amazonaws.com/amazon_linux/$AGW_ARCH/latest/aws-otel-collector.rpm"
-  rpm -Uvh --replacepkgs /tmp/aws-otel-collector.rpm
+  curl -fsSL -o /tmp/aws-otel-collector.deb \
+    "https://aws-otel-collector.s3.amazonaws.com/ubuntu/$AGW_ARCH/latest/aws-otel-collector.deb"
+  dpkg -i -E /tmp/aws-otel-collector.deb
 
   # Two jobs in one collector: take OTLP traces from the gateway and put them in
   # X-Ray, and scrape the gateway's Prometheus endpoint into CloudWatch metrics.
