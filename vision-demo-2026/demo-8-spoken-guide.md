@@ -457,6 +457,20 @@ difference is that the platform applies it once, outside the agent, the same way
 every agent, and refuses a direct call that skips the model's tool list altogether.
 Beat 6's denied request never went near the model.
 
+**"What stops the agent just calling api.github.com directly?"** At the network layer,
+in this lab, nothing, and you should say so rather than be caught by it. What stops it
+being worth doing is that the credential is not in the pod. I have tested the bypass:
+from inside the agent, a direct call to GitHub reads public repositories, cannot read a
+private one, and cannot write anything at all. So going around the gateway costs it
+every repository you care about and every verb that changes something.
+
+If you want the network closed too, that is an egress control rather than a tool
+control: a NetworkPolicy or an ambient egress policy allowing the agent to reach the
+waypoint, the model endpoint and the kagent controller, and nothing else. Worth knowing
+before you try it live that an ambient egress policy has to allow istiod and istio-csr
+as well, or certificate renewal fails about forty five minutes later and the mesh stops
+working long after the change looked fine.
+
 **"Where does the identity come from?"** ztunnel, from the workload's SPIFFE
 certificate. The policy matches `source.identity.serviceAccount`, and the agent has no
 say in it. Worth knowing that this only works at a waypoint: at an ingress gateway the
