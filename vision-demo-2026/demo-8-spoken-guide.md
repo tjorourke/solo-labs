@@ -62,12 +62,19 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 ## Beat 1 · What one MCP server costs you
 
-**Run:** the `tools/list` cell, then the token count cell.
+**Run:** the backend, the route, the chain, then `tools/list` and the token count.
 
 **Say:**
 
 > I wanted an agent that could tell me which pull requests were ready to merge. So I
-> connected GitHub's MCP server, which is one server, and this is what turned up.
+> connected GitHub's MCP server, which is one server.
+>
+> That is the backend. Where the real server lives, and one `secretRef`, which is where
+> GitHub's token sits. Agents reach it on an in-cluster name through a waypoint; for me to
+> look at it from here I also publish it, with an ordinary HTTPRoute. Route, backend, the
+> real server, read back out of the cluster.
+>
+> Now ask it what it can do. One call gets everything it offers.
 >
 > Ninety three tools. Thirty one thousand tokens of tool definitions, counted by
 > Anthropic's own endpoint rather than estimated, and that is in the context on every
@@ -88,53 +95,55 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 ---
 
-## Beat 2 · The gateway holds the credential
+## Beat 2 · Close the door you just opened
 
-**Run:** the backend cell, then the no-credential call.
+**Run:** the knock, the policy, the knock again, then the token.
 
 **Say:**
 
-> Before we build anything, one piece of plumbing. That is agentgateway in front of
-> GitHub's MCP server, read straight out of the cluster. Two fields matter.
-> `protocol: StreamableHTTP`, because GitHub's server is hosted and speaks that. And
-> `policies.auth.secretRef`, which is where the token lives.
+> I published that route a minute ago so that I could look at the server at all. Watch me
+> knock on it with nothing.
 >
-> The token is in one Kubernetes Secret that the gateway reads. Watch this call. Content
-> type, accept, and nothing else. No authorization header at all.
+> Two hundred. Anything that can route to that address has a session, and GitHub's
+> credential is sitting behind it. The per-agent policy I show you at the end is on the
+> other door, the in-cluster one, and it does nothing for this.
+>
+> So: one policy, on the route, requiring a token from the cluster's identity provider.
+> Knock again. Four oh one.
+>
+> And now a token. This one says who I am. A workload proves itself with a certificate the
+> mesh issued it; a person proves it with this. Neither of them is the GitHub credential,
+> which has not moved and never will.
+
+**Cue:** slow down here. Everyone in the room has shipped an open route beside a governed
+one. `./agents/prtriage/scripts/listener-audit.sh` finds them in any cluster, and it is worth
+saying that it exists.
+
+---
+
+## Beat 3 · The gateway holds the credential
+
+**Run:** the `list_pull_requests` call.
+
+**Say:**
+
+> So I am through the front door now, with my own token. Watch what I do not send.
+>
+> There is no GitHub credential anywhere in that call. The token I just minted says who I
+> am; it says nothing about GitHub. The gateway holds GitHub's token, in one Kubernetes
+> Secret, and attaches it on the way out.
 >
 > And there is real GitHub data coming back.
 >
 > The agent I am about to build has no GitHub credential. Not a scoped one, not a
 > short-lived one. None. It cannot leak a token it was never given.
 
-**Cue:** point at the curl line and say "no authorization header" out loud. People skim
-past it otherwise.
-
-**Then the two doors, which is the beat people remember:**
-
-> That backend has two ways in. Agents reach it on an in-cluster name, where the mesh hands
-> the gateway a certificate to check. It is also published, by an ordinary HTTPRoute, so a
-> person can reach it from a laptop.
->
-> Publishing a route does not authenticate it. Watch me knock with nothing at all.
->
-> Two hundred. Anything that can route to that address now has a session, and GitHub's
-> credential is sitting behind it. The per-agent policy I will show you in a few minutes is on
-> the other door, and it does nothing for this one.
->
-> So one policy, on the route, and knock again. Four oh one.
->
-> And a token. This says who I am. A workload proves itself with a certificate the mesh
-> issued it; a person proves it with this. Neither of them is the GitHub credential, which
-> has not moved and never will.
-
-**Cue:** this is the beat to slow down on. Everyone has shipped an open route beside a
-governed one. `./agents/prtriage/scripts/listener-audit.sh` lists every listener in a cluster
-and probes the published ones, and it is worth mentioning that it exists.
+**Cue:** point at the request and say "no GitHub credential" out loud. People skim past
+it otherwise.
 
 ---
 
-## Beat 3 · The catalogue, the skill, and the agent
+## Beat 4 · The catalogue, the skill, and the agent
 
 **Run:** `arctl get mcpserver` and `arctl get skill`, then the skill's headings, then
 `make -C agents/prtriage/java-agent show`.
@@ -181,7 +190,7 @@ does not care, an Agent record just references an image.
 
 > Maven and the JDK run inside the image. There is no Java on this laptop at all.
 
-## Beat 4 · Publish it, deploy it, read the trace
+## Beat 5 · Publish it, deploy it, read the trace
 
 **Run:** the two `arctl apply` commands, which publish the agent and deploy it, then
 wait for Ready. Then ask the question from the notebook and read the trace it prints.
@@ -241,7 +250,7 @@ beat answer it. Never script a mistake, and never lean on getting one.
 **Cue:** the scroll is the demo. Take your time over it. Ten seconds of silently
 scrolling JSON does more work than any sentence here.
 
-## Beat 5 · One field
+## Beat 6 · One field
 
 **Run:** the `toolMode` patch cell, which also waits and reloads, then the `tools/list`
 cell, then the same question.
@@ -250,7 +259,7 @@ cell, then the same question.
 
 > Same agent. Same image. Same catalogue. One field on the gateway backend.
 >
-> `toolMode: CodeSearch`. The model no longer gets forty four tools. It gets two:
+> `toolMode: CodeSearch`. The model no longer gets ninety three tools. It gets two:
 > `get_tool` to look up an operation's schema, and `run_code` to run a program against
 > them. And the agent restarts, because it reads its tool list once at startup. Same
 > image digest, and the line says so.
@@ -289,7 +298,7 @@ the round trips and what the model has to carry.
 
 ---
 
-## Beat 5b · Answer the heckle
+## Beat 6b · Answer the heckle
 
 **Run:** the unprepared-question cell.
 
@@ -312,7 +321,7 @@ the round trips and what the model has to carry.
 
 ---
 
-## Beat 6 · Two agents, one integration, different permissions
+## Beat 7 · Two agents, one integration, different permissions
 
 **Run:** the policy, then the release agent, then `identity-matrix`, then `try-merge`
 for both.
@@ -482,14 +491,14 @@ better dial than people expect: `X-MCP-Toolsets: pull_requests` gets 10 tools,
 toolset and not a tool, so `pull_requests` includes `merge_pull_request` unless you go
 read-only across the whole connection. And it is one answer for everyone on that
 connection, so it cannot give the triage agent and the release agent different lists,
-which is beat 6. The demo asks for all 93 deliberately, with a header the gateway sets,
+which is beat 7. The demo asks for all 93 deliberately, with a header the gateway sets,
 because that is what an organisation ends up with once one team needs Actions and
 another needs Dependabot.
 
 **"Could I not filter the tools in my own code?"** Yes, and a careful team will. The
 difference is that the platform applies it once, outside the agent, the same way for
 every agent, and refuses a direct call that skips the model's tool list altogether.
-Beat 6's denied request never went near the model.
+Beat 7's denied request never went near the model.
 
 **"What stops the agent just calling api.github.com directly?"** A NetworkPolicy, and it
 is worth showing rather than claiming. Both of the agent's ways out already end at a
