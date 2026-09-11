@@ -223,9 +223,21 @@ final class A2aServer {
           .put("messageId", text(request, "messageId").orElseGet(() -> UUID.randomUUID().toString()))
           .put("contextId", contextId).put("taskId", taskId);
       asked.putArray("parts").add(Json.object().put("kind", "text").put("text", prompt));
-      var withQuestion = Json.MAPPER.createArrayNode().add(asked);
-      stored.get("history").forEach(withQuestion::add);
-      stored.set("history", withQuestion);
+      // ...and the ANSWER at the end. The UI builds the conversation from history, so a
+      // task carrying only the question renders as nothing at all. An agent that used no
+      // tools has no other history, which is why the one that gets refused was blank
+      // while the one that did eighteen tool calls was fine.
+      var replied = Json.object()
+          .put("kind", "message").put("role", "agent")
+          .put("messageId", UUID.randomUUID().toString())
+          .put("contextId", contextId).put("taskId", taskId);
+      replied.putArray("parts").add(Json.object().put("kind", "text").put("text", answer));
+      replied.set("metadata", kagentMetadata(contextId, userId, invocationId));
+
+      var history = Json.MAPPER.createArrayNode().add(asked);
+      stored.get("history").forEach(history::add);
+      history.add(replied);
+      stored.set("history", history);
       KagentSession.recordTask(contextId, userId, stored);
 
       // 3. the answer as a message
