@@ -71,13 +71,38 @@ case "${1:-}" in
     eksctl delete cluster --region "$AWS_REGION" --name "$EKS_CLUSTER" \
       --disable-nodegroup-eviction --wait
 
+    # THE WEIGHT VOLUMES DO NOT GO WITH THE CLUSTER. reclaimPolicy: Delete is honoured
+    # by the EBS CSI controller, and `eksctl delete cluster` takes the control plane away
+    # without ever giving that controller a PVC deletion to act on. So two 100 GiB gp3
+    # volumes survive, about $16/month, and nothing in the delete output mentions them.
+    # Measured: exactly that happened on the first real teardown of this lab.
+    step "deleting the weight volumes the cluster delete leaves behind"
+    for vol in $(aws ec2 describe-volumes --region "$AWS_REGION" \
+                   --filters "Name=status,Values=available" \
+                             "Name=tag:KubernetesCluster,Values=$EKS_CLUSTER" \
+                   --query 'Volumes[].VolumeId' --output text 2>/dev/null); do
+      # Re-read the state rather than trusting the filter: a volume that has become
+      # attached since the query must be left alone.
+      st="$(aws ec2 describe-volumes --region "$AWS_REGION" --volume-ids "$vol" \
+              --query 'Volumes[0].State' --output text 2>/dev/null || true)"
+      if [ "$st" = "available" ]; then
+        aws ec2 delete-volume --region "$AWS_REGION" --volume-id "$vol" >/dev/null 2>&1 \
+          && ok "deleted $vol" || warn "could not delete $vol"
+      else
+        warn "skipping $vol (state=$st)"
+      fi
+    done
+
     # Never trust a teardown's exit code, read the state back.
     step "state after teardown"
     aws eks list-clusters --region "$AWS_REGION" --query clusters --output text
+    n=$(aws ec2 describe-volumes --region "$AWS_REGION" \
+          --filters "Name=status,Values=available" "Name=tag:KubernetesCluster,Values=$EKS_CLUSTER" \
+          --query 'length(Volumes)' --output text 2>/dev/null || echo "?")
+    log "unattached volumes still tagged $EKS_CLUSTER: $n"
     echo
-    log "The volumes holding the weights are deleted with the cluster (reclaimPolicy:"
-    log "Delete on gp3-fast), so a rebuild downloads them again. Check for leftovers the"
-    log "cluster delete cannot see:"
+    log "A rebuild downloads the weights again. Check for leftovers the cluster delete"
+    log "cannot see:"
     log "  ../scripts/aws-sweep.sh"
     ;;
 
