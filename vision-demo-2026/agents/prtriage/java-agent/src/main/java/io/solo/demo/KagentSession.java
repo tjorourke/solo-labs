@@ -48,37 +48,56 @@ final class KagentSession {
    * Record one message. author is "user" for the prompt, or the agent's name for the
    * answer; kagent renders anything that is not "user" as the agent side.
    */
-  static void record(String sessionId, String userId, String author, String text) {
+  /** An invocation id in kagent's own shape. One per turn, shared by both events. */
+  static String newInvocationId() {
+    return "e-" + UUID.randomUUID();
+  }
+
+  static void record(String sessionId, String userId, String invocationId,
+                     String author, String text) {
     if (!available() || sessionId == null || sessionId.isBlank()
         || userId == null || userId.isBlank()) {
       return;
     }
     try {
-      // The stored event is an ADK event, and the UI reads specific fields off it. Three
-      // are not optional however harmless they look: `id` and `timestamp` (epoch seconds
-      // as a FLOAT, which is what orders the conversation), and `invocation_id` in
-      // snake_case. Write a minimal {author, content} event and the call succeeds, the
-      // row is stored, the answer appears live from the stream, and the moment you
-      // navigate away and back the chat is empty, because nothing renders it.
+      // The stored event is an ADK event and the UI reads specific fields off it. Match
+      // the shape kagent's own runtime writes, because a nearly-right event is accepted,
+      // stored, and silently not rendered: the answer appears live from the stream and
+      // the conversation is empty the moment you navigate back.
+      //
+      // The ones that are not decoration:
+      //   id, timestamp   epoch seconds as a FLOAT, which orders the conversation
+      //   invocation_id   "e-" prefixed, and the SAME for both events of one turn
+      //   partial         false, not null. A null here reads as "not a settled message"
+      //   actions         present, with its empty maps rather than omitted
       var content = Json.object().put("role", "user".equals(author) ? "user" : "model");
       content.putArray("parts").add(Json.object().put("text", text));
+
+      var actions = Json.object()
+          .put("skip_summarization", (Boolean) null)
+          .put("transfer_to_agent", (String) null)
+          .put("escalate", (Boolean) null);
+      actions.putObject("state_delta");
+      actions.putObject("artifact_delta");
+      actions.putObject("requested_auth_configs");
+      actions.putObject("requested_tool_confirmations");
 
       var event = Json.object()
           .put("id", UUID.randomUUID().toString())
           .put("timestamp", System.currentTimeMillis() / 1000.0)
           .put("author", author)
-          .put("invocation_id", UUID.randomUUID().toString())
+          .put("invocation_id", invocationId)
           .put("branch", (String) null)
-          .put("partial", (Boolean) null)
+          .put("partial", false)
           .put("turn_complete", (Boolean) null)
           .put("error_code", (String) null)
           .put("error_message", (String) null)
           .put("interrupted", (Boolean) null);
+      if (!"user".equals(author)) {
+        event.put("finish_reason", "STOP");
+      }
       event.set("content", content);
-      event.set("actions", Json.object()
-          .put("skip_summarization", (Boolean) null)
-          .put("escalate", (Boolean) null)
-          .put("transfer_to_agent", (String) null));
+      event.set("actions", actions);
 
       var body = Json.object()
           .put("id", UUID.randomUUID().toString())

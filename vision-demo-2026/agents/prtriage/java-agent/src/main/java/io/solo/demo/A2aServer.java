@@ -31,7 +31,7 @@ final class A2aServer {
 
   private static final String CARD = """
       {
-        "capabilities": { "streaming": false },
+        "capabilities": { "streaming": true },
         "defaultInputModes": ["text"],
         "defaultOutputModes": ["text"],
         "description": "%s",
@@ -157,21 +157,44 @@ final class A2aServer {
       List<Event> events = List.of();
       String answer;
       try {
+        // No progress frames. ADK Java hands every event over when the turn FINISHES:
+        // instrumented, all eighteen tool calls arrived within six milliseconds of each
+        // other at the end of a seventy second run. Emitting a frame per call therefore
+        // dumps eighteen messages at once rather than showing progress, so the wait
+        // stays a wait and the transcript stays clean.
         events = Turn.of(agent, name).ask(prompt);
         answer = Turn.finalText(events);
       } catch (RuntimeException e) {
         var cause = e.getCause() == null ? e : e.getCause();
-        answer = "the agent failed: %s: %s".formatted(
-            cause.getClass().getSimpleName(),
-            cause.getMessage() == null ? "(no message)" : cause.getMessage());
-        Console.failed(answer);
-        e.printStackTrace();
+        var detail = cause.getMessage() == null ? "" : cause.getMessage();
+        // A turn can die because the conversation ADK assembled is malformed: a tool_use
+        // with no tool_result after it, which the provider rejects with a 400. It is not
+        // the question that is wrong, and a fresh session usually completes. Retry once,
+        // and only for that, so real failures still surface.
+        if (detail.contains("tool_use") && detail.contains("tool_result")) {
+          Console.failed("malformed tool history from the previous attempt, retrying once");
+          try {
+            events = Turn.of(agent, name).ask(prompt);
+            answer = Turn.finalText(events);
+          } catch (RuntimeException retry) {
+            var rc = retry.getCause() == null ? retry : retry.getCause();
+            answer = "the agent failed: %s: %s".formatted(rc.getClass().getSimpleName(),
+                rc.getMessage() == null ? "(no message)" : rc.getMessage());
+            Console.failed(answer);
+          }
+        } else {
+          answer = "the agent failed: %s: %s".formatted(cause.getClass().getSimpleName(),
+              detail.isEmpty() ? "(no message)" : detail);
+          Console.failed(answer);
+          e.printStackTrace();
+        }
       }
 
       // The UI reads the conversation from kagent's session store, not from this stream,
       // so both halves of the turn go in there too or the chat renders empty.
-      KagentSession.record(contextId, userId, "user", prompt);
-      KagentSession.record(contextId, userId, name, answer);
+      var invocationId = KagentSession.newInvocationId();
+      KagentSession.record(contextId, userId, invocationId, "user", prompt);
+      KagentSession.record(contextId, userId, invocationId, name + "_agent", answer);
 
       // 3. the answer as a message
       var agentMessage = Json.object()
