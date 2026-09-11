@@ -156,9 +156,9 @@ does not care, an Agent record just references an image.
 
 ## Beat 4 · Publish it, deploy it, read the trace
 
-**Run:** `make -C agents/prtriage/java-agent deploy`, which echoes the two `arctl apply`
-commands as it runs them and then waits for Ready. Then switch to the kagent UI, pick
-**prtriagejava**, paste the question, and open the Tracing tab.
+**Run:** the two `arctl apply` commands, which publish the agent and deploy it, then
+wait for Ready. Then switch to the kagent UI, pick **prtriagejava**, paste the question,
+and open the Tracing tab.
 
 **Say while it deploys:**
 
