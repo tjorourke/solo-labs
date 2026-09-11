@@ -1,0 +1,162 @@
+# The decode worker, and the routing sidecar in front of it.
+#
+# This is the pod the gateway actually sends every request to, monolithic or
+# disaggregated. The sidecar listens on 8000 and vLLM on 8200, so nothing reaches the
+# engine without the sidecar seeing it first.
+#
+# What the sidecar does with a request depends on one header:
+#
+#   no x-prefiller-host-port   run prefill and decode here, exactly as normal
+#   x-prefiller-host-port set  send the prompt to that prefill worker with
+#                              do_remote_decode=true, take back the KVTransferParams it
+#                              returns, and hand those to the local engine with
+#                              do_remote_prefill=true. The engine then pulls the KV
+#                              blocks from the prefill worker over NIXL and generates.
+#
+# The scheduler decides which of those happens, per request. That is why this lab can
+# show monolithic and disaggregated serving side by side on the same two cards without
+# redeploying anything.
+#
+# It mounts weights-vllm-1, the volume the load-balancing lab's second replica already
+# filled, so nothing is downloaded again.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-decode
+  namespace: models
+  labels: {app: vllm-pd}
+spec:
+  selector:
+    app: vllm-pd
+    llm-d.ai/role: decode
+  ports:
+    # The sidecar's port, not the engine's. Anything that dials 8200 directly bypasses
+    # the sidecar and can only ever run monolithic.
+    - {name: http, port: 8000, targetPort: 8000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-decode
+  namespace: models
+  labels: {app: vllm-pd}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      app: vllm-pd
+      llm-d.ai/role: decode
+  template:
+    metadata:
+      labels:
+        app: vllm-pd
+        llm-d.ai/role: decode
+        inference.networking.k8s.io/engine-type: vllm
+    spec:
+      enableServiceLinks: false
+      nodeSelector:
+        role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app: vllm-pd}
+              topologyKey: kubernetes.io/hostname
+      initContainers:
+        # A native sidecar: an initContainer with restartPolicy Always. That is not a
+        # trick, it is the supported way to get a sidecar that starts BEFORE the main
+        # container and stops after it. As an ordinary container it would race the
+        # engine on startup and, worse, could be killed first on shutdown, leaving
+        # in-flight requests with nowhere to go.
+        - name: routing-proxy
+          image: ghcr.io/llm-d/llm-d-router-disagg-sidecar:v0.10.0
+          restartPolicy: Always
+          args:
+            - --port=8000
+            # nixlv2 is the connector protocol between the sidecar and vLLM, and it has
+            # to match what --kv-transfer-config set on the engines. It is not the same
+            # setting as the NIXL backend (UCX vs LIBFABRIC); that one is about the
+            # wire, this one is about the handshake.
+            - --kv-connector=nixlv2
+            - --zap-log-level=1
+            # No TLS between the sidecar and the engines. They are in one pod and one
+            # namespace here. Turn it on for anything real.
+            - --secure-proxy=false
+          ports:
+            - {name: sidecar, containerPort: 8000}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+          resources:
+            requests: {cpu: "500m", memory: 256Mi}
+            limits: {memory: 512Mi}
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967
+          args:
+            - --model=/models/qwen3-coder-30b-fp8
+            - --served-model-name=qwen3-coder-30b
+            - --tensor-parallel-size=1
+            - --max-model-len=32768
+            - --gpu-memory-utilization=0.90
+            # 8200, behind the sidecar.
+            - --port=8200
+            # Must match the prefill worker exactly. NixlConnector refuses a pairing
+            # whose block sizes differ, and the error names neither pod.
+            - --block-size=128
+            - --kv-transfer-config
+            - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_buffer_device":"cuda","kv_connector_extra_config":{"backends":["UCX"]}}'
+            - --no-disable-hybrid-kv-cache-manager
+          ports:
+            - {name: http, containerPort: 8200}
+          env:
+            - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
+            - {name: VLLM_LOGGING_LEVEL, value: INFO}
+            # NO PYTORCH_CUDA_ALLOC_CONF HERE, unlike the load-balancing lab's manifest.
+            # vLLM refuses to start with both NixlConnector and
+            # expandable_segments:True: "KV connector NixlConnector is incompatible with
+            # PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True unless
+            # enable_cumem_allocator is also enabled". PyTorch's CUDA VMM allocator can
+            # remap the very KV pages NIXL has registered for RDMA. It is a startup
+            # ValidationError rather than anything subtle, but it is an easy line to
+            # carry over from a manifest that was not doing KV transfer.
+            - {name: VLLM_USE_DEEP_GEMM, value: "0"}
+            - {name: VLLM_MOE_USE_DEEP_GEMM, value: "0"}
+            - {name: VLLM_NO_USAGE_STATS, value: "1"}
+            - {name: DO_NOT_TRACK, value: "1"}
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 40Gi
+              cpu: "6"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: 24Gi
+              cpu: "4"
+          readinessProbe:
+            # Probe the engine directly. Probing through the sidecar would report Ready
+            # as soon as the proxy is up, which is about eight minutes before the model
+            # has loaded.
+            httpGet: {path: /health, port: 8200}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 60
+          volumeMounts:
+            - {name: weights, mountPath: /models}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: weights
+          persistentVolumeClaim:
+            claimName: weights-vllm-1
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 20Gi

@@ -1,0 +1,25 @@
+# eksctl marks no default StorageClass, and the in-tree gp2 class it leaves behind is
+# not default either. Anything that does not name a class then sits Pending on "no
+# storage class is set", which reads as a scheduling problem rather than a missing
+# default. The model volumes name gp3-fast explicitly; this also marks a default so
+# anything else added later does not trip over it.
+#
+# WaitForFirstConsumer is what pins each volume to the AZ its pod landed in. With
+# Immediate, a volume can be created in an AZ the GPU nodegroup does not run in and the
+# pod stays Pending on a node affinity conflict.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-fast
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+  # The weights are read once at load and then never again, but that one read is the
+  # difference between a two minute start and a ten minute one.
+  throughput: "500"
+  iops: "6000"

@@ -1,0 +1,46 @@
+# The gateway everything in the lab goes through.
+#
+# Port 80, no TLS, no external address. That is deliberate: this lab is about which
+# replica takes the next request, and everything that would normally sit in front of an
+# LLM endpoint (TLS, JWT, rate limits, an external load balancer) is a separate concern
+# that would triple the size of it. Put those back for anything real.
+#
+# WHICH IS WHY THE SERVICE TYPE IS PINNED. The gateway's Service defaults to
+# LoadBalancer, so applying the Gateway on its own gets you a public cloud load balancer
+# in front of an unauthenticated LLM endpoint, billed by the hour, and nothing on the
+# Gateway says so. AgentgatewayParameters overrides the generated Service, and the
+# Gateway points at it through spec.infrastructure.parametersRef.
+#
+# GATEWAY CLASS. ${GATEWAY_CLASS} is substituted at apply time: `agentgateway` on OSS,
+# `enterprise-agentgateway` on Solo Enterprise. Nothing else in this file, or anywhere
+# else in yaml/, differs between the two editions.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: inference-gateway-params
+  namespace: models
+spec:
+  service:
+    spec:
+      type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: inference-gateway
+  namespace: models
+spec:
+  gatewayClassName: ${GATEWAY_CLASS}
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: inference-gateway-params
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

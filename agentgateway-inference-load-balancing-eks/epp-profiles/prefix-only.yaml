@@ -1,0 +1,32 @@
+# Prefix affinity and nothing else.
+#
+# This one does not read a vLLM metric at all. The EPP keeps its own index: it chops
+# each prompt into blocks, hashes them, and records which replica it last sent each
+# block hash to. A new request that shares a prefix scores highest on the replica that
+# already served that prefix, on the assumption that replica still holds those blocks
+# in KV cache and can skip prefill for them.
+#
+# "On the assumption" is the important part. The index is the EPP's belief about the
+# replica's cache, not a reading of it. vLLM may have evicted the blocks under pressure
+# and the EPP will not know. autoTune is on by default and uses the servers' reported
+# cache size to keep the index roughly honest, but it stays an approximation.
+#
+# Run this alone and watch the two effects fight: every follow-up turn pins to one
+# replica, which is exactly what you want for cache hits and exactly wrong when that
+# replica is the one already at eight running sequences. That fight is why the default
+# profile carries all three scorers.
+inferenceExtension:
+  pluginsConfigFile: custom-plugins.yaml
+  pluginsCustomConfig:
+    custom-plugins.yaml: |
+      apiVersion: inference.networking.x-k8s.io/v1alpha1
+      kind: EndpointPickerConfig
+      plugins:
+      - type: prefix-cache-scorer
+      - type: max-score-picker
+      schedulingProfiles:
+      - name: default
+        plugins:
+        - pluginRef: max-score-picker
+        - pluginRef: prefix-cache-scorer
+          weight: 1

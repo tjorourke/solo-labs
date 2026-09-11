@@ -1,0 +1,35 @@
+# The scheduling profile the GIE chart ships, written out in full.
+#
+# Three scorers, weighted, and the highest total wins. Each scorer returns 0..1 per
+# replica, the weights multiply, and max-score-picker takes the top. That is the entire
+# algorithm, and it is worth saying out loud because "AI-aware routing" sounds like it
+# must be more than that.
+#
+#   queue-scorer                  vllm:num_requests_waiting, inverted
+#   kv-cache-utilization-scorer   vllm:kv_cache_usage_perc, inverted
+#   prefix-cache-scorer           the EPP's own index of which replica saw which prefix
+#
+# The weights are the chart's, not mine: prefix is worth more than the other two because
+# a prefix hit skips prefill entirely, which is a bigger win than avoiding a slightly
+# fuller queue.
+inferenceExtension:
+  pluginsConfigFile: custom-plugins.yaml
+  pluginsCustomConfig:
+    custom-plugins.yaml: |
+      apiVersion: inference.networking.x-k8s.io/v1alpha1
+      kind: EndpointPickerConfig
+      plugins:
+      - type: queue-scorer
+      - type: kv-cache-utilization-scorer
+      - type: prefix-cache-scorer
+      - type: max-score-picker
+      schedulingProfiles:
+      - name: default
+        plugins:
+        - pluginRef: max-score-picker
+        - pluginRef: queue-scorer
+          weight: 2
+        - pluginRef: kv-cache-utilization-scorer
+          weight: 2
+        - pluginRef: prefix-cache-scorer
+          weight: 3

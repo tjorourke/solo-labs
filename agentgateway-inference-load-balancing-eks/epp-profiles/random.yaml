@@ -1,0 +1,24 @@
+# No scoring at all: the EPP picks a replica at random.
+#
+# This is the control. The pool path, the ExtProc call to the Endpoint Picker, the
+# x-gateway-destination-endpoint header and the gateway dialling what it was told are
+# all exactly as they are in every other profile. The only thing removed is the
+# decision.
+#
+# Run it to check that a result you are pleased with came from the scoring and not from
+# the plumbing. If random matches the default profile on your workload, the honest
+# conclusion is that your workload does not need any of this, not that the lab is
+# broken. A pool of replicas serving short, unrelated, equal-cost prompts is genuinely
+# a round-robin problem.
+inferenceExtension:
+  pluginsConfigFile: custom-plugins.yaml
+  pluginsCustomConfig:
+    custom-plugins.yaml: |
+      apiVersion: inference.networking.x-k8s.io/v1alpha1
+      kind: EndpointPickerConfig
+      plugins:
+      - type: random-picker
+      schedulingProfiles:
+      - name: default
+        plugins:
+        - pluginRef: random-picker

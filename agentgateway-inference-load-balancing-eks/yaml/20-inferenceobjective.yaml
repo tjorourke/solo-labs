@@ -1,0 +1,40 @@
+# Serving priority for requests against the pool.
+#
+# A request opts into a tier by naming the objective in the
+# x-gateway-inference-objective header; no header means the pool's default. Higher
+# priority is dispatched first when the pool is under contention, fairness is only
+# tracked within a tier, and negative priorities mark work that can be shed entirely.
+#
+# Nothing in the lab's benchmarks sets the header, so both tiers are here as the obvious
+# next thing to try rather than as part of the measurement: send the skew scenario's
+# background load as `batch` and the measured requests as `interactive` and watch what
+# changes. It is a different lever from the scorers. The scorers decide WHERE a request
+# goes; this decides WHEN it is dispatched once it is there.
+#
+# Note the API group. InferenceObjective is still x-k8s.io/v1alpha2 in GIE v1.4.0 while
+# InferencePool has graduated to inference.networking.k8s.io/v1. They are not the same
+# group, and a poolRef that copies the objective's own apiVersion silently references
+# nothing.
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceObjective
+metadata:
+  name: interactive
+  namespace: models
+spec:
+  priority: 10
+  poolRef:
+    group: inference.networking.k8s.io
+    kind: InferencePool
+    name: vllm-pool
+---
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceObjective
+metadata:
+  name: batch
+  namespace: models
+spec:
+  priority: 0
+  poolRef:
+    group: inference.networking.k8s.io
+    kind: InferencePool
+    name: vllm-pool

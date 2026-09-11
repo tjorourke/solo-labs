@@ -1,0 +1,58 @@
+# Where the load comes from.
+#
+# A pod that does nothing but sleep, on the platform nodes. scripts/bench.sh pipes
+# bench.py into it over kubectl exec and reads the output back, which is the same
+# pattern the model-routing lab uses for its timing script: no image to build, no
+# ConfigMap to keep in step with the file on disk, and the script you read in the repo
+# is byte for byte the script that ran.
+#
+# WHY NOT RUN THE LOAD FROM A LAPTOP. A kubectl port-forward adds a hop through the API
+# server and its own buffering, and time to first token is exactly the measurement that
+# hop distorts. Generating load inside the cluster means the numbers are the gateway and
+# the model servers, not the tunnel.
+#
+# WHY NOT ON THE GPU NODES. The model servers want their CPUs for tokenisation and
+# sampling. A load generator sharing those cores competes with the thing it is
+# measuring, and the effect grows with concurrency, which is the axis being varied.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: models
+  labels: {app: loadgen}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: loadgen}
+  template:
+    metadata:
+      labels: {app: loadgen}
+    spec:
+      # Same trap as the model pods: a Service in this namespace would inject *_PORT
+      # variables. Nothing here reads them, but the habit is cheap.
+      enableServiceLinks: false
+      nodeSelector:
+        role: platform
+      containers:
+        - name: loadgen
+          image: python:3.12-slim
+          command: ["sleep", "infinity"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          env:
+            # bench.py's defaults, set here so scripts/bench.sh stays short and so the
+            # pod is usable by hand with a bare `python3 - mixed`.
+            - {name: GATEWAY_URL, value: "http://inference-gateway.models.svc.cluster.local"}
+            - {name: MODEL_NAME, value: "qwen3-coder-30b"}
+            - name: REPLICAS
+              value: "vllm-0.vllm-headless.models.svc.cluster.local:8000,vllm-1.vllm-headless.models.svc.cluster.local:8000"
+          resources:
+            # Enough headroom to actually drive the concurrency it is asked for. A
+            # throttled load generator produces a flat, reassuring latency curve that is
+            # measuring the cgroup and nothing else.
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "3", memory: 2Gi}

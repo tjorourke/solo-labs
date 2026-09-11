@@ -1,0 +1,24 @@
+# KV cache utilisation and nothing else.
+#
+# vllm:kv_cache_usage_perc on each replica, inverted, so the emptier cache wins. This is
+# a capacity signal, not a locality one: it says how close a replica is to evicting
+# blocks, not whether it holds the blocks this request needs.
+#
+# It moves more slowly than the queue signal, because the cache fills over a run of
+# requests rather than per request, so expect it to look sluggish next to queue-only on
+# a short burst and to matter more on a long one.
+inferenceExtension:
+  pluginsConfigFile: custom-plugins.yaml
+  pluginsCustomConfig:
+    custom-plugins.yaml: |
+      apiVersion: inference.networking.x-k8s.io/v1alpha1
+      kind: EndpointPickerConfig
+      plugins:
+      - type: kv-cache-utilization-scorer
+      - type: max-score-picker
+      schedulingProfiles:
+      - name: default
+        plugins:
+        - pluginRef: max-score-picker
+        - pluginRef: kv-cache-utilization-scorer
+          weight: 1

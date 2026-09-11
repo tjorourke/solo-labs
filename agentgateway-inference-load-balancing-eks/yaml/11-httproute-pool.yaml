@@ -1,0 +1,34 @@
+# The same route with one thing changed: the backendRef is an InferencePool, not a
+# Service.
+#
+# That one swap is the whole mechanism. agentgateway stops choosing the endpoint itself
+# and hands the choice to the pool's Endpoint Picker, which scores every replica on
+# live vLLM metrics and returns one. The gateway dials what it is told.
+#
+# Note the group. `inference.networking.k8s.io` is the v1 InferencePool API, and it has
+# to be spelled out: a backendRef with no group defaults to core, which means Service.
+# The pool is deliberately named vllm-pool and the Service vllm so that a dropped group
+# here fails loudly with an unresolved backend. Name them the same and it does not fail
+# at all. You get the Service, round-robin, no error on the route, and a lab that
+# appears to prove the Endpoint Picker does nothing.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-route
+  namespace: models
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: inference-gateway
+  rules:
+    - backendRefs:
+        - group: inference.networking.k8s.io
+          kind: InferencePool
+          name: vllm-pool
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: 300s

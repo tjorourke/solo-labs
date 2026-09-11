@@ -1,0 +1,152 @@
+# The prefill worker. One card, no sidecar, and it never generates a full answer.
+#
+# Its whole job is to read the prompt, build the KV cache for it, emit one token, and
+# tell the caller where the blocks are. The decode worker then pulls those blocks over
+# NIXL and generates from there.
+#
+# It mounts weights-vllm-0, the volume the load-balancing lab's first replica already
+# filled. That lab's StatefulSet is scaled to zero before this is applied (see
+# scripts/01-deploy.sh), so the ReadWriteOnce claim is free. Nothing is downloaded again.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-prefill
+  namespace: models
+  labels: {app: vllm-pd}
+spec:
+  selector:
+    app: vllm-pd
+    llm-d.ai/role: prefill
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-prefill
+  namespace: models
+  labels: {app: vllm-pd}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # single RWO volume, no rolling second pod
+  selector:
+    matchLabels:
+      app: vllm-pd
+      llm-d.ai/role: prefill
+  template:
+    metadata:
+      labels:
+        app: vllm-pd
+        # This label is the entire mechanism by which the scheduler tells the two roles
+        # apart. llm-d's prefill-filter and decode-filter select on it. Get it wrong and
+        # the disagg profile handler finds no candidates for one of its stages, which
+        # surfaces as every request quietly running monolithic on the decode worker.
+        llm-d.ai/role: prefill
+        inference.networking.k8s.io/engine-type: vllm
+    spec:
+      enableServiceLinks: false
+      nodeSelector:
+        role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      # Keep prefill and decode on different nodes. On this cluster the device plugin
+      # already guarantees it (one card per node, whole cards only), but stating it
+      # means the manifest still does the right thing on a multi-GPU instance type.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app: vllm-pd}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: vllm
+          # The same pinned digest the load-balancing lab uses: vLLM 0.27.1, the build
+          # proven to have working Blackwell kernels for this card. It also carries
+          # NIXL: the published vllm-openai release images are built with
+          # INSTALL_KV_CONNECTORS=true, which installs nixl 1.3.1. A vLLM image built
+          # without that flag has no NixlConnector and fails at engine init with an
+          # unknown kv_connector, so check before swapping the image.
+          image: vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967
+          args:
+            - --model=/models/qwen3-coder-30b-fp8
+            - --served-model-name=qwen3-coder-30b
+            - --tensor-parallel-size=1
+            - --max-model-len=32768
+            - --gpu-memory-utilization=0.90
+            - --port=8000
+            # 128, not the default 16. The KV transfer moves whole blocks, and a larger
+            # block means fewer, bigger transfers, which is what a TCP path wants. It
+            # has to match on both sides: NixlConnector refuses a pairing whose block
+            # sizes differ.
+            - --block-size=128
+            # NixlConnector with the UCX backend. UCX uses RDMA where it exists and
+            # falls back to TCP where it does not, and on g7e.2xlarge it does not: that
+            # size has no EFA (see the README table). kv_role kv_both on BOTH sides is
+            # what llm-d ships; the roles are decided per request by the headers, not by
+            # this field.
+            - --kv-transfer-config
+            - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_buffer_device":"cuda","kv_connector_extra_config":{"backends":["UCX"]}}'
+            - --no-disable-hybrid-kv-cache-manager
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            # How the decode worker finds this one. vLLM publishes this address in the
+            # KVTransferParams it returns, and decode dials it over ZMQ to fetch the
+            # NIXL metadata before the first pull. Leave it unset and it advertises
+            # something unroutable from another pod, and every transfer times out with
+            # nothing in either log naming the address.
+            - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
+            # vLLM's default HTTP keep-alive is 5s and the routing sidecar's idle
+            # connection timeout is 90s, so a reused connection gets a TCP RST. The
+            # symptom is intermittent 502s under load that vanish when you retry by
+            # hand, which is a miserable thing to chase.
+            - {name: VLLM_HTTP_TIMEOUT_KEEP_ALIVE, value: "120"}
+            - {name: VLLM_LOGGING_LEVEL, value: INFO}
+            # NO PYTORCH_CUDA_ALLOC_CONF HERE, unlike the load-balancing lab's manifest.
+            # vLLM refuses to start with both NixlConnector and
+            # expandable_segments:True: "KV connector NixlConnector is incompatible with
+            # PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True unless
+            # enable_cumem_allocator is also enabled". PyTorch's CUDA VMM allocator can
+            # remap the very KV pages NIXL has registered for RDMA. It is a startup
+            # ValidationError rather than anything subtle, but it is an easy line to
+            # carry over from a manifest that was not doing KV transfer.
+            # Same DeepGEMM crash as the other lab: vLLM 0.27.1 picks the DEEPGEMM FP8
+            # MoE backend on this card and dies loading weights with
+            # "Assertion error (layout.hpp:60): Unknown SF transformation".
+            - {name: VLLM_USE_DEEP_GEMM, value: "0"}
+            - {name: VLLM_MOE_USE_DEEP_GEMM, value: "0"}
+            - {name: VLLM_NO_USAGE_STATS, value: "1"}
+            - {name: DO_NOT_TRACK, value: "1"}
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 40Gi
+              cpu: "6"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: 24Gi
+              cpu: "4"
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 60
+          volumeMounts:
+            - {name: weights, mountPath: /models}
+            # NIXL and UCX stage transfers through shared memory. The default 64MB
+            # /dev/shm is far too small and the failure is a mid-transfer crash rather
+            # than a startup error.
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: weights
+          persistentVolumeClaim:
+            claimName: weights-vllm-0
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 20Gi

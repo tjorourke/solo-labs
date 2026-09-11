@@ -1,0 +1,38 @@
+# The baseline route: backendRef is an ordinary Kubernetes Service.
+#
+# This is what most people ship first. The gateway resolves the Service to its endpoints
+# and spreads requests across them, and it is a perfectly good load balancer for
+# stateless work where every request costs about the same. Neither of those is true of
+# LLM inference: one request is a 40 token question and the next is a 6,000 token
+# document, the cost of the second depends on whether the replica already holds its
+# prefix in KV cache, and a replica that is already eight sequences deep will queue the
+# next one rather than run it.
+#
+# Nothing here is wrong. It is just blind: the gateway has no way to know any of that.
+#
+# scripts/route.sh service  applies this file
+# scripts/route.sh pool     applies 11-httproute-pool.yaml instead
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-route
+  namespace: models
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: inference-gateway
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: vllm
+          port: 8000
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        # Generous, because a queued request on a saturated replica is exactly the thing
+        # being measured and a short timeout would hide it as an error instead.
+        request: 300s

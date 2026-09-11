@@ -1,0 +1,275 @@
+# One model, two replicas, one GPU card each.
+#
+# This is the difference between this lab and the model-routing one next door. There,
+# two different models sit behind one endpoint and the interesting question is which
+# model suits the prompt. Here both replicas are identical, so the model is never in
+# question and the only question left is which card should take the next request.
+#
+# A StatefulSet, not a Deployment, and not two Deployments. gp3 is ReadWriteOnce, so the
+# replicas cannot share one volume, and volumeClaimTemplates gives each pod its own
+# without writing the same manifest out twice. podManagementPolicy: Parallel matters:
+# the default OrderedReady starts vllm-1 only after vllm-0 is Ready, which serialises
+# two 31 GB downloads and turns a 20 minute first run into 40.
+#
+# --max-num-seqs is the field that makes the lab demonstrable. vLLM will happily run
+# far more than eight sequences at once on a 96 GB card, and if it does, no amount of
+# concurrency from the load generator ever builds a queue, vllm:num_requests_waiting
+# stays at zero on both replicas and the queue scorer has nothing to score. Capping it
+# low is a lab device, not a production setting. Raise it and the scorer still works;
+# you just need far more load before the difference is visible.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: models
+---
+# The governing Service for the StatefulSet. Headless, so each pod gets a stable DNS
+# name; nothing in the lab dials those names, but a StatefulSet requires one.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-headless
+  namespace: models
+  labels: {app: vllm}
+spec:
+  clusterIP: None
+  selector: {app: vllm}
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}
+---
+# The ordinary Service. This is the baseline the lab measures first: what you get if you
+# put a gateway in front of a model pool and think no further about it.
+#
+# It is NOT round-robin, and assuming it was cost this lab an afternoon. agentgateway
+# picks two endpoints at random and takes the better-scored one (power of two choices),
+# where the score is health / (1 + latency x (1 + 0.1 x pending requests)). So the
+# baseline already backs off a slow or backed-up replica on its own, using its own
+# observed latency and in-flight counts. Measured here, it avoided a deliberately
+# saturated replica about as well as the queue scorer did.
+#
+# Which sharpens what the Endpoint Picker is actually for. It is not basic load
+# spreading, because the gateway already does that. It is the things in-flight counts
+# cannot see: which replica holds THIS prompt's prefix, and how close a replica is to
+# evicting cache blocks, before either turns into latency.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: models
+  labels: {app: vllm}
+spec:
+  selector: {app: vllm}
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vllm
+  namespace: models
+  labels: {app: vllm}
+spec:
+  serviceName: vllm-headless
+  replicas: 2
+  # Both replicas start, and both download, at the same time.
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels: {app: vllm}
+  template:
+    metadata:
+      labels:
+        app: vllm
+        # The Endpoint Picker reads this label to decide which metric names to scrape.
+        # Absent, it falls back to its default engine, which is vllm anyway, so this is
+        # documentation more than configuration. It stops being documentation the day
+        # someone adds an SGLang replica to the same pool.
+        inference.networking.k8s.io/engine-type: vllm
+    spec:
+      # A Service named vllm injects VLLM_PORT=tcp://10.x.x.x:8000 into every pod that
+      # can see it, and vLLM parses VLLM_* environment variables as its own config. The
+      # engine then dies on a port it was never given. Turning service links off is the
+      # fix; renaming the Service is the other one.
+      enableServiceLinks: false
+      # fsGroup so the non-root init container can write the weights onto the volume.
+      # The vLLM container runs as root and reads them regardless.
+      securityContext:
+        fsGroup: 1000
+      nodeSelector:
+        role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      # One replica per node, enforced rather than assumed. The device plugin already
+      # makes it true (one card per node, whole cards only), but if the nodegroup ever
+      # grows a multi-GPU instance type both replicas could land on one node and the
+      # lab would be measuring a load balancer with one destination.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app: vllm}
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        # The weights are fetched here rather than by a separate Job on purpose. The
+        # volume is gp3 with WaitForFirstConsumer, so it binds in whichever AZ the pod
+        # lands in. A standalone Job can bind it to the wrong node and leave the pod
+        # Pending forever with no obvious cause. As an init container the bind and the
+        # consumer are the same pod, so that cannot happen. It is idempotent: on every
+        # restart after the first it finds the weights and exits.
+        - name: fetch-weights
+          image: python:3.12-slim
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          env:
+            - {name: MODEL_ID, value: Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8}
+            - {name: DEST, value: /models/qwen3-coder-30b-fp8}
+            # Xet is the Hub's newer chunked transfer backend and it fails on sharded
+            # repos like this one with "File reconstruction error: Internal Writer
+            # Error: Background writer channel closed", which crash-loops the init
+            # container with nothing pointing at the transfer layer. Plain HTTP is
+            # slower and finishes.
+            - {name: HF_HUB_DISABLE_XET, value: "1"}
+            # uid 1000 owns neither /root nor site-packages, so give pip and the HF
+            # cache somewhere writable and install to a target dir.
+            - {name: HOME, value: /tmp}
+            - {name: PYTHONPATH, value: /tmp/pylibs}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              # Skip only on a marker written AFTER a successful download. Testing for a
+              # config file instead is wrong and fails silently: config.json is small
+              # and arrives first, so an interrupted pull leaves it present, the next
+              # run skips, and vLLM dies later on "Weight files referenced in index but
+              # missing". snapshot_download resumes, so re-running is cheap.
+              if [ -f "$DEST/.download-complete" ]; then
+                echo "==> weights already on the volume"; du -sh "$DEST"; exit 0
+              fi
+              pip install -q --target=/tmp/pylibs "huggingface_hub[hf_transfer]"
+              echo "==> pulling $MODEL_ID (about 31 GB)"
+              python - <<'PY'
+              import os
+              from huggingface_hub import snapshot_download
+              snapshot_download(
+                  repo_id=os.environ["MODEL_ID"],
+                  local_dir=os.environ["DEST"],
+                  max_workers=4,
+              )
+              PY
+              # Blob symlinks are dead weight on the volume.
+              rm -rf "$DEST/.cache"
+              touch "$DEST/.download-complete"
+              du -sh "$DEST"
+          volumeMounts:
+            - {name: weights, mountPath: /models}
+          resources:
+            requests: {cpu: "2", memory: 8Gi}
+            # 24Gi, not 12. hf_transfer buffers aggressively and a large single-file
+            # download OOMKills at 12Gi, which surfaces as Init:OOMKilled with no
+            # explanation of what wanted the memory.
+            limits: {cpu: "6", memory: 24Gi}
+      containers:
+        - name: vllm
+          # Pinned by digest: vLLM 0.27.1, the build proven to have working Blackwell
+          # kernels for this card. A floating tag here is a lab that breaks on a
+          # Tuesday for reasons nothing in the repo records.
+          image: vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          args:
+            - --model=/models/qwen3-coder-30b-fp8
+            # Both replicas serve the same name. There is no routing decision to make
+            # about which model answers, which is the point.
+            - --served-model-name=qwen3-coder-30b
+            - --tensor-parallel-size=1
+            # 8192, not the 32768 this model supports. It has to come down with the KV
+            # cache below: vLLM refuses to start if the cache cannot hold even one
+            # request at the full context length, and the error is a bare ValueError out
+            # of _check_enough_kv_cache_memory that names neither flag. The lab's
+            # documents are about 3,000 tokens, so 8192 is generous for it and wrong for
+            # anything else.
+            - --max-model-len=8192
+            - --gpu-memory-utilization=0.90
+            # See the header. Eight running sequences is the cap that makes a queue
+            # form under the lab's load, so vllm:num_requests_waiting has something in
+            # it for the queue scorer to read.
+            - --max-num-seqs=8
+            # 2 GiB of KV cache, against the ~55 GiB this card would otherwise give it.
+            # The second lab device, and the one without which the lab proves nothing.
+            #
+            # Left alone, a 96 GB card holds about 600,000 tokens of KV cache. No
+            # realistic lab workload comes close, so NOTHING IS EVER EVICTED: whichever
+            # replica a request lands on, it caches the prefix and keeps it, both
+            # replicas gradually end up holding everything, and every prefix lookup hits
+            # no matter who scheduled it. Measured on this cluster, the Endpoint Picker
+            # and the gateway's own load balancer scored within two points of each other
+            # on prefix hit rate, because cache locality was free.
+            #
+            # Cache-aware scheduling only earns its place when the cache is under
+            # pressure. 2 GiB is roughly 22,000 tokens, so a corpus of a dozen 3,000
+            # token documents no longer fits and the replicas have to specialise. That
+            # is the regime a busy production server is actually in; this card is not,
+            # and shrinking it is how the lab reaches the same regime on two cards.
+            - --kv-cache-memory=2147483648
+            - --port=8000
+            # Prefix caching is ON by default in the vLLM V1 engine and is not passed
+            # here on purpose: --enable-prefix-caching has moved and been renamed more
+            # than once, and a flag the build does not recognise is a crash-loop, not a
+            # warning. Confirm it is on from vllm:prefix_cache_queries appearing in
+            # /metrics rather than from a flag being present.
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            - {name: VLLM_LOGGING_LEVEL, value: INFO}
+            - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+            # DeepGEMM is broken for this model on this card. vLLM 0.27.1 picks the
+            # DEEPGEMM FP8 MoE backend automatically on the RTX PRO 6000 Server and
+            # then dies in the scale-factor layout transform while loading weights:
+            #   RuntimeError: Assertion error (layout.hpp:60): Unknown SF transformation
+            # It is a hard crash-loop at engine init, not a slow path, and the pod
+            # restarts forever with the real cause 60 lines up the traceback. Turning
+            # DeepGEMM off drops vLLM to the next backend in its own preference list,
+            # which loads and serves. Re-test on a newer vLLM before removing these:
+            # this is a version-and-card bug, not a design.
+            - {name: VLLM_USE_DEEP_GEMM, value: "0"}
+            - {name: VLLM_MOE_USE_DEEP_GEMM, value: "0"}
+            - {name: VLLM_NO_USAGE_STATS, value: "1"}
+            - {name: DO_NOT_TRACK, value: "1"}
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 40Gi
+              cpu: "6"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: 24Gi
+              cpu: "4"
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 60
+          volumeMounts:
+            - {name: weights, mountPath: /models}
+  volumeClaimTemplates:
+    - metadata:
+        name: weights
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3-fast
+        resources:
+          requests:
+            # 31.2 GB of weights, but 100Gi not 60. huggingface_hub stages each file
+            # into .cache inside the target directory and moves it after, so peak usage
+            # is close to double the final size. At 60Gi the download dies on
+            # "[Errno 28] No space left on device" most of the way through, having
+            # already spent the transfer.
+            storage: 100Gi

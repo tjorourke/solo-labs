@@ -1,0 +1,83 @@
+# The cluster this lab runs on. Standalone: it shares nothing with any other lab, and
+# in particular it is not the model-routing lab's cluster. That lab pins a different
+# model to each card. This one needs the SAME model on both, so the two cannot share.
+#
+# WHY ONE AZ FOR THE GPUs. Each replica keeps its own copy of the weights on a gp3
+# volume, and a gp3 volume is bound to the AZ it was created in. Spread the nodegroup
+# across AZs and a scale-up that lands in a different one leaves the pod Pending
+# forever, with events that do not say why. Pin it, and each node comes back to its
+# own volume every time.
+#
+# WHY g7e.2xlarge. One RTX PRO 6000 Server with 96 GB, which holds the model on its own
+# with room for a large KV cache, so there is no tensor parallelism to configure and no
+# NCCL. London GPU capacity moves hour to hour: before a rehearsal, hold the nodes with
+# an On-Demand Capacity Reservation in this AZ rather than hoping.
+#
+#   aws ec2 create-capacity-reservation --instance-type g7e.2xlarge \
+#     --instance-platform Linux/UNIX --availability-zone eu-west-2a --instance-count 2 \
+#     --instance-match-criteria open --end-date-type limited --end-date <when you finish>
+#
+# instance-match-criteria=open means the nodegroup consumes it with no extra config.
+# ALWAYS set an end date: a reservation bills the full hourly rate with nothing in it.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: inference-lb
+  region: eu-west-2
+  version: "1.34"
+  tags:
+    Owner: torourke
+    Project: inference-lb-lab
+
+iam:
+  withOIDC: true
+
+addons:
+  # Without the EBS CSI driver every PVC in the lab stays Pending, and the events blame
+  # the volume rather than the missing driver.
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+
+managedNodeGroups:
+  - name: platform
+    # m6i.2xlarge, not xlarge. The Endpoint Picker's chart defaults to a 4-CPU request,
+    # which does not fit on a 4-vCPU node once the system pods have taken their share,
+    # and the EPP sits Pending on Insufficient cpu while the Gateway reports Programmed.
+    # The lab lowers that request anyway (scripts/03-pool.sh), and the bigger node keeps
+    # the load generator off the same CPUs as the scheduler it is measuring.
+    instanceType: m6i.2xlarge
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 3
+    volumeSize: 80
+    privateNetworking: true
+    labels:
+      role: platform
+
+  - name: gpu
+    instanceType: g7e.2xlarge
+    # Two nodes, one replica of one model each. The device plugin hands out whole GPUs,
+    # so a second replica on the same node stays Pending on Insufficient nvidia.com/gpu.
+    # Two is the whole point of the lab: there is nothing to balance across one.
+    desiredCapacity: 2
+    minSize: 0
+    maxSize: 2
+    # 200 GB because the vLLM image alone is 9 GB and the weights are pulled through
+    # the node before they reach the volume.
+    volumeSize: 200
+    privateNetworking: true
+    availabilityZones:
+      - eu-west-2a
+    labels:
+      role: gpu
+    taints:
+      # Keeps everything that is not a model off the expensive nodes. The vLLM
+      # StatefulSet tolerates it; nothing else does.
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule

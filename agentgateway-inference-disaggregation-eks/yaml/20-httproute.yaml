@@ -1,0 +1,35 @@
+# The route, pointed at the P/D pool.
+#
+# Same HTTPRoute name as the load-balancing lab's, so applying this replaces that one
+# and scripts/99-restore.sh puts it back. The only change is which InferencePool the
+# backendRef names.
+#
+# Nothing else about the gateway is touched by this lab. Not the Gateway, not the
+# GatewayClass, not the AgentgatewayParameters, not a single policy. That is the claim
+# worth testing: disaggregated serving is a change to the model servers and the
+# scheduler, and the gateway does not need to know it happened.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-route
+  namespace: models
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: inference-gateway
+  rules:
+    - backendRefs:
+        - group: inference.networking.k8s.io
+          kind: InferencePool
+          name: vllm-pd
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        # Longer than the other lab's. A cold NIXL pairing costs a one-off handshake of
+        # a few seconds on the first request between a given prefill and decode pair,
+        # and a timeout that clips it makes the first request of every session look like
+        # a failure.
+        request: 600s

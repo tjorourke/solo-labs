@@ -1,0 +1,41 @@
+# Helm values applied to the Endpoint Picker on every profile switch.
+#
+# The chart's own resource defaults are sized for a production EPP under scale testing:
+# 4 CPU and 8Gi requested. On the platform nodes here that is most of a node for a
+# process that is doing arithmetic on a handful of gauges, and on a 4-vCPU node it does
+# not schedule at all: the EPP sits Pending on Insufficient cpu while the Gateway
+# happily reports Programmed and every request falls through to the failure mode. Size
+# it for the lab and say so, rather than copying these numbers into anything real.
+inferenceExtension:
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      memory: 4Gi
+
+  # FailOpen is the chart default and it is kept deliberately. If the EPP dies, the
+  # gateway falls back to picking an endpoint itself, so the pool degrades to
+  # round-robin instead of returning 503. That is the right trade for inference, and
+  # it is also the thing that will hide a broken EPP from you: a lab that looks like it
+  # is scoring and is not. scripts/03-pool.sh checks the EPP is actually being consulted
+  # rather than trusting the route status.
+  failureMode: FailOpen
+
+  flags:
+    # v: 4 prints one line per scheduling decision, with the score each replica got.
+    # That is the evidence for the whole lab, so it is on by default here. It is far too
+    # noisy for production.
+    v: 4
+
+inferencePool:
+  targetPorts:
+    - number: 8000
+  modelServerType: vllm
+  apiVersion: inference.networking.k8s.io/v1
+  modelServers:
+    matchLabels:
+      app: vllm
+
+provider:
+  name: none
