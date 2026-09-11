@@ -457,19 +457,23 @@ difference is that the platform applies it once, outside the agent, the same way
 every agent, and refuses a direct call that skips the model's tool list altogether.
 Beat 6's denied request never went near the model.
 
-**"What stops the agent just calling api.github.com directly?"** At the network layer,
-in this lab, nothing, and you should say so rather than be caught by it. What stops it
-being worth doing is that the credential is not in the pod. I have tested the bypass:
-from inside the agent, a direct call to GitHub reads public repositories, cannot read a
-private one, and cannot write anything at all. So going around the gateway costs it
-every repository you care about and every verb that changes something.
+**"What stops the agent just calling api.github.com directly?"** A NetworkPolicy, and it
+is worth showing rather than claiming. Both of the agent's ways out already end at a
+gateway: tools at the GitHub waypoint, the model at a second waypoint in front of
+Anthropic. So the policy allows these agents to reach DNS, their own namespace and the
+trace collector, and has no rule for the internet at all. The cell runs `wget` against
+api.github.com from inside the agent and it fails.
 
-If you want the network closed too, that is an egress control rather than a tool
-control: a NetworkPolicy or an ambient egress policy allowing the agent to reach the
-waypoint, the model endpoint and the kagent controller, and nothing else. Worth knowing
-before you try it live that an ambient egress policy has to allow istiod and istio-csr
-as well, or certificate renewal fails about forty five minutes later and the mesh stops
-working long after the change looked fine.
+Two layers, and they answer different questions. The gateway policy decides which tools
+this agent may call. The NetworkPolicy decides whether it can talk to anything else at
+all. Neither is a substitute for the other: without the network rule the tool policy
+governs a route the agent can simply decline to use, and without the tool policy the
+network rule lets it do anything the credential allows.
+
+Worth saying plainly if asked: this was wrong in an earlier version of the lab. The
+notebook claimed the gateway was the agent's only route out when nothing enforced it,
+and a `wget` from inside the pod returned GitHub data. Preflight now runs that same
+`wget` and fails if it succeeds.
 
 **"Where does the identity come from?"** ztunnel, from the workload's SPIFFE
 certificate. The policy matches `source.identity.serviceAccount`, and the agent has no

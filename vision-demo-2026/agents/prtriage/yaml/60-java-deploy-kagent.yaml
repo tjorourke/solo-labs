@@ -16,4 +16,7 @@ spec:
   runtimeRef: { kind: Runtime, name: kind-kagent }
   env:
     SERVE: "true"
+    # Every call this agent makes to the outside now leaves through a gateway: tools
+    # through the GitHub waypoint, the model through this one.
+    ANTHROPIC_BASE_URL: "http://anthropic.kagent.svc.cluster.local"
     PORT: "8080"

@@ -48,9 +48,12 @@ public final class ReleaseReport {
    * and no credential for anything the gateway fronts.
    */
   private static LlmAgent agent(McpToolset gateway, Config config) {
-    var anthropic = AnthropicOkHttpClient.builder()
-        .apiKey(config.anthropicApiKey())
-        .build();
+    var anthropicBuilder = AnthropicOkHttpClient.builder().apiKey(config.anthropicApiKey());
+    // Through the gateway when there is one, so the agent needs no route to the internet.
+    if (!config.anthropicBaseUrl().isBlank()) {
+      anthropicBuilder.baseUrl(config.anthropicBaseUrl());
+    }
+    var anthropic = anthropicBuilder.build();
     var skill = config.instruction();
 
     return LlmAgent.builder()

@@ -11,7 +11,7 @@ spec:
   - kind: MCPServer
     name: github-mcp
     tag: latest
-  modelName: claude-sonnet-4-5
+  modelName: claude-haiku-4-5
   modelProvider: anthropic
   source:
     image: localhost:5001/prtriage-java:latest

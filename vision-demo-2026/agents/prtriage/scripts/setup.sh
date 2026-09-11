@@ -82,6 +82,15 @@ echo
 # been running here all along, wired to the same approved GitHub server in the
 # catalogue, and nobody noticed it could use the credential until a policy said who may.
 # Wheeling it in half way through step 6 would make it look like a prop.
+# The model's way out, and then the rule that closes every other way out. Both are
+# cluster setup: an agent that can reach the internet is the state this demo exists to
+# argue against, so it should never be the state the demo starts in.
+echo "== the model route, and the egress policy that makes it the only one =="
+$K apply -f "$HERE/../yaml/90-model-egress.yaml"
+$K -n kagent wait --for=condition=Programmed gateway/model-waypoint --timeout=180s >/dev/null
+$K apply -f "$HERE/../yaml/95-egress-policy.yaml"
+echo
+
 echo "== the changelog agent (another team's, deliberately not in the policy) =="
 arctl apply -f "$HERE/../yaml/85-unscoped-agent.yaml"
 until $K -n kagent get deploy/changelogjava >/dev/null 2>&1; do sleep 2; done

@@ -15,6 +15,7 @@ import java.util.Optional;
 record Config(
     String mcpUrl,
     String anthropicApiKey,
+    String anthropicBaseUrl,
     String modelName,
     String repository,
     Path skill,
@@ -28,7 +29,13 @@ record Config(
     return new Config(
         resolveMcpUrl(),
         required("ANTHROPIC_API_KEY"),
-        env("MODEL").orElse("claude-haiku-4-5"),
+        // Empty means "straight to api.anthropic.com". Set, it is the in-cluster name of
+        // the gateway that fronts the model, which is what lets egress be closed.
+        env("ANTHROPIC_BASE_URL").orElse(""),
+        // kagent injects MODEL_NAME, from the Agent record's modelName. Reading MODEL
+        // meant the fallback won every time and the record was decorative: the agent ran
+        // haiku while the catalogue said sonnet, and nothing said so.
+        env("MODEL_NAME").or(() -> env("MODEL")).orElse("claude-haiku-4-5"),
         env("DEMO_REPO").orElse("tjorourke/kagent"),
         Path.of(env("SKILL_PATH").orElse("/app/skill.md")),
         env("SERVE").map(Boolean::parseBoolean).orElse(false),

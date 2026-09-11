@@ -163,6 +163,27 @@ pol="$($K -n "$NS" get enterpriseagentgatewaypolicy github-per-agent -o jsonpath
 [ -n "$pol" ] && note "identity policy is already applied: step 6 will re-apply it, which is fine" \
               || pass "identity policy" "absent, as it should be before step 6"
 
+# --------------------------------------------------- 7b. egress really is closed
+# Tested, not assumed. This lab spent an afternoon believing a sentence about the agent
+# having no route to the internet, which was written and never checked, and was wrong.
+# So: make the agent try, and fail the preflight if it succeeds.
+np="$($K -n "$NS" get networkpolicy agents-egress-through-the-gateway -o jsonpath='{.metadata.name}' 2>/dev/null)"
+if [ -z "$np" ]; then
+  fail "egress policy" "absent: the agent can reach anything it likes"
+else
+  out="$($K -n "$NS" exec deploy/prtriagejava -- sh -c \
+        'wget -q -O- --timeout=10 https://api.github.com/repos/kagent-dev/kagent 2>&1' 2>/dev/null || true)"
+  case "$out" in
+    *full_name*) fail "egress policy" "present, but the agent still reached api.github.com" ;;
+    *)           pass "egress policy" "the agent cannot reach GitHub except through the gateway" ;;
+  esac
+fi
+
+# and the model route the policy depends on
+mw="$($K -n "$NS" get gateway model-waypoint -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null)"
+[ "$mw" = "True" ] && pass "model route" "model-waypoint Programmed, agent talks to Anthropic through it" \
+                   || fail "model route" "model-waypoint not Programmed: the agent has no way to reach the model"
+
 # ---------------------------------------------------------------- 8. trace visibility
 CHPOD="$($K -n solo-cost get pods -l clickhouse.altinity.com/chi -o name 2>/dev/null | head -1)"
 CHPOD="${CHPOD:-pod/management-clickhouse-shard0-0}"

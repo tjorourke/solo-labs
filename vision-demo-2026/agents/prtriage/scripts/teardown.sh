@@ -9,6 +9,8 @@ for r in "deployment releasejava" "agent releasejava" \
          "mcpserver github-mcp" "skill release-report"; do
   arctl delete $r >/dev/null 2>&1 && echo "  removed $r from the registry"
 done
+$K -n kagent delete networkpolicy agents-egress-through-the-gateway --ignore-not-found
+$K delete -f "$HERE/../yaml/90-model-egress.yaml" --ignore-not-found
 $K -n kagent delete enterpriseagentgatewaypolicy github-per-agent --ignore-not-found
 $K -n agentgateway-system delete enterpriseagentgatewaypolicy github-readonly --ignore-not-found
 $K delete -f "$HERE/../yaml/15-github-waypoint.yaml" --ignore-not-found

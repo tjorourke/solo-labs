@@ -1,0 +1,47 @@
+# Layer two. The gateway decides which tools an agent may call; this decides whether an
+# agent can reach anything else at all.
+#
+# Without it, "the only way out is the gateway" is a description of the configuration
+# rather than a constraint: the agent's own environment points only at the gateway, but
+# nothing stops it opening a socket to api.github.com, and it will.
+#
+# Everything this agent legitimately needs is inside the cluster, because both of its
+# routes out already terminate at a gateway: tools at the GitHub waypoint, the model at
+# the Anthropic one. So the allow list is DNS, the namespace it lives in, and the
+# collector its traces go to. There is no rule for the internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agents-egress-through-the-gateway
+  namespace: kagent
+spec:
+  # Named rather than selected by a shared label, on purpose: other agents run in this
+  # namespace and this demo has no business closing their egress.
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [prtriagejava, releasejava, changelogjava]
+  policyTypes: [Egress]
+  egress:
+  # 1. DNS. Without it nothing resolves, including the in-cluster gateway names.
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - { protocol: UDP, port: 53 }
+    - { protocol: TCP, port: 53 }
+  # 2. Its own namespace: the two waypoints it talks to, and the kagent controller that
+  #    hands it work. Waypoint traffic arrives over HBONE on 15008, not on 80.
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kagent
+  # 3. Traces. Without this the run works and the Tracing tab is silently empty.
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: solo-cost
+    ports:
+    - { protocol: TCP, port: 4317 }
