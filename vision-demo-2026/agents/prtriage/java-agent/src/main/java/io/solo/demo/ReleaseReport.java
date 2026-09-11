@@ -36,7 +36,7 @@ public final class ReleaseReport {
       var agent = agent(gateway, config);
 
       if (config.serve()) {
-        new A2aServer(agent, DESCRIPTION).start(config.port());
+        new A2aServer(agent, gateway, DESCRIPTION).start(config.port());
       } else {
         new OneShot(agent, gateway).report(config.defaultPrompt());
       }

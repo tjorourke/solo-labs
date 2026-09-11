@@ -70,8 +70,23 @@ final class KagentSession {
       //   invocation_id   "e-" prefixed, and the SAME for both events of one turn
       //   partial         false, not null. A null here reads as "not a settled message"
       //   actions         present, with its empty maps rather than omitted
+      // A Part carries its WHOLE schema, not just the field being used. kagent's own
+      // events have nine keys on every part with eight of them null, and an event whose
+      // part has only `text` is stored and then dropped on the way to the screen. That
+      // is the difference between a chat that renders when you come back to it and one
+      // that is empty, and nothing anywhere reports it.
+      var part = Json.object()
+          .put("code_execution_result", (String) null)
+          .put("executable_code", (String) null)
+          .put("file_data", (String) null)
+          .put("function_call", (String) null)
+          .put("function_response", (String) null)
+          .put("inline_data", (String) null)
+          .put("media_resolution", (String) null)
+          .put("text", text)
+          .put("thought", (Boolean) null);
       var content = Json.object().put("role", "user".equals(author) ? "user" : "model");
-      content.putArray("parts").add(Json.object().put("text", text));
+      content.putArray("parts").add(part);
 
       var actions = Json.object()
           .put("skip_summarization", (Boolean) null)

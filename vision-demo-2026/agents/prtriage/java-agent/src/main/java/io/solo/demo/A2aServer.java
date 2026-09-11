@@ -44,14 +44,16 @@ final class A2aServer {
       }""";
 
   private final LlmAgent agent;
+  private final com.google.adk.tools.BaseToolset gateway;
   private final String name;
   private final String description;
   private final AtomicInteger turns = new AtomicInteger();
 
-  A2aServer(LlmAgent agent, String description) {
+  A2aServer(LlmAgent agent, com.google.adk.tools.BaseToolset gateway, String description) {
     this.agent = agent;
     this.name = Optional.ofNullable(System.getenv("KAGENT_NAME")).orElse("prtriage-java");
     this.description = description;
+    this.gateway = gateway;
   }
 
   void start(int port) throws IOException, InterruptedException {
@@ -177,9 +179,22 @@ final class A2aServer {
             events = Turn.of(agent, name).ask(prompt);
             answer = Turn.finalText(events);
           } catch (RuntimeException retry) {
-            var rc = retry.getCause() == null ? retry : retry.getCause();
-            answer = "the agent failed: %s: %s".formatted(rc.getClass().getSimpleName(),
-                rc.getMessage() == null ? "(no message)" : rc.getMessage());
+            // Twice is not bad luck. An agent the gateway generated nothing for cannot
+            // make progress, and the model thrashes until the conversation is malformed.
+            // Report what it was actually given rather than a stack trace: that is an
+            // observation, and it happens to be the answer.
+            answer = toolsOffered()
+                .map(tools -> tools.isEmpty()
+                    ? "I could not complete this. The gateway generated no tools at all "
+                      + "for this agent, so there is nothing here to read pull requests with."
+                    : "I could not complete this. The gateway generated only these tools "
+                      + "for this agent: " + String.join(", ", tools)
+                      + " - and none of them reaches GitHub.")
+                .orElseGet(() -> {
+                  var rc = retry.getCause() == null ? retry : retry.getCause();
+                  return "the agent failed: %s: %s".formatted(rc.getClass().getSimpleName(),
+                      rc.getMessage() == null ? "(no message)" : rc.getMessage());
+                });
             Console.failed(answer);
           }
         } else {
@@ -356,6 +371,18 @@ final class A2aServer {
   }
 
   /** First value of a named field anywhere in the request, if it is there at all. */
+  /** The tool names the gateway generated for THIS agent, when they can be listed. */
+  private Optional<List<String>> toolsOffered() {
+    try {
+      return Optional.of(gateway.getTools(null)
+          .map(com.google.adk.tools.BaseTool::name)
+          .filter(n -> !"run_code".equals(n) && !"get_tool".equals(n))
+          .toList().blockingGet());
+    } catch (Exception e) {
+      return Optional.empty();
+    }
+  }
+
   private static Optional<String> header(HttpExchange exchange, String name) {
     return Optional.ofNullable(exchange.getRequestHeaders().getFirst(name))
         .filter(v -> !v.isBlank());
