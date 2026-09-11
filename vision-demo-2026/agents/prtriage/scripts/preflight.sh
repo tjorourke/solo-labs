@@ -127,21 +127,23 @@ done
 # short and nobody can see why, so name them rather than leaving it to be discovered.
 for ns in agentgateway-system "$NS"; do
   extra="$($K -n "$ns" get enterpriseagentgatewaypolicy -o name 2>/dev/null \
-    | sed 's#.*/##' | grep -vE '^(ai-gateway-tracing|github-per-agent)$' | tr '\n' ' ')"
+    | sed 's#.*/##' | grep -vE '^(ai-gateway-tracing|github-per-agent|github-mcp-ingress-auth)$' | tr '\n' ' ')"
   [ -z "${extra// }" ] && pass "no stray policies in $ns" "" \
                        || fail "stray policy in $ns" "${extra}- delete it or the tool list stays filtered"
 done
 
 # ---------------------------------------------------------------- 5. both MCP paths
 LB="$($K -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)"
-if [ -n "$LB" ] && [ -x /tmp/mcp.sh ]; then
-  n="$(/tmp/mcp.sh "http://github-mcp.${LB}.sslip.io/" tools/list 2>/dev/null | grep -o '"name":"[a-z_]*"' | wc -l | tr -d ' ')"
+# Use the suite's own client, which mints the token the listener now requires. The old copy in
+# /tmp predates that and reports an authenticated listener as "no tools".
+if [ -n "$LB" ]; then
+  n="$("$HERE/mcp.sh" tools/list 2>/dev/null | grep -o '"name":"[a-z_]*"' | wc -l | tr -d ' ')"
   want=93; [ "${M1:-Standard}" != "Standard" ] && want=2
   if [ "${n:-0}" = "$want" ]; then pass "ingress MCP path (laptop)" "$n tools, as ${M1:-Standard} expects"
   elif [ "${n:-0}" -gt 0 ]; then fail "ingress MCP path (laptop)" "$n tools, expected $want for ${M1:-Standard}"
   else fail "ingress MCP path (laptop)" "no tools returned"; fi
 else
-  note "ingress path not checked (/tmp/mcp.sh absent: run the notebook's client cell)"
+  note "ingress path not checked (no LB address)"
 fi
 
 # Retried, because reset.sh restarts the agent and an agent that has not finished
@@ -185,6 +187,19 @@ pol="$($K -n "$NS" get enterpriseagentgatewaypolicy github-per-agent -o jsonpath
 [ -z "$pol" ] && { fail "identity policy" "MISSING: every agent can use the credential"
                    note "fix: ./agents/prtriage/scripts/reset.sh"; } \
               || pass "identity policy" "in place, so each agent gets only its own tools"
+
+# ------------------------------------------- 7a. the published listener is shut
+# Tested by calling it. An open route beside the waypoint hands the GitHub credential to
+# anything that can reach the address, and the per-agent policy does not apply to it.
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -X POST "http://github-mcp.${LB}.sslip.io/" \
+       -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+       -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"pre","version":"1"}}}' 2>/dev/null)"
+case "$code" in
+  401|403) pass "published listener" "refuses an unauthenticated call ($code)" ;;
+  200)     fail "published listener" "OPEN: anyone reaching it gets the GitHub credential"
+           note "fix: kubectl apply -f agents/prtriage/yaml/12-ingress-jwt.yaml" ;;
+  *)       fail "published listener" "unexpected $code from the ingress" ;;
+esac
 
 # --------------------------------------------------- 7b. egress really is closed
 # Tested, not assumed. This lab spent an afternoon believing a sentence about the agent

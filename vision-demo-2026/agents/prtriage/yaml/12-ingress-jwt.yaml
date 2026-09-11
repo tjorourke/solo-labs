@@ -1,0 +1,24 @@
+# Close the published listener. The waypoint checks a workload's SPIFFE identity, which a
+# human at a laptop does not have, so the published route needs a different proof: a token.
+#
+# Without this the route answers an unauthenticated MCP initialize with 200, and anything that
+# can reach the address - including an agent in this cluster that the egress policy does not
+# cover - gets a session and the GitHub credential behind it. The per-agent policy lives on the
+# waypoint and does nothing for a route published beside it.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: github-mcp-ingress-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: github-mcp
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+      - issuer: http://keycloak.192.168.97.144.sslip.io/realms/agentregistry
+        jwks:
+          inline: '{"keys":[{"kid":"0NWcl8hld2L2FKILemtpAUGz6mqMi8RVxIud1vRvyn8","kty":"RSA","alg":"RS256","use":"sig","x5c":["MIICqTCCAZECBgGgfeZhHzANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1hZ2VudHJlZ2lzdHJ5MB4XDTI2MDkwNzIyMDIyNVoXDTM2MDkwNzIyMDQwNVowGDEWMBQGA1UEAwwNYWdlbnRyZWdpc3RyeTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAN723Z8VEiozz3VuyZkYj5AjitGDhlTgUD5L11vd+MNZmy1GyBQw6b9+UuhPBsPnrkr8IONzIvFbnNQJuqUVIa0gwjn+EUMLfHuscUmYOnBTrkgZDkNiJ1m4wLwK5fjkoGGgh2AJyxhKvowcpb74feDkYTlbzINxUkrwCwdhQ0jCSul5JDZTHJz6/GlJWxuFvbkDVZ4Pne75a4nWR0Efk1TWup97QcVYa4tu8bm5IClr/LkW1yE1/LG73SmoNC3dmKzts6CZMpjIGjrz+MK1oui9ERQictbFnF8qdtS85yaqWzi6+WmIiDnZE/T5TwUYyjLh+N74G78iI3uI9Xq53q0CAwEAATANBgkqhkiG9w0BAQsFAAOCAQEA13t8he5l15jYaXzSlukc36lX0u37EJFKmcxuJJuyOxjD4POhul/rlRYWQZDRffKhENbyhaYTbyPDMl87NyUxtdqI3yd8MgF8v3HZZcZ5kt4w046KMQkxS+wDjY22uXigmsH6jwmDfbVt4MVaPMwvV/INaqyo+TOj8VqxFlyvAs0QUFWIpvS4RUkZWkJh82oPud0XSb/TGs1W4Bjo7mO+mwsXhDYn/T/+hQpgR0ONz4rSCd+nHgFG3nTJwJFfHEKMoFGa7+XEcbh0hZfScn7YXR6YJLKKWxVczHewojbrzcAPjYdfRPnmK50k/Z720SlBzNHDlC8Yi2j/RrPKfak7lA=="],"x5t":"Ml0EKHKwMgdgyoSrhrWDI8CanqM","x5t#S256":"Mma80te_Jvepj8xqqWSqXGQrV02zJ9HIqTnS3QvfZkU","n":"3vbdnxUSKjPPdW7JmRiPkCOK0YOGVOBQPkvXW934w1mbLUbIFDDpv35S6E8Gw-euSvwg43Mi8Vuc1Am6pRUhrSDCOf4RQwt8e6xxSZg6cFOuSBkOQ2InWbjAvArl-OSgYaCHYAnLGEq-jBylvvh94ORhOVvMg3FSSvALB2FDSMJK6XkkNlMcnPr8aUlbG4W9uQNVng-d7vlridZHQR-TVNa6n3tBxVhri27xubkgKWv8uRbXITX8sbvdKag0Ld2YrO2zoJkymMgaOvP4wrWi6L0RFCJy1sWcXyp21LznJqpbOLr5aYiIOdkT9PlPBRjKMuH43vgbvyIje4j1ernerQ","e":"AQAB"},{"kid":"39bquNpNwdyDZv5pcoZy2izCa6M9PKVqCW6FAzCBTBQ","kty":"RSA","alg":"RSA-OAEP","use":"enc","x5c":["MIICqTCCAZECBgGgfeZhYjANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1hZ2VudHJlZ2lzdHJ5MB4XDTI2MDkwNzIyMDIyNVoXDTM2MDkwNzIyMDQwNVowGDEWMBQGA1UEAwwNYWdlbnRyZWdpc3RyeTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJSNNZprQmE0ZLseolsfi/tWdIjXa4XQpPtyXbegIvawlaKiNw9yQwNEQ0GLjg3rlZHA9s05Gu7+aKSKN1iNcXoYsSP07KogoINTWnIapAjQUcir4BHAoJ+CbkIsjzR6xFab9dOfRc7s2la52QQVlOMTrXcYgGuSRy5dQJIzx7EZUq7FefQDXna69UlntRd4NmqMTJuoTKi5VIGKCn1H2E8457hugFpjPKIPNz/bsmY8IOFjWF4sFza5GYVhN/x0Xwy5BdBHmuWt6tcS2JYKzGadEw2tMKpNKp6XWjTqQ1EfX1ibV+CW70zOhe/iHZVna5TVnXNhAcBlVzPdlDgs3HECAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAWmGRlTMZ0HE9dkRYA2IsZUMW8AAGJNgfZOEelbyO2Ec2vG7Jo8ufhlTgN3F6RUECh6iS7dsS88g0HdgrvvRmpBzKQb4w6qFHNDzz4W3QagsTz+QE7qhFHkcn/yiH5x/B8jOyX0BQdZRrUqjCtTkgjHzWHSAzaC4k8U4ansxpmoJox99hM9Dc05ef0Y0whk8sLXVvBxDLTRf/1s9k8klwIa7/vf/eK3EObEhQeLBVvZiGRN9XrayHr8lNYAOSG8UibDLE+9QdeoQ6uAnkKzEv2XkXRQaQggZXG2H3F4gJwnIfZOykrkbQ7ab/YBK/qJynLLflhTDyoXBJMNXMM6WdAw=="],"x5t":"XWJ1VP1p6Ud3c0eAODnGiReGVko","x5t#S256":"G9NVzTnLxDfrvhipEVTcB38olOuadfnXinm3mO-PvZ4","n":"lI01mmtCYTRkux6iWx-L-1Z0iNdrhdCk-3Jdt6Ai9rCVoqI3D3JDA0RDQYuODeuVkcD2zTka7v5opIo3WI1xehixI_TsqiCgg1NachqkCNBRyKvgEcCgn4JuQiyPNHrEVpv1059FzuzaVrnZBBWU4xOtdxiAa5JHLl1AkjPHsRlSrsV59ANedrr1SWe1F3g2aoxMm6hMqLlUgYoKfUfYTzjnuG6AWmM8og83P9uyZjwg4WNYXiwXNrkZhWE3_HRfDLkF0Eea5a3q1xLYlgrMZp0TDa0wqk0qnpdaNOpDUR9fWJtX4JbvTM6F7-IdlWdrlNWdc2EBwGVXM92UOCzccQ","e":"AQAB"}]}'

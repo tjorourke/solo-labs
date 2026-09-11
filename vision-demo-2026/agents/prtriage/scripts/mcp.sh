@@ -14,7 +14,11 @@ EP="${MCP:-http://github-mcp.${LB}.sslip.io/}"
 HOST=$(printf '%s' "$EP" | sed -E 's#^https?://##; s#[:/].*$##')
 IP=$(printf '%s' "$HOST" | sed -nE 's#.*[.]([0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3})[.]sslip[.]io$#\1#p')
 RESOLVE=(); [ -n "$IP" ] && RESOLVE=(--resolve "$HOST:80:$IP")
+# The published listener requires a caller token; token.sh mints it. This is not the GitHub
+# credential, which never leaves the gateway.
+TOKEN="$("$(dirname "${BASH_SOURCE[0]}")/token.sh" 2>/dev/null || true)"
 H=(-H "Content-Type: application/json" -H "Accept: application/json, text/event-stream")
+[ -n "$TOKEN" ] && H+=(-H "Authorization: Bearer $TOKEN")
 HDR=$(mktemp)
 curl -s -m 60 -X POST "$EP" "${RESOLVE[@]}" "${H[@]}" -D "$HDR" -o /dev/null \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"demo8","version":"1"}}}'
