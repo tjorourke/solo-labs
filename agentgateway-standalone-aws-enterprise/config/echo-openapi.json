@@ -1,0 +1,69 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Node echo service",
+    "description": "The small echo service running on 127.0.0.1:8080 on every gateway node. agentgateway turns this description into MCP tools, so an MCP client can call a plain REST API with no MCP server in the path.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/whoami": {
+      "get": {
+        "operationId": "whoami",
+        "summary": "Report which gateway node handled this call",
+        "description": "Returns the echo service's view of the request, including the hostname of the node that served it. Useful for proving which of the three nodes a tool call landed on.",
+        "responses": {
+          "200": {
+            "description": "Request details as seen by the node",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/headers": {
+      "get": {
+        "operationId": "headers",
+        "summary": "Echo the request headers the node received",
+        "description": "Returns the headers the upstream saw, after the gateway's header manipulation and transformation policies ran. This is how you confirm that x-verified-subject was set by the gateway from a verified token and not by the client.",
+        "responses": {
+          "200": {
+            "description": "The headers as received",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status/{code}": {
+      "get": {
+        "operationId": "status",
+        "summary": "Return a chosen HTTP status code",
+        "description": "Asks the upstream to respond with a specific status code. Used to exercise the retry policy.",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "description": "HTTP status code to return, for example 200 or 503.",
+            "schema": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "The requested status"
+          }
+        }
+      }
+    }
+  }
+}

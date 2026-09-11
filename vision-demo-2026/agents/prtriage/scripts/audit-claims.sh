@@ -92,6 +92,27 @@ echo "$base" | grep -q 'anthropic.kagent.svc' \
 mw=$($K -n $NS get gateway model-waypoint -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null)
 [ "$mw" = "True" ] && ok C11 "the model waypoint is programmed" "Programmed=True" \
                    || no C11 "the model waypoint is programmed" "${mw:-missing}"
+# Every agent the egress policy names needs the model route, or it dies with "Network is
+# unreachable" the first time it thinks. In a demo about refusal that reads as the
+# gateway refusing it. Checked per agent, and by reaching the endpoint rather than by
+# reading the variable: Anthropic answering 401 to an unauthenticated call proves the
+# whole path, and costs nothing.
+miss=""; unreach=""
+for a in $($K -n $NS get networkpolicy agents-egress-through-the-gateway \
+           -o jsonpath='{.spec.podSelector.matchExpressions[0].values[*]}' 2>/dev/null); do
+  $K -n $NS get deploy/$a >/dev/null 2>&1 || continue
+  [ -n "$($K -n $NS get deploy $a -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ANTHROPIC_BASE_URL")].value}' 2>/dev/null)" ] \
+    || miss="$miss $a"
+  code=$($K -n $NS exec deploy/$a -- sh -c \
+     'wget -S -O /dev/null --timeout=15 --post-data="{}" --header="content-type: application/json" \
+      http://anthropic.kagent.svc.cluster.local/v1/messages 2>&1 | grep -m1 "HTTP/" ' 2>/dev/null)
+  echo "$code" | grep -qE '40[0-9]|200' || unreach="$unreach $a"
+done
+[ -z "$miss" ] && ok C31a "every agent the policy names has the model route" "$($K -n $NS get networkpolicy agents-egress-through-the-gateway -o jsonpath='{.spec.podSelector.matchExpressions[0].values}')" \
+               || no C31a "every agent the policy names has the model route" "missing:$miss"
+[ -z "$unreach" ] && ok C31b "and each of them can actually reach it" "Anthropic answered through the waypoint" \
+                  || no C31b "and each of them can actually reach it" "unreachable:$unreach"
+
 $K -n $NS get deploy prtriagejava -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | grep -q ':latest' \
   && ok C12 "kagent hosts it as a BYO image" "$($K -n $NS get agent prtriagejava -o jsonpath='{.spec.type}')" \
   || no C12 "kagent hosts it as a BYO image" "no image"
