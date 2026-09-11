@@ -37,12 +37,14 @@ func newGateTool() (tool.Tool, error) {
 			"or has restarted more than three times, or has been Pending for more than five minutes.",
 	}, func(_ agent.Context, in gateArgs) (gateResult, error) {
 		switch {
-		case in.Phase != "Running" && in.Phase != "Succeeded":
+		case in.Phase == "Pending" && in.PendingMinutes > 5:
+			return gateResult{true, fmt.Sprintf("Pending for %.0f minutes, more than five", in.PendingMinutes)}, nil
+		case in.Phase == "Pending":
+			return gateResult{false, fmt.Sprintf("Pending for %.0f minutes, within the five minute allowance", in.PendingMinutes)}, nil
+		case in.Phase != "Running":
 			return gateResult{true, fmt.Sprintf("phase is %s, not Running", in.Phase)}, nil
 		case in.Restarts > 3:
 			return gateResult{true, fmt.Sprintf("%d restarts, more than three", in.Restarts)}, nil
-		case in.PendingMinutes > 5:
-			return gateResult{true, fmt.Sprintf("Pending for %.0f minutes", in.PendingMinutes)}, nil
 		}
 		return gateResult{false, "Running with three or fewer restarts"}, nil
 	})

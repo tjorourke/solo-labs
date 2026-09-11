@@ -91,20 +91,29 @@ export KEYCLOAK_REALM="${KEYCLOAK_REALM:-agentregistry}"
 export KEYCLOAK_CLIENT="${KEYCLOAK_CLIENT:-kagent-cli-password}"
 export AS_USER="${AS_USER:-admin-user}"
 export AS_PASSWORD="${AS_PASSWORD:-password}"
+# Without KEYCLOAK_URL, Keycloak is assumed to sit behind the ingress Gateway named by
+# KEYCLOAK_GATEWAY in KEYCLOAK_GATEWAY_NS, at keycloak.<gateway address>.sslip.io.
+export KEYCLOAK_GATEWAY="${KEYCLOAK_GATEWAY:-ar-ingress}"
+export KEYCLOAK_GATEWAY_NS="${KEYCLOAK_GATEWAY_NS:-agentgateway-system}"
 keycloak_url() {
   if [[ -n "${KEYCLOAK_URL:-}" ]]; then echo "$KEYCLOAK_URL"; return; fi
   local lb
-  lb="$(kc -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true)"
+  lb="$(kc -n "$KEYCLOAK_GATEWAY_NS" get gateway "$KEYCLOAK_GATEWAY" -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true)"
   if [[ -n "$lb" ]]; then echo "http://keycloak.${lb}.sslip.io"; fi
 }
 mint_token() {
   if [[ -n "${KAGENT_TOKEN:-}" ]]; then echo "$KAGENT_TOKEN"; return; fi
   local url; url="$(keycloak_url)"
   [[ -n "$url" ]] || { echo ""; return; }
-  curl -s -m 20 "$url/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+  local body
+  body="$(curl -s -m 20 "$url/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
     -d grant_type=password -d "client_id=${KEYCLOAK_CLIENT}" \
-    -d "username=${AS_USER}" -d "password=${AS_PASSWORD}" \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))'
+    -d "username=${AS_USER}" -d "password=${AS_PASSWORD}")" \
+    || die "could not reach Keycloak at $url"
+  python3 -c 'import json,sys
+try: t=json.loads(sys.argv[1]).get("access_token","")
+except ValueError: t=""
+print(t)' "$body"
 }
 # Sets TOKEN once per script. Minted when a Keycloak is known (KEYCLOAK_URL, or the one
 # behind the ar-ingress gateway); empty otherwise, for a controller with no OIDC.
@@ -133,7 +142,7 @@ wait_gateway_programmed() {
     [[ $(date +%s) -ge $end ]] && die "gateway $name not Programmed in 240s"; sleep 3
   done
   # The data-plane pod appears a few seconds after Programmed.
-  until kc -n "$NS" get pod -l "gateway.networking.k8s.io/gateway-name=$name" -o name 2>/dev/null | grep -q pod; do
+  until [[ -n "$(kc -n "$NS" get pod -l "gateway.networking.k8s.io/gateway-name=$name" -o name 2>/dev/null)" ]]; do
     [[ $(date +%s) -ge $end ]] && die "no pod for gateway $name"; sleep 2
   done
   kc -n "$NS" wait --for=condition=Ready pod -l "gateway.networking.k8s.io/gateway-name=$name" --timeout=120s >/dev/null
@@ -145,8 +154,9 @@ wait_gateway_programmed() {
 # contextId, so the same conversation appears in the UI.
 open_session() {
   local agent="$1" title="${2:-$1}"
-  ccurl -m 20 -X POST "$CONTROLLER_URL/api/sessions" -H 'Content-Type: application/json' \
-    -d "{\"agent_ref\":\"${NS}/${agent}\",\"name\":\"${title}\"}" \
+  local body
+  body="$(python3 -c 'import json,sys; print(json.dumps({"agent_ref": sys.argv[1], "name": sys.argv[2]}))' "${NS}/${agent}" "$title")"
+  ccurl -m 20 -X POST "$CONTROLLER_URL/api/sessions" -H 'Content-Type: application/json' -d "$body" \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("data",d).get("id",""))'
 }
 task_count() {

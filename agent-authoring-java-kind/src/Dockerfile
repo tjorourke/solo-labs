@@ -3,6 +3,7 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 COPY pom.xml .
+# A cache warm-up only, so a failure here means nothing more than a colder build below.
 RUN mvn -B -q dependency:go-offline || true
 COPY src ./src
 RUN mvn -B package -DskipTests

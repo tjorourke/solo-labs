@@ -31,8 +31,8 @@ controller_pf
 SESSION="$(open_session "$AGENT" "check: $QUESTION")"
 [[ -n "$SESSION" ]] || fail "could not open a session"
 START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-ANSWER="$(ASK_SESSION="$SESSION" bash "$SCRIPT_DIR/ask.sh" "$AGENT" "$QUESTION" | tail -n +4)"
-echo "$ANSWER" | sed 's/^/   /' | head -20
+# ask.sh prints its two header lines and a blank line before the trace and the answer.
+ASK_SESSION="$SESSION" bash "$SCRIPT_DIR/ask.sh" "$AGENT" "$QUESTION" | tail -n +4 | sed 's/^/   /'
 COUNT="$(task_count "$SESSION")"
 [[ "$COUNT" -ge 1 ]] || fail "GET /api/sessions/$SESSION/tasks returned $COUNT tasks; the UI would show an empty chat"
 ROLES="$(ccurl -m 20 "$CONTROLLER_URL/api/sessions/$SESSION/tasks" | python3 -c '
@@ -46,13 +46,13 @@ step "3. Gateway: tools only through the waypoint, as $AGENT"
 PROBE="probe-$AGENT-$RANDOM"
 # A throwaway pod with the agent's service account. Run to completion, then read its
 # log: attaching with -i races the container start and sometimes returns nothing.
-kc -n "$NS" run "$PROBE" --restart=Never --image=curlimages/curl:8.10.1 \
+kc -n "$NS" run "$PROBE" --restart=Never --image=curlimages/curl:8.10.1 --env="NS=$NS" \
   --overrides="{\"spec\":{\"serviceAccountName\":\"$AGENT\"}}" --quiet -- sh -c '
 INIT='"'"'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}'"'"'
 H="-H Content-Type:application/json -H Accept:application/json,text/event-stream"
-if curl -s -m 5 -o /dev/null $H -d "$INIT" http://kagent-tools.kagent:8084/mcp 2>/dev/null; then echo "direct=answered"; else echo "direct=refused"; fi
-SID=$(curl -s -m 10 -D - -o /dev/null $H -d "$INIT" http://sre-tools.kagent.svc.cluster.local/mcp | tr -d "\r" | awk "tolower(\$1)==\"mcp-session-id:\"{print \$2}")
-curl -s -m 10 $H -H "Mcp-Session-Id: $SID" -d '"'"'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'"'"' http://sre-tools.kagent.svc.cluster.local/mcp | sed "s/^data: //" | grep "^{" | head -1
+if curl -s -m 5 -o /dev/null $H -d "$INIT" "http://kagent-tools.$NS:8084/mcp" 2>/dev/null; then echo "direct=answered"; else echo "direct=refused"; fi
+SID=$(curl -s -m 10 -D - -o /dev/null $H -d "$INIT" "http://sre-tools.$NS.svc.cluster.local/mcp" | tr -d "\r" | awk "tolower(\$1)==\"mcp-session-id:\"{print \$2}")
+curl -s -m 10 $H -H "Mcp-Session-Id: $SID" -d '"'"'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'"'"' "http://sre-tools.$NS.svc.cluster.local/mcp" | sed "s/^data: //" | grep "^{" | head -1
 ' >/dev/null
 kc -n "$NS" wait --for=jsonpath='{.status.phase}'=Succeeded pod/"$PROBE" --timeout=120s >/dev/null 2>&1 \
   || warn "probe pod $PROBE did not finish in 120s"

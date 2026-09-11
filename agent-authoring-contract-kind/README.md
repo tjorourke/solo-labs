@@ -24,7 +24,9 @@ An existing cluster. Nothing here creates one.
 
 If the controller is protected by OIDC, the scripts mint a token from Keycloak (the
 defaults match a cluster set up with the vision-demo scripts: realm `agentregistry`,
-client `kagent-cli-password`, user `admin-user`). Override with `KEYCLOAK_URL`,
+client `kagent-cli-password`, user `admin-user`). Without `KEYCLOAK_URL` the scripts look for Keycloak behind the ingress Gateway named by
+`KEYCLOAK_GATEWAY` (default `ar-ingress` in `KEYCLOAK_GATEWAY_NS`, default
+`agentgateway-system`) at `keycloak.<gateway address>.sslip.io`. Override with `KEYCLOAK_URL`,
 `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT`, `AS_USER`, `AS_PASSWORD`, or set `KAGENT_TOKEN`.
 
 ## Bring it up

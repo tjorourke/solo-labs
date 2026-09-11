@@ -7,7 +7,7 @@ catalogue entry and a skill for the agent card. kagent supplies the runtime, so 
 the A2A endpoints, the streaming frames and the stored task all come from kagent and
 there is nothing to compile.
 
-Two agents, one manifest apart:
+Two agents from the same manifest:
 
 - **sre-declarative**: kagent's Python runtime (the default).
 - **sre-declarative-go**: the same spec with `spec.declarative.runtime: go`, on kagent's

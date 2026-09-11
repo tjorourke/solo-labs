@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -71,7 +72,8 @@ final class A2aServer {
     http.setExecutor(Executors.newFixedThreadPool(4));
     http.start();
     Console.serving(config.port());
-    Thread.currentThread().join();
+    // The server runs on its own threads; this keeps the main thread alive for the pod's life.
+    new CountDownLatch(1).await();
   }
 
   private void card(HttpExchange exchange) throws IOException {
@@ -151,12 +153,8 @@ final class A2aServer {
       // the turn, filed where the UI reads it
       var replied = message("agent", UUID.randomUUID().toString(), contextId, taskId, answer);
       replied.set("metadata", meta);
-      var stored = task(taskId, contextId, answer, events);
+      var stored = task(taskId, contextId, asked, replied, answer, events);
       stored.set("metadata", meta);
-      var history = Json.MAPPER.createArrayNode().add(asked);
-      stored.get("history").forEach(history::add);
-      history.add(replied);
-      stored.set("history", history);
       KagentSession.recordEvent(contextId, userId, invocationId, "user", prompt);
       KagentSession.recordEvent(contextId, userId, invocationId, name + "_agent", answer);
       KagentSession.recordTask(contextId, userId, stored);
@@ -199,36 +197,49 @@ final class A2aServer {
     }
     var taskId = text(request, "taskId").orElseGet(() -> UUID.randomUUID().toString());
     var contextId = text(request, "contextId").orElseGet(() -> UUID.randomUUID().toString());
+    var asked = message("user", text(request, "messageId").orElseGet(() -> UUID.randomUUID().toString()),
+        contextId, taskId, prompt);
+    var replied = message("agent", UUID.randomUUID().toString(), contextId, taskId, answer);
     var envelope = Json.object().put("jsonrpc", "2.0").putRawValue("id", raw(request.path("id")));
-    envelope.set("result", task(taskId, contextId, answer, events));
+    envelope.set("result", task(taskId, contextId, asked, replied, answer, events));
     return envelope;
   }
 
   /**
-   * A completed Task: the answer as the status message and as an artifact, and the tool
-   * calls and their responses in history as data parts, so a caller can see how the
-   * answer was reached.
+   * A completed Task: the answer as the status message and as an artifact, and a history
+   * that runs from the user's question, through each tool call and its response as data
+   * parts, to the agent's answer. The UI draws the history, so it is the same whichever
+   * method produced the turn.
    */
-  private ObjectNode task(String taskId, String contextId, String answer, List<Event> events) {
-    var artifact = Json.object().put("artifactId", "report").put("name", "report");
+  private ObjectNode task(String taskId, String contextId, ObjectNode asked, ObjectNode replied,
+                          String answer, List<Event> events) {
+    var artifact = Json.object().put("artifactId", UUID.randomUUID().toString()).put("name", "report");
     artifact.putArray("parts").add(textPart(answer));
     var task = Json.object()
         .put("kind", "task")
         .put("id", taskId)
         .put("contextId", contextId);
-    task.set("status", status("completed", message("agent", UUID.randomUUID().toString(), contextId, taskId, answer)));
+    task.set("status", status("completed", replied));
     task.putArray("artifacts").add(artifact);
     var history = task.putArray("history");
-    for (var call : Turn.toolCalls(events)) {
-      var data = Json.object().put("name", call.name().orElse("unnamed")).put("id", call.id().orElse(""));
-      data.set("args", Json.MAPPER.valueToTree(call.args().orElse(Map.of())));
-      history.add(dataMessage(data));
-    }
+    history.add(asked);
+    var responses = new java.util.HashMap<String, ObjectNode>();
     for (var response : Turn.toolResponses(events)) {
       var data = Json.object().put("name", response.name().orElse("unnamed")).put("id", response.id().orElse(""));
       data.set("response", Json.MAPPER.valueToTree(response.response().orElse(Map.of())));
-      history.add(dataMessage(data));
+      responses.put(response.id().orElse(""), dataMessage(data));
     }
+    for (var call : Turn.toolCalls(events)) {
+      var id = call.id().orElse("");
+      var data = Json.object().put("name", call.name().orElse("unnamed")).put("id", id);
+      data.set("args", Json.MAPPER.valueToTree(call.args().orElse(Map.of())));
+      history.add(dataMessage(data));
+      var response = responses.get(id);
+      if (response != null) {
+        history.add(response);
+      }
+    }
+    history.add(replied);
     return task;
   }
 

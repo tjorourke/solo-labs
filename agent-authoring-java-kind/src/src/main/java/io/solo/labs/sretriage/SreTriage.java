@@ -61,16 +61,24 @@ public final class SreTriage {
       @Annotations.Schema(name = "phase", description = "the pod phase, e.g. Running or Pending") String phase,
       @Annotations.Schema(name = "restarts", description = "container restart count") Integer restarts,
       @Annotations.Schema(name = "pendingMinutes", description = "minutes the pod has been Pending, 0 if not Pending") Integer pendingMinutes) {
-    var reasons = new java.util.ArrayList<String>();
+    int pending = pendingMinutes == null ? 0 : pendingMinutes;
+    int restarted = restarts == null ? 0 : restarts;
+    if ("Pending".equals(phase)) {
+      return pending > 5
+          ? verdict(true, "Pending for " + pending + " minutes, more than five")
+          : verdict(false, "Pending for " + pending + " minutes, within the five minute allowance");
+    }
     if (!"Running".equals(phase)) {
-      reasons.add("phase is " + phase);
+      return verdict(true, "phase is " + phase + ", not Running");
     }
-    if (restarts != null && restarts > 3) {
-      reasons.add(restarts + " restarts");
+    if (restarted > 3) {
+      return verdict(true, restarted + " restarts, more than three");
     }
-    if (pendingMinutes != null && pendingMinutes > 5) {
-      reasons.add("Pending for " + pendingMinutes + " minutes");
-    }
-    return Map.of("unhealthy", !reasons.isEmpty(), "reasons", reasons);
+    return verdict(false, "Running with three or fewer restarts");
+  }
+
+  /** The tool's result: the verdict and the clause of the rule that decided it. */
+  private static Map<String, Object> verdict(boolean unhealthy, String reason) {
+    return Map.of("unhealthy", unhealthy, "reason", reason);
   }
 }

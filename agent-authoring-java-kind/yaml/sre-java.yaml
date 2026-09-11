@@ -18,8 +18,6 @@ spec:
       image: localhost:5001/sre-java:lab
       imagePullPolicy: Always
       env:
-      - name: MODEL_PROVIDER
-        value: anthropic
       - name: MODEL_NAME
         value: claude-haiku-4-5
       - name: MCP_SERVERS_CONFIG

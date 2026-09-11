@@ -50,6 +50,10 @@ func configFromEnv() (Config, error) {
 		return cfg, fmt.Errorf("MCP_SERVERS_CONFIG is not a JSON list: %w", err)
 	}
 	for _, s := range servers {
+		// Only remote servers reach a BYO agent; kagent has no other type to inject.
+		if s.Type != "remote" {
+			continue
+		}
 		cfg.MCPServers = append(cfg.MCPServers, adk.HttpMcpServerConfig{
 			Params: adk.StreamableHTTPConnectionParams{Url: s.URL},
 		})

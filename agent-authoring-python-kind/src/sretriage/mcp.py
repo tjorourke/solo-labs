@@ -11,7 +11,7 @@ import os
 
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StreamableHTTPConnectionParams
 
-# ADK's default is 5 seconds. A first connection through a gateway can take longer.
+# A first connection through a gateway can take longer than the library default.
 CONNECT_TIMEOUT_SECONDS = 60
 
 

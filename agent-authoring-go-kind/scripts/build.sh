@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # build.sh: build the Go agent image and push it to the kind registry.
 #
-# Maven-free and JDK-free is the Java part's concern; here the equivalent is that no Go
-# toolchain is needed on the machine: the Dockerfile's build stage has it.
+# No Go toolchain is needed on the machine: the Dockerfile's build stage has it.
 #
 #   IMAGE   where to push (default localhost:5001/sre-go:lab, the registry wired into kind)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
