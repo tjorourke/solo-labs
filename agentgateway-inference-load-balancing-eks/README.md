@@ -1,4 +1,4 @@
-# agentgateway as an inference gateway: what the Endpoint Picker is actually for
+# Inference scheduling with agentgateway, Part 1: keeping requests off overloaded GPUs
 
 This lab runs Qwen3-Coder on two GPUs in EKS and compares agentgateway's own load balancing
 with the Gateway API Inference Extension's Endpoint Picker. The picker reads model-server

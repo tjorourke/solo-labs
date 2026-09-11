@@ -1,4 +1,4 @@
-# agentgateway as an inference gateway, Part 2: prefill and decode on your own GPUs
+# Inference scheduling with agentgateway, Part 2: smoother responses under load
 
 [Part 1](../agentgateway-inference-load-balancing-eks/) runs one model on two GPUs, with
 each replica handling complete requests. This lab separates prefill and decode across
