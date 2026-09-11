@@ -82,13 +82,11 @@ deploy: publish
 	@printf '   running image  %s\n' "$$($(KC) -n $(NS) get pod -l app.kubernetes.io/name=prtriagejava \
 	   -o jsonpath='{.items[0].status.containerStatuses[0].imageID}')"
 
-## Prompt it through kagent's OIDC-protected A2A endpoint. ask.sh mints the OIDC token
-## from inside a pod and needs python3 to do it, which this image does not have, so it
-## finds one in the namespace that does. Set EXEC_FROM to force a particular pod.
+## Prompt it through kagent's OIDC-protected A2A endpoint, in a session the UI lists,
+## with each tool call printed as it happens.
 ask: PROMPT ?= Give me the release report for $(DEMO_REPO), all open pull requests.
 ask:
-	@cd ../../../demo-scripts/agentregistry && AGENT_PREFIX=prtriagejava \
-	  $(if $(EXEC_FROM),EXEC_FROM=$(EXEC_FROM),) ./scripts/ask.sh "$(PROMPT)"
+	@AGENT=prtriagejava ../scripts/ask.sh "$(PROMPT)"
 
 ## What the agent itself logged, which is where the A2A turns show up.
 logs:

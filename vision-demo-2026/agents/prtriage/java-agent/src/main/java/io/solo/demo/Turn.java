@@ -11,61 +11,42 @@ import com.google.genai.types.Part;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.function.Consumer;
 
-/** One question through an ADK runner, collected rather than streamed. */
+/** One question through an ADK runner. The events come back together; the tool calls are reported as they happen. */
 record Turn(InMemoryRunner runner, String appName) {
 
   static Turn of(BaseAgent agent, String appName) {
     return new Turn(new InMemoryRunner(agent, appName), appName);
   }
 
-  /**
-   * The same turn, but handing each event over as it happens rather than at the end.
-   *
-   * A Standard-mode run is eighteen sequential model calls and takes about seventy
-   * seconds. Collected and emitted at the end, that is seventy seconds of a motionless
-   * "Thinking" on a projector. Streamed, it is eighteen tool calls appearing one after
-   * another, which is the thing the demo is actually about.
-   */
-  List<Event> askStreaming(String prompt, java.util.function.Consumer<Event> onEvent) {
-    var session = runner.sessionService()
-        .createSession(appName, "demo", Map.<String, Object>of(), null)
-        .blockingGet();
-    var collected = new java.util.ArrayList<Event>();
-    runner.runAsync(session.userId(), session.id(),
-            Content.fromParts(Part.fromText(prompt)), RunConfig.builder().build())
-        .blockingForEach(event -> {
-          collected.add(event);
-          onEvent.accept(event);
-        });
-    return List.copyOf(collected);
-  }
-
-  /** The name of the tool an event is calling, when it is calling one. */
-  static Optional<String> toolCallName(Event event) {
-    return event.content().stream()
-        .flatMap(content -> content.parts().stream())
-        .flatMap(List::stream)
-        .flatMap(part -> part.functionCall().stream())
-        .findFirst()
-        .flatMap(FunctionCall::name);
-  }
-
   List<Event> ask(String prompt) {
+    return ask(prompt, call -> {});
+  }
+
+  /**
+   * The same turn, telling {@code onToolCall} about each tool call when the model makes
+   * it and again when its result is back. The events themselves still arrive at the end:
+   * they are what the stored task is built from, and the progress is a separate channel.
+   */
+  List<Event> ask(String prompt, Consumer<Progress.ToolEvent> onToolCall) {
     // Map.<String, Object>of() rather than null: null binds to the deprecated
     // ConcurrentMap overload, and a deprecation warning is not what you want on screen.
     var session = runner.sessionService()
         .createSession(appName, "demo", Map.<String, Object>of(), null)
         .blockingGet();
-
-    return runner.runAsync(
-            session.userId(),
-            session.id(),
-            Content.fromParts(Part.fromText(prompt)),
-            RunConfig.builder().build())
-        .toList()
-        .blockingGet();
+    Progress.watch(session.id(), onToolCall);
+    try {
+      return runner.runAsync(
+              session.userId(),
+              session.id(),
+              Content.fromParts(Part.fromText(prompt)),
+              RunConfig.builder().build())
+          .toList()
+          .blockingGet();
+    } finally {
+      Progress.unwatch(session.id());
+    }
   }
 
   /** The function calls the model made, in order, as {name, args, id} triples. */

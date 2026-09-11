@@ -65,7 +65,8 @@ public final class ReleaseReport {
         // startup, and a report headed with the wrong date is wrong in the one place
         // everybody reads.
         .instruction(new Instruction.Provider(ctx -> Single.just(skill + dateNote())))
-        .tools(gateway, FunctionTool.create(ReleaseReport.class, "today"))
+        // Wrapped so each call is reported the moment the model makes it. See Progress.
+        .tools(Progress.wrap(gateway), Progress.wrap(FunctionTool.create(ReleaseReport.class, "today")))
         .build();
   }
 

@@ -22,9 +22,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * The two endpoints kagent needs from a BYO agent.
  *
- * There is no A2A SDK on Maven Central for Java, and the contract is small enough not to
- * want one: a static agent card for the readiness probe, and JSON-RPC {@code message/send}
- * for the question. Serving it here is what makes this a long-lived pod rather than a
+ * The official A2A Java SDK exists, but the contract is small enough not to want it here:
+ * a static agent card for the readiness probe, and JSON-RPC {@code message/send} and
+ * {@code message/stream} for the question. Serving it here is what makes this a long-lived pod rather than a
  * batch job, so kagent can run it exactly as it runs the Python agent.
  */
 final class A2aServer {
@@ -104,8 +104,9 @@ final class A2aServer {
    *   4. artifact-update with the answer, lastChunk
    *   5. status-update, completed, final                          (without it nothing settles)
    *
-   * ADK gives back the whole turn at once, so these are emitted together at the end
-   * rather than as the work happens. The shape is honest; the timing is not incremental.
+   * Between 2 and 3, one working status-update per tool call, twice: {name, args} when
+   * the model makes it and {name, response} when the result is back. The UI draws those
+   * as tool cards and a terminal as a trace, both while the run is still going.
    */
   private void messageStream(HttpExchange exchange, JsonNode request) throws IOException {
     var prompt = firstTextPart(request);
@@ -159,13 +160,13 @@ final class A2aServer {
 
       List<Event> events = List.of();
       String answer;
+      // ADK hands the turn's events over when it finishes, so progress cannot come from
+      // them. It comes from the tools: each call is reported as the model makes it, and
+      // goes out as a frame while the turn is still running.
+      java.util.function.Consumer<Progress.ToolEvent> onToolCall =
+          call -> progress(out, rpcId, taskId, contextId, userId, invocationId, call);
       try {
-        // No progress frames. ADK Java hands every event over when the turn FINISHES:
-        // instrumented, all eighteen tool calls arrived within six milliseconds of each
-        // other at the end of a seventy second run. Emitting a frame per call therefore
-        // dumps eighteen messages at once rather than showing progress, so the wait
-        // stays a wait and the transcript stays clean.
-        events = Turn.of(agent, name).ask(prompt);
+        events = Turn.of(agent, name).ask(prompt, onToolCall);
         answer = Turn.finalText(events);
       } catch (RuntimeException e) {
         var cause = e.getCause() == null ? e : e.getCause();
@@ -177,7 +178,7 @@ final class A2aServer {
         if (detail.contains("tool_use") && detail.contains("tool_result")) {
           Console.failed("malformed tool history from the previous attempt, retrying once");
           try {
-            events = Turn.of(agent, name).ask(prompt);
+            events = Turn.of(agent, name).ask(prompt, onToolCall);
             answer = Turn.finalText(events);
           } catch (RuntimeException retry) {
             // Twice is not bad luck. An agent the gateway generated nothing for cannot
@@ -314,8 +315,41 @@ final class A2aServer {
   private void frame(java.io.OutputStream out, JsonNode rpcId, ObjectNode result) throws IOException {
     var envelope = Json.object().put("jsonrpc", "2.0").putRawValue("id", raw(rpcId));
     envelope.set("result", result);
-    out.write(("data: " + Json.write(envelope) + "\n\n").getBytes(StandardCharsets.UTF_8));
-    out.flush();
+    // Progress frames are written from the tool threads while this handler waits for the
+    // turn, and the model can make several calls at once. One writer at a time.
+    synchronized (out) {
+      out.write(("data: " + Json.write(envelope) + "\n\n").getBytes(StandardCharsets.UTF_8));
+      out.flush();
+    }
+  }
+
+  /**
+   * A tool call, or its result, as a working status-update. Same data-part shape as the
+   * stored history and as kagent's own runtime puts on the wire: {name, args} for the
+   * call, {name, response} for the result. The UI reads the shape, not a type field.
+   */
+  private void progress(java.io.OutputStream out, JsonNode rpcId, String taskId, String contextId,
+                        String userId, String invocationId, Progress.ToolEvent call) {
+    var data = Json.object().put("name", call.name()).put("id", call.id());
+    if (call.response() == null) {
+      data.set("args", Json.MAPPER.valueToTree(call.args()));
+    } else {
+      data.set("response", Json.MAPPER.valueToTree(call.response()));
+    }
+    var message = dataMessage(data);
+    message.put("contextId", contextId).put("taskId", taskId);
+    message.set("metadata", kagentMetadata(contextId, userId, invocationId));
+    var working = Json.object().put("state", "working").put("timestamp", Instant.now().toString());
+    working.set("message", message);
+    var update = statusUpdate(taskId, contextId, working, false, false);
+    update.set("metadata", kagentMetadata(contextId, userId, invocationId));
+    try {
+      frame(out, rpcId, update);
+    } catch (IOException e) {
+      // The client has gone. The turn finishes anyway and the stored task is what anyone
+      // coming back will read, so this is worth a line in the log and nothing more.
+      Console.failed("could not stream a tool call: " + e.getMessage());
+    }
   }
 
   private String card(JsonNode request) {
