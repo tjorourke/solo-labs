@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# remove.sh — take Part 8 off the cluster entirely.
+# teardown.sh — take this part off the cluster entirely.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K="kubectl --context ${CTX:-kind-mesh1}"

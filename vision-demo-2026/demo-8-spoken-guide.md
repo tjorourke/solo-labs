@@ -33,16 +33,21 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 ## Before you start
 
-1. Run the **Connect** cell at the bottom of the notebook, then **`preflight`**. Connect
-   puts `mcp`, `ask`, `try-merge` and the rest on `PATH` and writes a kubeconfig holding
-   only this cluster, which is why every cell can say plain `kubectl`. Preflight checks
-   the fixture counts, the catalogue, both agents, both MCP paths, model access, stray
-   policies left over from a previous run, and whether traces are landing. If it says
-   "ready to present", it is. If not, every failure line says what to fix. `setup` is
-   cluster setup, not a beat: run it well before you present. It builds the waypoint,
-   both backends, the route and the catalogue entries, and you never touch it on stage.
-2. Run beat 1 once to warm the path, then reset: the last cell puts `toolMode` back to
-   `Standard` and deletes any policy.
+1. Run the **Connect** cell at the bottom of the notebook, then
+   **`./agents/prtriage/scripts/preflight.sh`**. Connect is
+   `source agents/prtriage/connect.sh`, and that same line works pasted into a terminal
+   from any directory, so the notebook and a terminal give you the same shell. It puts
+   `mcp`, `ask`, `try-merge` and the rest on `PATH` and writes a kubeconfig holding only
+   this cluster, which is why every cell can say plain `kubectl`. It changes nothing in
+   the cluster, so re-run it whenever, including mid-demo. Preflight checks the fixture
+   counts, the catalogue, both agents, both MCP paths, model access, stray policies left
+   over from a previous run, and whether traces are landing. If it says "ready to
+   present", it is. If not, every failure line says what to fix.
+   `./agents/prtriage/scripts/setup.sh` is cluster setup, not a beat: run it well before
+   you present. It builds the waypoint, both backends, the route and the catalogue
+   entries, and you never touch it on stage.
+2. Run beat 1 once to warm the path, then `./agents/prtriage/scripts/reset.sh`, which
+   puts `toolMode` back to `Standard` and deletes any policy.
 3. Confirm the repo still has twenty four open pull requests, four held, three drafts.
 4. Have the `tools/list` output captured to a file as a fallback.
 5. Windows you want open: the notebook, the kagent UI, a terminal, and optionally the
