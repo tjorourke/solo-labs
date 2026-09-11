@@ -3,8 +3,10 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K="kubectl --context ${CTX:-kind-mesh1}"
-for r in "deployment releasejava" "agent releasejava" "deployment prtriagejava" \
-         "agent prtriagejava" "mcpserver github-mcp" "skill release-report"; do
+for r in "deployment releasejava" "agent releasejava" \
+         "deployment changelogjava" "agent changelogjava" \
+         "deployment prtriagejava" "agent prtriagejava" \
+         "mcpserver github-mcp" "skill release-report"; do
   arctl delete $r >/dev/null 2>&1 && echo "  removed $r from the registry"
 done
 $K -n kagent delete enterpriseagentgatewaypolicy github-per-agent --ignore-not-found

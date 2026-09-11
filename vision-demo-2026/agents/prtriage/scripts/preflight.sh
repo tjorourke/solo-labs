@@ -98,7 +98,9 @@ M2="$($K -n "$NS" get enterpriseagentgatewaybackend github-mcp -o jsonpath='{.sp
   || fail "the two backends agree" "ingress=$M1 mesh=$M2, the demo would measure the wrong one"
 
 # ---------------------------------------------------------------- 4. the agents
-for a in prtriagejava releasejava; do
+# changelogjava is checked like prtriagejava, not like releasejava: setup deploys it, so
+# if it is missing before you present, the refusal beat in step 6 has nothing to refuse.
+for a in prtriagejava changelogjava releasejava; do
   exists="$($K -n "$NS" get agent "$a" -o jsonpath='{.metadata.name}' 2>/dev/null)"
   if [ -z "$exists" ]; then
     [ "$a" = "releasejava" ] && pass "agent $a" "not deployed yet, step 6 does it" \

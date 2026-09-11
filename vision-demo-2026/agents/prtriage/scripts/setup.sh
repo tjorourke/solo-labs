@@ -75,6 +75,21 @@ if [ "$st" != "True" ]; then
 fi
 echo "backend Accepted=True"
 echo
+
+# The changelog agent, which exists so that the demo has something to refuse.
+#
+# It belongs to setup rather than to a beat: the story is that another team's agent has
+# been running here all along, wired to the same approved GitHub server in the
+# catalogue, and nobody noticed it could use the credential until a policy said who may.
+# Wheeling it in half way through step 6 would make it look like a prop.
+echo "== the changelog agent (another team's, deliberately not in the policy) =="
+arctl apply -f "$HERE/../yaml/85-unscoped-agent.yaml"
+until $K -n kagent get deploy/changelogjava >/dev/null 2>&1; do sleep 2; done
+$K -n kagent rollout status deploy/changelogjava --timeout=240s >/dev/null
+$K -n kagent wait --for=condition=Ready agent/changelogjava --timeout=180s >/dev/null
+$K -n kagent get agent changelogjava
+echo
+
 echo "✓ Part 8 ready."
 echo "    agents call:  http://github-mcp.kagent.svc.cluster.local/   (waypoint, identity-aware)"
 echo "    laptop calls: http://github-mcp.${LB}.sslip.io/              (ingress, steps 1 and 2)"

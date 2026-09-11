@@ -8,5 +8,7 @@ $K -n agentgateway-system delete enterpriseagentgatewaypolicy github-readonly --
 arctl delete deployment releasejava >/dev/null 2>&1 || true
 arctl delete agent releasejava >/dev/null 2>&1 || true
 $K -n kagent delete deploy releasejava --ignore-not-found
+# changelogjava deliberately survives a reset. It is part of setup, not a beat: the
+# story is that another team's agent has been running here all along.
 "$HERE/set-mode.sh" Standard
 echo "  ✓ reset"

@@ -305,13 +305,14 @@ for both.
 ```
   identity           read PRs   merge        functions in its sandbox
   triage agent       yes        not defined  list_pull_requests pull_request_read
-  release agent      yes        DEFINED      ... merge_pull_request ...
-  another workload   DENIED     DENIED       (refused)
+  release agent      yes        DEFINED      list_pull_requests merge_pull_request ...
+  changelog agent    DENIED     DENIED       (the gateway generated no functions at all)
 ```
 
 > For the triage agent `merge_pull_request` is not a function that exists. The release
-> agent has it. Another workload in the same namespace, with an identity the policy does
-> not name, gets nothing at all.
+> agent has it. And the third one is another team's agent, which has been running in
+> this cluster the whole time, wired to the same approved GitHub server. It gets nothing
+> at all.
 >
 > The gateway generates that API after it applies the policy, so this table is the
 > policy, read back out of the sandbox.
@@ -346,6 +347,39 @@ Only mention it if someone asks whether you just merged something.
 > them. GitHub's permissions bound what the credential can ever do; gateway policy gives
 > each agent using that one integration a different set of tool permissions, which is a
 > distinction GitHub has no way to express.
+
+### The agent that was never approved for it
+
+**Run the changelog agent cell.** This is the one to slow down on, because it is the
+question every platform team is actually asking.
+
+**Say:**
+
+> Same question, same cluster, different agent. Watch what it does.
+>
+> It writes the program, exactly like the triage agent did. And
+> `list_pull_requests is not defined`. So it asks the gateway what tools it can have,
+> and gets an empty list back. Not an error, not a 403. An empty catalogue.
+>
+> Then it tells me it cannot do the job, which is the right answer and not one it had
+> to be taught.
+
+**Cue:** the agent does not hallucinate a report. Worth saying out loud, because the
+room will be wondering.
+
+**Then the scoping, which is the bit to talk over:**
+
+> This agent is in the catalogue. It is wired to the same approved GitHub server. Every
+> part of its deployment looks correct, and it starts fine.
+>
+> Being in the catalogue is not permission. AgentRegistry decides what an agent may be
+> wired to. The gateway decides what it may call. Two questions, two layers, and you
+> want both: one team's agent being allowed to reference GitHub should not mean it can
+> merge your pull requests.
+>
+> The identity is the service account, and it is not something the agent chooses. Add
+> fifty more agents to this cluster tomorrow and none of them appear in that expression,
+> so none of them get a single tool. It fails closed by default, not by vigilance.
 
 **Finish on useful access, not on the denial:**
 

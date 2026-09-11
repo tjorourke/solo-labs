@@ -79,9 +79,8 @@ echo
 printf "  %-18s %-10s %-12s %s\n" "identity" "read PRs" "merge"  "functions in its sandbox"
 printf "  %-18s %-10s %-12s %s\n" "------------------" "--------" "-----------" "------------------------"
 row "triage agent"     prtriagejava
-row "release agent"  releasejava
-# my-mcp is an ordinary pod in the namespace. It IS in the mesh, so it has an identity,
-# just not one the policy names. That is the honest third row and the common case: some
-# other workload that found the endpoint.
-row "another workload" my-mcp
+row "release agent"    releasejava
+# The third row is the common case: another team's agent, in the same namespace, wired
+# to the same approved GitHub server in the catalogue, and not named in the policy.
+row "changelog agent"  changelogjava
 echo
