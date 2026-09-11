@@ -295,7 +295,7 @@ the round trips and what the model has to carry.
 **Run:** the policy, then the release agent, then `identity-matrix`, then `try-merge`
 for both.
 
-**Say, while the policy goes on:**
+**Say, and note the policy is already there. You are showing it, not switching it on:**
 
 > The triage agent reads pull requests. A release agent needs to merge them. Both use
 > the same approved GitHub integration, the same image, and the same skill.

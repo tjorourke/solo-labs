@@ -91,6 +91,13 @@ $K -n kagent wait --for=condition=Programmed gateway/model-waypoint --timeout=18
 $K apply -f "$HERE/../yaml/95-egress-policy.yaml"
 echo
 
+# The per-agent policy is part of the platform, not a beat. A cluster where the rule is
+# only applied once the presenter reaches slide six is not how anyone runs anything, and
+# it leaves an agent nobody approved holding a credential until then.
+echo "== the per-agent authorization policy =="
+$K apply -f "$HERE/../yaml/70-identity-policy.yaml"
+echo
+
 echo "== the changelog agent (another team's, deliberately not in the policy) =="
 arctl apply -f "$HERE/../yaml/85-unscoped-agent.yaml"
 until $K -n kagent get deploy/changelogjava >/dev/null 2>&1; do sleep 2; done

@@ -54,10 +54,31 @@ final class KagentSession {
       return;
     }
     try {
-      var event = Json.object().put("author", author).put("invocationId", UUID.randomUUID().toString());
+      // The stored event is an ADK event, and the UI reads specific fields off it. Three
+      // are not optional however harmless they look: `id` and `timestamp` (epoch seconds
+      // as a FLOAT, which is what orders the conversation), and `invocation_id` in
+      // snake_case. Write a minimal {author, content} event and the call succeeds, the
+      // row is stored, the answer appears live from the stream, and the moment you
+      // navigate away and back the chat is empty, because nothing renders it.
       var content = Json.object().put("role", "user".equals(author) ? "user" : "model");
       content.putArray("parts").add(Json.object().put("text", text));
+
+      var event = Json.object()
+          .put("id", UUID.randomUUID().toString())
+          .put("timestamp", System.currentTimeMillis() / 1000.0)
+          .put("author", author)
+          .put("invocation_id", UUID.randomUUID().toString())
+          .put("branch", (String) null)
+          .put("partial", (Boolean) null)
+          .put("turn_complete", (Boolean) null)
+          .put("error_code", (String) null)
+          .put("error_message", (String) null)
+          .put("interrupted", (Boolean) null);
       event.set("content", content);
+      event.set("actions", Json.object()
+          .put("skip_summarization", (Boolean) null)
+          .put("escalate", (Boolean) null)
+          .put("transfer_to_agent", (String) null));
 
       var body = Json.object()
           .put("id", UUID.randomUUID().toString())

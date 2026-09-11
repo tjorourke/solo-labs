@@ -150,8 +150,10 @@ inmesh="$($K -n "$NS" exec deploy/prtriagejava -- sh -c '
   S=$(wget -qS -O /dev/null --header="Content-Type: application/json" --header="Accept: application/json, text/event-stream" --post-data="$I" $U 2>&1 | grep -i mcp-session-id | awk "{print \$2}")
   wget -qO- --header="Content-Type: application/json" --header="Accept: application/json, text/event-stream" ${S:+--header="Mcp-Session-Id: $S"} \
     --post-data='"'"'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'"'"' $U 2>&1 | grep -o "\"name\":\"[a-z_]*\"" | wc -l' 2>/dev/null | tr -d ' ')"
-wantm=93; [ "${M2:-Standard}" != "Standard" ] && wantm=2
-if [ "${inmesh:-0}" = "$wantm" ]; then pass "in-mesh MCP path (agents)" "$inmesh tools via the waypoint"
+# The in-mesh count is what the policy leaves for prtriagejava, not the whole catalogue:
+# two GitHub tools in Standard, and the two meta tools in a code mode.
+wantm=2
+if [ "${inmesh:-0}" = "$wantm" ]; then pass "in-mesh MCP path (agents)" "$inmesh tools for the triage agent, as the policy allows"
 elif [ "${inmesh:-0}" -gt 0 ]; then fail "in-mesh MCP path (agents)" "$inmesh tools, expected $wantm for ${M2:-Standard}"
 else fail "in-mesh MCP path (agents)" "the waypoint returned nothing"; fi
 
@@ -170,11 +172,11 @@ $K -n "$NS" get secret kagent-anthropic >/dev/null 2>&1 \
 
 # ---------------------------------------------------------------- 7. policy state
 pol="$($K -n "$NS" get enterpriseagentgatewaypolicy github-per-agent -o jsonpath='{.metadata.name}' 2>/dev/null)"
-# Applied already means step 6 has nothing left to show: the matrix and the refusal are
-# the before-and-after of applying it.
-[ -n "$pol" ] && { fail "identity policy" "already applied: step 6 has nothing to reveal"
+# The per-agent policy is part of the platform, not a beat. Missing it means every agent
+# in the namespace can use the GitHub credential, and step 6 has nothing to show.
+[ -z "$pol" ] && { fail "identity policy" "MISSING: every agent can use the credential"
                    note "fix: ./agents/prtriage/scripts/reset.sh"; } \
-              || pass "identity policy" "absent, as it should be before step 6"
+              || pass "identity policy" "in place, so each agent gets only its own tools"
 
 # --------------------------------------------------- 7b. egress really is closed
 # Tested, not assumed. This lab spent an afternoon believing a sentence about the agent

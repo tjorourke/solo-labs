@@ -47,7 +47,8 @@ JSON
 # fight each other: the second one reset the first one's mode mid-run and reported four
 # failures that were not real.
 restore() {
-  $K -n $NS delete enterpriseagentgatewaypolicy github-per-agent --ignore-not-found >/dev/null 2>&1
+  # The policy is cluster setup now, so restoring means putting it BACK, not removing it.
+  $K apply -f "$HERE/../yaml/70-identity-policy.yaml" >/dev/null 2>&1
   if [ -n "${RELEASE_WAS_DEPLOYED_BY_AUDIT:-}" ]; then
     arctl delete deployment releasejava >/dev/null 2>&1; arctl delete agent releasejava >/dev/null 2>&1
     $K -n $NS delete deploy releasejava --ignore-not-found >/dev/null 2>&1
@@ -176,7 +177,7 @@ echo "$probe" | grep -q '"Date":"MISSING"' && echo "$probe" | grep -q '"fetch":"
 
 # ─────────────────────────────────────────────────── identity and policy
 head_ "6 · two agents, different permissions"
-$K apply -f "$HERE/../yaml/70-identity-policy.yaml" >/dev/null 2>&1; sleep 6
+$K apply -f "$HERE/../yaml/70-identity-policy.yaml" >/dev/null 2>&1; sleep 6   # idempotent: setup applied it
 # step 6 deploys the release agent, so the audit has to as well before testing its claims
 if ! $K -n $NS get deploy/releasejava >/dev/null 2>&1; then
   arctl apply -f "$HERE/../yaml/80-release-agent.yaml" >/dev/null 2>&1
