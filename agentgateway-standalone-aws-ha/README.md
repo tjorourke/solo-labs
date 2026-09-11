@@ -1,4 +1,6 @@
-# agentgateway standalone on AWS: three nodes, no Kubernetes
+# agentgateway standalone on AWS, Part 1: OSS setup and high availability
+
+**Standalone AWS series:** **Part 1: OSS setup and high availability** · [Part 2: Enterprise setup and features](../agentgateway-standalone-aws-enterprise/)
 
 agentgateway as a plain binary under systemd on three EC2 instances, driven by **one
 YAML file**. No CRDs, no controller, no Kubernetes. The state that makes three

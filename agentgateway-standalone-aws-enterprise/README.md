@@ -1,13 +1,13 @@
-# Solo Enterprise for agentgateway standalone on AWS: three nodes, no Kubernetes
+# agentgateway standalone on AWS, Part 2: Enterprise setup and features
 
-Part 2 of the standalone fleet, and a setup guide. Part 1
-(`agentgateway-standalone-aws-ha`) builds the same three-node shape on the OSS build;
-this one builds it with **Solo Enterprise for agentgateway v2026.9.0** and turns on the
-enterprise features.
+**Standalone AWS series:** [Part 1: OSS setup and high availability](../agentgateway-standalone-aws-ha/) · **Part 2: Enterprise setup and features**
+
+Install **Solo Enterprise for agentgateway v2026.9.0** on three EC2 nodes, configure
+the proxy and security token service, then test the additional Enterprise MCP features.
+This creates a separate fleet; a running Part 1 deployment is not required.
 
 Same premise: binaries under systemd on three EC2 instances, driven by **one YAML file**.
-No CRDs, no controller, no Kubernetes. Two things are different to set up, and both are
-covered below: there are **two processes per node**, and the proxy needs a **licence**.
+The Enterprise setup uses **two processes per node**, a **licence** and **Ubuntu 24.04**.
 
 ```bash
 # what the node bootstrap runs, and what you would run on a laptop
@@ -181,7 +181,7 @@ Then work through the demos. Each one explains itself as it runs.
 | `15-ratelimit.sh` | The difference between a per-process limit and a real one. |
 | `16-tool-modes.sh` | The same MCP listener in `standard`, `search`, `code` and `codeSearch`, counting the tool definitions a client is given each time. Enterprise only. |
 | `17-composable.sh` | A tool defined as a pipeline of HTTP steps in the config file. One call, two requests, one answer. Enterprise only. |
-| `18-token-exchange.sh` | Impersonation, delegation and dual authentication, each proved by decoding the credential the upstream actually received rather than describing it. Enterprise only. |
+| `18-token-exchange.sh` | Test impersonation and dual authentication by inspecting the upstream credential. Delegation is skipped because this lab's Cognito tokens lack the required `may_act` claim. |
 | `20-ha-node-loss.sh` | Stop the gateway on a node, then destroy the instance and time the rebuild. |
 | `21-ha-mcp-session.sh` | Drive one MCP session at all three nodes directly, then break it by changing one node's session key. |
 | `22-ha-config-push.sh` | One `s3 cp` reconfigures the fleet, with a streaming response held open across the reload. |
