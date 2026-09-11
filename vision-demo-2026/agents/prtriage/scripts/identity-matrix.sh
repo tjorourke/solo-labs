@@ -26,7 +26,7 @@ case "$MODE" in
     echo
     echo "  This reads the policy out of the gateway's code sandbox, so it needs a mode"
     echo "  that offers run_code. The backend is currently toolMode=${MODE:-unknown}."
-    echo "  Run step 5 first, or set it directly:"
+    echo "  Run section 6 first, or set it directly:"
     echo
     echo "    for ns in agentgateway-system kagent; do"
     echo "      kubectl -n \$ns patch enterpriseagentgatewaybackend github-mcp --type merge \\"
