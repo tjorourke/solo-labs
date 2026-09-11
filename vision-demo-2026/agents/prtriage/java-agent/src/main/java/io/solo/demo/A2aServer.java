@@ -85,43 +85,119 @@ final class A2aServer {
   }
 
   /**
-   * One turn, delivered as Server-Sent Events. The work is not incremental here (ADK
-   * hands back the events when the turn finishes), so this is a single frame carrying
-   * the same completed Task that message/send returns. That satisfies the streaming
-   * contract without pretending to stream tokens we do not have.
+   * One turn, as the event sequence kagent's UI expects.
+   *
+   * A single completed Task in one frame is not enough: the UI created a session for
+   * every prompt and showed nothing in it, not even the message that had just been
+   * typed. The sequence below is the one the Python agent emits, captured off the wire
+   * and matched frame for frame, because that is the contract in practice.
+   *
+   *   1. status-update, submitted, carrying the USER's message   (the UI renders this)
+   *   2. status-update, working, carrying the kagent_* metadata  (session bookkeeping)
+   *   3. status-update, working, carrying the AGENT's message
+   *   4. artifact-update with the answer, lastChunk
+   *   5. status-update, completed, final                          (without it nothing settles)
+   *
+   * ADK gives back the whole turn at once, so these are emitted together at the end
+   * rather than as the work happens. The shape is honest; the timing is not incremental.
    */
   private void messageStream(HttpExchange exchange, JsonNode request) throws IOException {
     var prompt = firstTextPart(request);
     Console.turn(turns.incrementAndGet(), prompt);
 
-    List<Event> events = List.of();
-    String answer;
-    try {
-      events = Turn.of(agent, name).ask(prompt);
-      answer = Turn.finalText(events);
-    } catch (RuntimeException e) {
-      var cause = e.getCause() == null ? e : e.getCause();
-      answer = "the agent failed: %s: %s".formatted(
-          cause.getClass().getSimpleName(),
-          cause.getMessage() == null ? "(no message)" : cause.getMessage());
-      Console.failed(answer);
-      e.printStackTrace();
-    }
-
-    var frame = Json.write(Json.object()
-        .put("jsonrpc", "2.0")
-        .putRawValue("id", raw(request.path("id")))
-        .set("result", task(request, answer, events)));
+    var taskId = UUID.randomUUID().toString();
+    var contextId = text(request, "contextId").orElseGet(() -> UUID.randomUUID().toString());
+    var rpcId = request.path("id");
 
     var headers = exchange.getResponseHeaders();
     headers.add("Content-Type", "text/event-stream");
     headers.add("Cache-Control", "no-cache");
     headers.add("Connection", "keep-alive");
     exchange.sendResponseHeaders(200, 0);          // 0 = chunked, no length up front
+
     try (var out = exchange.getResponseBody()) {
-      out.write(("data: " + frame + "\n\n").getBytes(StandardCharsets.UTF_8));
-      out.flush();
+      // 1. the prompt, echoed back, which is what the UI draws as the user's turn
+      var userMessage = Json.object()
+          .put("kind", "message")
+          .put("role", "user")
+          .put("messageId", text(request, "messageId").orElseGet(() -> UUID.randomUUID().toString()))
+          .put("contextId", contextId)
+          .put("taskId", taskId);
+      userMessage.putArray("parts").add(Json.object().put("kind", "text").put("text", prompt));
+      var submitted = Json.object().put("state", "submitted").put("timestamp", Instant.now().toString());
+      submitted.set("message", userMessage);
+      frame(out, rpcId, statusUpdate(taskId, contextId, submitted, false, true));
+
+      // 2. working, with the bookkeeping kagent uses to file the session
+      frame(out, rpcId, statusUpdate(taskId, contextId,
+          Json.object().put("state", "working").put("timestamp", Instant.now().toString()), false, true));
+
+      List<Event> events = List.of();
+      String answer;
+      try {
+        events = Turn.of(agent, name).ask(prompt);
+        answer = Turn.finalText(events);
+      } catch (RuntimeException e) {
+        var cause = e.getCause() == null ? e : e.getCause();
+        answer = "the agent failed: %s: %s".formatted(
+            cause.getClass().getSimpleName(),
+            cause.getMessage() == null ? "(no message)" : cause.getMessage());
+        Console.failed(answer);
+        e.printStackTrace();
+      }
+
+      // 3. the answer as a message
+      var agentMessage = Json.object()
+          .put("kind", "message")
+          .put("role", "agent")
+          .put("messageId", UUID.randomUUID().toString())
+          .put("contextId", contextId)
+          .put("taskId", taskId);
+      agentMessage.putArray("parts").add(Json.object().put("kind", "text").put("text", answer));
+      var working = Json.object().put("state", "working").put("timestamp", Instant.now().toString());
+      working.set("message", agentMessage);
+      frame(out, rpcId, statusUpdate(taskId, contextId, working, false, true));
+
+      // 4. and as an artifact
+      var artifact = Json.object().put("artifactId", UUID.randomUUID().toString()).put("name", "report");
+      artifact.putArray("parts").add(Json.object().put("kind", "text").put("text", answer));
+      var artifactUpdate = Json.object()
+          .put("kind", "artifact-update")
+          .put("taskId", taskId)
+          .put("contextId", contextId)
+          .put("lastChunk", true);
+      artifactUpdate.set("artifact", artifact);
+      frame(out, rpcId, artifactUpdate);
+
+      // 5. final. Without this the client waits, and the session stays empty.
+      frame(out, rpcId, statusUpdate(taskId, contextId,
+          Json.object().put("state", "completed").put("timestamp", Instant.now().toString()), true, true));
     }
+  }
+
+  /** A status-update event, optionally carrying the kagent session bookkeeping. */
+  private ObjectNode statusUpdate(String taskId, String contextId, ObjectNode status,
+                                  boolean isFinal, boolean withMetadata) {
+    var event = Json.object()
+        .put("kind", "status-update")
+        .put("taskId", taskId)
+        .put("contextId", contextId)
+        .put("final", isFinal);
+    event.set("status", status);
+    if (withMetadata) {
+      event.set("metadata", Json.object()
+          .put("kagent_app_name", "kagent__NS__" + name)
+          .put("kagent_user_id", "A2A_USER_" + contextId)
+          .put("kagent_session_id", contextId));
+    }
+    return event;
+  }
+
+  private void frame(java.io.OutputStream out, JsonNode rpcId, ObjectNode result) throws IOException {
+    var envelope = Json.object().put("jsonrpc", "2.0").putRawValue("id", raw(rpcId));
+    envelope.set("result", result);
+    out.write(("data: " + Json.write(envelope) + "\n\n").getBytes(StandardCharsets.UTF_8));
+    out.flush();
   }
 
   private String card(JsonNode request) {
