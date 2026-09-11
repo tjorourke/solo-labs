@@ -23,12 +23,17 @@ Do not claim it is faster. Both land around thirty seconds and somebody will tim
 
 ## Verify these two in rehearsal, they cannot be checked from a terminal
 
-1. **The Tracing tab actually draws the tree.** The Java agent now initialises the
+1. **Do not plan a live chat in the kagent UI with this agent.** It answers over A2A,
+   including streaming, but the UI's conversation view is populated from the controller's
+   stored session events, which only kagent's own Python runtime writes. The chat shows
+   "Thinking" and the session reads back empty. The notebook path is the one to use, and
+   it prints the trace you want anyway.
+2. **The Tracing tab actually draws the tree.** The Java agent now initialises the
    OpenTelemetry SDK from the variables kagent injects, and its spans do land in the
    table the UI reads: `call_llm` and `execute_tool <name>`, the same names the Python
    agent produces. Confirmed in ClickHouse. What is not confirmed is the tab rendering
    them, because that needs a browser. Look at it once before you rely on it.
-2. **The report a viewer sees in the UI**, as opposed to the one `ask.sh` prints. They
+3. **The report a viewer sees in the UI**, as opposed to the one `ask.sh` prints. They
    come from the same A2A response, but only one of them has been looked at.
 
 ## Before you start
@@ -157,8 +162,15 @@ does not care, an Agent record just references an image.
 ## Beat 4 · Publish it, deploy it, read the trace
 
 **Run:** the two `arctl apply` commands, which publish the agent and deploy it, then
-wait for Ready. Then switch to the kagent UI, pick **prtriagejava**, paste the question,
-and open the Tracing tab.
+wait for Ready. Then ask the question from the notebook and read the trace it prints.
+
+**Not from the kagent UI.** A chat there with this agent shows "Thinking" and stores no
+history, and the reason is worth knowing rather than discovering on stage: the UI draws
+a conversation from the events the controller has stored for that session, and those are
+written by kagent's own Python runtime. A BYO agent that speaks A2A correctly, as this
+one now does, never writes them, so the session stays empty even though the answer came
+back. Use the UI to show the agent exists, its settings and its card. Ask it from the
+notebook.
 
 **Say while it deploys:**
 
