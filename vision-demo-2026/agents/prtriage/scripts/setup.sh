@@ -24,7 +24,10 @@ $K -n agentgateway-system create secret generic github-mcp-pat \
   --from-literal=Authorization="$PAT" --dry-run=client -o yaml | $K apply -f -
 
 echo "== agentgateway fronts GitHub's hosted MCP server (ingress, for steps 1 and 2) =="
-sed "s/LB_PLACEHOLDER/$LB/" "$HERE/../yaml/10-github-backend.yaml" | $K apply -f -
+$K apply -f "$HERE/../yaml/10-github-backend.yaml"
+# yaml/11 (the published route) and yaml/12 (its authentication) are deliberately NOT applied.
+# Step 1 publishes the route and step 2 closes it, because "a route you publish is open until you
+# authenticate it" is worth watching rather than being told. reset.sh removes both again.
 
 echo "== and again at a WAYPOINT in the mesh, which is what the agents use =="
 # The PAT has to exist where the waypoint can read it, so it goes in both namespaces.

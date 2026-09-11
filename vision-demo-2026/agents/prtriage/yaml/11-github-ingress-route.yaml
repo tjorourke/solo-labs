@@ -1,0 +1,26 @@
+# Publishing the MCP backend so a person can reach it.
+#
+# Agents do not use this. They reach the same backend on an in-cluster name, through the waypoint
+# in 15-github-waypoint.yaml, where the mesh hands the gateway a certificate to check. This route
+# exists so a human at a laptop can look at the server at all.
+#
+# Applying it is an exposure: a published route is open to anything that can reach the address
+# until it is authenticated, and the backend behind this one holds a GitHub credential.
+# 12-ingress-jwt.yaml is what closes it, and the lab applies them in that order on purpose.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: github-mcp
+  namespace: agentgateway-system
+spec:
+  parentRefs: [{ name: ar-ingress }]
+  # the sslip.io name for humans and curl, and the gateway Service's own cluster
+  # name so the agent -> gateway hop never depends on public DNS at all
+  hostnames:
+  - "github-mcp.LB_PLACEHOLDER.sslip.io"
+  - "ar-ingress.agentgateway-system.svc.cluster.local"
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: github-mcp

@@ -33,11 +33,24 @@ arctl_login >/dev/null 2>&1 \
 # A kubeconfig holding only this cluster, so every cell and every pasted command can say
 # plain `kubectl`. Writing our own file rather than switching the laptop's current
 # context means no other terminal changes under you.
-kubectl config view --raw --minify --context kind-mesh1 > /tmp/demo8.kubeconfig 2>/dev/null \
-  && export KUBECONFIG=/tmp/demo8.kubeconfig \
-  && kubectl config use-context kind-mesh1 >/dev/null 2>&1 \
-  && echo "  kubectl    kind-mesh1 (via \$KUBECONFIG=/tmp/demo8.kubeconfig)" \
-  || echo "  kubectl    no kind-mesh1 context found"
+_p8_kubeconfig=/tmp/demo8.kubeconfig
+# Never read our own output. A plain `kubectl config view > $_p8_kubeconfig` truncates the file
+# BEFORE kubectl runs, and on a second Connect in the same shell KUBECONFIG already points at it,
+# so kubectl reads an empty file, writes nothing, and leaves a 0-byte kubeconfig behind. Every
+# later cell then talks to localhost:8080 and dumps five lines of memcache errors. Build it from
+# the real config, via a temp file, and only then swap it in.
+[ "${KUBECONFIG:-}" = "$_p8_kubeconfig" ] && unset KUBECONFIG
+_p8_tmp="$(mktemp)"
+if kubectl config view --raw --minify --context kind-mesh1 > "$_p8_tmp" 2>/dev/null && [ -s "$_p8_tmp" ]; then
+  mv "$_p8_tmp" "$_p8_kubeconfig"
+  export KUBECONFIG="$_p8_kubeconfig"
+  kubectl config use-context kind-mesh1 >/dev/null 2>&1
+  echo "  kubectl    kind-mesh1 (via \$KUBECONFIG=$_p8_kubeconfig)"
+else
+  rm -f "$_p8_tmp"
+  echo "  kubectl    NO kind-mesh1 context found. Later cells will fail: check 'kubectl config get-contexts'"
+fi
+unset _p8_tmp _p8_kubeconfig
 
 # mcp, ask, try-merge, wait-for-mode, reload-agent, identity-matrix, check-report,
 # trace-cost, sandbox-probe, compare-modes.

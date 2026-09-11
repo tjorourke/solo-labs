@@ -136,14 +136,14 @@ done
 LB="$($K -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)"
 # Use the suite's own client, which mints the token the listener now requires. The old copy in
 # /tmp predates that and reports an authenticated listener as "no tools".
-if [ -n "$LB" ]; then
+if [ -n "$LB" ] && [ -n "$($K -n agentgateway-system get httproute github-mcp -o name 2>/dev/null)" ]; then
   n="$("$HERE/mcp.sh" tools/list 2>/dev/null | grep -o '"name":"[a-z_]*"' | wc -l | tr -d ' ')"
   want=93; [ "${M1:-Standard}" != "Standard" ] && want=2
   if [ "${n:-0}" = "$want" ]; then pass "ingress MCP path (laptop)" "$n tools, as ${M1:-Standard} expects"
   elif [ "${n:-0}" -gt 0 ]; then fail "ingress MCP path (laptop)" "$n tools, expected $want for ${M1:-Standard}"
   else fail "ingress MCP path (laptop)" "no tools returned"; fi
 else
-  note "ingress path not checked (no LB address)"
+  note "laptop path not checked: the route is not published until step 1"
 fi
 
 # Retried, because reset.sh restarts the agent and an agent that has not finished
@@ -194,12 +194,14 @@ pol="$($K -n "$NS" get enterpriseagentgatewaypolicy github-per-agent -o jsonpath
 code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -X POST "http://github-mcp.${LB}.sslip.io/" \
        -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
        -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"pre","version":"1"}}}' 2>/dev/null)"
-case "$code" in
-  200)     pass "published listener" "open, as step 2 expects. Step 2 closes it on stage" ;;
-  401|403) fail "published listener" "already authenticated ($code): step 2 has nothing to close"
-           note "fix: ./agents/prtriage/scripts/reset.sh" ;;
-  *)       fail "published listener" "unexpected $code from the ingress" ;;
-esac
+rt="$($K -n agentgateway-system get httproute github-mcp -o jsonpath='{.metadata.name}' 2>/dev/null)"
+auth="$($K -n agentgateway-system get enterpriseagentgatewaypolicy github-mcp-ingress-auth -o jsonpath='{.metadata.name}' 2>/dev/null)"
+if [ -z "$rt" ] && [ -z "$auth" ]; then
+  pass "published route" "not published yet, which is what step 1 does"
+else
+  fail "published route" "already there (route=${rt:-none} auth=${auth:-none}): steps 1 and 2 have nothing to do"
+  note "fix: ./agents/prtriage/scripts/reset.sh"
+fi
 
 # --------------------------------------------------- 7b. egress really is closed
 # Tested, not assumed. This lab spent an afternoon believing a sentence about the agent
