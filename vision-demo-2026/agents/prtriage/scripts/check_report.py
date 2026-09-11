@@ -84,7 +84,14 @@ if extra:
 # "no approval" and "no sign-off" are the same verdict in different words, and the
 # model picks either. Judge the decision, not the phrasing.
 def same(a, b):
-    norm = lambda v: "no sign-off" if v.startswith("no ") else re.sub(r"\s*\(.*\)$", "", v)
+    # "awaiting sign-off" is the wording the house format uses in the SUMMARY block, and
+    # a model that carries it down into the rows has said exactly the same thing. Treat
+    # it as the same verdict rather than failing a report that is right.
+    def norm(v):
+        v = re.sub(r"\s*\(.*\)$", "", v).strip()
+        if v.startswith("no ") or v.startswith("awaiting"):
+            return "no sign-off"
+        return v
     return norm(a) == norm(b)
 
 wrong = [(n, want[n], got[n]) for n in sorted(set(want) & set(got))
