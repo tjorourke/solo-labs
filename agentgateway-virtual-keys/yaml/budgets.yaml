@@ -1,0 +1,37 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBudget
+metadata:
+  name: virtual-keys-lab
+  namespace: agentgateway-system
+  labels:
+    lab: virtual-keys
+spec:
+  budgets:
+    - name: per-key-tokens
+      subject:
+        virtualKey: "*"
+      limit:
+        amount: 250
+        unit: Tokens
+      window:
+        unit: Day
+      onBudgetExceeded: Block
+    - name: engineering-spend
+      subject:
+        group: engineering
+      limit:
+        amount: 5
+        unit: USD
+      window:
+        unit: Day
+      onBudgetExceeded: Block
+    - name: cost-centre-audit
+      subject:
+        costCenter: cc-product
+        environment: dev
+      limit:
+        amount: 1
+        unit: USD
+      window:
+        unit: Day
+      onBudgetExceeded: Audit

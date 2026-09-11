@@ -1,0 +1,38 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: virtual-keys
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: virtual-keys
+  traffic:
+    apiKeyAuthentication:
+      mode: Strict
+      configMapSelector:
+        matchLabels:
+          agentgateway.dev/apikey: virtual-keys-lab
+    entBudgetEnforcement: {}
+  frontend:
+    metrics:
+      attributes:
+        add:
+          - name: user_id
+            expression: apiKey.user
+          - name: team
+            expression: apiKey.group
+    accessLog:
+      attributes:
+        add:
+          - name: lab.user
+            expression: apiKey.user
+          - name: lab.team
+            expression: apiKey.group
+          - name: lab.cost_center
+            expression: apiKey.costCenter
+          - name: lab.virtual_key
+            expression: apiKey.id
+          - name: lab.cost
+            expression: llm.cost.total

@@ -1,0 +1,21 @@
+# Lists replace the chart defaults, so retain group, user and virtualKey.
+budgetDimensions:
+  enabled: true
+  config:
+    hierarchy:
+      - id: group
+        expression: apiKey.group
+        displayName: Team
+      - id: user
+        expression: apiKey.user
+        displayName: User
+    attributes:
+      - id: virtualKey
+        expression: apiKey.id
+        displayName: Virtual Key
+      - id: costCenter
+        expression: apiKey.costCenter
+        displayName: Cost Centre
+      - id: environment
+        expression: apiKey.environment
+        displayName: Environment

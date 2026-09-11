@@ -1,0 +1,19 @@
+# Artificial rates for local mock models, not provider prices.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-model-costs
+  namespace: agentgateway-system
+data:
+  catalog.json: |
+    {
+      "providers": {
+        "openai": {
+          "models": {
+            "virtual-key-demo": {"rates": {"input": "10000", "output": "10000"}},
+            "resolved-silver": {"rates": {"input": "10000", "output": "10000"}},
+            "resolved-gold": {"rates": {"input": "10000", "output": "10000"}}
+          }
+        }
+      }
+    }

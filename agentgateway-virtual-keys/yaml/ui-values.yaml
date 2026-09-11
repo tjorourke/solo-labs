@@ -1,0 +1,19 @@
+cluster: agw-virtual-keys
+platform:
+  multiCluster:
+    enabled: false
+istio:
+  ambient:
+    enabled: false
+service:
+  type: ClusterIP
+products:
+  agentgateway:
+    enabled: true
+    namespace: agentgateway-system
+    features:
+      cost-management: true
+      cost-management-writes: true
+clickhouse:
+  persistentVolume:
+    enabled: false

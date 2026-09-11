@@ -1,0 +1,21 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: model-access
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: virtual-keys
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - 'json(request.body).model in apiKey.allowedModels'
+  backend:
+    ai:
+      modelAliases:
+        silver: resolved-silver
+        gold: resolved-gold

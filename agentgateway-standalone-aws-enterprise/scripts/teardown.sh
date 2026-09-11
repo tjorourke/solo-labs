@@ -49,6 +49,7 @@ if [[ -f "$TF_DIR/terraform.tfstate" ]]; then
     ${LAB_AUTH0_ISSUER:+-var "auth0_issuer=$LAB_AUTH0_ISSUER"} \
     -var "openai_api_key=${OPENAI_API_KEY:-}" \
     -var "anthropic_api_key=${ANTHROPIC_API_KEY:-}" \
+    -var "agentgateway_license_key=${AGENTGATEWAY_LICENSE_KEY:-teardown}" \
     || warn "destroy reported errors; the sweep below may clear the blockers, then re-run"
 fi
 
@@ -56,13 +57,13 @@ fi
 # Sweep. Everything the lab creates is tagged, so anything left behind with the
 # lab's tag or name prefix is an orphan.
 # ---------------------------------------------------------------------------
-NAME="${LAB_NAME:-agw-ha}"
+NAME="${LAB_NAME:-agw-ent}"
 
 hdr "Sweep: orphaned resources"
 
 log "instances still running with the lab tag:"
 aws ec2 describe-instances \
-  --filters "Name=tag:Lab,Values=agentgateway-standalone-aws-ha" "Name=instance-state-name,Values=running,pending,stopping,stopped" \
+  --filters "Name=tag:Lab,Values=agentgateway-standalone-aws-enterprise" "Name=instance-state-name,Values=running,pending,stopping,stopped" \
   --query 'Reservations[].Instances[].[InstanceId,State.Name]' --output text | sed 's/^/    /' || true
 
 log "load balancers:"
@@ -109,5 +110,5 @@ cat <<'EOT'
   Check the bill for the day with:
     aws ce get-cost-and-usage --time-period Start=$(date -u -v-1d +%F),End=$(date -u +%F) \
       --granularity DAILY --metrics UnblendedCost \
-      --filter '{"Tags":{"Key":"Lab","Values":["agentgateway-standalone-aws-ha"]}}'
+      --filter '{"Tags":{"Key":"Lab","Values":["agentgateway-standalone-aws-enterprise"]}}'
 EOT
