@@ -1,50 +1,38 @@
 # Solo Enterprise for agentgateway standalone on AWS: three nodes, no Kubernetes
 
-Part 2 of the standalone fleet. Part 1 (`agentgateway-standalone-aws-ha`) runs the same
-three-node shape on the OSS build; this one runs **Solo Enterprise for agentgateway
-v2026.9.0**, announced in September 2026, and adds the features OSS has no equivalent for.
+Part 2 of the standalone fleet, and a setup guide. Part 1
+(`agentgateway-standalone-aws-ha`) builds the same three-node shape on the OSS build;
+this one builds it with **Solo Enterprise for agentgateway v2026.9.0** and turns on the
+enterprise features.
 
-Same premise as part 1: binaries under systemd on three EC2 instances, driven by **one
-YAML file**. No CRDs, no controller, no Kubernetes. What is different is that there are
-now **two processes per node**, the proxy and the security token service, and that the
-proxy will not start at all without a licence.
+Same premise: binaries under systemd on three EC2 instances, driven by **one YAML file**.
+No CRDs, no controller, no Kubernetes. Two things are different to set up, and both are
+covered below: there are **two processes per node**, and the proxy needs a **licence**.
 
 ```bash
-# what the enterprise installer does, on a laptop or a server
+# what the node bootstrap runs, and what you would run on a laptop
 curl -fsSL https://run.solo.io/agentgateway/install | sh
+export ENTERPRISE_AGENTGATEWAY_LICENSE_KEY=<your key>
+
 ~/.agentgateway/bin/agentgateway --version
 ~/.agentgateway/bin/agentgateway-sts --version
 ```
 
-Two binaries, one installer, and a different install host from OSS. The lab pins the
-version through `AGENTGATEWAY_VERSION`, because a node the Auto Scaling group builds next
-week has to be the same build as the two beside it.
+One installer, two binaries: `agentgateway` is the proxy and `agentgateway-sts` is the
+security token service. Pin the release with `AGENTGATEWAY_VERSION` and choose where they
+land with `AGENTGATEWAY_INSTALL_DIR`, which is what the launch template does so a node the
+Auto Scaling group builds next week matches the two beside it.
 
-Run it without a key and you get this, immediately, rather than a gateway that half works:
+## What this sets up
 
-```
-license refused startup: no license key configured, and this installation has never held
-a valid license; there is no grace period without a prior entitlement
-```
-
----
-
-## What part 2 adds
-
-| Enterprise feature | What it does here | Script |
+| Enterprise feature | How it is configured here | Script |
 | --- | --- | --- |
-| Tool modes | `standard`, `search`, `code` and `codeSearch` on the same MCP listener, measured by how many tool definitions a client has to accept. OSS behaves as though it is always `standard`. | `16-tool-modes.sh` |
-| Composable MCP | One tool name, two HTTP steps, one answer, defined in the config file. No MCP server written and none deployed. | `17-composable.sh` |
-| Impersonation | The gateway exchanges the user's Cognito token for one it signs itself, so the upstream never sees the IdP credential. | `18-token-exchange.sh` |
-| Delegation | One credential naming two parties: `sub` is the user, `act.sub` is the agent. | `18-token-exchange.sh` |
-| Dual authentication | The MCP client authenticates to the gateway, and the gateway authenticates to the backend with a different credential. | `18-token-exchange.sh` |
-| The read-write UI | The standalone UI that edits configuration, behind Cognito login on the fleet's own hostname, with edits shared through Aurora. | `23-ha-ui-overlay.sh` |
-
-And one failure mode that only exists once there are two processes:
-
-| Failure | What happens | Script |
-| --- | --- | --- |
-| The STS dies on one node | Documented behaviour is that the proxy keeps serving every user whose token it has already cached and answers `502` for everyone else, so the node looks healthy while a growing share of users fail. The systemd unit here `BindsTo` the STS, so the node stops and leaves the load balancer's pool instead. | `24-ha-sts-loss.sh` |
+| The STS | `entSts` in the shared config file, a second systemd unit per node, one signing key for the fleet from Secrets Manager. | `18-token-exchange.sh` |
+| Impersonation | `backendAuth.oauthTokenExchange` on an MCP target, so the upstream is called with a token the gateway signs rather than the caller's. | `18-token-exchange.sh` |
+| Dual authentication | `mcpAuthentication` on the listener for the client's credential, plus the exchange above for the backend's. | `18-token-exchange.sh` |
+| Tool modes | `mcp.toolMode`, switched between `standard`, `search`, `code` and `codeSearch` with a config push. | `16-tool-modes.sh` |
+| Composable MCP | `mcp.targets[].custom`: one tool defined as a pipeline of HTTP steps with CEL. | `17-composable.sh` |
+| The read-write UI | `ui.policies.oidc` against Cognito, served on the fleet's own hostname, with edits shared through Aurora. | `23-ha-ui-overlay.sh` |
 
 ## What it demonstrates
 
@@ -103,44 +91,18 @@ Two of those secrets are new in part 2 and both are deliberately fleet-wide:
 
 ---
 
-## The one that will catch you: glibc
+## The operating system
 
-Part 1 runs on Amazon Linux 2023. Part 2 cannot, and the reason is worth knowing before
-you plan a rollout.
-
-The OSS binary is a **static musl build** and runs on anything. The enterprise binary is
-**`aarch64-unknown-linux-gnu`**, dynamically linked, and needs **glibc 2.39**. Amazon
-Linux 2023 ships **2.34**, so the installer succeeds, both binaries land in
-`/usr/local/bin`, and then nothing starts:
-
-```
-/usr/local/bin/agentgateway: /lib64/libm.so.6: version `GLIBC_2.35' not found
-/usr/local/bin/agentgateway: /lib64/libc.so.6: version `GLIBC_2.39' not found
-/usr/local/bin/agentgateway: /lib64/libc.so.6: version `GLIBC_2.38' not found
-```
-
-The installer's own message is `the downloaded agentgateway binary does not run on this
-system`, which does not mention glibc, so the first instinct is to suspect the
-architecture. It is not the architecture.
-
-So this lab runs **Ubuntu 24.04 LTS**, which ships glibc 2.39 exactly and is therefore the
-oldest LTS that works. Check any host before you commit to it, in one command and without
-building anything:
+The fleet runs **Ubuntu 24.04 LTS**. The enterprise binary is
+`aarch64-unknown-linux-gnu` and needs **glibc 2.39**, which rules out Amazon Linux 2023
+(2.34) and anything else older. Check a candidate host before you commit to it:
 
 ```bash
-curl -fsSL -o agentgateway-enterprise-linux-arm64 \
-  https://storage.googleapis.com/enterprise-agentgateway-standalone/v2026.9.0/agentgateway-enterprise-linux-arm64
-chmod +x agentgateway-enterprise-linux-arm64
-
-docker run --rm --platform linux/arm64 -v "$PWD:/x:ro" ubuntu:24.04 \
-  /x/agentgateway-enterprise-linux-arm64 --version      # works
-docker run --rm --platform linux/arm64 -v "$PWD:/x:ro" amazonlinux:2023 \
-  /x/agentgateway-enterprise-linux-arm64 --version      # GLIBC_2.39 not found
+ldd --version | head -1     # needs to be 2.39 or newer
 ```
 
-If your estate is on RHEL 8, Amazon Linux 2023 or anything else below glibc 2.39, the
-container image is the way in: it carries its own userland, and the bundle image runs both
-processes under one launcher.
+If your estate is on an older base, run the container image instead: it carries its own
+userland, and the bundle image runs the proxy and the STS under one launcher.
 
 ---
 
@@ -228,46 +190,44 @@ Then work through the demos. Each one explains itself as it runs.
 
 ---
 
-## What the testing showed
+## Proving it on three nodes
 
-Every script was run against the live three node fleet. The numbers are what the scripts
-printed rather than what the design predicted.
+This is what the scripts printed on the live fleet, so you know what a good run looks
+like. One node per availability zone, `us-east-1a`, `1b` and `1c`.
 
-### Part 2, the enterprise features
+**The enterprise features, across the fleet**
 
-<!-- RESULTS: filled in from the live run -->
+- **Tool modes.** A new MCP session sees **7** tool definitions in `standard`, **2** in
+  `search`, **1** in `code` and **2** in `codeSearch`, then 7 again on the way back. Each
+  switch is one `aws s3 cp`, and all three nodes were on the new file within **5 to 15
+  seconds**, with no restart.
+- **Composable MCP.** One `tools/call` returns
+  `node i-0ec6dff8a959c8ec7 in us-east-1b saw note 'hello'`: two HTTP steps and a CEL
+  expression joining them, inside the gateway, in one round trip.
+- **Impersonation.** The client presents a Cognito token; the upstream receives one issued
+  by `https://agw-ent.awslab.masterthemesh.com/sts` with the same `sub`. Decoded from the
+  headers the upstream actually saw, not from the config.
+- **Dual authentication.** `POST /mcp` with no credential is `401` with a
+  `www-authenticate` pointing at the resource metadata; with a valid one, the bearer that
+  reaches the backend is a different token from the one the client sent.
+- **The STS on every node.** All three report
+  `{"service":"token-exchange-server","status":"healthy"}` on loopback.
 
-### Inherited from part 1, re-run on the enterprise build
+**Failover**
 
-- **Self-healing in 139 seconds.** An instance was destroyed; a replacement built itself,
-  loaded the same config and was serving, with nobody touching anything.
-- **Sessions survive node loss.** One MCP session worked on all three nodes, so a client
-  keeps working when the node it started on goes away. No sticky sessions and no session
-  store.
-- **Config changes with no downtime.** The whole fleet took a change with no restart, and a
-  response streaming at the time delivered all 124 of its events uninterrupted.
-- **Limits mean what they say.** A limit of 10 a minute allowed precisely 10 across three
-  nodes; three independent per-node buckets would have let 30 through.
-
-| Exercise | Result |
-| --- | --- |
-| Fleet health | 3 of 3 healthy, one per availability zone, identical binary version and config hash |
-| Load distribution | 7 / 7 / 6 over 20 requests |
-| Process loss | Out of service within ~20s, traffic continued on the survivors, back to 3 after restart |
-| Instance loss | **139 seconds** from terminate to three healthy, replacement identical, no manual step |
-| Portable MCP session, direct to each node | HTTP 200 on all three, each call ran on the node addressed |
-| Portable MCP session, through the load balancer | 12 of 12 calls on one session, served by all three |
-| Portable MCP session, negative test | Only the node with a different session key refused (400); restoring the key returned it to 200 |
-| Config push | All three serving a new route within the sync interval, nothing restarted, **124 server-sent events** held across the reload |
-| Overlay propagation | A model created on one node was published by all three in about 8 seconds |
-| Overlay durability | The replacement for a destroyed node inherited it from Aurora |
-| Per-node rate limit | 90 of 90 allowed against a 60 a minute per-process bucket |
-| Fleet-wide rate limit | **Exactly 10 of 20 allowed**, a second caller unaffected |
-| Rate limit degradation | With one node's limiter stopped, that node allowed and the others refused, as `failOpen` specifies |
-
-Sixty-seven assertions across the nine scripts, all passing. Each capability test pairs a
-positive case with a negative one: a token without the scope, a tool the caller is not
-entitled to, a request past the limit.
+- **Losing the proxy.** Stop `agentgateway` on one node: the ALB drops to two healthy
+  targets, traffic continues on the other two, and a restart brings it back to three.
+- **Losing the STS.** Stop `agentgateway-sts` on one node and the proxy stops with it
+  within **5 seconds**, so the node leaves the pool rather than serving some callers and
+  failing others. The ALB was down to two healthy targets **5 seconds** later. Of the 42
+  requests in flight across the failure, **35 succeeded and 7 failed**, and an exchanged
+  request was served by a surviving node throughout. Restarting both units returned the
+  fleet to three healthy in **10 seconds**.
+- **Losing the instance.** Terminate one outright: **194 seconds** from terminate to three
+  healthy targets, with the Auto Scaling group building a replacement that installed the
+  binaries, read the licence and the signing key from Secrets Manager, pulled the config
+  from S3 and joined the fleet. It reported `version=v2026.9.0` and the same config hash
+  as its siblings, with nobody touching it.
 
 ---
 

@@ -688,12 +688,15 @@ mcp:
   # client sees, which is the whole point: 17 in standard, 2 in search, 1 in code.
   toolMode: standard
 
+  # -------------------------------------------------------------------------
+  # Three targets, one tool list: the REST API described by OpenAPI, the composed
+  # tool, and the same API reached with an exchanged token. All three are served
+  # from the node itself.
+  #
+  # Keep external targets in mind when you add them: failureMode is failClosed,
+  # so a target that cannot be reached empties tools/list for every caller.
+  # -------------------------------------------------------------------------
   targets:
-  # A hosted MCP test server, reachable over streamable HTTP.
-  - name: bin
-    mcp:
-      host: https://mcpbin.is.solo.io/remote/mcp
-
   # The local echo service turned into MCP tools from its OpenAPI description.
   # No MCP server is involved: agentgateway generates the tools from the spec and
   # calls the REST API. The spec file is synced from S3 with the rest of the
@@ -782,13 +785,12 @@ mcp:
     mcpAuthentication:
       mode: strict
       issuer: $COGNITO_ISSUER
-      audiences:
-      - $AGW_PUBLIC_URL/mcp
       jwks:
         url: $COGNITO_JWKS_URL
-      # Cognito access tokens have no aud claim, so require only what they
-      # actually carry. The audience above is still published in the resource
-      # metadata for spec-compliant clients.
+      # No `audiences` with Cognito. Setting it makes `aud` a required claim, and
+      # a Cognito access token does not carry one, so every request would be
+      # refused with MissingRequiredClaim("aud"). The resource identifier is
+      # published in resourceMetadata below, which is what an MCP client reads.
       jwtValidationOptions:
         requiredClaims:
         - exp
@@ -832,9 +834,6 @@ mcp:
       # symptom is a tool that "does not exist" rather than a permission error.
       - allow: 'mcp.tool.target == "node-report" && has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/mcp.call")'
       - allow: 'mcp.tool.target == "exchanged" && has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/mcp.call")'
-      # The hosted target needs the admin scope on top, so a token with only
-      # mcp.call sees the echo tools and not these.
-      - allow: 'mcp.tool.target == "bin" && has(jwt.scope) && jwt.scope.contains("$COGNITO_API_AUDIENCE/admin")'
       # Human callers in the platform group can call anything.
       - allow: '"cognito:groups" in jwt && "platform" in jwt["cognito:groups"]'
 

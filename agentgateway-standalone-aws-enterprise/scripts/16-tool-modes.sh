@@ -26,7 +26,9 @@ show_mode() { # show_mode <mode> <expected-tool-count-or-empty>
   read -r n names <<<"$(count_tools)"
   log "a new session now sees $n tool definition(s)"
   echo "$names" | tr ',' '\n' | sed 's/^/    /'
-  [[ -n "$want" ]] && expect "$mode presents $want tool(s) to the client" "$want" "$n"
+  if [[ -n "$want" ]]; then
+    expect "$mode presents $want tool(s) to the client" "$want" "$n"
+  fi
   echo
 }
 

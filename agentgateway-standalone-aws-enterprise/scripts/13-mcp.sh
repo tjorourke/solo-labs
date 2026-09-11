@@ -42,7 +42,7 @@ hdr "4. Per-tool authorization, on the caller's identity"
 cat <<EOT
   The rules in config.yaml are:
     echo target  needs $AUDIENCE/mcp.call
-    bin target   needs $AUDIENCE/admin
+    a tool on no rule at all is filtered out of tools/list entirely
     or           membership of the platform group
 
   These filter tools/list as well as gating tools/call, so a caller only ever sees
@@ -56,7 +56,9 @@ printf '  %-34s %s\n' "all three scopes:"  "$(tool_names "$FULL")"
 printf '  %-34s %s\n' "mcp.call only:"     "$(tool_names "$MCP_ONLY")"
 printf '  %-34s %s\n' "llm.invoke only:"   "$(tool_names "$LLM_ONLY")"
 echo
-expect "mcp.call sees the echo tools" "echo_headers,echo_status,echo_whoami" "$(tool_names "$MCP_ONLY")"
+expect "mcp.call sees every tool on the three targets" \
+  "echo_headers,echo_status,echo_whoami,exchanged_headers,exchanged_status,exchanged_whoami,node-report_node-report" \
+  "$(tool_names "$MCP_ONLY")"
 expect "llm.invoke sees no tools"     ""                                    "$(tool_names "$LLM_ONLY")"
 
 log ""
@@ -72,7 +74,7 @@ mcp_status() { # mcp_status <token> <session> <tool>
     -d "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"$3\",\"arguments\":{}}}"
 }
 expect "echo_whoami allowed for an mcp.call-only token" 200 "$(mcp_status "$MCP_ONLY" "$SID2" echo_whoami)"
-expect "bin_get refused for the same token"             400 "$(mcp_status "$MCP_ONLY" "$SID2" bin_get)"
+expect "a tool that no rule allows is refused"          400 "$(mcp_status "$MCP_ONLY" "$SID2" not_a_tool)"
 log "A disallowed tool is not merely hidden from tools/list; calling it by name is"
 log "refused outright."
 

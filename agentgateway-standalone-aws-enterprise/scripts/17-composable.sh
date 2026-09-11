@@ -21,10 +21,17 @@ mcp_rpc "$TOK" "$SID" '{"jsonrpc":"2.0","id":3,"method":"tools/list"}' \
   | jq -r '.result.tools[] | select(.name | test("node.report")) | .inputSchema' | sed 's/^/    /'
 
 hdr "3. One call, two HTTP requests inside the gateway"
+# prefixMode: always namespaces every tool with its target, so the composed tool
+# is node-report_node-report. Read the name from tools/list rather than assuming
+# it, because the prefix is a config choice.
+TOOL="$(mcp_rpc "$TOK" "$SID" '{"jsonrpc":"2.0","id":9,"method":"tools/list"}' \
+  | jq -r '.result.tools[] | select(.name | test("node.report")) | .name' | head -1)"
+[[ -n "$TOOL" ]] || die "the composed tool is not in tools/list"
+log "tool name: $TOOL"
 NOTE="lab-$(date +%s)"
 log "calling with note=$NOTE"
 OUT="$(mcp_rpc "$TOK" "$SID" \
-  "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"node-report\",\"arguments\":{\"note\":\"$NOTE\"}}}" \
+  "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"$TOOL\",\"arguments\":{\"note\":\"$NOTE\"}}}" \
   | jq -r '.result.content[0].text // (.error|tostring)')"
 echo "$OUT" | sed 's/^/    /'
 echo
@@ -45,7 +52,7 @@ hdr "4. Which node composed it"
 log "Ten calls, so you can see the fleet answering:"
 for _ in $(seq 1 10); do
   mcp_rpc "$TOK" "$(mcp_init "$TOK")" \
-    "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"node-report\",\"arguments\":{\"note\":\"$NOTE\"}}}" \
+    "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"$TOOL\",\"arguments\":{\"note\":\"$NOTE\"}}}" \
     | jq -r '.result.content[0].text // empty' | awk '{print $2}'
 done | sort | uniq -c | sed 's/^/    /'
 

@@ -1,12 +1,11 @@
 #!/bin/bash
-# The STS, three ways: impersonation, delegation, dual authentication.
+# The STS: impersonation and dual authentication end to end, and what delegation
+# needs from your identity provider.
 #
 # One mechanism. What changes is what the client sends and what the downstream
-# service ends up seeing, and the only way to show that honestly is to read the
-# credential the upstream actually received rather than describe it.
-#
-# The echo service is what makes that possible: it returns the headers it was
-# called with, so every claim below is decoded from a real request.
+# service ends up seeing, so every claim below is decoded from a real request
+# rather than described: the echo service returns the headers it was called
+# with, which is how you can see the credential the upstream actually got.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 require_tools; require_aws; require_stack
 
@@ -56,42 +55,30 @@ log "The MCP server never saw the user's Cognito token. It cannot replay it, and
 log "a leak there is not a leak of the user's IdP credential."
 
 # ---------------------------------------------------------------------------
-hdr "2. Delegation: the token names the user AND the agent"
+hdr "2. Delegation, and what it needs from your IdP"
 # ---------------------------------------------------------------------------
 cat <<'EOT'
-  Impersonation answers "who is this for". Delegation answers "who is doing it",
-  which is the question an audit asks after the fact. The client sends its own
-  machine token as the actor alongside the user's token, and the STS puts both
-  identities in one credential: sub is the user, act.sub is the agent.
+  Impersonation answers "who is this for". Delegation answers "who is doing it":
+  the STS mints one credential naming the user in sub and the agent in act.sub,
+  so a downstream audit sees both parties.
+
+  It has one prerequisite that belongs in your IdP rather than in agentgateway.
+  The subject token must carry a may_act claim naming the client allowed to act
+  for that subject, per RFC 8693. Without it the STS refuses:
+
+    {"error":"unauthorized_client",
+     "error_description":"delegation not authorized: subject token does not
+      contain may_act claim"}
+
+  Cognito does not put may_act in an access token, and this lab builds Cognito,
+  so delegation is configured here and demonstrated wherever your IdP can issue
+  the claim. Keycloak does it with a protocol mapper; Entra and Okta with a
+  claims policy. The entSts block in config.yaml already accepts actor tokens:
+  actorValidators is what makes the second identity trustworthy.
 EOT
+log "the actor token this fleet can mint, ready for an IdP that issues may_act:"
 AGENT_TOK="$(mint_token llm-only)"
-log "the agent's own token:"
 jwt_payload "$AGENT_TOK" | jq '{iss, sub, scope}' | sed 's/^/    /'
-
-# The exchange is a direct call to the STS here, because the gateway's route
-# policy is what decides whether to pass an actor token, and this shows the
-# mechanism rather than the routing.
-NODE="$(fleet_instances | head -1)"
-DELEGATED="$(node_try "$NODE" "curl -s -m 10 http://127.0.0.1:7777/token \
-  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-  -d subject_token_type=urn:ietf:params:oauth:token-type:jwt \
-  -d requested_token_type=urn:ietf:params:oauth:token-type:jwt \
-  -d audience=internal-tools \
-  --data-urlencode subject_token=$USER_TOK \
-  -d actor_token_type=urn:ietf:params:oauth:token-type:jwt \
-  --data-urlencode actor_token=$AGENT_TOK" | jq -r '.access_token // empty')"
-
-if [[ -n "$DELEGATED" ]]; then
-  log "the delegated token:"
-  jwt_payload "$DELEGATED" | jq '{iss, sub, aud, act}' | sed 's/^/    /'
-  expect_contains "sub is still the user" "$(jwt_payload "$USER_TOK" | jq -r .sub)" "$(jwt_payload "$DELEGATED" | jq -r .sub)"
-  expect "act.sub names the agent" "$(jwt_payload "$AGENT_TOK" | jq -r .sub)" "$(jwt_payload "$DELEGATED" | jq -r '.act.sub // "none"')"
-  log "One credential, two identities, and a downstream service that logs the"
-  log "token logs both without being taught anything new."
-else
-  warn "the STS returned no delegated token; check /var/log/agentgateway/sts.log on $NODE"
-  FAIL=$((FAIL+1))
-fi
 
 # ---------------------------------------------------------------------------
 hdr "3. Dual authentication: two independent credentials on one route"
