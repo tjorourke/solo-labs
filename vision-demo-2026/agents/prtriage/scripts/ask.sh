@@ -102,7 +102,20 @@ def shown(response):
 def fmt_args(args):
     if not isinstance(args, dict):
         return json.dumps(args)
-    return ", ".join("%s=%s" % (k, json.dumps(v) if isinstance(v, (list, dict)) else v) for k, v in args.items())
+    # The one argument that must not be printed in full: a code-mode program is the
+    # whole point of the mode, but on a screen it is forty lines of JavaScript between
+    # the call and its result. Summarise it; the interesting number is how much the
+    # RESULT cost, which trace-cost reads off the "-> " line below.
+    out = []
+    for k, v in args.items():
+        if k == "code" and isinstance(v, str):
+            out.append("a %d-line program, run in the sandbox" % (v.count("\n") + 1))
+        elif isinstance(v, (list, dict)):
+            out.append("%s=%s" % (k, json.dumps(v)))
+        else:
+            text = str(v)
+            out.append("%s=%s" % (k, text if len(text) <= 80 else text[:77] + "..."))
+    return ", ".join(out)
 
 calls, numbered, answer, error, header = 0, {}, "", None, False
 def frame(text):
