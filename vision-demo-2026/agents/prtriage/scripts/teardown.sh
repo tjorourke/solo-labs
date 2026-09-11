@@ -1,8 +1,34 @@
 #!/usr/bin/env bash
 # teardown.sh — take this part off the cluster entirely.
+#
+# Destructive, so it asks first. In a terminal it prompts; anywhere without a terminal
+# (a notebook cell, CI) it does nothing unless you pass --yes.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K="kubectl --context ${CTX:-kind-mesh1}"
+
+cat <<MSG
+This removes Part 8 from the cluster:
+  the three agents and their deployments, the GitHub MCP catalogue entry and the skill,
+  both policies, the waypoint, the backend, the published route, and the GitHub PAT Secret.
+Standing it back up is ./agents/prtriage/scripts/setup.sh. The seeded pull requests are
+not touched.
+MSG
+
+if [ "${1:-}" = "--yes" ]; then
+  :
+elif [ -t 0 ]; then
+  printf 'Type teardown to continue: '
+  read -r answer
+  [ "$answer" = "teardown" ] || { echo "  left alone"; exit 1; }
+else
+  echo
+  echo "Nothing removed. Re-run with --yes to confirm:"
+  echo "  ./agents/prtriage/scripts/teardown.sh --yes"
+  exit 1
+fi
+echo
+
 for r in "deployment releasejava" "agent releasejava" \
          "deployment changelogjava" "agent changelogjava" \
          "deployment prtriagejava" "agent prtriagejava" \
