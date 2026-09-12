@@ -35,7 +35,16 @@ if curl -sf -o /dev/null -m 4 "http://localhost:${PORT}/" 2>/dev/null; then
   echo "→ viewer already up at http://localhost:${PORT}"
 else
   echo "→ starting the viewer"
-  "$SCOPE" >/dev/null || { echo "✗ viewer failed to start — run $SCOPE on its own to see why"; exit 1; }
+  # Show the viewer's own reason rather than sending you off to run it again. The
+  # usual one is that the Part 5 cluster is not there: this addresses it by context,
+  # so it has to exist before anything can be visualised.
+  if ! "$SCOPE"; then
+    echo
+    echo "✗ the viewer would not start. If the message above is about a missing"
+    echo "  kind-substrate context, build the Part 5 cluster first (a few minutes):"
+    echo "      ./demo-scripts/substrate-cluster.sh"
+    exit 1
+  fi
 fi
 
 "$SCOPE" load "$AGENTS" "$CHATS"
