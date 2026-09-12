@@ -12,6 +12,16 @@ Clone `https://github.com/tjorourke/solo-labs.git` and run the commands below fr
 The series shares one question, put to a seeded namespace with four broken pods:
 *"Which pods in sre-lab are unhealthy, and why?"*
 
+## Choose a route
+
+Start here, then choose the implementation you need:
+
+- Part 2: configure a declarative agent without building an image.
+- Part 3 **or** Part 4: write custom logic in Python or Go using kagent's libraries.
+- Part 5: implement the A2A and controller integration in Java.
+
+Python and Go are alternatives. Neither is a prerequisite for the Java lab.
+
 ## Prerequisites
 
 Use an existing cluster with:
@@ -43,13 +53,26 @@ export CTX=kind-mesh1            # any context with the prerequisites above
 policy and an L4 authorization in front of `kagent-tools`, registers the `sre-tools`
 catalogue entry, and deploys the `sre-reference` declarative agent for the curl calls.
 
-## Drive the contract
+## Start with a conversation
+
+```bash
+./scripts/ask.sh sre-reference "Which pods in sre-lab are unhealthy, and why?"
+```
+
+The script opens a session through the controller, prints tool activity and then
+the report. Keep its session ID. Open the existing kagent UI for your cluster,
+select `sre-reference` and find the conversation under the same user as the token.
+
+Streaming delivers progress while a turn runs. Storing the task against the session
+lets the UI retrieve it afterwards. Those are separate operations, and stored UI
+history is not automatically model memory for the next turn.
+
+## Inspect the contract
 
 ```bash
 ./scripts/show-card.sh sre-reference                 # GET /.well-known/agent-card.json
 ./scripts/send-message.sh sre-reference "Which pods in sre-lab are unhealthy, and why?"
 ./scripts/stream-message.sh sre-reference "Which pods in sre-lab are unhealthy, and why?"
-./scripts/ask.sh sre-reference "Which pods in sre-lab are unhealthy, and why?"
 ./scripts/read-tasks.sh <session id printed by ask.sh>
 ```
 
@@ -57,6 +80,11 @@ catalogue entry, and deploys the `sre-reference` declarative agent for the curl 
 still store a task, but without a session the UI lists. Use `ask.sh` to create a
 session and send the turn through the controller. `read-tasks.sh` then retrieves
 the conversation data used by the UI.
+
+`stream-message.sh` summarises the individual Server-Sent Events (SSE) from one
+open HTTP response. Its numbered lines are helper output, not raw curl output.
+The page explains the event types; the full `data: {...}` examples are in the
+optional raw SSE reference.
 
 ## The four checks
 

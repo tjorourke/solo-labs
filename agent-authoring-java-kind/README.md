@@ -13,6 +13,24 @@ The agent answers one question, the same one every part of the series answers:
 logs and events through the `sre-tools` agentgateway waypoint from Part 1, applies the
 health gate with a local tool, and returns a short report.
 
+Read Part 1 before this lab. The Python and Go implementations are alternatives,
+not prerequisites for Java.
+
+## Supported behaviour and limits
+
+- The server handles `message/send` and `message/stream`, plus the agent card.
+  A2A task retrieval, cancellation and stream resubscription are not implemented.
+- Each question gets a new `InMemoryRunner` and ADK session. Previous kagent tasks
+  are not loaded into the next model turn. A conversation can be visible in the UI
+  without the model remembering its earlier messages.
+- Tool activity streams as it happens; the final answer text is sent after the
+  turn completes, not token by token.
+- The streaming path posts the task and session events to the controller.
+  `message/send` returns a Task without performing those writes.
+- Caught runtime exceptions become answer text with a `completed` task status.
+  Controller-write failures are logged without a durable retry queue. Finishing
+  the stream does not prove that execution or persistence succeeded.
+
 ## Prerequisites
 
 An existing cluster with:
