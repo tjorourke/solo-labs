@@ -6,7 +6,7 @@
 - **Part 2: L4 identity.** The petshop on `mesh1`: the certificate is the identity, authorise on it in ztunnel, identity-aware access logs, the shared-ServiceAccount gap, workload claims closing it: all at L4, no proxy in the path.
 - **Part 3: Waypoint (L7).** Add the agentgateway waypoint to the petshop: JWT authorisation, canary routing and identity-keyed rate limiting. Needs the petshop from Part 2 §2.1.
 - **Part 4 — AgentRegistry.** On `mesh1`: a governed catalog of approved MCP tool servers, skills and runtimes; scaffold a dice agent with `arctl`, build/publish, kick off the **AWS Bedrock AgentCore** push in the background, deploy to kagent; roll the dice and watch the tool-call trace land in the **kagent UI** (Tracing span tree); add a tool; lock it down with a waypoint AccessPolicy; turn a REST API into MCP tools (OpenAPI → MCP); then invoke the same agent on AgentCore. Needs the extra platform standup below (and AWS + a git repo for the AgentCore beats).
-- **Part 5: Substrate (gVisor).** On its **own** `kind-substrate` cluster (kagent 0.5.6): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool`: catch `runsc` actually serving a turn, show that an idle actor is a snapshot with no process at all, watch one actor per session appear, bind extra actors in a few hundred milliseconds, and put the same three agents up as ordinary pod-backed `Agent`s to see what that costs. Isolated from Part 4 (which stays on kagent v0.4.3).
+- **Part 5: Substrate (gVisor).** On its **own** `kind-substrate` cluster (kagent 0.5.6): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool`. Catch `runsc` serving a turn; watch one actor go Suspended → Resuming → Running → Suspending → Suspended on kagent's `/api/substrate/status` with its snapshot version going up; see that concurrency is the worker count (three turns on two workers, then `kubectl scale`); put the same three agents up as pod-backed `Agent`s for comparison; call MCP tools from inside the sandbox; resume the same conversation from its own snapshot; roll a shape change out as a second golden snapshot beside the first; pin an agent to a second `WorkerPool` on its own node; mix a pod agent and a sandboxed agent in one graph; then light up the [Substrate Scope](https://github.com/themsquared/substrate-scope) board with `substrate-load.sh`. Written up as the KB article [Agent Substrate: how kagent runs agents as actors](../kagent-agent-substrate/).
 - **Part 6: Inference routing.** On its **own** `kind-inference` cluster: a standalone agentgateway fronts a vLLM-simulator pool; the GIE Endpoint Picker does KV-cache-aware routing to an `InferencePool`, with serving priority via `InferenceObjective`. (A mesh-integrated gateway can't route GIE pools, so it runs on its own non-mesh gateway.)
 - **Part 7: The AI gateway.** On `mesh1`: one agentgateway in front of every model, key and tool. Corporate model names routed across Azure OpenAI, AWS Bedrock and Anthropic (frontier models only, inference stays in Part 6); failover priority groups; JWT identity stamped on every metric; group-based model access; per-user token limits; virtual keys with a declarative budget; realised-USD chargeback by user/team/BU; and an MCP hub with per-tool authorisation. Needs the small extra standup below.
 
@@ -89,6 +89,11 @@ source demo-scripts/env.sh 8   # github + MCP tool layer    (mesh1)
 ```
 
 Must be **sourced**, not executed (`./env.sh` runs in a subshell and the exports vanish).
+
+Part 5's cells are one named command each; the commands (`ask`, `actors`, `workers`,
+`templates`, `watch-turn`, `catch-runsc`, `on-node`, `fire`, `scale-pool`, `delete-session`)
+come from `demo-scripts/substrate-lib.sh`, which `env.sh 5` and the notebook's Connect cell
+both source, and its manifests are in `demo-scripts/yaml-substrate/`.
 
 **Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak, and the kagent Enterprise UI + telemetry on the shared `management` release in `solo-cost`): heavy, so it is a separate one-time standup after `./demo-scripts/setup.sh`:
 

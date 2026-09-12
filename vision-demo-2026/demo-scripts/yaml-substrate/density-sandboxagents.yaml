@@ -1,0 +1,48 @@
+# Three more SandboxAgents: each binds a new actor onto the workers already running.
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: substrate-demo-2
+  namespace: kagent
+spec:
+  type: Declarative
+  description: density demo actor 2
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: "actor 2"
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+---
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: substrate-demo-3
+  namespace: kagent
+spec:
+  type: Declarative
+  description: density demo actor 3
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: "actor 3"
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+---
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: substrate-demo-4
+  namespace: kagent
+spec:
+  type: Declarative
+  description: density demo actor 4
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: "actor 4"
+  substrate:
+    workerPoolRef:
+      name: kagent-default

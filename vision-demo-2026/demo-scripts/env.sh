@@ -79,15 +79,11 @@ case "$DEMO" in
     ;;
   5)
     cd "$LAB_ROOT" || return 1
-    ./demo-scripts/free-ports.sh 18083
-    export CTX=kind-substrate KAGENT_NS=kagent
     export KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
     export KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
     export KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.6}"
-    echo "demo-5 · context: $CTX · kagent-enterprise: $KAGENT_ENT_VERSION"
-    kubectl --context $CTX get ns "$KAGENT_NS" >/dev/null 2>&1 \
-      && echo "substrate cluster: up" \
-      || echo "substrate not found: run ./demo-scripts/substrate-cluster.sh"
+    # the notebook's helpers (ask, actors, workers, watch-turn, ...) and CTX=kind-substrate
+    source "$LAB_ROOT/demo-scripts/substrate-lib.sh"
     ;;
   7)
     cd "$LAB_ROOT" || return 1

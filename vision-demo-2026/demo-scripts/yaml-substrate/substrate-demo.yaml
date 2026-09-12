@@ -1,0 +1,17 @@
+# A SandboxAgent: the same spec as an Agent, plus where it runs. It becomes a gVisor actor
+# on the kagent-default WorkerPool, not a pod.
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: substrate-demo
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Minimal Go ADK SandboxAgent running on Agent Substrate (gVisor)
+  declarative:
+    runtime: go                        # the Go ADK is the substrate runtime
+    modelConfig: default-model-config  # created from the anthropic provider at install
+    systemMessage: "You are a helpful assistant running inside a gVisor-sandboxed actor."
+  substrate:
+    workerPoolRef:
+      name: kagent-default

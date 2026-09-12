@@ -1,0 +1,24 @@
+# The same agent shape with MCP tools: three read-only Kubernetes tools from kagent's tool
+# server, called from inside the gVisor sandbox.
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: sb-tools
+  namespace: kagent
+spec:
+  type: Declarative
+  description: SRE assistant in a gVisor sandbox, with read-only Kubernetes tools
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: "You are an SRE assistant running inside a gVisor sandbox. Use your tools to answer questions about the cluster. Be brief."
+    tools:
+    - type: McpServer
+      mcpServer:
+        name: kagent-tool-server
+        kind: RemoteMCPServer
+        apiGroup: kagent.dev
+        toolNames: [k8s_get_resources, k8s_get_pod_logs, k8s_get_events]
+  substrate:
+    workerPoolRef:
+      name: kagent-default

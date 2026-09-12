@@ -1,0 +1,16 @@
+# An agent that may only ever be placed on the tier2 pool.
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: sb-tier2
+  namespace: kagent
+spec:
+  type: Declarative
+  description: only ever placed on the tier2 pool
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: "You run in the tier2 worker pool. Be brief."
+  substrate:
+    workerPoolRef:
+      name: kagent-tier2

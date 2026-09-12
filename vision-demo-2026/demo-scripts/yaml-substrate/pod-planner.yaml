@@ -1,0 +1,18 @@
+# An ordinary pod-backed Agent that delegates cluster questions to the sandboxed sb-tools.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: pod-planner
+  namespace: kagent
+spec:
+  type: Declarative
+  description: pod-backed planner that delegates cluster questions to a sandboxed agent
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: "You are a planner with no cluster access of your own. For any question about the Kubernetes cluster, call the sb-tools agent tool and relay its answer. Be brief."
+    tools:
+    - type: Agent
+      agent:
+        name: sb-tools
+        kind: SandboxAgent
+        apiGroup: kagent.dev

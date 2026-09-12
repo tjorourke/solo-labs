@@ -1,0 +1,16 @@
+# A second WorkerPool, pinned to a node. In a real cluster the nodeSelector names a node
+# group with its own runtime, network policy or hardware: a trust tier.
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: kagent-tier2
+  namespace: kagent
+  labels:
+    kagent.dev/worker-pool: kagent-tier2     # what an ActorTemplate's workerSelector matches
+spec:
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.9
+  replicas: 1
+  sandboxClass: gvisor
+  template:
+    nodeSelector:
+      kubernetes.io/hostname: substrate-worker

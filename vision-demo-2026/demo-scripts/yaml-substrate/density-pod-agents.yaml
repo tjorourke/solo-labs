@@ -1,0 +1,36 @@
+# The same three agents as ordinary Agents: one Deployment, one pod, one memory request each.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: pod-baseline-1
+  namespace: kagent
+spec:
+  type: Declarative
+  description: ordinary pod-backed agent 1
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: "baseline 1"
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: pod-baseline-2
+  namespace: kagent
+spec:
+  type: Declarative
+  description: ordinary pod-backed agent 2
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: "baseline 2"
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: pod-baseline-3
+  namespace: kagent
+spec:
+  type: Declarative
+  description: ordinary pod-backed agent 3
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: "baseline 3"
