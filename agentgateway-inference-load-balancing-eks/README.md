@@ -225,6 +225,31 @@ An earlier comparison used a stale mapping and attributed requests to the wrong 
 | **`InferenceObjective` is a different API group** | `InferencePool` has graduated to `inference.networking.k8s.io/v1`; `InferenceObjective` is still `inference.networking.x-k8s.io/v1alpha2`. A `poolRef` copying the objective's own apiVersion references nothing, with no error. |
 | **`huggingface_hub[hf_transfer]` no longer exists** | hub 1.31.0 dropped the extra, so pip warns and installs the base package. Harmless, and it implies an accelerated transfer that is not happening. Anonymous Hub pulls are also rate limited; set `HF_TOKEN` if 62 GB of parallel download stalls. |
 
+## How the gateway's load balancing holds up at larger scale
+
+This lab runs on two cards, where the question is which replica each request lands on
+rather than aggregate throughput. An [upstream agentgateway
+benchmark](https://agentgateway.dev/blog/2026-08-20-benchmarking-agentgateway-epp-proxy-overhead/),
+run for Google Summer of Code 2026 on 16 H100s serving Qwen3-32B across eight vLLM
+replicas, measures the other end of the same question: what routing through agentgateway is
+worth against a plain Kubernetes Service with kube-proxy round-robin.
+
+At 60 queries per second, routing through agentgateway rather than round-robin raised peak
+output from 6,910 to 16,178 tokens per second, and completed requests per second from 6.70
+to 16.52. Time to first token fell from 62.9s to 0.1s at the median, and from 135.6s to
+0.2s at the 90th percentile. Round-robin was piling requests onto replicas that were
+already saturated, which is the same failure this lab watches for on two cards.
+
+The gap is not a fixed proxy cost. At 3 QPS all setups performed alike; the difference only
+opened up as load rose. Inter-token latency under load was higher through the gateway, about
+50ms against 30ms, which the authors attribute to vLLM keeping the GPUs fully batched rather
+than to gateway overhead.
+
+Those figures are from the upstream benchmark on H100s, not from this lab's two
+`g7e.2xlarge` cards. They measure agentgateway's routing against round-robin; the tests
+above measure the Endpoint Picker against agentgateway's own power of two choices, a finer
+comparison on top of that.
+
 ## Next: prefill and decode on separate GPUs
 
 Each replica runs prefill and decode on the same card here.
