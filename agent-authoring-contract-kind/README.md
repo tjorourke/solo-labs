@@ -1,17 +1,20 @@
 # agent-authoring-contract-kind
 
-Part 1 of **Writing agents for kagent**, a five-part series. This part builds no agent.
-It makes the contract between kagent and an agent visible, by driving a running agent
-with curl: the agent card, `message/send`, the `message/stream` frames, and the task
-the UI reads back out of the controller's store. Parts 2 to 5 implement that contract
-as a declarative agent, in Python, in Go and in Java.
+Part 1 of **Writing agents for kagent**. Inspect a running agent with curl: read its
+card, call `message/send` and `message/stream`, then retrieve the task from the
+controller's session store. The setup provides the reference agent, tool gateway
+and test workloads used by Parts 2 to 5.
+
+[Browse the files in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-contract-kind).
+Clone `https://github.com/tjorourke/solo-labs.git` and run the commands below from
+`agent-authoring-contract-kind/`. Keep all five lab directories together.
 
 The series shares one question, put to a seeded namespace with four broken pods:
 *"Which pods in sre-lab are unhealthy, and why?"*
 
-## What it needs
+## Prerequisites
 
-An existing cluster. Nothing here creates one.
+Use an existing cluster with:
 
 - Solo Enterprise for kagent (tested on 0.4.3), with a `default-model-config` ModelConfig
   and its API key Secret in the `kagent` namespace
@@ -38,8 +41,7 @@ export CTX=kind-mesh1            # any context with the prerequisites above
 
 `up` seeds the `sre-lab` namespace, puts an agentgateway waypoint, a per-agent tool
 policy and an L4 authorization in front of `kagent-tools`, registers the `sre-tools`
-catalogue entry, and deploys `sre-reference`, a declarative agent used as the far end
-of the contract.
+catalogue entry, and deploys the `sre-reference` declarative agent for the curl calls.
 
 ## Drive the contract
 
@@ -51,9 +53,10 @@ of the contract.
 ./scripts/read-tasks.sh <session id printed by ask.sh>
 ```
 
-`send-message.sh` and `stream-message.sh` go to the agent's own pod; nothing is stored.
-`ask.sh` goes through the controller with a session, which is what makes the turn a
-conversation the kagent UI lists. `read-tasks.sh` reads what the UI reads.
+`send-message.sh` and `stream-message.sh` call the agent directly. The runtime can
+still store a task, but without a session the UI lists. Use `ask.sh` to create a
+session and send the turn through the controller. `read-tasks.sh` then retrieves
+the conversation data used by the UI.
 
 ## The four checks
 
@@ -74,7 +77,7 @@ Every later part ends with the same script against its own agent.
 
 | path | what |
 |---|---|
-| `yaml/00-sre-namespace.yaml` | the seeded namespace: 3 healthy, 4 broken, frozen |
+| `yaml/00-sre-namespace.yaml` | the test namespace: 3 healthy and 4 faulty workloads |
 | `yaml/10-sre-tools-gateway.yaml` | Service + waypoint Gateway + MCP Backend + HTTPRoute in front of kagent-tools |
 | `yaml/20-tool-policy.yaml` | which tools each agent identity may call |
 | `yaml/30-tools-authz.yaml` | ztunnel refuses the agents' direct route to kagent-tools:8084 |

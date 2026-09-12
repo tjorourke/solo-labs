@@ -1,11 +1,13 @@
 # agent-authoring-declarative-kind
 
-Part 2 of the *Writing agents for kagent* series: **a declarative agent, no image to
-build**. The same Kubernetes SRE triage question as Part 1, answered by an `Agent` of
-`type: Declarative`: a model reference, a system message, four tools from the `sre-tools`
-catalogue entry and a skill for the agent card. kagent supplies the runtime, so the pod,
-the A2A endpoints, the streaming frames and the stored task all come from kagent and
-there is nothing to compile.
+Part 2 of *Writing agents for kagent*. Configure the SRE triage agent as
+`type: Declarative` and compare the Python and Go runtimes. The manifest selects
+the model and tools and supplies the system prompt; kagent handles A2A and task
+storage. No custom container image is required.
+
+[Browse the files in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-declarative-kind).
+Clone `https://github.com/tjorourke/solo-labs.git` and run commands from
+`agent-authoring-declarative-kind/`. Keep `agent-authoring-contract-kind/` alongside it.
 
 Two agents from the same manifest:
 
@@ -13,7 +15,7 @@ Two agents from the same manifest:
 - **sre-declarative-go**: the same spec with `spec.declarative.runtime: go`, on kagent's
   Go runtime.
 
-## What it needs
+## Prerequisites
 
 An existing cluster with:
 
@@ -40,9 +42,9 @@ export CTX=kind-mesh1                 # the kubectl context to use
 The controller API is reached through a port-forward and, on Solo Enterprise for kagent,
 with an OIDC token. The shared `lib.sh` mints one from the cluster's Keycloak; set
 `KAGENT_TOKEN` to supply your own, or `KEYCLOAK_URL`, `KEYCLOAK_REALM`,
-`KEYCLOAK_CLIENT`, `AS_USER` and `AS_PASSWORD` to point the mint elsewhere.
+`KEYCLOAK_CLIENT`, `AS_USER` and `AS_PASSWORD` to use another Keycloak configuration.
 
-## Look at
+## Inspect the running agents
 
 ```bash
 S=../agent-authoring-contract-kind/scripts

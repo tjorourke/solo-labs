@@ -8,12 +8,11 @@ import java.time.Duration;
 import java.util.Optional;
 
 /**
- * Everything the agent is told about the world, read once from the environment.
+ * Runtime configuration read from the pod environment.
  *
  * kagent injects KAGENT_NAME, KAGENT_NAMESPACE, KAGENT_URL and the OTEL_* variables into
  * every agent pod. The Agent record adds MODEL_NAME, MCP_SERVERS_CONFIG
- * and the model key. Nothing here is a credential for the tool server: the gateway
- * holds those.
+ * and the model key. MCP access uses the workload identity at the waypoint.
  */
 record Config(
     String agentName,

@@ -12,12 +12,8 @@ import java.util.Map;
 /**
  * A Kubernetes SRE triage agent, in Java on Google ADK, hosted by kagent.
  *
- * This class is the agent: a model, an instruction, the MCP toolset kagent points it at,
- * and one local tool. Everything else in this package exists because kagent ships an
- * agent runtime for Python and for Go and none for Java, so the HTTP contract kagent
- * expects from a hosted agent is implemented here: the agent card ({@link A2aServer}),
- * the A2A JSON-RPC endpoints ({@link A2aServer}), and the task and session writes that
- * make a conversation appear in the kagent UI ({@link KagentSession}).
+ * Defines the model and tools. {@link A2aServer} handles A2A requests;
+ * {@link KagentSession} writes completed turns to the controller.
  */
 public final class SreTriage {
 
@@ -35,8 +31,7 @@ public final class SreTriage {
   }
 
   /**
-   * The whole agent definition. The toolset is whatever the gateway serves this agent's
-   * identity; there is no tool list, credential or policy here.
+   * Creates the agent with the MCP tools allowed by the gateway and a local health tool.
    */
   static LlmAgent agent(McpToolset tools, Config config) {
     var anthropic = AnthropicOkHttpClient.builder().apiKey(config.anthropicApiKey()).build();
@@ -51,8 +46,7 @@ public final class SreTriage {
   }
 
   /**
-   * The gate the report applies, as a tool, so the decision is made by the same rule
-   * every time rather than by the model's reading of it.
+   * Evaluates pod health, allowing Pending pods a five-minute grace period.
    */
   @Annotations.Schema(description =
       "Apply the health gate to one pod: unhealthy when it is not Running, has restarted "

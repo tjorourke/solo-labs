@@ -8,11 +8,7 @@ import (
 	"google.golang.org/adk/v2/tool/functiontool"
 )
 
-// The gate, as a local tool. The MCP tools read the cluster; this one applies the rule
-// the report is judged by, so the model does not have to hold it in its head.
-//
-// A local tool runs inside the agent's process. It is what a declarative agent cannot
-// have, and the reason this part builds an image at all.
+// This local tool evaluates pod health using values collected by the MCP tools.
 
 // gateArgs is what the model passes in: the pod's phase and restart count, and how long
 // it has been Pending. JSON tags become the tool's input schema.

@@ -1,9 +1,4 @@
-"""A Kubernetes SRE triage agent on Google ADK, hosted by the kagent Python runtime.
-
-This file is the whole agent: a model, an instruction, one local tool and the MCP
-tools kagent hands it. The A2A server, the streamed frames, the session and the task
-the UI reads are all the runtime's work (kagent-adk), not this file's.
-"""
+"""Define the Google ADK agent loaded by the kagent Python runtime."""
 
 import os
 

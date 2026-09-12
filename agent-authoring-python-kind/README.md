@@ -1,18 +1,20 @@
 # agent-authoring-python-kind
 
-Part 3 of *Writing agents for kagent*: the same Kubernetes SRE triage agent as the
-rest of the series, written in Python on Google ADK and hosted by kagent's own Python
-runtime (`kagent-adk`). The agent is one directory of Python: a model, an instruction,
-one local tool and the MCP tools kagent hands it. The A2A server, the streamed frames,
-the session and the stored task the UI reads are all the runtime's.
+Part 3 of *Writing agents for kagent*. Write the SRE triage agent in Python on Google
+ADK and host it on `kagent-adk`. The package defines the agent and a local health
+tool. The base runtime handles A2A requests and persistence in the controller.
+
+[Browse the files in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-python-kind).
+Clone `https://github.com/tjorourke/solo-labs.git` and run commands from
+`agent-authoring-python-kind/`. Keep `agent-authoring-contract-kind/` alongside it.
 
 Series: [Part 1, the contract](../agent-authoring-contract-kind/) ·
 [Part 2, declarative](../agent-authoring-declarative-kind/) · **Part 3, Python** ·
 [Part 4, Go](../agent-authoring-go-kind/) · [Part 5, Java](../agent-authoring-java-kind/)
 
-## What it needs
+## Prerequisites
 
-An existing cluster, not a new one:
+Use an existing cluster with:
 
 - Solo Enterprise for kagent (the controller, a `default-model-config` ModelConfig, the
   bundled `kagent-tools` server) in namespace `kagent`.

@@ -16,10 +16,8 @@ import java.util.UUID;
 /**
  * Writes a finished turn into kagent's stores, which is what the UI reads.
  *
- * The controller passes the A2A exchange through to the agent and only ever reads from
- * its stores. The UI lists a conversation from {@code GET /api/sessions/{id}/tasks}, and
- * a task gets in there one way: the agent posts it. kagent's Python and Go runtimes do
- * this on the agent's behalf; a Java agent does it here.
+ * The A2A proxy does not persist the turn. This class posts the task for the UI to
+ * retrieve through {@code GET /api/sessions/{id}/tasks}.
  *
  * Both writes authenticate with the service-account token kagent projects into the pod
  * at {@code /var/run/secrets/tokens/kagent-token}, and carry the user the controller

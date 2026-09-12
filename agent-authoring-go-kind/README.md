@@ -1,15 +1,17 @@
 # agent-authoring-go-kind
 
-Part 4 of **Writing agents for kagent**: the Kubernetes SRE triage agent from the
-series, written in Go on kagent's own Go ADK. The library serves the agent card and
-the A2A JSON-RPC endpoint, runs the turn, streams the frames the kagent UI draws, and
-files the session and task with the controller. The program wires a model, the
-approved MCP tools and one local tool, and hands over.
+Part 4 of **Writing agents for kagent**. Build the SRE triage agent with kagent's Go
+ADK and deploy a compiled image. The program configures the model and tools;
+the ADK handles the agent card, A2A requests and controller-backed sessions.
+
+[Browse the files in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-go-kind).
+Clone `https://github.com/tjorourke/solo-labs.git` and run commands from
+`agent-authoring-go-kind/`. Keep `agent-authoring-contract-kind/` alongside it.
 
 Previous: [Part 3, Python on the kagent ADK](../agent-authoring-python-kind/).
 Next: [Part 5, Java, with the contract written by hand](../agent-authoring-java-kind/).
 
-## What it needs
+## Prerequisites
 
 An existing cluster, selected with `CTX`, running:
 

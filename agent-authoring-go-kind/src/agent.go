@@ -12,9 +12,7 @@ import (
 	"google.golang.org/adk/v2/tool"
 )
 
-// instruction is the agent's system prompt. It is the same text every part of the
-// series gives its agent, so the five agents can be compared on how they are built
-// rather than on what they were told.
+// instruction describes the triage task and asks the model to use the local health tool.
 const instruction = `You are a Kubernetes SRE. When asked about a namespace, find the pods that are
 unhealthy and explain why, from evidence.
 
@@ -35,9 +33,7 @@ twenty lines. You have read-only tools and you do not change anything.`
 // newAgent builds the one LLM agent this program runs: the Anthropic model named by
 // the environment, the MCP tools kagent approved, and the local gate tool.
 //
-// The MCP toolsets are created by the kagent library from the approved server list. The
-// agent holds no credential for the tool server and does not know what is behind the
-// URL; the gateway at that URL decides which tools this identity may see.
+// The gateway filters the MCP tools using the agent's workload identity.
 func newAgent(ctx context.Context, cfg Config, log logr.Logger) (agent.Agent, error) {
 	model, err := models.NewAnthropicModelWithLogger(&models.AnthropicConfig{Model: cfg.Model}, log)
 	if err != nil {

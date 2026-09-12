@@ -1,9 +1,4 @@
-"""The health gate, as a local tool.
-
-The rule the agent is asked to apply is stated once, here, in code the model calls
-rather than prose it has to remember. A local tool is a plain Python function: ADK
-turns the signature and docstring into the tool schema the model sees.
-"""
+"""Local health tool. ADK derives its schema from the signature and docstring."""
 
 RESTART_LIMIT = 3
 PENDING_LIMIT_MINUTES = 5

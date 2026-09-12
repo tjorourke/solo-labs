@@ -9,11 +9,7 @@ import (
 	"github.com/kagent-dev/kagent/go/api/adk"
 )
 
-// Config is everything the agent is told by its environment, in one place.
-//
-// kagent sets all of it on the pod: the agent's name and namespace, the controller URL
-// the library persists sessions and tasks to, the model from the Agent resource, and
-// the approved MCP servers. Nothing here is invented by the agent.
+// Config holds the identity, controller URL, model and MCP servers from the pod environment.
 type Config struct {
 	Name          string // KAGENT_NAME
 	Namespace     string // KAGENT_NAMESPACE

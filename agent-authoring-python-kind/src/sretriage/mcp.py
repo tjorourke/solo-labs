@@ -1,10 +1,4 @@
-"""MCP servers, from the environment.
-
-kagent hands the agent its approved tool servers in MCP_SERVERS_CONFIG, a JSON list of
-{"name", "type", "url"}. The URL is the agentgateway waypoint, so the credential, the
-tool filtering and the identity policy all live there. The agent reads the list; it
-does not choose, and it holds no credential of its own.
-"""
+"""Create MCP toolsets from the remote server URLs in MCP_SERVERS_CONFIG."""
 
 import json
 import os

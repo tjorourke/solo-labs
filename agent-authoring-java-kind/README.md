@@ -1,9 +1,12 @@
 # agent-authoring-java-kind
 
-Part 5 of *Writing agents for kagent*: a Kubernetes SRE triage agent in Java on Google
-ADK, hosted by kagent, with the contract kagent expects from an agent implemented in the
-agent's own code. kagent ships an agent runtime for Python and for Go; this lab is what
-that runtime does, written out in Java.
+Part 5 of *Writing agents for kagent*. Build the SRE triage agent with Google ADK for
+Java and implement its kagent integration. The tested release has no Java runtime,
+so the example includes an A2A server and controller task/session writes.
+
+[Browse the files in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-java-kind).
+Clone `https://github.com/tjorourke/solo-labs.git` and run commands from
+`agent-authoring-java-kind/`. Keep `agent-authoring-contract-kind/` alongside it.
 
 The agent answers one question, the same one every part of the series answers:
 "which pods in this namespace are unhealthy, and why?" It reads pods, descriptions,

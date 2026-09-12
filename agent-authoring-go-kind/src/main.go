@@ -1,15 +1,7 @@
 // sre-go is a kagent BYO agent written in Go on kagent's Go ADK.
 //
-// The program wires four things and then hands over to the library:
-//
-//  1. a Config read from the environment kagent injects,
-//  2. an LLM agent (model, MCP tools, one local tool),
-//  3. kagent's executor, which runs a turn and emits the A2A events the UI draws,
-//  4. the app, which serves the agent card and JSON-RPC and persists sessions and
-//     tasks to the controller at KAGENT_URL, authenticating with the pod's projected
-//     token.
-//
-// Nothing in this file speaks A2A or HTTP directly. That is the point of the library.
+// It configures the agent and starts the kagent executor and HTTP application.
+// Sessions and tasks use the controller at KAGENT_URL with the projected token.
 package main
 
 import (
