@@ -1,6 +1,6 @@
 # The contained agent. Declarative, so kagent runs it; what this part adds is around it:
-# a model config that points at the model waypoint, a tool endpoint only this identity
-# may call, an egress policy that closes everything else, and a waypoint of its own.
+# a model config pointing at a waypoint, restricted tool access, an egress allowlist,
+# and a waypoint protecting calls to the agent's Service.
 #
 # The label asks Solo Enterprise for kagent to create that waypoint in front of the
 # agent's Service. It is where an AccessPolicy naming this agent as its target is
@@ -14,7 +14,7 @@ metadata:
     kagent.solo.io/waypoint: "true"
 spec:
   type: Declarative
-  description: Kubernetes SRE triage, hosted with its model and tools behind gateways and no other route out.
+  description: Kubernetes SRE triage with gateway policies for model, tool and agent access.
   declarative:
     modelConfig: sre-model
     systemMessage: |

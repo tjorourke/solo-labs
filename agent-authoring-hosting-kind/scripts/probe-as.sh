@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # probe-as.sh <serviceaccount> [endpoint]: tools/list at an MCP endpoint, as that identity.
 #
-# Runs from a throwaway pod carrying the service account, so the call reaches the
-# waypoint with that workload's SPIFFE identity and nothing else. Prints the tool names
-# the gateway generated for it; an identity the policy does not name gets none.
+# Runs from a temporary pod using the selected service account. Prints the tool
+# list returned by the waypoint for that workload's SPIFFE identity.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../../agent-authoring-contract-kind/scripts/lib.sh
 source "$SCRIPT_DIR/../../agent-authoring-contract-kind/scripts/lib.sh"
@@ -23,6 +22,9 @@ OUT="$(kc -n "$NS" logs "$PROBE" 2>/dev/null || true)"
 kc -n "$NS" delete pod "$PROBE" --wait=false >/dev/null 2>&1 || true
 echo "$OUT" | grep '^{' | python3 -c '
 import json, sys
-d = json.load(sys.stdin); tools = sorted(t["name"] for t in d.get("result", {}).get("tools", []))
+d = json.load(sys.stdin)
+assert "error" not in d, "MCP returned an error, not an empty tool list"
+assert isinstance(d.get("result"), dict) and isinstance(d["result"].get("tools"), list), "missing tools/list result"
+tools = sorted(t["name"] for t in d["result"]["tools"])
 print("as %s: %d tool(s)%s" % (sys.argv[1], len(tools), (": " + " ".join(tools)) if tools else ""))' "$SA" \
-  || echo "as $SA: no MCP response (the endpoint refused the connection or the identity)"
+  || { echo "as $SA: INCONCLUSIVE (no valid tools/list response)"; exit 1; }

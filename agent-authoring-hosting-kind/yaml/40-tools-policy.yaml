@@ -1,7 +1,6 @@
-# One agent may call this endpoint. The identity is the pod's SPIFFE identity, read
-# from the certificate ztunnel presented, so no other workload can claim it, and a
-# workload not named here gets an empty tool list rather than a refusal. The controller
-# is named because it reads tools/list to draw the UI.
+# Allow the designated agent service account and the controller in kagent.
+# Pods sharing a namespace and service account share this workload identity.
+# The controller uses the allowlist for discovery and also has these tool grants.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:
@@ -19,6 +18,7 @@ spec:
         policy:
           matchExpressions:
           - >-
-            source.identity.serviceAccount in ["sre-contained", "kagent-controller"]
+            source.identity.namespace == "kagent"
+            && source.identity.serviceAccount in ["sre-contained", "kagent-controller"]
             && mcp.tool.name in
               ["k8s_get_resources", "k8s_describe_resource", "k8s_get_pod_logs", "k8s_get_events"]

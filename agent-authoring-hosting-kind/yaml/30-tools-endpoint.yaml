@@ -2,8 +2,9 @@
 #
 # Same shape as Part 1's sre-tools: a Service with no pods, a waypoint, an MCP backend
 # forwarding to kagent-tools, and a GAMMA route. The difference is who may call it:
-# 40-tools-policy.yaml names a single agent identity. The catalogue entry at the end is
-# what that agent references; there is no entry that reaches kagent-tools any other way.
+# 40-tools-policy.yaml allows the designated agent and controller service accounts.
+# The catalogue entry points at this Service; 80-tools-authz.yaml separately blocks
+# these agents from reaching the upstream tool server directly.
 apiVersion: v1
 kind: Service
 metadata:

@@ -1,7 +1,6 @@
-# A second agent wired to the same endpoint and to the same A2A target, and named in
-# neither policy. Its manifest is correct and its tools are listed. The tool gateway
-# hands it nothing and sre-contained's waypoint refuses its call: being wired to a
-# server or an agent is not permission to use it.
+# An agent with the same tool and A2A references but no matching grants.
+# The tool gateway returns an empty list and the target agent rejects its call.
+# Its model access is still allowed so it can report the denial.
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:

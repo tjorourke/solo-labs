@@ -16,20 +16,12 @@ health gate with a local tool, and returns a short report.
 Read Part 1 before this lab. The Python and Go implementations are alternatives,
 not prerequisites for Java.
 
-## Supported behaviour and limits
+## What this example supports
 
-- The server handles `message/send` and `message/stream`, plus the agent card.
-  A2A task retrieval, cancellation and stream resubscription are not implemented.
-- Each question gets a new `InMemoryRunner` and ADK session. Previous kagent tasks
-  are not loaded into the next model turn. A conversation can be visible in the UI
-  without the model remembering its earlier messages.
-- Tool activity streams as it happens; the final answer text is sent after the
-  turn completes, not token by token.
-- The streaming path posts the task and session events to the controller.
-  `message/send` returns a Task without performing those writes.
-- Caught runtime exceptions become answer text with a `completed` task status.
-  Controller-write failures are logged without a durable retry queue. Finishing
-  the stream does not prove that execution or persistence succeeded.
+Ask which pods are unhealthy and follow the investigation in the kagent UI.
+The saved conversation includes the tool activity and report. Each question runs
+independently: previous messages remain visible in the UI but are not passed to
+the model. The runner and session handling are explained in `Turn.java`.
 
 ## Prerequisites
 
@@ -75,6 +67,19 @@ conversation is in the kagent UI under the agent.
 | `src/main/resources/instruction.txt` | the system prompt |
 
 ## Notes
+
+<details>
+<summary>Protocol support and failure handling</summary>
+
+- The server handles `message/send` and `message/stream`, plus the agent card.
+  A2A task retrieval, cancellation and stream resubscription are not implemented.
+- Tool activity streams as it happens; answer text is sent after the turn finishes.
+- The streaming handler posts the task and session events to the controller.
+  `message/send` returns a Task without performing those writes.
+- Caught runtime exceptions become answer text with a `completed` status.
+  Controller-write failures are logged without a durable retry queue.
+
+</details>
 
 - The image tag is fixed (`localhost:5001/sre-java:lab`) and the Agent pulls with
   `imagePullPolicy: Always`; `build.sh` restarts the Deployment after a push.

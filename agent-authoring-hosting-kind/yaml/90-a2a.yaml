@@ -2,7 +2,7 @@
 #
 # sre-caller has no Kubernetes tools. Its one tool is another agent: a tools[].type: Agent
 # reference to sre-contained, which kagent turns into an A2A call. The AccessPolicy below
-# says who may make that call: sre-caller may, and nothing else in the cluster may. The
+# grants that call to sre-caller in kagent. Other callers have no grant in this policy. The
 # policy is enforced at sre-contained's own waypoint on the caller's mesh identity, so
 # sre-other in 55-other-agent.yaml, which carries the same tools[] reference, is refused.
 apiVersion: kagent.dev/v1alpha2

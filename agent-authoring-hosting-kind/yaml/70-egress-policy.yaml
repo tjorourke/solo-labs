@@ -1,7 +1,8 @@
-# Configuration is not containment. The agent has been told to use two gateways; this
-# is what stops it using anything else. Egress from this part's agent pods is allowed to
-# DNS, to the kagent namespace (the controller and the waypoints), to istiod, and to the
-# telemetry collector. There is no rule for the internet, so there is no route to it.
+# Lab egress allowlist. This intentionally permits the whole kagent namespace,
+# plus DNS, istiod and the telemetry collector. It is not a gateway-only rule.
+# Other matching NetworkPolicies can add permissions. Narrow destination selectors
+# and ports before using this pattern in a shared production namespace, and review
+# indirect access through every allowed service. Enforcement depends on the CNI.
 #
 # Two rules are there because of the mesh. ztunnel fetches and renews a pod's certificate
 # through that pod's own network namespace, so istiod (15012) must be reachable or the

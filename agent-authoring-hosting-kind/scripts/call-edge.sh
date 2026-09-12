@@ -10,14 +10,17 @@ source "$SCRIPT_DIR/../../agent-authoring-contract-kind/scripts/lib.sh"
 export INGRESS_GATEWAY="${INGRESS_GATEWAY:-ar-ingress}"
 export INGRESS_GATEWAY_NS="${INGRESS_GATEWAY_NS:-agentgateway-system}"
 LB="$(kc -n "$INGRESS_GATEWAY_NS" get gateway "$INGRESS_GATEWAY" -o jsonpath='{.status.addresses[0].value}')"
-URL="http://contained-tools.${LB}.sslip.io/mcp"
+URL="${EDGE_URL:-http://contained-tools.${LB}.sslip.io/mcp}"
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"laptop","version":"1"}}}'
 H=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream')
 
 echo "POST $URL"
 echo "  no token          → HTTP $(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$URL" "${H[@]}" -d "$INIT")"
 T="$(mint_token)"; [[ -n "$T" ]] || die "no token: set KAGENT_TOKEN or KEYCLOAK_URL"
-SID="$(curl -s -m 10 -D - -o /dev/null -X POST "$URL" -H "Authorization: Bearer $T" "${H[@]}" -d "$INIT" | tr -d '\r' | awk 'tolower($1)=="mcp-session-id:"{print $2}')"
+HEADERS="$(curl -sS -m 10 -D - -o /dev/null -w '\n%{http_code}' -X POST "$URL" -H "Authorization: Bearer $T" "${H[@]}" -d "$INIT")"
+CODE="$(printf '%s\n' "$HEADERS" | tail -1)"
+[[ "$CODE" == 200 ]] || die "initialize with a token returned HTTP $CODE"
+SID="$(printf '%s\n' "$HEADERS" | tr -d '\r' | awk 'tolower($1)=="mcp-session-id:"{print $2}')"
 [[ -n "$SID" ]] || die "initialize with a token returned no Mcp-Session-Id"
 echo "  token for $AS_USER → HTTP 200, MCP session opened"
 curl -s -m 10 -X POST "$URL" -H "Authorization: Bearer $T" -H "Mcp-Session-Id: $SID" "${H[@]}" \

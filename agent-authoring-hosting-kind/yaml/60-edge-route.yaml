@@ -7,11 +7,13 @@
 # before it reaches the backend, and the backend's own policy then limits the tools.
 #
 # LB_ADDRESS and KEYCLOAK_URL are substituted by scripts/quick.sh.
+# This uses the existing local HTTP listener for the kind demonstration. Use an
+# HTTPS listener and trusted certificate before carrying tokens outside that setup.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
 metadata:
   name: contained-tools-edge
-  namespace: agentgateway-system
+  namespace: ${INGRESS_GATEWAY_NS}
 spec:
   entMcp:
     toolMode: Standard
@@ -29,10 +31,10 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: contained-tools
-  namespace: agentgateway-system
+  namespace: ${INGRESS_GATEWAY_NS}
 spec:
   parentRefs:
-  - name: ar-ingress
+  - name: ${INGRESS_GATEWAY}
   hostnames:
   - "contained-tools.${LB_ADDRESS}.sslip.io"
   rules:
@@ -45,7 +47,7 @@ apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:
   name: contained-tools-edge-jwt
-  namespace: agentgateway-system
+  namespace: ${INGRESS_GATEWAY_NS}
 spec:
   targetRefs:
   - group: gateway.networking.k8s.io
@@ -67,7 +69,7 @@ apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:
   name: contained-tools-edge-tools
-  namespace: agentgateway-system
+  namespace: ${INGRESS_GATEWAY_NS}
 spec:
   targetRefs:
   - group: enterpriseagentgateway.solo.io

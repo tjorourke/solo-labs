@@ -1,11 +1,10 @@
 # The model, behind a waypoint of its own.
 #
-# Every call the contained agent makes to the outside leaves through a gateway: its
-# tools through contained-tools (30-tools-endpoint.yaml) and its model through this.
+# Configure the agent's model calls to use a gateway.
 # The agent is given http://sre-model.kagent.svc.cluster.local as the Anthropic base URL;
 # the Service has no pods, the label sends every call to the waypoint, and the waypoint
-# terminates TLS to api.anthropic.com. With both routes on gateways, the egress policy
-# in 70-egress-policy.yaml can refuse the pod everything else.
+# originates TLS to api.anthropic.com. The egress policy in 70-egress-policy.yaml
+# restricts direct external connections but also permits infrastructure traffic.
 #
 # HTTP/1.1 is pinned on the upstream hop. A reset HTTP/2 stream in the middle of a tool
 # call leaves a tool_use with no tool_result, and the next model request is rejected.

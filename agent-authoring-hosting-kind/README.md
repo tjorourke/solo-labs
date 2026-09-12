@@ -1,103 +1,129 @@
-# agent-authoring-hosting-kind
+# Hosting an agent and containing its tools
 
-Part 6 of **Writing agents for kagent**. Host one agent so that every route out of it
-ends at a gateway, and every route into it and into its tools is decided by identity:
-a tool endpoint only that agent may call, an A2A path only one other agent may use, a
-published route that needs a token, an egress policy that closes the rest, and an audit
-that lists every way into the cluster's gateways.
+Part 6 of **Writing agents for kagent**. Restrict tool and A2A access by workload
+identity, route model requests through a waypoint, and test selected network paths.
+These controls run outside the model. They do not provide a process sandbox or
+prove that data cannot leave through a permitted dependency.
 
-[Browse the files in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-hosting-kind).
-Clone `https://github.com/tjorourke/solo-labs.git` and run the commands below from
-`agent-authoring-hosting-kind/`. Keep the lab directories together: this part sources
-Part 1's `scripts/lib.sh` and applies its shared pieces first.
+For the motivation, read the [OpenAI and Hugging Face incident guide](https://mastertheagent.com/solo/zero-trust-agents-kubernetes/).
+An allowed service's outbound capabilities also belong in the agent's threat model.
+
+[Source in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-hosting-kind).
+Clone `https://github.com/tjorourke/solo-labs.git` and run from this directory with
+`agent-authoring-contract-kind/` beside it.
+
+## Agents
+
+| Agent | Role | Access |
+| --- | --- | --- |
+| sre-caller | Receives the user's question | Delegates to sre-contained |
+| sre-contained | Investigates pods | Four approved Kubernetes read tools |
+| sre-other | Tests denied access | No tools from the protected endpoint; A2A denied |
+
+All three use the model waypoint. The MCP policy separately allows the controller
+service account for discovery and the same tool grants. Ask `sre-caller` in the UI:
+direct controller calls to `sre-contained` are intentionally denied by its A2A policy.
 
 ## Prerequisites
 
-The same cluster as Parts 1 to 5, with Part 1's shared pieces applied (`quick.sh up` does
-that for you):
+An existing cluster with Solo Enterprise for kagent, Enterprise agentgateway,
+Istio ambient and the `kagent` namespace enrolled; the `kagent-anthropic` Secret;
+an ingress Gateway; Keycloak; and a network plugin that enforces NetworkPolicy.
+The scripts require kubectl, curl and Python 3. Part 1's setup is applied by `up`.
+The operator running the namespace-scope test needs permission to create and
+delete a temporary namespace, service account and probe pod.
 
-- Solo Enterprise for kagent (tested on 0.4.3) with the `kagent-anthropic` key Secret
-- Solo Enterprise for agentgateway (tested on v2026.8.2) with an ingress Gateway
-  (default `ar-ingress` in `agentgateway-system`; override with `INGRESS_GATEWAY` and
-  `INGRESS_GATEWAY_NS`)
-- Istio ambient with the `kagent` namespace enrolled
-- Keycloak as the OIDC issuer for the controller and the published route (discovered as
-  in Part 1, or set `KEYCLOAK_URL`)
-- A CNI that enforces `NetworkPolicy`; kind's default CNI does
-- `kubectl`, `curl`, `python3`
+Do not assume NetworkPolicy enforcement from the existence of the resource. Record
+the plugin/version and compare positive and negative probes on your own cluster.
+The observed cluster used kindnetd `v20251212-v0.29.0-alpha-105-g20ccfc88`,
+Kubernetes v1.35.0 and Istio ambient. A direct Anthropic request succeeded from an
+unselected declarative pod but timed out from `sre-contained`.
 
-## Bring it up
+## Run
 
 ```bash
 export CTX=kind-mesh1
 ./scripts/quick.sh up
-```
-
-`up` applies, in order: a waypoint in front of `api.anthropic.com` and a `ModelConfig`
-whose base URL is that waypoint; a tool endpoint `contained-tools` with a policy naming
-one agent identity; three declarative agents (`sre-contained`, `sre-caller`,
-`sre-other`); an `AccessPolicy` allowing `sre-caller` alone to call `sre-contained`; a
-`NetworkPolicy` allowing the three pods DNS, the kagent namespace, istiod and the collector and nothing else; and an `HTTPRoute` on
-the ingress gateway with a Strict JWT policy.
-
-## See it hold
-
-```bash
-./scripts/probe-as.sh sre-contained       # tools/list as that identity: four read tools
-./scripts/probe-as.sh sre-other           # as an identity the policy does not name: none
-./scripts/call-edge.sh                    # the published route: 401, then four tools with a token
-./scripts/audit-endpoints.sh              # every way into the cluster's gateways, probed
 ../agent-authoring-contract-kind/scripts/ask.sh sre-caller "Which pods in sre-lab are unhealthy, and why?"
-../agent-authoring-contract-kind/scripts/ask.sh sre-other  "Which pods in sre-lab are unhealthy, and why?"
+../agent-authoring-contract-kind/scripts/ask.sh sre-other "Which pods in sre-lab are unhealthy, and why?"
+./scripts/quick.sh test
 ```
 
-`sre-caller` delegates to `sre-contained` over A2A and returns its report. `sre-other`,
-wired to the same endpoint and the same agent, gets no tools and a 403 at
-`sre-contained`'s waypoint.
+Use the same user in the UI as the token used by `ask.sh`. The permitted caller
+receives a delegated report; the other caller receives a denial.
 
-## Waypoints
+## Policy boundaries
 
-A waypoint belongs to a destination Service, not to a caller. Part 1's agents share one
-waypoint in front of the shared tool endpoint and are told apart by identity in a single
-policy; this part adds a dedicated tool waypoint for one agent, the agent's own waypoint
-(from the `kagent.solo.io/waypoint` label) so a policy can name its callers, and a model
-waypoint. The page has a table of the four and when a separate one is worth having.
+- A waypoint protects a destination Service. Callers can share it with different
+  permissions. Separate proxies are a deployment choice, not a per-agent requirement.
+- Tool grants match namespace and service account. Pods sharing those values share
+  the workload identity. Tool names do not restrict namespace/resource arguments;
+  enforce those through the tool implementation and its Kubernetes RBAC.
+- The egress policy allows **the entire kagent namespace on all ports**, plus DNS,
+  istiod and telemetry. This is a lab allowance, not a gateway-only rule. Other
+  matching NetworkPolicies can add access. Narrow selectors/ports for your environment.
+- Direct Anthropic and tool-server connections are probed; required model calls
+  still reach Anthropic through the waypoint. Review indirect access through all
+  allowed services. The ModelConfig still references the agent's model-key Secret.
 
-## The checks
+## Optional external-client exercise
+
+Setup creates a route on the existing local ingress listener, protected by JWT
+authentication and a demo-user tool allowlist. Defaults: `INGRESS_GATEWAY=ar-ingress`,
+`INGRESS_GATEWAY_NS=agentgateway-system`. Keycloak settings follow Part 1's helpers.
 
 ```bash
-./scripts/check.sh      # or ./scripts/quick.sh test
+./scripts/call-edge.sh
+./scripts/quick.sh render-edge  # inspect the rendered route and policies
 ```
 
-1. Tools: `contained-tools` serves exactly four read tools to `sre-contained` and none to
-   another identity; the direct route to `kagent-tools` is reset.
-2. Egress: the contained pod cannot reach `api.anthropic.com` or `kagent-tools` itself
-   and reaches its model through the waypoint.
-3. A2A: `sre-caller`'s delegated turn is answered; `sre-other`'s call is refused.
-4. Edge: the published route answers 401 with no token and serves the four read tools
-   with one.
-5. Audit: this part's published route is closed; every other published route is listed
-   with its verdict.
+The default URL uses HTTP for this local kind demonstration. Before carrying tokens
+outside that setup, configure an HTTPS listener with a trusted certificate and
+use `EDGE_URL=https://tools.example.com/mcp`. This override changes only the client
+URL, not the Gateway configuration. Validate the intended issuer/audience and
+replace the demo `admin-user` rule with application-specific grants.
+
+## Endpoint audit
+
+```bash
+./scripts/audit-endpoints.sh
+./scripts/audit-endpoints.sh --json
+./scripts/audit-endpoints.sh --path /another-mcp-path
+python3 scripts/test-audit-endpoints.py
+```
+
+The audit inventories Gateways and Gateway-attached HTTPRoutes, plus non-ClusterIP
+Services in `NS` (default `kagent`). It probes unauthenticated MCP initialize on
+concrete hostnames with agentgateway backends, using HTTP/HTTPS listener ports.
+
+| Verdict | Meaning |
+| --- | --- |
+| ACCEPTED | MCP initialize succeeded without credentials; tool access is not established |
+| DENIED | This request received HTTP 401 or 403 |
+| INCONCLUSIVE | Network/TLS failure, timeout, redirect or unexpected response |
+| NOT_TESTED | Outside probe scope; no authentication assumption is made |
+
+Other paths, wildcard/unspecified hostnames, other route types and exposure outside
+Gateway API need separate review. Findings do not change the report's exit code;
+inventory/API errors fail the command. The lab checks explicitly assert DENIED for
+this lab's route. A zero ACCEPTED count is not an all-clear for the cluster.
 
 ## Files
 
-| path | what |
-|---|---|
-| `yaml/10-model-egress.yaml` | Service + waypoint + backend to `api.anthropic.com`, HTTP/1.1 pinned |
-| `yaml/20-model-config.yaml` | `ModelConfig` whose base URL is the model waypoint |
-| `yaml/30-tools-endpoint.yaml` | the `contained-tools` endpoint and its catalogue entry |
-| `yaml/40-tools-policy.yaml` | one identity, four read tools |
-| `yaml/50-agent.yaml` | `sre-contained`, labelled for a waypoint of its own |
-| `yaml/55-other-agent.yaml` | `sre-other`, wired to everything and named in no policy |
-| `yaml/60-edge-route.yaml` | the published route, its Strict JWT policy and its tool policy |
-| `yaml/70-egress-policy.yaml` | `NetworkPolicy`: DNS, the kagent namespace, istiod, the collector, nothing else |
-| `yaml/80-tools-authz.yaml` | ztunnel refuses these agents' direct route to `kagent-tools` |
-| `yaml/90-a2a.yaml` | `sre-caller` and the `AccessPolicy` that lets it, alone, call `sre-contained` |
-| `scripts/check.sh` | the five checks |
-| `scripts/audit-endpoints.sh` | waypoints, exposed Services, published routes probed without a token |
+- `yaml/10-model-egress.yaml`, `20-model-config.yaml`: fixed model upstream and base URL.
+- `yaml/30-tools-endpoint.yaml`, `40-tools-policy.yaml`: protected MCP endpoint and grants.
+- `yaml/50-agent.yaml`, `55-other-agent.yaml`, `90-a2a.yaml`: agents and A2A caller policy.
+- `yaml/60-edge-route.yaml`: local ingress route and JWT/tool policies.
+- `yaml/70-egress-policy.yaml`, `80-tools-authz.yaml`: network allowances and direct-tool denial.
+- `scripts/check.sh`: selected live access checks.
+- `scripts/probe-other-namespace.sh`: same service-account name in a temporary
+  ambient namespace, with cleanup after the probe.
+- `scripts/audit-endpoints.py`: inventory, probe selection and request verdicts.
+- `scripts/test-audit-endpoints.py`: verdict regression tests without a cluster.
 
-## Teardown
+## Cleanup
 
-```bash
-./scripts/quick.sh teardown     # this part's objects; Part 1's shared pieces stay
-```
+`./scripts/quick.sh teardown` removes Part 6 resources; Part 1's shared pieces stay.
+Use the same ingress overrides as setup. Before deploying beyond the lab, review
+destination scope, data permissions, HTTPS, credentials and runtime isolation;
+the full walkthrough and incident guide explain these separately.

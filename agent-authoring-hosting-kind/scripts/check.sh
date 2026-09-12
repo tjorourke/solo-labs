@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check.sh: every containment claim this part makes, executed.
+# check.sh: exercise the lab's selected tool, A2A, egress and edge paths.
 #
 #   1. Tools    contained-tools serves exactly four read tools to sre-contained and none
 #               to another identity; the direct route to kagent-tools is reset
@@ -22,9 +22,11 @@ A="$(bash "$SCRIPT_DIR/probe-as.sh" sre-contained)"; echo "   $A"
 [[ "$A" == *"4 tool(s): k8s_describe_resource k8s_get_events k8s_get_pod_logs k8s_get_resources" ]] || fail "sre-contained did not get the four read tools"
 B="$(bash "$SCRIPT_DIR/probe-as.sh" sre-other)"; echo "   $B"
 [[ "$B" == *"0 tool(s)"* ]] || fail "sre-other got tools from contained-tools"
-ok "contained-tools: sre-contained 4, sre-other 0"
+C="$(bash "$SCRIPT_DIR/probe-other-namespace.sh")"; echo "   $C"
+[[ "$C" == *"0 tool(s)"* ]] || fail "the same service-account name in another namespace got tools"
+ok "contained-tools: designated identity 4, other agent and other namespace 0"
 
-step "2. Egress: no route out except the gateways"
+step "2. Egress: probe direct Anthropic and tool-server access"
 POD="$(kc -n "$NS" get pod -l app.kubernetes.io/name=sre-contained -o name | head -1)"
 [[ -n "$POD" ]] || fail "no sre-contained pod"
 OUT="$(kc -n "$NS" exec "$POD" -- python3 -c '
@@ -40,7 +42,7 @@ echo "$OUT" | sed 's/^/   /'
 echo "$OUT" | grep -q "api.anthropic.com/ refused" || fail "the pod reached api.anthropic.com directly"
 echo "$OUT" | grep -q "kagent-tools.kagent:8084/mcp refused" || fail "the pod reached kagent-tools directly"
 echo "$OUT" | grep -q "sre-model.kagent.svc.cluster.local/ reached" || fail "the pod cannot reach its model waypoint"
-ok "direct routes refused, the model waypoint answers"
+ok "direct Anthropic and tool-server probes failed; the model waypoint answers"
 
 step "3. A2A: sre-caller may call sre-contained, sre-other may not"
 controller_pf
@@ -59,9 +61,16 @@ echo "$EDGE" | grep -q "no token          → HTTP 401" || fail "the edge route 
 echo "$EDGE" | grep -q "4 tool(s): k8s_describe_resource k8s_get_events k8s_get_pod_logs k8s_get_resources" || fail "the edge route did not serve the four read tools with a token"
 ok "401 without a token, four read tools with one"
 
-step "5. Audit: this part's published route is closed, and the rest is reported"
-AUDIT="$(bash "$SCRIPT_DIR/audit-endpoints.sh")"; echo "$AUDIT" | sed 's/^/   /'
-echo "$AUDIT" | grep -q "^  contained-tools\..*closed (HTTP 401" || fail "contained-tools is published without a working JWT policy"
-ok "contained-tools is closed without a token; open routes above, if any, belong to other workloads on this cluster"
+step "5. Audit: inspect the result for this lab's ingress route"
+AUDIT="$(bash "$SCRIPT_DIR/audit-endpoints.sh" --json)"
+printf '%s' "$AUDIT" | python3 -c '
+import json,sys
+report=json.load(sys.stdin)
+rows=[r for r in report["results"] if r["route"] == sys.argv[1]]
+assert rows and all(r["status"] == "DENIED" for r in rows), "contained-tools probe was not denied"
+print("  audit counts:", report["counts"])
+for r in rows: print(" ", r["url"], r["status"], r["detail"])
+' "${INGRESS_GATEWAY_NS:-agentgateway-system}/contained-tools" || fail "contained-tools audit did not establish rejection"
+ok "the tested contained-tools requests were rejected; inspect other audit findings separately"
 
-printf '\n' >&2; ok "all five containment checks passed"
+printf '\n' >&2; ok "all five lab checks passed (not a complete containment audit)"

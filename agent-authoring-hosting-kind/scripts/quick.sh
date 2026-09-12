@@ -19,7 +19,8 @@ render_edge() {
   [[ -n "$lb" ]] || die "gateway $INGRESS_GATEWAY_NS/$INGRESS_GATEWAY has no address"
   url="$(keycloak_url)"
   [[ -n "$url" ]] || die "no Keycloak URL: set KEYCLOAK_URL"
-  sed -e "s|\${LB_ADDRESS}|$lb|g" -e "s|\${KEYCLOAK_URL}|$url|g" -e "s|\${KEYCLOAK_REALM}|$KEYCLOAK_REALM|g" "$YAML/60-edge-route.yaml"
+  sed -e "s|\${LB_ADDRESS}|$lb|g" -e "s|\${KEYCLOAK_URL}|$url|g" -e "s|\${KEYCLOAK_REALM}|$KEYCLOAK_REALM|g" \
+    -e "s|\${INGRESS_GATEWAY}|$INGRESS_GATEWAY|g" -e "s|\${INGRESS_GATEWAY_NS}|$INGRESS_GATEWAY_NS|g" "$YAML/60-edge-route.yaml"
 }
 
 case "${1:-up}" in
@@ -28,13 +29,13 @@ case "${1:-up}" in
     step "Model waypoint and model config"
     kc apply -f "$YAML/10-model-egress.yaml" -f "$YAML/20-model-config.yaml" >/dev/null
     wait_gateway_programmed sre-model-waypoint
-    ok "api.anthropic.com is reached only through sre-model.$NS.svc.cluster.local"
+    ok "model endpoint configured at sre-model.$NS.svc.cluster.local"
 
     step "Tool endpoint for one agent"
     kc apply -f "$YAML/30-tools-endpoint.yaml" -f "$YAML/40-tools-policy.yaml" >/dev/null
     wait_gateway_programmed contained-tools-waypoint
     sed "s|\${TRUST_DOMAIN}|$(trust_domain)|g" "$YAML/80-tools-authz.yaml" | kc apply -f - >/dev/null
-    ok "contained-tools serves sre-contained and nobody else"
+    ok "contained-tools policy applied for sre-contained and kagent-controller in kagent"
 
     step "Agents, A2A policy and egress policy"
     kc apply -f "$YAML/50-agent.yaml" -f "$YAML/55-other-agent.yaml" -f "$YAML/90-a2a.yaml" -f "$YAML/70-egress-policy.yaml" >/dev/null
@@ -49,15 +50,16 @@ case "${1:-up}" in
 
   Part 6 is up on $CTX.
 
-    ./scripts/check.sh                       # every containment claim, executed
+    ./scripts/check.sh                       # selected lab access checks
     ./scripts/probe-as.sh sre-contained      # tools/list as that identity
     ./scripts/probe-as.sh sre-python         # and as an identity the endpoint does not know
     ./scripts/call-edge.sh                   # the published route, without and with a token
-    ./scripts/audit-endpoints.sh             # every way into the cluster's gateways
+    ./scripts/audit-endpoints.sh             # request-specific endpoint audit
     ../agent-authoring-contract-kind/scripts/ask.sh sre-caller "Which pods in $SRE_NS are unhealthy, and why?"
 MSG
     ;;
   test) bash "$SCRIPT_DIR/check.sh" ;;
+  render-edge) render_edge ;;
   teardown)
     step "Removing Part 6 from $CTX"
     render_edge 2>/dev/null | kc delete --ignore-not-found -f - >/dev/null 2>&1 || true
@@ -66,5 +68,5 @@ MSG
     kc delete -f "$YAML/40-tools-policy.yaml" -f "$YAML/30-tools-endpoint.yaml" -f "$YAML/20-model-config.yaml" -f "$YAML/10-model-egress.yaml" --ignore-not-found >/dev/null
     ok "removed; Part 1's shared pieces stay"
     ;;
-  *) echo "Usage: $0 up | test | teardown" >&2; exit 2 ;;
+  *) echo "Usage: $0 up | test | render-edge | teardown" >&2; exit 2 ;;
 esac

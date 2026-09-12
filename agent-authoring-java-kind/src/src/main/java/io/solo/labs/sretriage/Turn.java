@@ -23,6 +23,8 @@ import java.util.function.Consumer;
 record Turn(InMemoryRunner runner, String appName) {
 
   static Turn of(BaseAgent agent, String appName) {
+    // Each question starts independently. Saved kagent conversation history is
+    // kept for the UI and is not loaded into this runner.
     return new Turn(new InMemoryRunner(agent, appName), appName);
   }
 
