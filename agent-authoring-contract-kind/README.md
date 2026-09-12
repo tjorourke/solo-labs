@@ -7,7 +7,7 @@ and test workloads used by Parts 2 to 5.
 
 [Browse the files in solo-labs](https://github.com/tjorourke/solo-labs/tree/main/agent-authoring-contract-kind).
 Clone `https://github.com/tjorourke/solo-labs.git` and run the commands below from
-`agent-authoring-contract-kind/`. Keep all five lab directories together.
+`agent-authoring-contract-kind/`. Keep the lab directories together.
 
 The series shares one question, put to a seeded namespace with four broken pods:
 *"Which pods in sre-lab are unhealthy, and why?"*

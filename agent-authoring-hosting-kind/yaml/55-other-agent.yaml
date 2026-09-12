@@ -1,0 +1,32 @@
+# A second agent wired to the same endpoint and to the same A2A target, and named in
+# neither policy. Its manifest is correct and its tools are listed. The tool gateway
+# hands it nothing and sre-contained's waypoint refuses its call: being wired to a
+# server or an agent is not permission to use it.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-other
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Another team's triage agent, wired to contained-tools and not named in its policy.
+  declarative:
+    modelConfig: sre-model
+    systemMessage: |
+      You are a Kubernetes SRE. When asked about a namespace, list its pods with the
+      tools you have and report which are unhealthy and why. If you have no Kubernetes
+      tools, ask the sre-contained agent instead and return its report. If that fails
+      too, say so in one line, quoting the error, and stop.
+    tools:
+    - type: McpServer
+      mcpServer:
+        kind: RemoteMCPServer
+        name: contained-tools
+        toolNames:
+        - k8s_get_resources
+        - k8s_describe_resource
+        - k8s_get_pod_logs
+        - k8s_get_events
+    - type: Agent
+      agent:
+        name: sre-contained

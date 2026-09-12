@@ -1,0 +1,55 @@
+# The contained agent. Declarative, so kagent runs it; what this part adds is around it:
+# a model config that points at the model waypoint, a tool endpoint only this identity
+# may call, an egress policy that closes everything else, and a waypoint of its own.
+#
+# The label asks Solo Enterprise for kagent to create that waypoint in front of the
+# agent's Service. It is where an AccessPolicy naming this agent as its target is
+# enforced (90-a2a.yaml), on the caller's mesh identity.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: sre-contained
+  namespace: kagent
+  labels:
+    kagent.solo.io/waypoint: "true"
+spec:
+  type: Declarative
+  description: Kubernetes SRE triage, hosted with its model and tools behind gateways and no other route out.
+  declarative:
+    modelConfig: sre-model
+    systemMessage: |
+      You are a Kubernetes SRE. When asked about a namespace, find the pods that are
+      unhealthy and explain why, from evidence.
+
+      A pod is unhealthy when it is not Running, or has restarted more than three
+      times, or has been Pending for more than five minutes.
+
+      Method: list the pods in the namespace, pick out the unhealthy ones, then for
+      each one read the evidence that explains it: the pod description, the last
+      lines of its log, and the events for it. A container that never started has
+      no log, so use the events. Do not guess a cause you have not read.
+
+      Report format, plain text:
+        <pod>  <state>  <one line cause>  <the one thing to check next>
+      one line per unhealthy pod, then one line naming the healthy pods. Keep it under
+      twenty lines. You have read-only tools and you do not change anything.
+    tools:
+    - type: McpServer
+      mcpServer:
+        kind: RemoteMCPServer
+        name: contained-tools
+        toolNames:
+        - k8s_get_resources
+        - k8s_describe_resource
+        - k8s_get_pod_logs
+        - k8s_get_events
+    a2aConfig:
+      skills:
+      - id: triage-namespace
+        name: Triage a namespace
+        description: Report which pods in a namespace are unhealthy and why
+        inputModes: [text]
+        outputModes: [text]
+        tags: [kubernetes, sre, triage]
+        examples:
+        - "Which pods in sre-lab are unhealthy, and why?"

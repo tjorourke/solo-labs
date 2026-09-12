@@ -1,0 +1,47 @@
+# Configuration is not containment. The agent has been told to use two gateways; this
+# is what stops it using anything else. Egress from this part's agent pods is allowed to
+# DNS, to the kagent namespace (the controller and the waypoints), to istiod, and to the
+# telemetry collector. There is no rule for the internet, so there is no route to it.
+#
+# Two rules are there because of the mesh. ztunnel fetches and renews a pod's certificate
+# through that pod's own network namespace, so istiod (15012) must be reachable or the
+# pod stops accepting mesh connections when the certificate is next renewed. And a
+# connection to another mesh workload leaves the pod on the HBONE port, 15008, not on
+# the port the application dialled, so the collector rule allows both.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: contained-agents-egress
+  namespace: kagent
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [sre-contained, sre-caller, sre-other]
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - { protocol: UDP, port: 53 }
+    - { protocol: TCP, port: 53 }
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kagent
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - { protocol: TCP, port: 15012 }
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: solo-cost
+    ports:
+    - { protocol: TCP, port: 4317 }
+    - { protocol: TCP, port: 15008 }

@@ -117,9 +117,9 @@ spec:
         image: hashicorp/http-echo:99.99.99
         resources: { requests: { cpu: 10m, memory: 8Mi }, limits: { memory: 16Mi } }
 ---
-# OOMKilled. tail has to hold the whole 200 MiB stream before it can print the last
-# byte, inside a 32 MiB limit. The kernel kills it, the pod restarts, and the
-# reason is on the container status, not in the log.
+# OOMKilled. tail -c 200m has to buffer 200 MiB of the stream before it can print,
+# inside a 32 MiB limit. The kernel kills it, the pod restarts, and the reason is on
+# the container status, not in the log.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -135,7 +135,7 @@ spec:
       containers:
       - name: worker
         image: busybox:1.36
-        command: ["sh", "-c", "echo 'report-worker: building the daily report'; head -c 200m /dev/zero | tail -c 1"]
+        command: ["sh", "-c", "echo 'report-worker: building the daily report'; head -c 200m /dev/zero | tail -c 200m > /dev/null"]
         resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 32Mi } }
 ---
 # Pending. No node has 64 CPUs to give, so the scheduler never places it. The reason

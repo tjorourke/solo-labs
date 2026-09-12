@@ -1,0 +1,85 @@
+# The same tools published on the ingress gateway, for a person with a token.
+#
+# A waypoint is mesh-internal: identity arrives with the connection. An HTTPRoute on an
+# ingress Gateway publishes a hostname on a load balancer, and it is open to anything
+# that can route to the address until a policy says otherwise. So the route carries a
+# Strict JWT policy: a request without a valid token from the Keycloak realm is refused
+# before it reaches the backend, and the backend's own policy then limits the tools.
+#
+# LB_ADDRESS and KEYCLOAK_URL are substituted by scripts/quick.sh.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: contained-tools-edge
+  namespace: agentgateway-system
+spec:
+  entMcp:
+    toolMode: Standard
+    sessionRouting: Stateful
+    failureMode: FailClosed
+    targets:
+    - name: kagent-tools
+      static:
+        host: kagent-tools.kagent.svc.cluster.local
+        port: 8084
+        path: /mcp
+        protocol: StreamableHTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: contained-tools
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+  - name: ar-ingress
+  hostnames:
+  - "contained-tools.${LB_ADDRESS}.sslip.io"
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: contained-tools-edge
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: contained-tools-edge-jwt
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: contained-tools
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+      - issuer: ${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}
+        jwks:
+          remote:
+            url: ${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs
+            cacheDuration: 10m
+---
+# The token says who is calling; this says what they may call. Read tools only, the
+# same four the agent has, and only for a token whose preferred_username is on the list.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: contained-tools-edge-tools
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayBackend
+    name: contained-tools-edge
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - >-
+            jwt.preferred_username in ["admin-user"]
+            && mcp.tool.name in
+              ["k8s_get_resources", "k8s_describe_resource", "k8s_get_pod_logs", "k8s_get_events"]

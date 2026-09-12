@@ -1,0 +1,23 @@
+# The direct route to kagent-tools, closed for this part's agents at L4. Part 1 does the
+# same for its agents; a second DENY policy on the same workload adds to it.
+# TRUST_DOMAIN is substituted by scripts/quick.sh.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kagent-tools-no-direct-contained
+  namespace: kagent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagent-tools
+  action: DENY
+  rules:
+  - from:
+    - source:
+        principals:
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-contained"
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-other"
+        - "${TRUST_DOMAIN}/ns/kagent/sa/sre-caller"
+    to:
+    - operation:
+        ports: ["8084"]

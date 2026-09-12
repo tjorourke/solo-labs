@@ -1,0 +1,70 @@
+# The model, behind a waypoint of its own.
+#
+# Every call the contained agent makes to the outside leaves through a gateway: its
+# tools through contained-tools (30-tools-endpoint.yaml) and its model through this.
+# The agent is given http://sre-model.kagent.svc.cluster.local as the Anthropic base URL;
+# the Service has no pods, the label sends every call to the waypoint, and the waypoint
+# terminates TLS to api.anthropic.com. With both routes on gateways, the egress policy
+# in 70-egress-policy.yaml can refuse the pod everything else.
+#
+# HTTP/1.1 is pinned on the upstream hop. A reset HTTP/2 stream in the middle of a tool
+# call leaves a tool_use with no tool_result, and the next model request is rejected.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-model
+  namespace: kagent
+  labels:
+    istio.io/use-waypoint: sre-model-waypoint
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: sre-model-waypoint
+  namespace: kagent
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: sre-model
+  namespace: kagent
+spec:
+  static:
+    host: api.anthropic.com
+    port: 443
+  policies:
+    tls:
+      sni: api.anthropic.com
+    http:
+      version: HTTP1
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sre-model
+  namespace: kagent
+spec:
+  parentRefs:
+  - group: ""
+    kind: Service
+    name: sre-model
+    port: 80
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: sre-model
