@@ -1,9 +1,11 @@
-# Hosting an agent and containing its tools
+# Writing agents for kagent, part 6: hosting an agent and scoping its reach
 
-Part 6 of **Writing agents for kagent**. Restrict tool and A2A access by workload
-identity, route model requests through a waypoint, and test selected network paths.
-These controls run outside the model. They do not provide a process sandbox or
-prove that data cannot leave through a permitted dependency.
+Part 6 of **Writing agents for kagent**. Scope an SRE agent's tool, agent-to-agent,
+model and network reach independently. Its prompt describes intended behaviour;
+workload identity and external policy determine which calls can succeed. Test both
+allowed and denied paths, then review what permitted services can reach on the
+agent's behalf. This lab does not provide a process sandbox or prove that sensitive
+data cannot leave through an intentionally allowed destination.
 
 For the motivation, read the [OpenAI and Hugging Face incident guide](https://mastertheagent.com/solo/zero-trust-agents-kubernetes/).
 An allowed service's outbound capabilities also belong in the agent's threat model.
@@ -52,7 +54,7 @@ export CTX=kind-mesh1
 Use the same user in the UI as the token used by `ask.sh`. The permitted caller
 receives a delegated report; the other caller receives a denial.
 
-## Policy boundaries
+## Scope of these controls
 
 - A waypoint protects a destination Service. Callers can share it with different
   permissions. Separate proxies are a deployment choice, not a per-agent requirement.
