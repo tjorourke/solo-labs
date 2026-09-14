@@ -340,6 +340,27 @@ and repeat in reverse mode order. There are no published comparative latency res
 | **The vSR chart PVC** | defaults to a `standard` StorageClass that does not exist on EKS, so the pod reports an unbound claim rather than a config error. `yaml/70` sets `gp3`. |
 | **kagent agents need a skill** | An agent card with no `a2aConfig.skills` list is rejected by the runtime at startup, and the failure looks like a broken image rather than a rejected card. On a cluster that reserves Agent creation to the kagent control plane, add `--as=system:serviceaccount:kagent:kagent-controller`; this one does not. |
 
+## Which option, in order
+
+Ask these in order and stop at the first yes.
+
+1. **Does the caller already know which model it needs?** An IDE plugin, a reporting
+   app, a purpose-built agent. Yes: a **named model** in its ModelConfig, nothing to
+   classify.
+2. **Does who is asking change the answer, or must some requests be refused?**
+   Entitlement per team, data handling, a budget tier. Yes: the **policy engine**, OPA
+   over `traffic.extAuth` at PreRouting. It decides from identity and prompt and can
+   say no.
+3. **Does the wording vary beyond a list you are willing to maintain?** One shared
+   assistant taking mixed traffic. Yes: the **semantic router**. No: **keyword match**,
+   a CEL transformation that is free and brittle as the whole classifier.
+
+Same topic but different depth is Part 2: a complexity signal added to the router.
+
+Identity and meaning together is the combination this lab cannot give you in one
+phase. extAuth runs before extProc, so OPA decides instead of the router, not after it.
+If you need both, the entitlement has to live where the classification does.
+
 ## When the topic is not enough
 
 Routing on the topic runs out when two prompts share one. That is
