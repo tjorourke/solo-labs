@@ -1,0 +1,98 @@
+# OPA as the gateway's external authorizer.
+#
+# Plain Kubernetes, the same on both editions. OPA's -envoy build speaks the Envoy
+# ext_authz gRPC protocol on :9191, which is what the gateway's traffic.extAuth calls.
+# Rego answers with allow plus headers, or deny plus a status and a body.
+#
+# The policy itself is not in this file. scripts/06-opa.sh builds the opa-policy
+# ConfigMap from opa/routing.rego, so the Rego lives in one place and the page embeds
+# the file that runs. OPA loads the file at start, so a policy change is a
+# `kubectl rollout restart deploy/opa`.
+#
+# The -static tag is the one published for both amd64 and arm64. The plain -envoy tag
+# is amd64 only and fails to pull on an Apple silicon kind node.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-config
+  namespace: agentgateway-system
+data:
+  config.yaml: |
+    plugins:
+      envoy_ext_authz_grpc:
+        addr: :9191
+        # The rule the plugin evaluates for every check: package routing, rule result.
+        path: routing/result
+    decision_logs:
+      # Every decision to stdout with its full input, so `kubectl logs deploy/opa`
+      # shows the team, the requested model and the result for each request.
+      console: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  namespace: agentgateway-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+    spec:
+      containers:
+        - name: opa
+          image: openpolicyagent/opa:1.20.2-envoy-static
+          args:
+            - run
+            - --server
+            - --config-file=/config/config.yaml
+            - --addr=0.0.0.0:8181
+            - --diagnostic-addr=0.0.0.0:8282
+            - /policy/routing.rego
+          ports:
+            - name: grpc
+              containerPort: 9191
+            - name: http
+              containerPort: 8181
+          readinessProbe:
+            httpGet:
+              path: "/health?plugins"
+              port: 8282
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: policy
+              mountPath: /policy
+      volumes:
+        - name: config
+          configMap:
+            name: opa-config
+        - name: policy
+          configMap:
+            name: opa-policy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  namespace: agentgateway-system
+spec:
+  selector:
+    app: opa
+  ports:
+    - name: grpc
+      port: 9191
+      targetPort: 9191
+      appProtocol: grpc
+    - name: http
+      port: 8181
+      targetPort: 8181

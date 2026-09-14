@@ -1,0 +1,51 @@
+# OSS conversion. Same routing, upstream agentgateway CRDs.
+#
+# Mechanical from the Enterprise manifest in ../yaml:
+#   enterpriseagentgateway.solo.io/v1alpha1 -> agentgateway.dev/v1alpha1
+#   EnterpriseAgentgatewayPolicy            -> AgentgatewayPolicy
+#
+# spec.traffic.extAuth with grpc, forwardBody and failureMode is on the OSS CRD at
+# v1.3.0-alpha.1, checked with kubectl explain. Unlike extProc, extAuth carries
+# failureMode on OSS too, so this file and its Enterprise twin are identical below
+# the kind.
+
+# Policy-decided routing: hand the decision to OPA.
+#
+# Same policy name as the keyword and semantic policies, so applying this file swaps the
+# decider the way yaml-oss/80 does, and re-applying yaml-oss/20 swaps it back. The
+# route is yaml-oss/30, unchanged: OPA writes x-model, the same header the keyword
+# transformation writes.
+#
+#   kubectl apply -f yaml-oss/91-opa-extauth-policy.yaml -f yaml-oss/30-httproute.yaml
+#
+# extAuth runs at PreRouting before the route is chosen, and the headers OPA returns on
+# an allow are written onto the request. Within the phase the order is JWT, then
+# extAuth, then authorization, then extProc, then transformation, so OPA sees verified
+# claims and the body, and nothing the semantic router or the transformation would set.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: extract-model-internal
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: model-gateway
+  traffic:
+    # Before the route is chosen, or the header OPA writes changes nothing.
+    phase: PreRouting
+    extAuth:
+      backendRef:
+        name: opa
+        namespace: agentgateway-system
+        port: 9191
+      # The Envoy ext_authz gRPC protocol. OPA's -envoy build implements it.
+      grpc: {}
+      # Without this OPA is sent headers only, parsed_body is undefined in Rego, and
+      # every request classifies as a promptless "auto".
+      forwardBody:
+        maxSize: 65536
+      # OPA has to answer or the request is refused. FailOpen would let a request
+      # through with no x-model, and it would fall to the default backend with a 200.
+      failureMode: FailClosed

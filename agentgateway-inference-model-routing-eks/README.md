@@ -37,18 +37,20 @@ returns anything if requests reach the model that suits them, and nothing in the
 the method or the caller's identity says which that is. The only thing that does is the
 prompt.
 
-## Three ways a request reaches a model
+## Four ways a request reaches a model
 
-The backend mapping stays the same in all three. Semantic mode replaces the policy
-and changes the HTTPRoute's matched header from `x-model` to `x-selected-model`.
+The backend mapping stays the same in all four. Semantic mode replaces the policy
+and changes the HTTPRoute's matched header from `x-model` to `x-selected-model`. The
+policy option replaces the policy only and keeps the `x-model` route.
 
 | Option | Who decides | Cost |
 |---|---|---|
 | Client-declared | the client names a model | nothing |
 | Keyword match | the gateway matches words in the prompt | nothing, no new component |
 | Semantic | vLLM Semantic Router classifies the prompt and the gateway acts on it | one more service, several GB of model weights |
+| Policy | OPA decides from who is asking and what they are entitled to, and can refuse | one small service, no model weights |
 
-All three are deployed here. Three kagent agents cover both patterns:
+All four are deployed here; OPA is an optional extra step (`scripts/06-opa.sh`). Three kagent agents cover both patterns:
 
 | Agent | ModelConfig | Who decides |
 |---|---|---|
@@ -124,6 +126,7 @@ That runs six steps, each also runnable on its own:
 | `scripts/03-routing.sh` | gateway, a backend per model, the PreRouting policy, the route | ~1 min |
 | `scripts/04-kagent.sh` | kagent and the three agents | ~5 min |
 | `scripts/05-semantic-router.sh` | vSR and the policy that hands it the decision | ~5 min |
+| `scripts/06-opa.sh` (optional) | OPA as the decider: entitlement in Rego, called over `traffic.extAuth` at PreRouting | ~1 min |
 
 **The experimental Gateway API channel is required.** ExtProc rides on it and the
 standard channel does not carry it. `01-gateway.sh` applies
@@ -150,7 +153,8 @@ The GPUs are the cost, about $11.70/hr for the pair. Everything else idles cheap
 The manifests in `yaml-oss/` are the OSS CRDs and are what the scripts apply. `yaml/`
 holds the Enterprise set: same shapes with an `Enterprise` prefix on the kinds and
 `gatewayClassName: enterprise-agentgateway`. One field differs, and only Enterprise has
-it: `extProc.failureMode`, which the OSS CRD rejects outright.
+it: `extProc.failureMode`, which the OSS CRD rejects outright. `traffic.extAuth` is the
+same on both, `failureMode` included, so `yaml/91` and `yaml-oss/91` differ only in kind.
 
 ## Testing
 
@@ -221,6 +225,39 @@ vSR itself does more than this. It can combine signals such as domain, complexit
 privacy, apply routing policy, narrow the candidate models and choose the inference path
 from there. The lab uses domain classification only, so the mechanics stay visible.
 
+
+### The policy option
+
+`test-policy.sh` runs eight requests with OPA deciding: two teams, `auto` against a
+named model, both content shapes, and one request that has to be refused. The `OPA`
+column is the `x-opa-decision` response header and `ANSWERED` is the model in the body.
+
+```bash
+./scripts/06-opa.sh
+./scripts/test-policy.sh
+```
+
+```
+TEAM      ASKED FOR              PROMPT                                 EXPECT                 OPA                    ANSWERED
+platform  auto                   Write a Python function that reverses  qwen3-coder-30b        qwen3-coder-30b        ok qwen3-coder-30b
+platform  auto                   What is IFRS 9 stage 2 impairment?     mistral-small-3.2-24b  mistral-small-3.2-24b  ok mistral-small-3.2-24b
+finance   auto                   Write a Python function that reverses  mistral-small-3.2-24b  mistral-small-3.2-24b  ok mistral-small-3.2-24b
+finance   qwen3-coder-30b        Write a Python function that reverses  403                    -                      ok 403
+finance   mistral-small-3.2-24b  What is IFRS 9 stage 2 impairment?     mistral-small-3.2-24b  mistral-small-3.2-24b  ok mistral-small-3.2-24b
+platform  qwen3-coder-30b        anything                               qwen3-coder-30b        qwen3-coder-30b        ok qwen3-coder-30b
+(none)    auto                   Write a Python function that reverses  mistral-small-3.2-24b  mistral-small-3.2-24b  ok mistral-small-3.2-24b
+platform  auto                   [parts] Refactor this Python function  qwen3-coder-30b        qwen3-coder-30b        ok qwen3-coder-30b
+
+policy decisions: 8/8 as expected
+```
+
+Row three is the case the other options cannot express: the same coding prompt goes to
+the code model for the platform team and to the general model for the finance team,
+because the finance team is not entitled to the code model. Row four is a 403 with a
+reason, before any model is dialled. The Rego reuses the keyword regex on purpose: OPA is
+not a better classifier, it is the entitlement layer around one. Within `PreRouting` the
+gateway runs JWT, extAuth, authorization, extProc, then the transformation, so OPA sees
+claims and the body and nothing vSR would set: the two are alternatives, not a pipeline.
 
 ### Seeing which model answered
 
@@ -297,6 +334,9 @@ and repeat in reverse mode order. There are no published comparative latency res
 | **The header is `x-selected-model`** | `x-vsr-selected-model` is a *response* header with the same value. Matching it gives a route that never matches, with no error anywhere. |
 | **Read both content shapes** | `content` can be a string or a list of typed parts. curl sends a string, ADK and LiteLLM agents send parts. Matching only the string shape silently sends all agent traffic to the default model. |
 | **The gateway Service defaults to LoadBalancer** | Apply the Gateway on its own and the controller provisions a public cloud load balancer in front of an unauthenticated LLM endpoint, and nothing on the Gateway says it did. `yaml/05` pins the Service to `ClusterIP` with an `AgentgatewayParameters` and `spec.infrastructure.parametersRef`. |
+| **`forwardBody` on extAuth** | Without it OPA is sent headers only, `parsed_body` is undefined in Rego, and every request is a promptless `auto` that lands on the default model with a 200. |
+| **extAuth runs before extProc** | Inside one `PreRouting` phase the order is JWT, extAuth, authorization, extProc, transformation. OPA cannot read the semantic router's header, so it decides instead of vSR, not after it. |
+| **The OPA `-envoy` tag is amd64 only** | It fails to pull on an Apple silicon kind node. `-envoy-static` is published for both and is what `yaml/90` uses. |
 | **The vSR chart PVC** | defaults to a `standard` StorageClass that does not exist on EKS, so the pod reports an unbound claim rather than a config error. `yaml/70` sets `gp3`. |
 | **kagent agents need a skill** | An agent card with no `a2aConfig.skills` list is rejected by the runtime at startup, and the failure looks like a broken image rather than a rejected card. On a cluster that reserves Agent creation to the kagent control plane, add `--as=system:serviceaccount:kagent:kagent-controller`; this one does not. |
 
