@@ -29,6 +29,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # with `unknown field "spec.substrate"` because mesh1 carries no substrate. Use a name
 # nothing else exports, and override deliberately with SUBSTRATE_CTX=... if you need to.
 CTX="${SUBSTRATE_CTX:-kind-substrate}"
+# Read the laptop's kubeconfig, not the caller's. demo-8's connect.sh (and demo-7's) export a
+# minified one-cluster KUBECONFIG so their cells can say plain `kubectl`; under that file
+# $CTX does not exist and this would wrongly report the Part 5 cluster as missing.
+export KUBECONFIG="${SUBSTRATE_KUBECONFIG:-$HOME/.kube/config}"
 DIR="$SCRIPT_DIR/.substrate-scope"
 REPO="https://github.com/themsquared/substrate-scope.git"
 PIN="${SUBSTRATE_SCOPE_REF:-952c386777638e1e3a0a2c3e10c7021fe217a38f}"

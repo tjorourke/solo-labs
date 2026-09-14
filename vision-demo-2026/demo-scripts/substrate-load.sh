@@ -41,7 +41,8 @@ else
   if ! "$SCOPE"; then
     echo
     echo "✗ the viewer would not start. If the message above is about a missing"
-    echo "  kind-substrate context, build the Part 5 cluster first (a few minutes):"
+    echo "  kind-substrate context, check 'kind get clusters'. If substrate is not"
+    echo "  listed, build the Part 5 cluster first (a few minutes):"
     echo "      ./demo-scripts/substrate-cluster.sh"
     exit 1
   fi
