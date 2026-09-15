@@ -1,0 +1,37 @@
+# Helm values for kagent 0.10.1 with the Agent Substrate integration on.
+# The Anthropic key is not here: 03-kagent.sh creates the kagent-anthropic Secret from
+# the environment and the chart's default ModelConfig reads it.
+providers:
+  default: anthropic
+  anthropic:
+    model: claude-sonnet-4-6
+controller:
+  substrate:
+    enabled: true
+    ateApiEndpoint: dns:///api.ate-system.svc:443
+    ateApiInsecure: true
+    atenetRouterURL: http://atenet-router.ate-system.svc:80
+    ateApiTokenFile: /var/run/secrets/tokens/ate-api/token
+    defaultWorkerPool:
+      namespace: kagent
+      name: kagent-default
+# Two gVisor workers: a long-lived AgentHarness pins one slot from its first chat, and the
+# reference SandboxAgent and any golden-snapshot build need the other.
+substrateWorkerPool:
+  create: true
+  name: kagent-default
+  replicas: 2
+  sandboxClass: gvisor
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.9
+# Only kagent-tools is needed (it is the MCP server the harness reaches through agentgateway).
+k8s-agent: {enabled: false}
+kgateway-agent: {enabled: false}
+istio-agent: {enabled: false}
+promql-agent: {enabled: false}
+observability-agent: {enabled: false}
+argo-rollouts-agent: {enabled: false}
+helm-agent: {enabled: false}
+cilium-policy-agent: {enabled: false}
+cilium-manager-agent: {enabled: false}
+cilium-debug-agent: {enabled: false}
+grafana-mcp: {enabled: false}

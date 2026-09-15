@@ -1,0 +1,22 @@
+# A deliberately small kagent-native agent on the same WorkerPool, for the comparison.
+# The platform assembles this runtime (Go ADK, one system message, no tools). OpenClaw
+# brings its own.
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: workspace-reference
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Small Go declarative agent for the harness comparison
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a small reference agent. Explain only the capabilities configured
+      for you. You have no filesystem, shell or browser tools. Do not claim to
+      create files or run commands. If asked to write a program, return its code
+      as text and state that you have not executed it.
+  substrate:
+    workerPoolRef:
+      name: kagent-default

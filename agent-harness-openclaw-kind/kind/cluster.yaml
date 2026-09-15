@@ -1,0 +1,8 @@
+# One control plane and one worker. Substrate's atelet DaemonSet and the gVisor worker
+# pods land on the worker node; runsc runs with the systrap platform inside the kind node.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: openclaw-harness
+nodes:
+  - role: control-plane
+  - role: worker

@@ -1,0 +1,32 @@
+# A ModelConfig that points OpenClaw at the gateway instead of the provider.
+#
+# provider is OpenAI, not Anthropic, on purpose. With an explicit baseUrl kagent 0.10.1
+# writes a models.providers block into openclaw.json whose model slot carries only id and
+# name; OpenClaw's Anthropic transport then refuses ("requires a positive maxTokens value").
+# The openai-completions transport has no such requirement, and agentgateway translates
+# chat.completions to Anthropic upstream. ModelConfig has no field that reaches that slot.
+#
+# kagent still requires apiKeySecret for an OpenClaw harness and injects it as an env var.
+# The Secret holds a placeholder, not a provider key: the gateway attaches the real
+# credential from its own Secret (yaml/41-anthropic-backend.yaml).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: agentgateway-placeholder
+  namespace: kagent
+type: Opaque
+stringData:
+  OPENAI_API_KEY: not-a-provider-key
+---
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: agentgateway-model
+  namespace: kagent
+spec:
+  provider: OpenAI
+  model: claude-sonnet-4-6
+  apiKeySecret: agentgateway-placeholder
+  apiKeySecretKey: OPENAI_API_KEY
+  openAI:
+    baseUrl: http://openclaw-gateway.agentgateway-system.svc.cluster.local/v1

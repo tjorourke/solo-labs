@@ -1,0 +1,38 @@
+# Anthropic behind the gateway. The provider key lives in the anthropic-secret Secret
+# (created by 05-agentgateway.sh from ANTHROPIC_API_KEY) and is attached by the gateway;
+# the harness never holds it. Clients speak the OpenAI chat.completions shape on /v1 and
+# the gateway translates to Anthropic's Messages API upstream.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      anthropic:
+        model: claude-sonnet-4-6
+  policies:
+    auth:
+      secretRef:
+        name: anthropic-secret
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: openclaw-gateway
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+      backendRefs:
+        - name: anthropic
+          namespace: agentgateway-system
+          group: agentgateway.dev
+          kind: AgentgatewayBackend

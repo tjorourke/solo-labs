@@ -1,0 +1,14 @@
+# The same harness, with its model path moved behind agentgateway. Applying this over
+# yaml/20-openclaw-harness.yaml changes only modelConfigRef.
+apiVersion: kagent.dev/v1alpha2
+kind: AgentHarness
+metadata:
+  name: openclaw-lab
+  namespace: kagent
+spec:
+  backend: openclaw
+  description: OpenClaw workspace harness on Agent Substrate
+  modelConfigRef: agentgateway-model
+  substrate:
+    workerPoolRef:
+      name: kagent-default

@@ -1,0 +1,16 @@
+# One agentgateway proxy for the lab. The model route (/v1/messages) and the MCP route
+# (/mcp) both attach here, so the harness has a single platform-owned address to call.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: openclaw-gateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All

@@ -1,0 +1,14 @@
+# The OpenClaw harness. kagent reconciles this into an ActorTemplate on the named
+# WorkerPool, builds a golden gVisor snapshot, and speaks ACP to the actor on the first chat.
+apiVersion: kagent.dev/v1alpha2
+kind: AgentHarness
+metadata:
+  name: openclaw-lab
+  namespace: kagent
+spec:
+  backend: openclaw
+  description: OpenClaw workspace harness on Agent Substrate
+  modelConfigRef: default-model-config
+  substrate:
+    workerPoolRef:
+      name: kagent-default
