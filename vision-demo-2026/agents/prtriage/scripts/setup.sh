@@ -12,6 +12,13 @@ K="kubectl --context kind-mesh1"
 PAT="${GITHUB_PAT:-${GITHUB_PORTLAB_TOKEN:-}}"
 [ -n "$PAT" ] || { echo "✗ set GITHUB_PAT (a GitHub PAT; read access is enough)"; exit 1; }
 
+echo "== the agent image, and everything its build needs, while there is a network =="
+# Section 5 rebuilds this live. The base images, the Maven dependencies and the approved
+# skill are fetched here, so that build works at a venue with no wifi. The push puts the
+# image in the kind registry for the changelog agent deployed below.
+make -C "$HERE/../java-agent" offline push
+echo
+
 echo "== make sure the cluster can resolve its own ingress names =="
 "$HERE/fix-cluster-dns.sh" >/dev/null 2>&1 || echo "  (dns fix skipped)"
 

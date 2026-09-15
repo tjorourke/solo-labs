@@ -5,6 +5,8 @@
 #   make show      the method that wires ADK to the gateway
 #   make build     multi-stage docker build (maven -> jre)
 #   make push      into the kind registry
+#   make offline   fetch everything build needs while there is a network (base images,
+#                  maven dependencies, the approved skill), so the demo builds with no wifi
 #   make publish   register it in AgentRegistry with arctl
 #   make deploy    deploy it onto kagent as a pod, via AgentRegistry
 #   make ask       prompt it through kagent's A2A endpoint
@@ -19,8 +21,10 @@ CTX     ?= kind-mesh1
 NS      ?= kagent
 SRC     := src/main/java/io/solo/demo/ReleaseReport.java
 KC      := kubectl --context $(CTX)
+# the FROM images, read off the Dockerfile so this list cannot drift from it
+BASES   := $(shell sed -n 's/^FROM  *\([^ ]*\).*/\1/p' Dockerfile)
 
-.PHONY: all show build push publish deploy ask logs clean skill.md
+.PHONY: all show bases offline build push publish deploy ask logs clean skill.md
 
 all: build push publish deploy ask
 
@@ -41,10 +45,60 @@ show:
 ## LOCAL_SKILL=1 uses the working copy instead, which is what you want while editing
 ## the skill, since a pull would fetch the last version that reached the mirror.
 skill.md:
-	@if [ -n "$(LOCAL_SKILL)" ]; then 	  echo "== skill.md from the LOCAL working copy (LOCAL_SKILL=1) =="; 	  awk '/^---$$/{c++;next} c>=2' ../skill/release-report/SKILL.md > $@; 	else 	  echo "== pulling the approved skill from AgentRegistry =="; 	  rm -rf .skill; 	  arctl pull skill release-report .skill >/dev/null || { 	    echo "   ! arctl pull failed. Is arctl logged in, and has the skill's source"; 	    echo "     repository been updated? Falling back to the local copy."; 	    awk '/^---$$/{c++;next} c>=2' ../skill/release-report/SKILL.md > $@; 	    exit 0; }; 	  awk '/^---$$/{c++;next} c>=2' .skill/SKILL.md > $@; 	  arctl get skill release-report -o yaml | sed -n 's/^ *subfolder: */   source: /p'; 	fi
+	@if [ -n "$(LOCAL_SKILL)" ]; then \
+	  echo "== skill.md from the LOCAL working copy (LOCAL_SKILL=1) =="; \
+	  SKILL=../skill/release-report/SKILL.md; \
+	else \
+	  echo "== the approved skill, from AgentRegistry =="; \
+	  rm -rf .skill.new; \
+	  if arctl pull skill release-report .skill.new >/dev/null 2>&1; then \
+	    rm -rf .skill && mv .skill.new .skill; \
+	    arctl get skill release-report -o yaml | sed -n 's/^ *subfolder: */   source: /p'; \
+	    SKILL=.skill/SKILL.md; \
+	  elif [ -s .skill/SKILL.md ]; then \
+	    rm -rf .skill.new; \
+	    echo "   no fresh pull (no network, or arctl not logged in): using the copy pulled $$(date -r .skill/SKILL.md '+%d %b %H:%M')"; \
+	    SKILL=.skill/SKILL.md; \
+	  else \
+	    rm -rf .skill.new; \
+	    echo "   ! arctl pull failed and nothing was pulled before. Is arctl logged in, and has"; \
+	    echo "     the skill's source repository been updated? Using the local working copy."; \
+	    SKILL=../skill/release-report/SKILL.md; \
+	  fi; \
+	fi; \
+	awk '/^---$$/{c++;next} c>=2' "$$SKILL" > $@
 	@echo "   skill.md is $$(wc -c < $@ | tr -d ' ') bytes"
 
-build: skill.md
+## The images the Dockerfile builds FROM. Docker pulls one only when it is not already on
+## this machine, so once both are here the build needs no network. Pull them here rather
+## than leaving it to the build, so the failure at a venue with no wifi is one line that
+## says what to do, not a buildkit trace. A prune removes them, which is how this bit.
+bases:
+	@for b in $(BASES); do \
+	  docker image inspect $$b >/dev/null 2>&1 && continue; \
+	  echo "== pulling $$b (not on this machine yet) =="; \
+	  docker pull -q $$b >/dev/null || { \
+	    echo "   ! could not pull $$b and it is not on this machine, so the build cannot start."; \
+	    echo "     Run 'make offline' while you have a network."; \
+	    exit 1; }; \
+	done
+
+## Everything the build step needs, fetched while there is still a network: the base
+## images, the Maven dependencies (cached in the build layers, and the package step runs
+## with -o so it never asks for more), the approved skill, and a check that the kind
+## registry is up. After this, section 5 builds and pushes with the wifi off.
+offline: bases build
+	@docker ps --format '{{.Names}}' | grep -qx kind-registry \
+	  || { echo "   ! the kind-registry container is not running, so 'make push' has nowhere to go"; exit 1; }
+	@echo
+	@echo "   the build needs no network now:"
+	@for b in $(BASES); do printf '     %-36s on this machine\n' "$$b"; done
+	@printf '     %-36s cached in the build layers\n' "maven dependencies"
+	@printf '     %-36s .skill/, from the registry\n' "approved skill"
+	@printf '     %-36s localhost:5001, a local container\n' "kind registry"
+	@echo
+
+build: bases skill.md
 	@echo "== building $(IMAGE) (maven runs inside the image) =="
 	@# --progress=quiet: buildkit's default output is forty lines of layer chatter,
 	@# which is unreadable on a projector. The summary below says the same thing.

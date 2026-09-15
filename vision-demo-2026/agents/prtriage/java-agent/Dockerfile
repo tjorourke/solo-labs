@@ -2,9 +2,13 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 COPY pom.xml .
-RUN mvn -B -q -Dmaven.repo.local=/root/.m2 dependency:go-offline || true
+# Fetch every dependency and plugin the build needs, in a layer keyed on pom.xml alone, so
+# a source change does not refetch them. If this step fails, it fails here, while online.
+RUN mvn -B -q -Dmaven.repo.local=/root/.m2 dependency:go-offline
 COPY src ./src
-RUN mvn -B -Dmaven.repo.local=/root/.m2 package -DskipTests
+# -o: offline. Everything is already in /root/.m2 from the layer above, so this step never
+# asks the network for anything, and a source edit at a venue with no wifi still builds.
+RUN mvn -B -o -Dmaven.repo.local=/root/.m2 package -DskipTests
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

@@ -16,6 +16,7 @@ nothing else.
 make show      # the method that wires ADK to the gateway
 make build     # multi-stage docker build (maven -> jre)
 make push      # into the kind registry
+make offline   # fetch everything build needs while you have a network, so it builds with no wifi
 make publish   # register it in AgentRegistry with arctl
 make deploy    # deploy onto kagent as a pod, the same shape as the Python agent
 make ask       # prompt it through kagent's OIDC-protected A2A endpoint

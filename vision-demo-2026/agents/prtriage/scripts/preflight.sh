@@ -132,6 +132,31 @@ for ns in agentgateway-system "$NS"; do
                        || fail "stray policy in $ns" "${extra}- delete it or the tool list stays filtered"
 done
 
+# ------------------------------------------------ 4a. the build, with no network
+# Section 5 builds and pushes the image live. Docker pulls a FROM image only when it is
+# not already on this machine, the Maven step runs offline against the cached layers,
+# the skill comes from the last registry pull, and the registry is a local container.
+# With those in place the build does not care whether the venue has wifi. This bit once:
+# a prune had removed the JRE base image and the build stopped to fetch it.
+JA="$HERE/../java-agent"
+missing=""
+for b in $(sed -n 's/^FROM  *\([^ ]*\).*/\1/p' "$JA/Dockerfile"); do
+  docker image inspect "$b" >/dev/null 2>&1 || missing="$missing $b"
+done
+if [ -z "$missing" ]; then pass "build: base images" "on this machine, nothing to pull"
+else fail "build: base images" "not on this machine:${missing}"
+     note "fix, while online: make -C agents/prtriage/java-agent offline"; fi
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx kind-registry; then
+  curl -sf -m 5 localhost:5001/v2/prtriage-java/tags/list 2>/dev/null | grep -q '"latest"' \
+    && pass "build: kind registry" "running, holds prtriage-java:latest" \
+    || fail "build: kind registry" "running, but has no prtriage-java:latest: make -C agents/prtriage/java-agent push"
+else
+  fail "build: kind registry" "the kind-registry container is not running"
+fi
+[ -s "$JA/.skill/SKILL.md" ] && pass "build: approved skill" "cached from the last registry pull" \
+                             || { fail "build: approved skill" "never pulled, so offline the build falls back to the working copy"
+                                  note "fix, while online: make -C agents/prtriage/java-agent skill.md"; }
+
 # ---------------------------------------------------------------- 5. both MCP paths
 LB="$($K -n agentgateway-system get gateway ar-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)"
 # Use the suite's own client, which mints the token the listener now requires. The old copy in
