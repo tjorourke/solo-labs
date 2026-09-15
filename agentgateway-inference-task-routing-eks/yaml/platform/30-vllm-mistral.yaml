@@ -8,7 +8,7 @@
 #
 # The general model: Mistral-Small-3.2-24B, on the first GPU.
 #
-# Creates the namespace, a fast gp3 StorageClass, the weights PVC, the vLLM Deployment
+# Creates the namespace, the weights PVC, the vLLM Deployment
 # and its Service.
 #
 # THE WEIGHTS ARE NOT FETCHED HERE. This expects them already on the volume at
@@ -20,37 +20,18 @@
 # The three mistral-format flags below are not optional. vLLM starts without them and
 # produces subtly wrong output against the Mistral-native weights.
 
+# WHAT YOUR CLUSTER NEEDS. A default StorageClass for the weights PVC (the PVC names none, so
+# the default is used); a node with an NVIDIA GPU labelled `role: gpu`, or change the
+# nodeSelector below; and, if that node is tainted nvidia.com/gpu, nothing else, the
+# toleration is here. The comments that mention gp3 or an AZ come from the EKS cluster this
+# was first run on and do not apply elsewhere.
+#
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: models
----
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: gp3-fast
-provisioner: ebs.csi.aws.com
-# WaitForFirstConsumer matters: the volume must be created in whichever AZ the
-# GPU pod lands in. The gpu-od nodegroup is pinned to a single AZ (eu-west-2a, per
-# eks/cluster.yaml), so it binds in that AZ and the node comes back to the same
-# volume on every scale-up.
-#
-# That pinning is why the nodegroup must never be widened to a second AZ. Once
-# this volume has bound in 2a, a scale-up that lands in 2b leaves the pod Pending
-# forever, and the events do not say why.
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-reclaimPolicy: Retain
-parameters:
-  type: gp3
-  # Default gp3 is 125 MiB/s, which makes a 48 GB model load take ~6.5 minutes
-  # every pod start. 750 MiB/s brings that under 90 seconds. Throughput must be
-  # <= 0.25 MiB/s per provisioned IOPS, so 6000 IOPS covers it.
-  throughput: "750"
-  iops: "6000"
-  encrypted: "true"
-  csi.storage.k8s.io/fstype: ext4
+
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -59,7 +40,6 @@ metadata:
   namespace: models
 spec:
   accessModes: ["ReadWriteOnce"]
-  storageClassName: gp3-fast
   resources:
     requests:
       # 48 GB model plus room for a second copy during any future swap.
@@ -171,7 +151,7 @@ spec:
           args:
             - --model=/models/mistral-small-3.2-24b
             - --served-model-name=mistral-small-3.2-24b
-            # ONE GPU, not four. The node is g7e.2xlarge: a single RTX PRO 6000
+            # ONE GPU, not four. The node carries a single RTX PRO 6000
             # Server with 96 GB. Weights are ~48 GB in bf16, so the whole model sits
             # on one card with ~48 GB left for KV cache, and there is no tensor
             # parallelism to configure.
@@ -225,8 +205,8 @@ spec:
             # claim does not rest on the block alone. DO_NOT_TRACK covers the wider ecosystem.
             - {name: VLLM_NO_USAGE_STATS, value: "1"}
             - {name: DO_NOT_TRACK, value: "1"}
-          # Sized for g7e.2xlarge: 8 vCPU and 64 GiB, of which roughly 7.6 and 60 GiB
-          # are allocatable. The previous values (4 GPUs, 16 CPU requested, 96Gi)
+          # Sized for the GPU node used here: 8 vCPU and 64 GiB, of which roughly
+          # 7.6 and 60 GiB are allocatable. The previous values (4 GPUs, 16 CPU requested, 96Gi)
           # cannot be satisfied on this node and the pod would sit Pending with an
           # Insufficient cpu/memory event that says nothing about the node change.
           #

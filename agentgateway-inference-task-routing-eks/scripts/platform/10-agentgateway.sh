@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Platform step 2: OSS agentgateway, set up for an inference gateway that classifies.
+# Platform step 1: OSS agentgateway, set up for an inference gateway that classifies.
 #
 #   ./scripts/platform/10-agentgateway.sh
 #
@@ -15,6 +15,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$HERE/scripts/lib.sh"
 GWAPI_VERSION="${GWAPI_VERSION:-v1.6.1}"
 AGW_VERSION="${AGW_VERSION:-v1.5.0}"
+
+banner "the cluster this is going onto"
+kubectl get nodes -o custom-columns='NODE:.metadata.name,READY:.status.conditions[-1].status,GPU:.status.allocatable.nvidia\.com/gpu,ROLE:.metadata.labels.role'
+if ! kubectl get storageclass -o jsonpath='{range .items[*]}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' | grep -q true; then
+  echo "WARNING: no default StorageClass. The model PVCs in step 3 name none and will sit Pending." >&2
+fi
 
 banner "Gateway API $GWAPI_VERSION, experimental channel"
 kubectl apply --server-side --force-conflicts \

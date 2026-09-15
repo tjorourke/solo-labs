@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Platform step 3: the NVIDIA device plugin, time-slicing the one card into two.
+# Platform step 2: the NVIDIA device plugin, time-slicing the one card into two.
 #
 #   ./scripts/platform/20-device-plugin.sh
 #
@@ -12,8 +12,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NVDP_VERSION="${NVDP_VERSION:-0.17.4}"
 
 banner "NVIDIA device plugin $NVDP_VERSION"
-# eksctl installs its own plugin on `create nodegroup` even when the cluster was created
-# without one, and it hands out whole cards. Remove it so the two do not fight.
+# A plugin the cluster tooling installed on its own (several managed-cluster tools do) hands out whole
+# cards. Remove it so the two do not fight.
 kubectl -n kube-system delete daemonset nvidia-device-plugin-daemonset --ignore-not-found >/dev/null
 helm_ repo add nvdp https://nvidia.github.io/k8s-device-plugin >/dev/null 2>&1 || true
 helm_ repo update nvdp >/dev/null

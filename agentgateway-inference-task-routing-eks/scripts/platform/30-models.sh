@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Platform step 4: the two open-weight models on vLLM, both on the one card.
+# Platform step 3: the two open-weight models on vLLM, both on the one card.
 #
 #   ./scripts/platform/30-models.sh
 #
-# Applies yaml/platform/30-vllm-mistral.yaml and 31-vllm-qwen.yaml: a namespace, a PVC and a
-# Service and a Deployment per model, with an init container that pulls the weights onto the
+# Applies yaml/platform/30-vllm-mistral.yaml and 31-vllm-qwen.yaml: a namespace, a PVC on the
+# cluster's default StorageClass, a Service and a Deployment per model, with an init container that pulls the weights onto the
 # PVC on first run. 45 GB for Mistral and 31 GB for Qwen, so allow 40 minutes the first time;
 # a later run against the same volumes reloads in a few minutes.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

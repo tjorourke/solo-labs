@@ -64,19 +64,21 @@ then an error. There is no fall-through to the frontier.
 
 ## Install
 
-Everything is on the OSS agentgateway CRDs and public charts. Where a component has a Helm
-chart it is installed from it with a values file; vLLM and OPA are plain manifests (vLLM
-ships an image, not a chart; OPA's Envoy ext_authz plugin config is not what the community
-chart is built around). Every step skips what exists, so on a cluster Part 3 built the whole
-sequence reports `unchanged`. On a fresh account, about an hour and a half, most of it the
-76 GB weight pull. Needs `aws` with an identity that can create EKS clusters, `eksctl`,
-`kubectl`, `helm`, `openssl`, `python3`, `curl`.
+The prerequisite is a Kubernetes cluster, anywhere: 1.32 or later, a default StorageClass,
+one node with an NVIDIA GPU of at least 96 GB labelled `role: gpu` (or change the
+`nodeSelector` in the model manifests), two or three CPU nodes, and outbound access to
+Hugging Face, ghcr.io, cr.agentgateway.dev and nvcr.io. This guide was run on EKS 1.34 and
+nothing in it is specific to that. On your machine: `kubectl` pointed at the cluster,
+`helm`, `openssl`, `python3`, `curl`.
+
+Where a component has a Helm chart it is installed from it with a values file; vLLM and OPA
+are plain manifests (vLLM ships an image, not a chart; OPA's Envoy ext_authz plugin config
+is not what the community chart is built around). Every step skips what exists.
 
 ```bash
-./scripts/platform/00-cluster.sh        # 1  EKS 1.34, one g7e.2xlarge, addons, default StorageClass   (eks/cluster.yaml)
-./scripts/platform/10-agentgateway.sh   # 2  Gateway API v1.6.1 experimental, agentgateway v1.5.0 charts, the Gateway
-./scripts/platform/20-device-plugin.sh  # 3  NVIDIA device plugin 0.17.4, time-slicing the card into two
-./scripts/platform/30-models.sh         # 4  Mistral-Small-24B and Qwen3-Coder-30B on vLLM, one card
+./scripts/platform/10-agentgateway.sh   # 1  Gateway API v1.6.1 experimental, agentgateway v1.5.0 charts, the Gateway
+./scripts/platform/20-device-plugin.sh  # 2  NVIDIA device plugin 0.17.4, time-slicing the card into two
+./scripts/platform/30-models.sh         # 3  Mistral-Small-24B and Qwen3-Coder-30B on vLLM, one card (first run pulls 76 GB)
 ```
 
 Or `./scripts/platform/up.sh`. The one agentgateway value that is not optional is
@@ -92,12 +94,12 @@ the router restarts twice and the classifier weights are already on its volume.
 ```bash
 export ANTHROPIC_API_KEY=...
 
-./scripts/00-check.sh             # 5  the platform is serving; mints nothing
+./scripts/00-check.sh             # 4  the platform is serving
 ./scripts/01-identity.sh          #    tokens for bob, alice, dave, and a forgery; reuses Part 3's signing key
-./scripts/02-router.sh            # 6  vLLM Semantic Router becomes a task classifier
-./scripts/03-opa.sh               # 7  OPA with the routing table and the data checks
-./scripts/04-decision-gateway.sh  # 8  the decision gateway, backends, policy and route
-./scripts/05-classify-gateway.sh  # 9  the public gateway verifies, classifies, hands on
+./scripts/02-router.sh            # 5  vLLM Semantic Router becomes a task classifier
+./scripts/03-opa.sh               # 6  OPA with the routing table and the data checks
+./scripts/04-decision-gateway.sh  # 7  the decision gateway, backends, policy and route
+./scripts/05-classify-gateway.sh  # 8  the public gateway verifies, classifies, hands on
 ```
 
 Or `./scripts/quick.sh up`, which runs the install steps first and then these.
@@ -117,10 +119,10 @@ IdP replaces the inline JWKS with `jwks.remote`. Nothing else changes.
 
 ```bash
 source identity/tokens.env
-./scripts/06-test-flow.sh         # 10  bob's five prompts and alice's one
-./scripts/08-show-decision.sh bob "Review this function for concurrency bugs: ..."   # 11  one request traced across both hops
-./scripts/07-test-controls.sh     # 12  internal code, provenance, a credential, dave, spoofing, bad tokens
-./scripts/classify.sh "Look at this code and tell me if the lock is released on every path."   # 13  tune the classifier
+./scripts/06-test-flow.sh         # 9   bob's five prompts and alice's one
+./scripts/08-show-decision.sh bob "Review this function for concurrency bugs: ..."   # 10  one request traced across both hops
+./scripts/07-test-controls.sh     # 11  internal code, provenance, a credential, dave, spoofing, bad tokens
+./scripts/classify.sh "Look at this code and tell me if the lock is released on every path."   # 12  tune the classifier
 ```
 
 The flow reads three things off every response: `x-vsr-selected-model` is the router's task
@@ -145,8 +147,6 @@ default.
 ### Files
 
 ```
-eks/cluster.yaml                           EKS 1.34, two platform nodes, one GPU node, addons
-yaml/platform/00-default-storageclass.yaml gp3, default
 yaml/platform/05-gateway.yaml              the public Gateway, ClusterIP
 yaml/platform/10-agentgateway-values.yaml  the experimental-features flag
 yaml/platform/20-device-plugin-values.yaml time-slicing, replicas 2, affinity null
@@ -168,6 +168,4 @@ yaml/80-classify-route.yaml       everything to the decision gateway
 
 ```bash
 ./scripts/99-restore.sh           # Part 3's routing back; the models and the cluster are untouched
-./scripts/platform/gpu.sh down    # stop the GPU meter; the weights stay on their volumes
-./scripts/quick.sh teardown       # both, or a full cluster delete if this lab built the cluster
 ```

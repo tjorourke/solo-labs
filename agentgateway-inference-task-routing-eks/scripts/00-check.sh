@@ -16,7 +16,7 @@ bad() { printf "  FAIL  %s\n" "$*"; fail=1; }
 echo "context: $CTX"
 for d in vllm vllm-qwen; do
   if [ "$(kubectl -n models get deploy "$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null)" = "1" ]; then ok "$d is serving"
-  else bad "$d is not ready. Install the platform with ./scripts/platform/up.sh, or if the GPU node is scaled to zero run ./scripts/platform/gpu.sh up"; fi
+  else bad "$d is not ready. Install the platform with ./scripts/platform/up.sh"; fi
 done
 if [ "$(kubectl -n "$NS" get deploy semantic-router -o jsonpath='{.status.availableReplicas}' 2>/dev/null)" = "1" ]; then ok "semantic-router is running (02-router.sh reconfigures it)"; else echo "  note  semantic-router not installed yet; 02-router.sh installs it"; fi
 if [ "$(kubectl -n "$NS" get gateway model-gateway -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null)" = "True" ]; then ok "model-gateway is Programmed"; else bad "model-gateway is not Programmed"; fi

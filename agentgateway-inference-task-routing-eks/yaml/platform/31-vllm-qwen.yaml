@@ -21,6 +21,12 @@
 # --tool-call-parser to be set". `qwen3_coder` is a built-in parser choice in vLLM
 # 0.27.1; the parser file
 # shipped in the model repo targets an older module path and does not load.
+# WHAT YOUR CLUSTER NEEDS. A default StorageClass for the weights PVC (the PVC names none, so
+# the default is used); a node with an NVIDIA GPU labelled `role: gpu`, or change the
+# nodeSelector below; and, if that node is tainted nvidia.com/gpu, nothing else, the
+# toleration is here. The comments that mention gp3 or an AZ come from the EKS cluster this
+# was first run on and do not apply elsewhere.
+#
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -29,7 +35,6 @@ metadata:
   namespace: models
 spec:
   accessModes: ["ReadWriteOnce"]
-  storageClassName: gp3-fast
   resources:
     requests:
       # 31.2 GB of weights, but 100Gi not 60. huggingface_hub stages each file into

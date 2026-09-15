@@ -1,35 +1,15 @@
 # Shared by every script in this lab. Source it, then use kubectl, helm_, gw_up and gw_curl.
 #
-# Cluster selection is Part 1's: the current kubectl context by default, KUBE_CONTEXT to
-# name one, or EKS_CLUSTER (default model-routing) for the cloud case. PART3_DIR points at
-# the Part 3 lab, whose cluster, models, identity key and OPA manifest this part reuses.
+# Cluster selection: the current kubectl context, or KUBE_CONTEXT to name one. Nothing here
+# is tied to a cloud. PART3_DIR points at the Part 3 lab, whose identity key and OPA manifest
+# this part reuses when it is next door.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PART1_DIR="$(cd "${PART1_DIR:-$HERE/../agentgateway-inference-model-routing-eks}" 2>/dev/null && pwd || echo "${PART1_DIR:-}")"
 PART3_DIR="$(cd "${PART3_DIR:-$HERE/../agentgateway-inference-identity-routing-eks}" 2>/dev/null && pwd || echo "${PART3_DIR:-}")"
-EKS_CLUSTER="${EKS_CLUSTER:-model-routing}"
-AWS_REGION="${AWS_REGION:-eu-west-2}"
-export EKS_CLUSTER AWS_REGION
 NS=agentgateway-system
 banner() { echo; echo "==> $*"; }
-
-resolve_ctx() {
-  if [ -n "${KUBE_CONTEXT:-}" ]; then CTX="$KUBE_CONTEXT"; return; fi
-  local account arn found cluster_entry
-  account="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
-  [ -n "$account" ] && [ "$account" != "None" ] \
-    || { echo "error: no AWS identity. Check AWS_PROFILE, or run aws sso login." >&2; exit 1; }
-  arn="arn:aws:eks:${AWS_REGION}:${account}:cluster/${EKS_CLUSTER}"
-  if command kubectl config get-contexts -o name 2>/dev/null | grep -qxF "$arn"; then CTX="$arn"; return; fi
-  for cluster_entry in "$arn" "${EKS_CLUSTER}.${AWS_REGION}.eksctl.io"; do
-    found="$(command kubectl config view -o \
-      "jsonpath={range .contexts[?(@.context.cluster=='${cluster_entry}')]}{.name}{'\n'}{end}" 2>/dev/null | head -1)"
-    if [ -n "$found" ]; then CTX="$found"; return; fi
-  done
-  aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER" >/dev/null
-  CTX="$arn"
-}
-resolve_ctx
+CTX="${KUBE_CONTEXT:-$(command kubectl config current-context 2>/dev/null || true)}"
+[ -n "$CTX" ] || { echo "error: no kubectl context. Set KUBE_CONTEXT or point kubectl at your cluster." >&2; exit 1; }
 kubectl() { command kubectl --context "$CTX" "$@"; }
 helm_()   { helm --kube-context "$CTX" "$@"; }
 
