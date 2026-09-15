@@ -1,0 +1,65 @@
+# The decision gateway's route. It reads the two headers OPA wrote and nothing else.
+#
+#   pool=private,           class=coding   -> Qwen3-Coder on the GPU
+#   pool=private,           class=finance  -> Mistral on the GPU
+#   pool=private,           class=general  -> Mistral on the GPU
+#   pool=approved-frontier                 -> Anthropic
+#
+# No catch-all. A request with no pool header, which can only happen if extAuth did not
+# run, gets a 404 rather than a default. The internal headers are removed after the match,
+# so no backend sees them.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: decision-routing
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: decision-gateway
+      sectionName: http
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: coding}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
+      backendRefs:
+        - {name: vllm-qwen, group: agentgateway.dev, kind: AgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: finance}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
+      backendRefs:
+        - {name: vllm-mistral, group: agentgateway.dev, kind: AgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: general}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
+      backendRefs:
+        - {name: vllm-mistral, group: agentgateway.dev, kind: AgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - {type: Exact, name: x-model-pool, value: approved-frontier}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
+      backendRefs:
+        - {name: anthropic, group: agentgateway.dev, kind: AgentgatewayBackend}

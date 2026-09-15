@@ -1,0 +1,24 @@
+# The public gateway's route: everything to the decision gateway.
+#
+# One rule, no header matching. The classification has been written into the request by
+# now, but nothing on this hop acts on it; the decision gateway does. Its Service is the one
+# agentgateway creates for the Gateway of the same name.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: classify-then-decide
+  namespace: agentgateway-system
+spec:
+  hostnames:
+    - model-gateway.agentgateway-system.svc.cluster.local
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: model-gateway
+      sectionName: http
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+      backendRefs:
+        - name: decision-gateway
+          port: 80

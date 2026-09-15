@@ -1,0 +1,66 @@
+# The three backends the decision gateway routes to, and the one thing each of them knows:
+# what the task labels mean for the model it fronts.
+#
+# The router wrote a task label into the body's model field. OPA decided the pool and the
+# class. The route picks a backend from those two, and the backend's modelAliases turns the
+# task label into the model it actually serves. Private coding is Qwen3-Coder, private
+# finance and the general default are Mistral, and the approved frontier is Anthropic, for
+# generic coding only, so it aliases one label.
+#
+# The two GPU backends are Part 1's, same names, with their aliases replaced.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: vllm-qwen
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: qwen3-coder-30b
+      host: vllm-qwen.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+  policies:
+    ai:
+      modelAliases:
+        code_review: qwen3-coder-30b
+        code_modification: qwen3-coder-30b
+        generic_coding: qwen3-coder-30b
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: vllm-mistral
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: mistral-small-3.2-24b
+      host: vllm.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+  policies:
+    ai:
+      modelAliases:
+        finance: mistral-small-3.2-24b
+        uncertain: mistral-small-3.2-24b
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      anthropic: {}
+  policies:
+    auth:
+      secretRef:
+        name: anthropic-secret
+    ai:
+      modelAliases:
+        generic_coding: claude-sonnet-5

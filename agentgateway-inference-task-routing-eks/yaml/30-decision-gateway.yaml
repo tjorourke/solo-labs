@@ -1,0 +1,39 @@
+# The second hop. The public gateway authenticates and classifies; this one decides and
+# routes. It exists because of the order agentgateway runs a phase in: extAuth before
+# extProc, so on one hop OPA would answer before the router had said what the task is. Two
+# hops put the router first, and OPA on this hop sees the task label, the verified identity
+# and the prompt together.
+#
+# Internal only: ClusterIP, reached by the public gateway's route and nothing else that
+# needs to. It re-validates the bearer token itself (the first hop preserves it), so a call
+# that skips the first hop still has to carry a real token.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: decision-gateway-params
+  namespace: agentgateway-system
+spec:
+  service:
+    spec:
+      type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: decision-gateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: decision-gateway-params
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

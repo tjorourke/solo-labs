@@ -1,0 +1,49 @@
+# The public gateway's policy: verify the token, classify the task, hand on.
+#
+# scripts/05-classify-gateway.sh renders yaml/70-classify-policy.yaml from this template
+# with the JWKS from identity/jwks.json inlined, and replaces Part 3's policy on the same
+# Gateway.
+#
+# preserveToken keeps the bearer on the request after it has been verified, so the decision
+# gateway can verify it again. Without it the gateway strips the Authorization header once
+# the JWT has been checked. The router runs as extProc with the body buffered, writes the
+# task label into the body's model field and into x-selected-model, and the route sends
+# everything to the decision gateway.
+#
+# lint-crd-blocks: allow preserveToken
+# The repo's cached AgentgatewayPolicy schema is the Enterprise 2026.8 chart's; preserveToken
+# is on the OSS v1.5.0 CRD this lab runs (kubectl explain agentgatewaypolicy.spec.traffic.jwtAuthentication).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: classify
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: model-gateway
+  traffic:
+    phase: PreRouting
+    jwtAuthentication:
+      mode: Strict
+      preserveToken: true
+      providers:
+        - issuer: https://identity.lab
+          audiences:
+            - model-gateway
+          jwks:
+            inline: '__JWKS__'
+    # FailClosed: a router outage is a refused request, not an unclassified one sent on.
+    extProc:
+      backendRef:
+        name: semantic-router
+        namespace: agentgateway-system
+        port: 50051
+      processingOptions:
+        requestHeaderMode: Send
+        requestBodyMode: Buffered
+        responseHeaderMode: Send
+        responseBodyMode: Buffered
+        allowModeOverride: true
+      failureMode: FailClosed

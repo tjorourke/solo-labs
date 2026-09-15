@@ -1,0 +1,108 @@
+# OPA as the gateway's external authorizer, with three mounts.
+#
+#   /config   the plugin config (this file)
+#   /policy   opa/routing.rego, built into the opa-policy ConfigMap by scripts/02-opa.sh
+#   /data     opa/entitlements.json, built into opa-entitlements the same way
+#
+# OPA loads policy and data at start, so a change to either ConfigMap takes effect on
+# `kubectl rollout restart deploy/opa`. That is the lab's "change only the entitlement"
+# step, and the restart is deliberate: it makes the reload visible rather than relying
+# on a file watch.
+#
+# The entitlement ConfigMap is a lab device, not a design. Kubernetes caps a ConfigMap at
+# 1 MiB, around fourteen thousand users at this file's shape, every change is a full rewrite
+# plus a restart, and the data is readable by anything with access to the namespace. A real
+# deployment feeds OPA the same data through its bundle API or a queried data source, and
+# nothing on the gateway changes.
+#
+# The -static tag is the one published for both amd64 and arm64.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-config
+  namespace: agentgateway-system
+data:
+  config.yaml: |
+    plugins:
+      envoy_ext_authz_grpc:
+        addr: :9191
+        path: routing/result
+    decision_logs:
+      # Every decision with its full input to stdout. This is how the lab shows what
+      # the gateway actually sent OPA, verified claims included.
+      console: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  namespace: agentgateway-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+    spec:
+      containers:
+        - name: opa
+          image: openpolicyagent/opa:1.20.2-envoy-static
+          args:
+            - run
+            - --server
+            - --config-file=/config/config.yaml
+            - --addr=0.0.0.0:8181
+            - --diagnostic-addr=0.0.0.0:8282
+            - /policy/routing.rego
+            - /data/entitlements.json
+          ports:
+            - name: grpc
+              containerPort: 9191
+            - name: http
+              containerPort: 8181
+          readinessProbe:
+            httpGet:
+              path: "/health?plugins"
+              port: 8282
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: policy
+              mountPath: /policy
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: opa-config
+        - name: policy
+          configMap:
+            name: opa-policy
+        - name: data
+          configMap:
+            name: opa-entitlements
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  namespace: agentgateway-system
+spec:
+  selector:
+    app: opa
+  ports:
+    - name: grpc
+      port: 9191
+      targetPort: 9191
+      appProtocol: grpc
+    - name: http
+      port: 8181
+      targetPort: 8181

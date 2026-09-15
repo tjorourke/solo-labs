@@ -1,0 +1,22 @@
+{
+  "users": {
+    "bob":   {"allowed_model_pools": ["private", "approved-frontier"]},
+    "alice": {"allowed_model_pools": ["private"]},
+    "dave":  {"allowed_model_pools": ["approved-frontier"]}
+  },
+  "routing": {
+    "default_pool": "private",
+    "tasks": {
+      "code_review":       {"pool": "private",           "class": "coding"},
+      "code_modification": {"pool": "private",           "class": "coding"},
+      "finance":           {"pool": "private",           "class": "finance"},
+      "generic_coding":    {"pool": "approved-frontier", "class": "coding"},
+      "uncertain":         {"pool": "private",           "class": "general"}
+    },
+    "private_classes": ["coding", "finance", "general"]
+  },
+  "dlp": {
+    "internal_code_markers": ["com.example.internal", "settlement-service", "ledger-core"],
+    "internal_repo_prefixes": ["git.internal/", "internal/"]
+  }
+}

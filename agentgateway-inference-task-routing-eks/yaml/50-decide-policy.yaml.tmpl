@@ -1,0 +1,39 @@
+# The decision gateway's policy: verify the token again, then ask OPA.
+#
+# scripts/04-decision-gateway.sh renders yaml/50-decide-policy.yaml from this template with
+# the JWKS from identity/jwks.json inlined.
+#
+# The first hop preserved the bearer token, so this hop validates it itself and OPA acts on
+# a subject the gateway verified, not on a header. forwardBody is on here, unlike Part 3:
+# OPA needs the prompt for the data checks, a credential pattern or the bank's own code in
+# the text. The task label arrives as the x-selected-model request header the router wrote.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: decide
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: decision-gateway
+  traffic:
+    phase: PreRouting
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: https://identity.lab
+          audiences:
+            - model-gateway
+          jwks:
+            inline: '__JWKS__'
+    # FailClosed: an OPA outage is a refused request, not a default pool.
+    extAuth:
+      backendRef:
+        name: opa
+        namespace: agentgateway-system
+        port: 9191
+      grpc: {}
+      forwardBody:
+        maxSize: 1Mi
+      failureMode: FailClosed

@@ -1,0 +1,263 @@
+# vLLM Semantic Router as a task classifier. This is the whole of the router's job in this
+# lab: read the prompt and say what kind of task it is. It writes one of five task labels
+# into the request body's model field and into x-selected-model, and nothing else. Where
+# the request runs, and which model answers, is decided afterwards by OPA and the route.
+#
+# The five labels are the rows of the routing table in opa/routing-data.json:
+#
+#   code_review        look at existing code and report on it
+#   code_modification  change existing code
+#   generic_coding     a coding question about no particular code
+#   finance            the bank's own subject
+#   uncertain          nothing above matched with confidence
+#
+# Signals. `domains` is the same MMLU-Pro classifier Parts 1 to 3 use. The similarity
+# rules under `complexity` are Part 2's mechanism with different banks: two sets of example
+# phrasings scored with the mmbert model already on the volume, so review and modification
+# are told apart by what they ask for rather than by a word list. `keywords` back them up
+# for the short, blunt asks the examples do not cover. The examples are the definition of the signal; the
+# test prompts are held out and never appear here.
+#
+# Priority resolves overlaps: a review of a function is computer science AND a review ask,
+# and 60 beats 10, so it is a review rather than generic coding. `uncertain` is
+# `default_model`: what the router says when no decision matches, and the routing table
+# sends that to a private model, never to the frontier.
+persistence:
+  storageClassName: gp3
+  size: 20Gi
+
+image:
+  repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
+  tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 3Gi
+  limits:
+    cpu: "2"
+    memory: 7Gi
+
+config:
+  version: v0.3
+
+  listeners: []
+
+  providers:
+    defaults:
+      default_model: uncertain
+    # Task labels, not models. backend_refs is required by the schema and never dialled
+    # on this path: agentgateway does the forwarding.
+    models:
+      - name: code_review
+        backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
+      - name: code_modification
+        backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
+      - name: generic_coding
+        backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
+      - name: finance
+        backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
+      - name: uncertain
+        backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
+
+  routing:
+    signals:
+      # Similarity rules. Each one holds two banks of example phrasings and scores a prompt
+      # against both: `signal` is hard_score minus easy_score, and the rule returns `hard`
+      # above the threshold, `easy` below it, `medium` around it. The router calls this
+      # signal `complexity`, after its first use; here the two banks are two kinds of task,
+      # so `hard` means "sounds like the first bank". Three rules separate three tasks:
+      #
+      #   review_vs_generic   review of existing code   against   a coding question about no code
+      #   modify_vs_generic   change to existing code   against   a coding question about no code
+      #   review_vs_modify    review                    against   change
+      #
+      # The examples are the definition of the signal. The test prompts are held out and
+      # never appear here. Keep both banks of a rule on the same subjects, or the rule learns
+      # the subject rather than the shape of the ask.
+      complexity:
+        - name: review_vs_generic
+          description: Looking at existing code, against a question about no code
+          threshold: 0.0
+          hard:
+            candidates:
+              - Review this function and point out any problems
+              - Look over this code and tell me what is wrong with it
+              - Check this method for thread-safety issues
+              - Audit this class for security problems
+              - Are there any bugs in the following code
+              - Give me feedback on this implementation
+          easy:
+            candidates:
+              - Show an example of dependency injection in Java
+              - How do I read a file in Python
+              - What is the difference between a list and a set
+              - Explain how a hash map works
+              - Give an example of a REST client in Go
+              - How does garbage collection work in the JVM
+        - name: modify_vs_generic
+          description: Changing existing code, against a question about no code
+          threshold: 0.0
+          hard:
+            candidates:
+              - Modify this function so that it handles the new case
+              - Change this method to use the new API
+              - Refactor this service to remove the duplication
+              - Fix the bug in the following code
+              - Rewrite this function to be thread safe
+              - Update this class to add a retry
+          easy:
+            candidates:
+              - Show an example of dependency injection in Java
+              - How do I read a file in Python
+              - What is the difference between a list and a set
+              - Explain how a hash map works
+              - Give an example of a REST client in Go
+              - How does garbage collection work in the JVM
+        - name: review_vs_modify
+          description: Looking at code, against changing it
+          threshold: 0.0
+          hard:
+            candidates:
+              - Review this function and point out any problems
+              - Look over this code and tell me what is wrong with it
+              - Check this method for thread-safety issues
+              - Audit this class for security problems
+              - Are there any bugs in the following code
+              - Give me feedback on this implementation
+          easy:
+            candidates:
+              - Modify this function so that it handles the new case
+              - Change this method to use the new API
+              - Refactor this service to remove the duplication
+              - Fix the bug in the following code
+              - Rewrite this function to be thread safe
+              - Update this class to add a retry
+      keywords:
+        - name: review_words
+          operator: OR
+          method: bm25
+          bm25_threshold: 0.1
+          keywords: [review, audit, "look over", "any bugs", critique, feedback]
+        - name: modify_words
+          operator: OR
+          method: bm25
+          bm25_threshold: 0.1
+          keywords: [modify, change, refactor, fix, rewrite, update, "add a", convert, migrate]
+      domains:
+        - name: business
+          description: Business, corporate strategy, management, finance, marketing
+        - name: economics
+          description: Microeconomics, macroeconomics, financial markets, monetary policy, trade
+        - name: computer science
+          description: Algorithms, data structures, programming, software engineering
+        - name: engineering
+          description: Engineering disciplines, design, problem-solving, systems
+        - name: law
+          description: Legal principles, case law, statutory interpretation, legal procedures
+        - name: math
+          description: Mathematics, algebra, calculus, geometry, statistics
+        - name: physics
+          description: Physical laws, mechanics, thermodynamics, electromagnetism, quantum physics
+        - name: chemistry
+          description: Chemical reactions, molecular structures, laboratory techniques
+        - name: biology
+          description: Molecular biology, genetics, cell biology, ecology, evolution, anatomy
+        - name: health
+          description: Anatomy, physiology, diseases, treatments, preventive care, nutrition
+        - name: psychology
+          description: Cognitive processes, behavioral patterns, mental health, developmental psychology
+        - name: history
+          description: Historical events, time periods, cultures, civilizations
+        - name: philosophy
+          description: Philosophical traditions, ethics, logic, metaphysics, epistemology
+        - name: other
+          description: General knowledge and miscellaneous topics
+
+    decisions:
+      # Review and modification first. Each has a semantic rule and a keyword rule, so a
+      # long ask is caught by its meaning and a short one by its verb. Both semantic rules
+      # outrank both keyword rules: a verb in passing must not overrule the shape of the ask.
+      - name: code_review_semantic
+        description: Looking at existing code
+        priority: 60
+        rules:
+          operator: AND
+          conditions:
+            - {type: domain, name: computer science}
+            - {type: complexity, name: review_vs_generic:hard}
+            - {type: complexity, name: review_vs_modify:hard}
+        modelRefs: [{model: code_review, use_reasoning: false}]
+      - name: code_review_keyword
+        description: Looking at existing code, short form
+        priority: 58
+        rules:
+          operator: AND
+          conditions:
+            - {type: domain, name: computer science}
+            - {type: keyword, name: review_words}
+        modelRefs: [{model: code_review, use_reasoning: false}]
+      - name: code_modification_semantic
+        description: Changing existing code
+        priority: 59
+        rules:
+          operator: AND
+          conditions:
+            - {type: domain, name: computer science}
+            - {type: complexity, name: modify_vs_generic:hard}
+            - {type: complexity, name: review_vs_modify:easy}
+        modelRefs: [{model: code_modification, use_reasoning: false}]
+      - name: code_modification_keyword
+        description: Changing existing code, short form
+        priority: 57
+        rules:
+          operator: AND
+          conditions:
+            - {type: domain, name: computer science}
+            - {type: keyword, name: modify_words}
+        modelRefs: [{model: code_modification, use_reasoning: false}]
+      # Finance is a subject, so the domain classifier is enough.
+      - name: finance
+        description: The bank's own subject
+        priority: 50
+        rules:
+          operator: OR
+          conditions:
+            - {type: domain, name: economics}
+            - {type: domain, name: business}
+        modelRefs: [{model: finance, use_reasoning: false}]
+      # Generic coding needs to be clearly generic: computer science AND close to the
+      # generic examples. A coding question that is neither review, modification nor
+      # generic falls through to uncertain.
+      - name: generic_coding
+        description: A coding question about no code of ours
+        priority: 10
+        rules:
+          operator: AND
+          conditions:
+            - {type: domain, name: computer science}
+            - {type: complexity, name: review_vs_generic:easy}
+            - {type: complexity, name: modify_vs_generic:easy}
+        modelRefs: [{model: generic_coding, use_reasoning: false}]
+
+    modelCards:
+      - name: code_review
+      - name: code_modification
+      - name: generic_coding
+      - name: finance
+      - name: uncertain
+
+  global:
+    router:
+      strategy: priority
+    stores:
+      semantic_cache:
+        enabled: false
+      memory:
+        embedding_model: mmbert
+      vector_store:
+        embedding_model: mmbert
+    observability:
+      tracing:
+        enabled: false
