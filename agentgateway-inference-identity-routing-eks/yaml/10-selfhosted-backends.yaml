@@ -1,0 +1,44 @@
+# The two open-weight models on the GPU, as Part 1 defines them, plus one alias each.
+#
+# Same names as Part 1's yaml-oss/10-backends.yaml so restoring Part 1 is a re-apply.
+# Part 1's backends pin the served model with provider.openai.model, which is kept. The
+# alias is what makes them interchangeable with the frontier backends: the router writes
+# `general` or `code` into the body, and each backend here turns the one name it serves
+# into the model vLLM advertises. The route sends `general` to Mistral and `code` to Qwen,
+# so each backend only ever sees its own name.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: vllm-mistral
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: mistral-small-3.2-24b
+      host: vllm.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+  policies:
+    ai:
+      modelAliases:
+        general: mistral-small-3.2-24b
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: vllm-qwen
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: qwen3-coder-30b
+      host: vllm-qwen.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+  policies:
+    ai:
+      modelAliases:
+        code: qwen3-coder-30b

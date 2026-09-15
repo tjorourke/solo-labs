@@ -1,0 +1,28 @@
+# The OpenAI frontier backend. One per provider, and the only place that knows OpenAI's
+# model names and holds OpenAI's key.
+#
+# modelAliases is what lets the semantic router stay neutral about where a request runs:
+# the router writes `general` or `code` into the body, the route picks this backend from
+# the target header, and the alias turns the logical name into the concrete model before
+# the request leaves. Add a provider and you add a backend with its own two aliases; the
+# router config and the route grow by one rule.
+#
+# The Secret is created by scripts/06-backends.sh from OPENAI_API_KEY, keyed
+# Authorization, which the gateway sends as `Authorization: Bearer <key>`.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: openai
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai: {}
+  policies:
+    auth:
+      secretRef:
+        name: openai-secret
+    ai:
+      modelAliases:
+        general: gpt-5.4-mini
+        code: gpt-5.4

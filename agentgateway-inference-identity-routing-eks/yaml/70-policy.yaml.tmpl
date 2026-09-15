@@ -1,0 +1,60 @@
+# The one policy, three parts, all at PreRouting so every decision is made before the
+# route is chosen. scripts/07-routing.sh renders yaml/70-policy.yaml from this template
+# with the JWKS from identity/jwks.json inlined.
+#
+# Order inside the phase, from the gateway source: JWT, then extAuth, then extProc, then
+# transformation, then route selection. That is exactly the order this design needs.
+# Part 1 treated OPA and the router as alternatives; here they compose because each
+# reads something the other does not: OPA reads the verified identity, the router reads
+# the prompt.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: identity-then-semantic
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: model-gateway
+  traffic:
+    phase: PreRouting
+
+    # 1. Who is asking. Strict: no token or a bad one is a 401 here and nothing further
+    # runs. The gateway strips the token after validating it, so neither OPA nor the
+    # provider ever sees it.
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: https://identity.lab
+          audiences:
+            - model-gateway
+          jwks:
+            inline: '__JWKS__'
+
+    # 2. Where they may send it. No forwardBody: OPA needs the identity, not the prompt.
+    # With no requestMetadata set, the gateway forwards the validated claims under the
+    # envoy.filters.http.jwt_authn metadata key, which is what the Rego reads.
+    # FailClosed: an OPA outage is a refused request, not a default provider.
+    extAuth:
+      backendRef:
+        name: opa
+        namespace: agentgateway-system
+        port: 9191
+      grpc: {}
+      failureMode: FailClosed
+
+    # 3. What class of model the prompt needs. Buffered is mandatory or the router
+    # classifies while its output is dropped. FailClosed here too: no silent default model.
+    extProc:
+      backendRef:
+        name: semantic-router
+        namespace: agentgateway-system
+        port: 50051
+      processingOptions:
+        requestHeaderMode: Send
+        requestBodyMode: Buffered
+        responseHeaderMode: Send
+        responseBodyMode: Buffered
+        allowModeOverride: true
+      failureMode: FailClosed

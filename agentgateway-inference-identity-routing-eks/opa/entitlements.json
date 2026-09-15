@@ -1,0 +1,7 @@
+{
+  "users": {
+    "alice": {"data": "internal",   "provider": "openai",    "tier": "premium",  "region": "eu"},
+    "bob":   {"data": "internal",   "provider": "anthropic", "tier": "standard", "region": "eu"},
+    "carol": {"data": "restricted", "provider": "openai",    "tier": "standard", "region": "uk"}
+  }
+}

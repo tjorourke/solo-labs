@@ -1,0 +1,20 @@
+# The Anthropic frontier backend. Same shape as the OpenAI one, different key and
+# different alias targets. The client keeps sending OpenAI-style chat completions; the
+# gateway translates to the Anthropic Messages API and translates the response back.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: anthropic
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      anthropic: {}
+  policies:
+    auth:
+      secretRef:
+        name: anthropic-secret
+    ai:
+      modelAliases:
+        general: claude-sonnet-5
+        code: claude-opus-5

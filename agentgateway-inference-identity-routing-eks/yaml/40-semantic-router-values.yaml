@@ -1,0 +1,183 @@
+# vLLM Semantic Router, configured to answer one question: what class of model does this
+# prompt need? It returns a logical name, `general` or `code`, and nothing about where the
+# request will run. Whichever backend the route selects turns that name into a model it
+# serves, so the same router config serves the two GPUs and both frontier providers.
+#
+# The signals and decisions are Part 2's: domain from Part 1, complexity from Part 2, and
+# the same four decisions with the model names swapped for the two logical ones.
+# Image and chart are pinned the same way for the same reason: the two drift
+# independently, and a floating pair can start as a no-op router that passes every test
+# while classifying nothing.
+persistence:
+  storageClassName: gp3
+  size: 20Gi
+
+image:
+  # Pinned by digest: the build :latest pointed at on 2026-08-09, newer than the :v0.3.0
+  # tag and the one Parts 1 and 2 were validated on.
+  repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
+  tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
+  # Set, not inherited, for the same multi-document reason as resources below: the
+  # chart's last values document is an e2e fixture with pullPolicy Never.
+  pullPolicy: IfNotPresent
+
+# Set, not inherited. The chart's values.yaml is a multi-document file and Helm takes the
+# last document, whose limit is 2Gi. The mmBERT classifier does not load in 2Gi.
+resources:
+  requests:
+    cpu: "1"
+    memory: 3Gi
+  limits:
+    cpu: "2"
+    memory: 7Gi
+
+config:
+  version: v0.3
+
+  listeners: []
+
+  providers:
+    defaults:
+      default_model: general
+    # Logical names. The router writes one of them into the request body's model field
+    # and into x-selected-model. backend_refs is required by the schema and never dialled
+    # on this path: agentgateway does the forwarding.
+    models:
+      - name: general
+        backend_refs:
+          - name: gateway
+            endpoint: model-gateway.agentgateway-system.svc.cluster.local:80
+            weight: 1
+      - name: code
+        backend_refs:
+          - name: gateway
+            endpoint: model-gateway.agentgateway-system.svc.cluster.local:80
+            weight: 1
+
+  routing:
+    signals:
+      # Part 2's complexity rule. Both banks are computer science on purpose: if the easy
+      # bank were Python and the hard bank distributed systems, the signal would learn the
+      # subject and quietly become a second domain classifier.
+      complexity:
+        - name: basic_request
+          description: Definitional and explanatory asks, against diagnostic ones
+          threshold: 0.0
+          easy:
+            candidates:
+              - Explain optimistic concurrency control in two sentences.
+              - What is the difference between readiness and liveness probes?
+              - Give a one-sentence definition of a race condition.
+              - Write a Python function that reverses a string.
+          hard:
+            candidates:
+              - Two writers report successful updates to the same record, but one update disappears. Diagnose the failure and propose a safe write protocol.
+              - Readiness stays green while requests fail only during rollouts. Explain what evidence would distinguish draining problems from application failures.
+              - Why can linearizable reads still fail to protect this read-modify-write operation?
+              - A distributed service uses optimistic concurrency across three writers; under load updates are lost. Analyse the race and propose a redesign.
+      domains:
+        - name: business
+          description: Business, corporate strategy, management, finance, marketing
+        - name: economics
+          description: Microeconomics, macroeconomics, financial markets, monetary policy, trade
+        - name: computer science
+          description: Algorithms, data structures, programming, software engineering
+        - name: engineering
+          description: Engineering disciplines, design, problem-solving, systems
+        - name: law
+          description: Legal principles, case law, statutory interpretation, legal procedures
+        - name: math
+          description: Mathematics, algebra, calculus, geometry, statistics
+        - name: physics
+          description: Physical laws, mechanics, thermodynamics, electromagnetism, quantum physics
+        - name: chemistry
+          description: Chemical reactions, molecular structures, laboratory techniques
+        - name: biology
+          description: Molecular biology, genetics, cell biology, ecology, evolution, anatomy
+        - name: health
+          description: Anatomy, physiology, diseases, treatments, preventive care, nutrition
+        - name: psychology
+          description: Cognitive processes, behavioral patterns, mental health, developmental psychology
+        - name: history
+          description: Historical events, time periods, cultures, civilizations
+        - name: philosophy
+          description: Philosophical traditions, ethics, logic, metaphysics, epistemology
+        - name: other
+          description: General knowledge and miscellaneous topics
+
+    # Part 2's four decisions. The router resolves on priority, not file order: a basic
+    # computer-science question matches the first two and the 50 wins.
+    decisions:
+      - name: basic_technical_decision
+        description: Basic computer-science asks go to the general model
+        priority: 50
+        rules:
+          operator: AND
+          conditions:
+            - type: domain
+              name: computer science
+            - type: complexity
+              name: basic_request:easy
+        modelRefs:
+          - model: general
+            use_reasoning: false
+
+      - name: coding_decision
+        description: Software, infrastructure and debugging questions
+        priority: 10
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: computer science
+            - type: domain
+              name: engineering
+        modelRefs:
+          - model: code
+            use_reasoning: false
+
+      - name: finance_decision
+        description: Finance, regulation, risk and reporting questions
+        priority: 10
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: economics
+            - type: domain
+              name: business
+        modelRefs:
+          - model: general
+            use_reasoning: false
+
+      - name: general_decision
+        description: Everything else
+        priority: 1
+        rules:
+          operator: OR
+          conditions:
+            - type: domain
+              name: other
+        modelRefs:
+          - model: general
+            use_reasoning: false
+
+    modelCards:
+      - name: general
+      - name: code
+
+  global:
+    router:
+      strategy: priority
+    stores:
+      # Off: a semantic cache would answer the second run of a prompt from memory, the
+      # gateway would log no upstream, and the routing would look broken.
+      semantic_cache:
+        enabled: false
+      memory:
+        embedding_model: mmbert
+      vector_store:
+        embedding_model: mmbert
+    observability:
+      tracing:
+        enabled: false
