@@ -1,0 +1,14 @@
+# OSS agentgateway, the values that matter for an inference gateway that classifies requests.
+#
+# KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES is the one that is not optional. ExtProc, which
+# is how the gateway hands a request body to vLLM Semantic Router, rides on Gateway API
+# experimental features. Without this the CRDs still install, the controller ignores them, and
+# an ExtProc policy is Accepted and does nothing: every request goes through unclassified with
+# a 200. The other half of the same setting is the Gateway API experimental channel itself,
+# applied by scripts/platform/10-agentgateway.sh before the charts.
+#
+# Everything else is the chart's default. One controller, and a data plane per Gateway object,
+# which the controller creates when a Gateway is applied (yaml/platform/05-gateway.yaml).
+controller:
+  extraEnv:
+    KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES: "true"

@@ -18,7 +18,9 @@ with `preserveToken`, `traffic.extProc`, `traffic.extAuth` with `forwardBody`, a
 `phase: PreRouting`, and `AgentgatewayBackend.spec.policies.ai.modelAliases`. Validated on
 upstream agentgateway v1.5.0.
 
-## Why two hops
+## Overview
+
+### Why two hops
 
 Inside `PreRouting` the gateway runs extAuth before extProc, so on one gateway OPA would
 answer before the router had said what the task is. This flow needs the other order. So
@@ -36,7 +38,7 @@ client ──▶ model-gateway ────────────────�
              uncertain
 ```
 
-## The routing table
+### The routing table
 
 `opa/routing-data.json`, loaded into OPA as data. Permissions constrain the destinations
 the table can select; the task determines the preferred one.
@@ -60,41 +62,96 @@ the company's own code in the prompt, or an internal repository named in `x-sour
 forces private; then the table's preferred pool if permitted; then private if permitted;
 then an error. There is no fall-through to the frontier.
 
-## Run it
+## Install
 
-Needs Part 3 up (its `./scripts/00-check.sh` and, if the GPU node is scaled down, its
-`./scripts/gpu.sh up`), plus an Anthropic key in the environment. About ten minutes: the
-router restarts twice and the classifier weights are already on its volume.
+Everything is on the OSS agentgateway CRDs and public charts. Where a component has a Helm
+chart it is installed from it with a values file; vLLM and OPA are plain manifests (vLLM
+ships an image, not a chart; OPA's Envoy ext_authz plugin config is not what the community
+chart is built around). Every step skips what exists, so on a cluster Part 3 built the whole
+sequence reports `unchanged`. On a fresh account, about an hour and a half, most of it the
+76 GB weight pull. Needs `aws` with an identity that can create EKS clusters, `eksctl`,
+`kubectl`, `helm`, `openssl`, `python3`, `curl`.
+
+```bash
+./scripts/platform/00-cluster.sh        # 1  EKS 1.34, one g7e.2xlarge, addons, default StorageClass   (eks/cluster.yaml)
+./scripts/platform/10-agentgateway.sh   # 2  Gateway API v1.6.1 experimental, agentgateway v1.5.0 charts, the Gateway
+./scripts/platform/20-device-plugin.sh  # 3  NVIDIA device plugin 0.17.4, time-slicing the card into two
+./scripts/platform/30-models.sh         # 4  Mistral-Small-24B and Qwen3-Coder-30B on vLLM, one card
+```
+
+Or `./scripts/platform/up.sh`. The one agentgateway value that is not optional is
+`controller.extraEnv.KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES: "true"`, alongside the
+Gateway API experimental channel: ExtProc rides on both, and without them an ExtProc policy
+is Accepted and does nothing.
+
+## Configure
+
+Needs an Anthropic key in the environment, for the one frontier route. About ten minutes:
+the router restarts twice and the classifier weights are already on its volume.
 
 ```bash
 export ANTHROPIC_API_KEY=...
 
-./scripts/00-check.sh             # Part 3 is serving
-./scripts/01-identity.sh          # tokens for bob, alice, dave, and a forgery; reuses Part 3's signing key
-./scripts/02-router.sh            # step 1: the router becomes a task classifier
-./scripts/03-opa.sh               # step 2: OPA with the routing table and the data checks
-./scripts/04-decision-gateway.sh  # step 3: the decision gateway, backends, policy and route
-./scripts/05-classify-gateway.sh  # step 4: the public gateway verifies, classifies, hands on
+./scripts/00-check.sh             # 5  the platform is serving; mints nothing
+./scripts/01-identity.sh          #    tokens for bob, alice, dave, and a forgery; reuses Part 3's signing key
+./scripts/02-router.sh            # 6  vLLM Semantic Router becomes a task classifier
+./scripts/03-opa.sh               # 7  OPA with the routing table and the data checks
+./scripts/04-decision-gateway.sh  # 8  the decision gateway, backends, policy and route
+./scripts/05-classify-gateway.sh  # 9  the public gateway verifies, classifies, hands on
 ```
 
-Or `./scripts/quick.sh up`.
+Or `./scripts/quick.sh up`, which runs the install steps first and then these.
 
-## Test it
+**Do not ship the ConfigMap.** It is the lab's entitlement source because it is the
+smallest thing that proves the point. Kubernetes caps a ConfigMap at 1 MiB of data, every
+change is a full rewrite and an OPA restart, and the data is readable by anything with
+access to the namespace. A company-wide table belongs behind OPA's bundle API or in a data
+source OPA queries at decision time; the gateway and the router do not change.
+
+There is no Keycloak. The lab is about routing, and all the gateway needs from an identity
+provider is a JWKS to check signatures against, so `01-identity.sh` generates an RSA key
+per clone, writes its public half as `identity/jwks.json`, and mints RS256 tokens. A real
+IdP replaces the inline JWKS with `jwks.remote`. Nothing else changes.
+
+## Test
 
 ```bash
 source identity/tokens.env
-./scripts/06-test-flow.sh         # bob's five prompts and alice's one
-./scripts/07-test-controls.sh     # internal code, provenance, a credential, dave, spoofing, bad tokens
-./scripts/08-show-decision.sh bob "Review this function for concurrency bugs: ..."
-./scripts/classify.sh "Look at this code and tell me if the lock is released on every path."
+./scripts/06-test-flow.sh         # 10  bob's five prompts and alice's one
+./scripts/08-show-decision.sh bob "Review this function for concurrency bugs: ..."   # 11  one request traced across both hops
+./scripts/07-test-controls.sh     # 12  internal code, provenance, a credential, dave, spoofing, bad tokens
+./scripts/classify.sh "Look at this code and tell me if the lock is released on every path."   # 13  tune the classifier
 ```
 
-`classify.sh` is the tuning tool: it prints the task the router chose, the decision that
-chose it and the similarity scores behind it, for one prompt.
+The flow reads three things off every response: `x-vsr-selected-model` is the router's task
+label, `x-model-pool` and `x-model-class` are OPA's decision, and the `model` field in the
+body is the serving model's own statement of which model answered.
 
-## Files
+## Reference
+
+### What a client can and cannot name
+
+The body's `model` field is not free text. `auto` is classified. Any other value, a real
+model name included, is refused by the router with a 400 before any backend is called. The
+routing headers a client sends are removed by OPA before it writes its own, and the task
+header is overwritten by the router. `07-test-controls.sh` proves each of those.
+
+### Fail closed
+
+Both policy components are `FailClosed`. With OPA down the gateway answers 403. With the
+router down it answers 500. Neither case reaches a backend, and neither falls back to a
+default.
+
+### Files
 
 ```
+eks/cluster.yaml                           EKS 1.34, two platform nodes, one GPU node, addons
+yaml/platform/00-default-storageclass.yaml gp3, default
+yaml/platform/05-gateway.yaml              the public Gateway, ClusterIP
+yaml/platform/10-agentgateway-values.yaml  the experimental-features flag
+yaml/platform/20-device-plugin-values.yaml time-slicing, replicas 2, affinity null
+yaml/platform/30-vllm-mistral.yaml         Mistral on vLLM, 0.56 of the card
+yaml/platform/31-vllm-qwen.yaml            Qwen3-Coder on vLLM, 0.38 of the card
 opa/routing.rego                  the decision: block, force private, prefer, fall back, refuse
 opa/routing-data.json             who may use which pool; task to pool and class; internal-code markers
 yaml/10-router-tasks.yaml         the router as a task classifier: similarity banks, keywords, domains
@@ -107,8 +164,10 @@ yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
 ```
 
-## Teardown
+### Teardown
 
 ```bash
-./scripts/99-restore.sh           # Part 3 back as it was; the models and the cluster are untouched
+./scripts/99-restore.sh           # Part 3's routing back; the models and the cluster are untouched
+./scripts/platform/gpu.sh down    # stop the GPU meter; the weights stay on their volumes
+./scripts/quick.sh teardown       # both, or a full cluster delete if this lab built the cluster
 ```

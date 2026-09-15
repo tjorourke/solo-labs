@@ -180,6 +180,12 @@ config:
         - name: other
           description: General knowledge and miscellaneous topics
 
+    # A decision is a list of conditions and what to write when they hold. Each condition names
+    # a signal kind (`type`) and a rule of that kind (`name`). The names are not built in: they
+    # are the rules defined under `signals` above. `review_words` is the keyword rule up there,
+    # `computer science` is one of the fourteen domain names, and `review_vs_generic:hard` is a
+    # similarity rule plus the band it returned. `operator` says whether all conditions must
+    # hold (AND) or any one (OR).
     decisions:
       # Review and modification first. Each has a semantic rule and a keyword rule, so a
       # long ask is caught by its meaning and a short one by its verb. Both semantic rules

@@ -1,0 +1,36 @@
+# NVIDIA device plugin, from its Helm chart, with the one card time-sliced into two.
+#
+# The plugin hands out whole GPUs by default, so two pods each asking for nvidia.com/gpu: 1
+# need two cards. With replicas: 2 the node advertises nvidia.com/gpu: 2 and both vLLM pods
+# schedule onto the one RTX PRO 6000. Time-slicing shares compute by turn and does nothing
+# about memory, so the split of the 96 GB between the two models is each vLLM's own
+# --gpu-memory-utilization, set in scripts/02-models.sh.
+#
+# renameByDefault stays false so the resource keeps its name and Part 1's manifests apply
+# unchanged. failRequestsGreaterThanOne stays false for the same reason.
+# The chart's default node affinity waits for labels that Node Feature Discovery or the
+# GPU Feature Discovery sidecar would set (nvidia.com/gpu.present, the PCI vendor label).
+# Neither runs here, so with the default the DaemonSet schedules zero pods and the node
+# advertises no GPU at all. The nodegroup label is the selector instead. null, not {}:
+# Helm merges an empty map with the chart default and keeps the affinity.
+affinity: null
+nodeSelector:
+  role: gpu
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+gfd:
+  enabled: false
+config:
+  default: time-slicing
+  map:
+    time-slicing: |-
+      version: v1
+      sharing:
+        timeSlicing:
+          renameByDefault: false
+          failRequestsGreaterThanOne: false
+          resources:
+            - name: nvidia.com/gpu
+              replicas: 2
