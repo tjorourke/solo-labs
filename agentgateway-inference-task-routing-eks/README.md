@@ -20,10 +20,11 @@ upstream agentgateway v1.5.0.
 
 ## Overview
 
-### Why two hops
+### Why there are two gateways
 
-Inside `PreRouting` the gateway runs extAuth before extProc, so on one gateway OPA would
-answer before the router had said what the task is. This flow needs the other order. So
+A Gateway evaluates its policies in a fixed order and picks the route last: JWT, then
+extAuth (OPA), then extProc (the router), then route selection. OPA is asked before the
+router answers, so on one Gateway OPA is asked before the task exists. This flow needs the other order. So
 the public gateway authenticates and classifies, and hands every request to a second,
 internal gateway where OPA sees the task, the verified identity and the prompt together
 and the route acts on OPA's answer. The router is called once. OPA returns both the pool
