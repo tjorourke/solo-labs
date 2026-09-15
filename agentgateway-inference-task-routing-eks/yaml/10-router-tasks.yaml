@@ -22,14 +22,18 @@
 # and 60 beats 10, so it is a review rather than generic coding. `uncertain` is
 # `default_model`: what the router says when no decision matches, and the routing table
 # sends that to a private model, never to the frontier.
+# Everything above `config:` is the Helm chart's own settings for the router pod. Everything
+# under `config:` becomes the router's config.yaml, mounted from a ConfigMap.
 persistence:
-  storageClassName: gp3
+  storageClassName: gp3      # the volume the classifier weights are downloaded onto, once
   size: 20Gi
 
 image:
+  # Pinned by digest, not tag: chart and image drift independently, and a pair that
+  # disagrees can start as a router that passes every request through unclassified.
   repository: ghcr.io/vllm-project/semantic-router/extproc@sha256
   tag: c0519e91c9dfe69066b25766aef40a38b5474e17dcbb1b58c791c451646334e0
-  pullPolicy: IfNotPresent
+  pullPolicy: IfNotPresent   # set, not inherited: the chart's last values document says Never
 
 resources:
   requests:
@@ -37,18 +41,19 @@ resources:
     memory: 3Gi
   limits:
     cpu: "2"
-    memory: 7Gi
+    memory: 7Gi              # the mmbert classifier does not load in the chart's 2Gi default
 
 config:
-  version: v0.3
+  version: v0.3              # the config schema version this build reads
 
-  listeners: []
+  listeners: []              # the router opens no listener of its own: agentgateway fronts it
 
   providers:
     defaults:
-      default_model: uncertain
-    # Task labels, not models. backend_refs is required by the schema and never dialled
-    # on this path: agentgateway does the forwarding.
+      default_model: uncertain   # what the router answers when no decision matches
+    # Task labels, not models. Anything named here is a value the router may write into the
+    # request's model field. backend_refs is required by the schema and never dialled on this
+    # path: agentgateway does the forwarding.
     models:
       - name: code_review
         backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
@@ -241,6 +246,7 @@ config:
             - {type: complexity, name: modify_vs_generic:easy}
         modelRefs: [{model: generic_coding, use_reasoning: false}]
 
+    # The names the decisions may refer to. Same list as providers.models.
     modelCards:
       - name: code_review
       - name: code_modification
@@ -250,8 +256,10 @@ config:
 
   global:
     router:
-      strategy: priority
+      strategy: priority     # when several decisions match, the highest priority wins
     stores:
+      # Off: a semantic cache would answer a repeated prompt from memory and the gateway
+      # would log no upstream, so the routing would look broken while working.
       semantic_cache:
         enabled: false
       memory:
