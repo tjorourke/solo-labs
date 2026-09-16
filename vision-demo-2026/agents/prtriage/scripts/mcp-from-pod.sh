@@ -45,18 +45,23 @@ case "$TRANSPORT" in
 wget|curl)
   $K -n "$NS" exec -i "deploy/$DEP" -- sh -c 'cat > /tmp/body.json; U="'"$URL"'"
     I='"'"'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}'"'"'
+    # --tries=1 and a timeout are not tuning, they are the difference between a second and
+    # five minutes. The gateway refuses a caller the policy does not name by resetting the
+    # connection, and wget reads a reset mid-headers as transient: it retries twenty times
+    # with a backoff, so a refusal that happens instantly took 291s to report. curl gets the
+    # same treatment for the same reason.
     if command -v wget >/dev/null 2>&1; then
-      S=$(wget -qS -O /dev/null --header="Content-Type: application/json" \
+      S=$(wget -qS -O /dev/null --tries=1 --timeout=10 --header="Content-Type: application/json" \
             --header="Accept: application/json, text/event-stream" --post-data="$I" "$U" 2>&1 \
           | grep -i mcp-session-id | awk "{print \$2}" | tr -d "\r")
-      wget -q --content-on-error -O- --header="Content-Type: application/json" \
+      wget -q --content-on-error -O- --tries=1 --timeout=20 --header="Content-Type: application/json" \
            --header="Accept: application/json, text/event-stream" \
            ${S:+--header="Mcp-Session-Id: $S"} --post-file=/tmp/body.json "$U" 2>/dev/null
     else
-      S=$(curl -sS -D- -o /dev/null -X POST -H "Content-Type: application/json" \
+      S=$(curl -sS -D- -o /dev/null --max-time 10 -X POST -H "Content-Type: application/json" \
             -H "Accept: application/json, text/event-stream" -d "$I" "$U" 2>/dev/null \
           | grep -i mcp-session-id | awk "{print \$2}" | tr -d "\r")
-      curl -sS -X POST -H "Content-Type: application/json" \
+      curl -sS -X POST --max-time 20 -H "Content-Type: application/json" \
            -H "Accept: application/json, text/event-stream" \
            ${S:+-H "Mcp-Session-Id: $S"} --data-binary @/tmp/body.json "$U" 2>/dev/null
     fi | sed "s/^data: //" | grep -v "^event:" | grep .' < /tmp/mcp-body.json 2>/dev/null || true
