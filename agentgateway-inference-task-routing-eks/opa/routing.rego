@@ -29,15 +29,25 @@ task := input.attributes.request.http.headers["x-selected-model"]
 
 table := data.routing.tasks[task]
 
-# The prompt, for the data checks. The body is forwarded by the gateway (forwardBody) and
-# the last user message is the one the router classified.
+# The prompt, for the data checks. The body is forwarded by the gateway (forwardBody).
 body := json.unmarshal(input.attributes.request.http.body)
 
-last_user_message := m if {
-	msgs := [msg.content | some msg in body.messages; msg.role == "user"]
-	count(msgs) > 0
-	m := msgs[count(msgs) - 1]
-}
+# Every message, joined. The checks below read this rather than the last message alone,
+# because an editor sends the question and the files it has open as separate parts of one
+# request, and the intake hop lifts the question out into its own final message. Evidence
+# anywhere in the request is evidence.
+all_text := concat("\n", [t |
+	some msg in body.messages
+	t := message_text(msg)
+])
+
+# Message content is a string in the plain chat shape and a list of parts in the other one.
+message_text(msg) := msg.content if is_string(msg.content)
+
+message_text(msg) := concat(" ", [p.text |
+	some p in msg.content
+	is_string(p.text)
+]) if not is_string(msg.content)
 
 # --- data checks ---------------------------------------------------------------------------
 
@@ -51,7 +61,7 @@ secret_patterns := [
 
 has_secret if {
 	some p in secret_patterns
-	regex.match(p, last_user_message)
+	regex.match(p, all_text)
 }
 
 # Things that say this is our code: a package or service name from the internal list, or a
@@ -60,7 +70,7 @@ has_secret if {
 # supplied value is acceptable here.
 has_internal_code if {
 	some marker in data.dlp.internal_code_markers
-	contains(last_user_message, marker)
+	contains(all_text, marker)
 }
 
 has_internal_code if {

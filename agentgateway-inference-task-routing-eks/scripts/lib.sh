@@ -16,11 +16,15 @@ helm_()   { helm --kube-context "$CTX" "$@"; }
 # The public gateway is ClusterIP with no external address, so the scripts reach it
 # through a port-forward and send the hostname its route is bound to.
 GW_PORT="${GW_PORT:-18080}"
-GW_HOST=model-gateway.agentgateway-system.svc.cluster.local
+# The tests enter where a client enters: the intake hop, which normalises the model name
+# and the tool shapes and lifts an editor's question out of its envelope. Set GW_SVC to
+# model-gateway to test the classify hop on its own.
+GW_SVC="${GW_SVC:-intake-gateway}"
+GW_HOST="${GW_HOST:-intake-gateway.agentgateway-system.svc.cluster.local}"
 GW_URL="http://localhost:${GW_PORT}/v1/chat/completions"
 gw_up() {
   if ! curl -s -o /dev/null -m 2 -H "Host: $GW_HOST" "http://localhost:${GW_PORT}/" 2>/dev/null; then
-    kubectl -n "$NS" port-forward svc/model-gateway "${GW_PORT}:80" >/dev/null 2>&1 &
+    kubectl -n "$NS" port-forward "svc/$GW_SVC" "${GW_PORT}:80" >/dev/null 2>&1 &
     GW_PF=$!
     trap 'kill ${GW_PF:-0} 2>/dev/null || true' EXIT
     for _ in $(seq 1 30); do

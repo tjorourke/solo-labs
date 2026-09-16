@@ -147,10 +147,11 @@ body is the serving model's own statement of which model answered.
 
 ### What a client can and cannot name
 
-The body's `model` field is not free text. `auto` is classified. Any other value, a real
-model name included, is refused by the router with a 400 before any backend is called. The
-routing headers a client sends are removed by OPA before it writes its own, and the task
-header is overwritten by the router. `07-test-controls.sh` proves each of those.
+The body's `model` field is not a request. The intake hop replaces whatever the client sent
+with the router's own name, so a real model name in the body changes nothing: the task and
+the caller's permissions still decide where it goes. The routing headers a client sends are
+removed by OPA before it writes its own, and the task header is overwritten by the router.
+`07-test-controls.sh` proves each of those, including an editor's envelope.
 
 ### Fail closed
 

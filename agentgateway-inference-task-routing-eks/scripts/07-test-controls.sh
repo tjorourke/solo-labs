@@ -3,12 +3,14 @@
 #
 #   ./scripts/07-test-controls.sh
 #
-# C1 and C2 are evidence that overrides a generic classification: the bank's own code in the
-# prompt, and a provenance header from an application that knows where the code came from.
-# Both keep a generic question private. C3 is the same evidence in the form an editor sends\n# it, file paths rather than package names. C4 is a credential in the prompt: blocked, not
-# routed. C4 is dave, who may use the frontier only, asking for a review: reviews are
-# private, he may not use private, so an error and nothing sent anywhere. C5 to C7 are
-# spoofing attempts that must change nothing. C8 and C9 are tokens that never reach OPA.
+# C1 to C3 are evidence that overrides a generic classification: the bank's own code in the
+# prompt, a provenance header from an application that knows where the code came from, and
+# the same evidence in the form an editor sends it, file paths inside its own envelope. All
+# three keep a question private. C4 is a credential in the prompt: blocked, not routed. C5 is
+# dave, who may use the frontier only, asking for a review: reviews are private, he may not
+# use private, so an error and nothing sent anywhere. C6 to C8 are attempts to steer the
+# decision from the client side, which must change nothing. C9 and C10 are tokens that never
+# reach OPA.
 # Exits non-zero on any miss.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
@@ -51,8 +53,12 @@ gw_curl "$ALICE_TOKEN" "$(chat "$GENERIC")" -H 'x-model-pool: approved-frontier'
 row $(t "$(pool)" private) "alice sends x-model-pool: approved-frontier" "pool=$(pool)"
 gw_curl "$BOB_TOKEN" "$(chat "Review this function for concurrency bugs: public void credit(long amt) { balance += amt; }")" -H 'x-selected-model: generic_coding'
 row $(t "$(task)/$(pool)" code_review/private) "bob sends x-selected-model: generic_coding with a review" "task=$(task) pool=$(pool)"
-gw_curl "$BOB_TOKEN" "$(chat "$GENERIC" claude-sonnet-5)"
-row $(t "$STATUS" 400) "bob names the frontier model in the body" "$STATUS $(err_msg)"
+# Naming a model in the body is not an error and not a request: the intake hop replaces
+# whatever the client sent with the router's own name, so the destination is still decided
+# by the task and the caller's permissions. alice names the frontier model and still gets a
+# private one, because she may not use the frontier.
+gw_curl "$ALICE_TOKEN" "$(chat "$GENERIC" claude-sonnet-5)"
+row $(t "$(pool)/$(resp_model)" private/qwen3-coder-30b) "alice names the frontier model in the body" "pool=$(pool) model=$(resp_model)"
 
 before=$(opa_decisions)
 gw_curl - "$(chat "$GENERIC")"
