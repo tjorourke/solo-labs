@@ -1,0 +1,33 @@
+# A budget on the one route that costs money.
+#
+# The private models run on a card the bank already owns, so spend there is a sunk cost.
+# The frontier is metered per token by someone else, which is the thing a bank wants a
+# limit on, and the limit belongs to a person rather than to the endpoint.
+#
+# `subject` is a set of cost dimensions, and the dimensions come from
+# yaml/platform/11-dimensions-values.yaml: `user` from the verified token, `modelPool` from
+# the header OPA writes. So this budget reads "bob, on the approved frontier", and it
+# cannot be dodged by asking differently: the values are written by the gateway and the
+# policy, never by the caller.
+#
+# Tokens rather than USD because the amount is an integer, so the smallest USD budget is a
+# whole dollar and a demo would take hundreds of requests to reach it. Tokens make the
+# limit visible in two or three questions. `Block` refuses over the limit; `Audit` records
+# and lets it through, which is how you would introduce this to a team before enforcing it.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBudget
+metadata:
+  name: frontier-budgets
+  namespace: agentgateway-system
+spec:
+  budgets:
+    - name: bob-frontier-daily
+      subject:
+        user: bob
+        modelPool: approved-frontier
+      limit:
+        amount: 3000
+        unit: Tokens
+      window:
+        unit: Day
+      onBudgetExceeded: Block
