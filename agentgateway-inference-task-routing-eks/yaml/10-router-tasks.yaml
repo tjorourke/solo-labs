@@ -143,12 +143,12 @@ config:
         - name: review_words
           operator: OR
           method: bm25
-          bm25_threshold: 0.1
+          bm25_threshold: 0.01
           keywords: [review, audit, "look over", "any bugs", critique, feedback]
         - name: modify_words
           operator: OR
           method: bm25
-          bm25_threshold: 0.1
+          bm25_threshold: 0.01
           keywords: [modify, change, refactor, fix, rewrite, update, "add a", convert, migrate]
       domains:
         - name: business
@@ -217,6 +217,29 @@ config:
           conditions:
             - {type: domain, name: computer science}
             - {type: complexity, name: modify_vs_generic:hard}
+            - {type: complexity, name: review_vs_modify:easy}
+        modelRefs: [{model: code_modification, use_reasoning: false}]
+      # Real prompts arrive with the file attached, and a long code block does two things:
+      # it dilutes every keyword score, and it hands the domain classifier the vocabulary of
+      # the code rather than of the question. Ledger code reads as business, not computer
+      # science. These two decisions do not ask the domain classifier at all: a review word
+      # plus a prompt that sounds more like a review than a change is a review.
+      - name: code_review_in_code
+        description: Looking at code that came with the prompt
+        priority: 62
+        rules:
+          operator: AND
+          conditions:
+            - {type: keyword, name: review_words}
+            - {type: complexity, name: review_vs_modify:hard}
+        modelRefs: [{model: code_review, use_reasoning: false}]
+      - name: code_modification_in_code
+        description: Changing code that came with the prompt
+        priority: 61
+        rules:
+          operator: AND
+          conditions:
+            - {type: keyword, name: modify_words}
             - {type: complexity, name: review_vs_modify:easy}
         modelRefs: [{model: code_modification, use_reasoning: false}]
       - name: code_modification_keyword
