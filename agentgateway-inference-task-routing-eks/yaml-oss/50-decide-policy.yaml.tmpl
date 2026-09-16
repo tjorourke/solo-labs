@@ -7,8 +7,8 @@
 # a subject the gateway verified, not on a header. forwardBody is on here, unlike Part 3:
 # OPA needs the prompt for the data checks, a credential pattern or the bank's own code in
 # the text. The task label arrives as the x-selected-model request header the router wrote.
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayPolicy
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
 metadata:
   name: decide
   namespace: agentgateway-system
@@ -17,19 +17,6 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: decision-gateway
-  frontend:
-    # Telemetry for the Enterprise UI. The gateway exports a span per request to the
-    # collector the management chart installs, and the dashboards and Cost Management
-    # read those spans. Without this the UI installs cleanly and shows no data.
-    # It lives on this policy rather than its own, because a second policy targeting the
-    # same Gateway replaces the first rather than adding to it.
-    tracing:
-      backendRef:
-        name: solo-enterprise-telemetry-collector
-        namespace: agentgateway-system
-        port: 4317
-      protocol: GRPC
-      randomSampling: "true"     # every request, which is what a demo wants
   traffic:
     phase: PreRouting
     jwtAuthentication:

@@ -13,10 +13,13 @@ cluster, same single GPU with both open-weight models, same router and OPA. It r
 the decision. Part 3 decided where a request runs from the identity alone, before the
 prompt was read. Here the task comes first.
 
-**Editions.** Everything here is on the OSS agentgateway CRDs: `traffic.jwtAuthentication`
-with `preserveToken`, `traffic.extProc`, `traffic.extAuth` with `forwardBody`, all at
-`phase: PreRouting`, and `AgentgatewayBackend.spec.policies.ai.modelAliases`. Validated on
-upstream agentgateway v1.5.0.
+**Editions.** `yaml/` is the Solo Enterprise CRDs, validated on Solo Enterprise for
+agentgateway v2026.9.0, because the Enterprise UI is what reports on this flow: token usage
+and spend per person, per task and per pool. `yaml-oss/` is the same set on the OSS CRDs, a
+group and kind swap away, validated on upstream agentgateway v1.5.0. The routing needs
+nothing Enterprise: `traffic.jwtAuthentication` with `preserveToken`, `traffic.extProc`,
+`traffic.extAuth` with `forwardBody`, `traffic.transformation`, all at `phase: PreRouting`,
+and `policies.ai.modelAliases` exist in both.
 
 ## Overview
 
@@ -68,24 +71,34 @@ then an error. There is no fall-through to the frontier.
 The prerequisite is a Kubernetes cluster, anywhere: 1.32 or later, a default StorageClass,
 one node with an NVIDIA GPU of at least 96 GB labelled `role: gpu` (or change the
 `nodeSelector` in the model manifests), two or three CPU nodes, and outbound access to
-Hugging Face, ghcr.io, cr.agentgateway.dev and nvcr.io. This guide was run on EKS 1.34 and
+Hugging Face, ghcr.io, us-docker.pkg.dev and nvcr.io. This guide was run on EKS 1.34 and
 nothing in it is specific to that. On your machine: `kubectl` pointed at the cluster,
-`helm`, `openssl`, `python3`, `curl`.
+`helm`, `openssl`, `python3`, `curl`, and `AGENTGATEWAY_LICENSE_KEY` in the environment for
+the Enterprise charts. The OSS set in `yaml-oss/` needs no licence.
 
 Where a component has a Helm chart it is installed from it with a values file; vLLM and OPA
 are plain manifests (vLLM ships an image, not a chart; OPA's Envoy ext_authz plugin config
 is not what the community chart is built around). Every step skips what exists.
 
 ```bash
-./scripts/platform/10-agentgateway.sh   # 1  Gateway API v1.6.1 experimental, agentgateway v1.5.0 charts, the Gateway
+./scripts/platform/10-agentgateway.sh   # 1  Gateway API v1.6.1, Enterprise agentgateway v2026.9.0, the UI, the Gateway
 ./scripts/platform/20-device-plugin.sh  # 2  NVIDIA device plugin 0.17.4, time-slicing the card into two
 ./scripts/platform/30-models.sh         # 3  Mistral-Small-24B and Qwen3-Coder-30B on vLLM, one card (first run pulls 76 GB)
 ```
 
-Or `./scripts/platform/up.sh`. The one agentgateway value that is not optional is
-`controller.extraEnv.KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES: "true"`, alongside the
-Gateway API experimental channel: ExtProc rides on both, and without them an ExtProc policy
-is Accepted and does nothing.
+Or `./scripts/platform/up.sh`. Step 1 also installs the management chart, which is the
+Enterprise UI, and the cost dimensions in `yaml/platform/11-dimensions-values.yaml`: the
+task the router chose, and the pool and class OPA decided, alongside the built-in `model`,
+`provider` and `user`. Installing and operating that UI is covered in the
+[agentgateway quickstart](../agentgateway-quickstart-kind/) and
+[LLM cost management](../agentgateway-cost-management-kind/) rather than repeated here.
+Reach it with `kubectl -n agentgateway-system port-forward svc/solo-enterprise-ui 4000:80`.
+
+On the OSS set, the one value that is not optional is
+`controller.extraEnv.KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES: "true"` in
+`yaml-oss/platform/10-agentgateway-values.yaml`, alongside the Gateway API experimental
+channel: ExtProc rides on both, and without them an ExtProc policy is Accepted and does
+nothing.
 
 ## Configure
 
@@ -149,7 +162,7 @@ default.
 
 ```
 yaml/platform/05-gateway.yaml              the public Gateway, ClusterIP
-yaml/platform/10-agentgateway-values.yaml  the experimental-features flag
+yaml/platform/11-dimensions-values.yaml    cost dimensions: user, task, pool, class
 yaml/platform/20-device-plugin-values.yaml time-slicing, replicas 2, affinity null
 yaml/platform/30-vllm-mistral.yaml         Mistral on vLLM, 0.56 of the card
 yaml/platform/31-vllm-qwen.yaml            Qwen3-Coder on vLLM, 0.38 of the card
@@ -163,6 +176,10 @@ yaml/50-decide-policy.yaml.tmpl   verify the token again, ask OPA with the body
 yaml/60-decision-route.yaml       four rules on x-model-pool and x-model-class
 yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
+yaml/90-intake-gateway.yaml       the front door, ClusterIP
+yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped
+yaml/92-intake-route.yaml         everything under /v1/ to the public gateway, Host rewritten
+yaml-oss/                         the same set on the OSS CRDs, no licence needed
 ```
 
 ### Teardown

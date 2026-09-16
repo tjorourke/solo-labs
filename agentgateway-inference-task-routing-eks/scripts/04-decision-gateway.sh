@@ -27,7 +27,7 @@ banner "route"
 kubectl apply -f "$HERE/yaml/60-decision-route.yaml"
 sleep 3
 banner "attachment status"
-kubectl -n "$NS" get agentgatewaypolicy decide -o jsonpath='{range .status.ancestors[*]}{range .conditions[*]}{.type}={.status}  {.message}{"\n"}{end}{end}'
+kubectl -n "$NS" get enterpriseagentgatewaypolicy decide -o jsonpath='{range .status.ancestors[*]}{range .conditions[*]}{.type}={.status}  {.message}{"\n"}{end}{end}'
 kubectl -n "$NS" get httproute decision-routing -o jsonpath='{range .status.parents[*].conditions[*]}{.type}={.status}{"\n"}{end}' | sort -u
 echo
 echo "Next: ./scripts/05-classify-gateway.sh"

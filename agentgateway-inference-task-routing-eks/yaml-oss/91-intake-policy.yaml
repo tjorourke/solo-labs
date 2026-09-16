@@ -1,0 +1,49 @@
+# What the front door does: make any client's request something this flow can serve.
+#
+# Two problems, both met on a real editor rather than in theory.
+#
+# 1. The model name. An editor sends the name it has, `gpt-4o` or whatever the user picked,
+#    and the router only answers to its own virtual names. Anything else comes back as a 400
+#    saying the model is not available. Merging `{"model": "auto"}` into the body means no
+#    team has to be told which name to type, and the router classifies as it always did.
+#
+# 2. The tool list. Editors attach tools to every agent request, and some use OpenAI's newer
+#    `"type": "custom"` shape. The gateway cannot parse those: the request fails with a 503
+#    saying `missing field custom` toward a frontier backend, and vLLM rejects them with a
+#    validation error. Filtering the list to classic `"type": "function"` tools keeps tool
+#    calling working and drops what no backend here accepts. An empty list after filtering is
+#    accepted by both, which is why the second branch only has to drop the field when nothing
+#    usable is left.
+#
+# The CRD does not allow `conditional` entries alongside a plain `request` transformation, so
+# the last entry is the catch-all, written as `condition: 'true'`.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: normalise-model
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: intake-gateway
+  traffic:
+    phase: PreRouting
+    transformation:
+      conditional:
+        # Tools, at least one of them usable: keep those, drop the rest, rename the model.
+        - condition: 'has(json(request.body).tools) && size(json(request.body).tools.filter(t, t.type == "function")) > 0'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto", "tools": json(request.body).tools.filter(t, t.type == "function")}))'
+        # Tools, none of them usable: take the field out altogether.
+        - condition: 'has(json(request.body).tools)'
+          policy:
+            request:
+              body: 'toJson(json(request.body).filterKeys(k, k != "tools" && k != "tool_choice").merge({"model": "auto"}))'
+        # No tools: rename the model and leave everything else alone.
+        - condition: 'true'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto"}))'

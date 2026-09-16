@@ -9,8 +9,8 @@
 #
 # The two GPU backends are Part 1's, same names, with their aliases replaced.
 ---
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayBackend
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
 metadata:
   name: vllm-qwen
   namespace: agentgateway-system
@@ -29,8 +29,8 @@ spec:
         code_modification: qwen3-coder-30b
         generic_coding: qwen3-coder-30b
 ---
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayBackend
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
 metadata:
   name: vllm-mistral
   namespace: agentgateway-system
@@ -48,8 +48,8 @@ spec:
         finance: mistral-small-3.2-24b
         uncertain: mistral-small-3.2-24b
 ---
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayBackend
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
 metadata:
   name: anthropic
   namespace: agentgateway-system

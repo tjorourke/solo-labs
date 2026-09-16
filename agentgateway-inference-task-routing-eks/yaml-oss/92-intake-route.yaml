@@ -1,0 +1,30 @@
+# One rule: everything under /v1/ goes on to the public gateway, normalised.
+#
+# The hostname rewrite is the part that is easy to miss. The gateway behind this one binds its
+# route to its own in-cluster Service name, so a request arriving with a client's hostname
+# matches no route there and comes back 404 with an empty body, whatever the policies decided.
+# Rewriting the Host on the way out keeps that route matching whoever the client thinks it is
+# talking to.
+#
+# /v1/models is included on purpose: clients call it to list what they may ask for, and the
+# router answers it.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: intake-routing
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: intake-gateway
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            hostname: model-gateway.agentgateway-system.svc.cluster.local
+      backendRefs:
+        - {name: model-gateway, kind: Service, group: "", port: 80}

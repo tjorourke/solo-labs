@@ -18,8 +18,8 @@
 # allowedRoutes from Same keeps the routes in this namespace, which is all the lab
 # needs and one less thing to reason about.
 ---
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayParameters
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
 metadata:
   name: model-gateway-params
   namespace: agentgateway-system
@@ -34,11 +34,11 @@ metadata:
   name: model-gateway
   namespace: agentgateway-system
 spec:
-  gatewayClassName: enterprise-agentgateway
+  gatewayClassName: agentgateway
   infrastructure:
     parametersRef:
-      group: enterpriseagentgateway.solo.io
-      kind: EnterpriseAgentgatewayParameters
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
       name: model-gateway-params
   listeners:
     - name: http

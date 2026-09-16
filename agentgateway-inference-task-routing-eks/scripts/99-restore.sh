@@ -3,16 +3,17 @@
 #
 #   ./scripts/99-restore.sh
 #
-# Removes the decision gateway, its policy and route, the classify policy and route on
-# model-gateway, then re-applies Part 3's OPA policy and data, its backends, its policy and
-# route, and its router config. The models and the cluster are left alone.
+# Removes the intake gateway, the decision gateway, their policies and routes, and the
+# classify policy and route on model-gateway, then re-applies Part 3's OPA policy and data,
+# its backends, its policy and route, and its router config. The models and the cluster are
+# left alone.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
 banner "this part's objects"
-kubectl -n "$NS" delete agentgatewaypolicy classify decide --ignore-not-found
-kubectl -n "$NS" delete httproute classify-then-decide decision-routing --ignore-not-found
-kubectl -n "$NS" delete gateway decision-gateway --ignore-not-found
-kubectl -n "$NS" delete agentgatewayparameters decision-gateway-params --ignore-not-found
+kubectl -n "$NS" delete enterpriseagentgatewaypolicy classify decide normalise-model --ignore-not-found
+kubectl -n "$NS" delete httproute classify-then-decide decision-routing intake-routing --ignore-not-found
+kubectl -n "$NS" delete gateway decision-gateway intake-gateway --ignore-not-found
+kubectl -n "$NS" delete enterpriseagentgatewayparameters decision-gateway-params intake-gateway-params --ignore-not-found
 banner "Part 3's OPA policy and data"
 kubectl create configmap opa-policy -n "$NS" --from-file=routing.rego="$PART3_DIR/opa/routing.rego" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create configmap opa-entitlements -n "$NS" --from-file=entitlements.json="$PART3_DIR/opa/entitlements.json" --dry-run=client -o yaml | kubectl apply -f -

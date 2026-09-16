@@ -1,0 +1,43 @@
+# Cost dimensions for the Enterprise control plane, applied as Helm values on the
+# enterprise-agentgateway chart. They decide how spend and token usage can be sliced in the
+# Enterprise UI.
+#
+#   helm upgrade --install enterprise-agentgateway <chart> -n agentgateway-system \
+#     --reuse-values -f yaml/platform/11-dimensions-values.yaml
+#   kubectl -n agentgateway-system rollout restart deploy/model-gateway deploy/decision-gateway
+#
+# `model` and `provider` are built in and need no expression here, so "which model answered"
+# is always available. Everything else is a CEL expression evaluated per request, and the
+# context includes the verified JWT claims and the request headers, which is exactly where
+# this flow's decisions live: the router writes the task, OPA writes the pool and the class.
+#
+# The hierarchy list REPLACES the chart's default list rather than merging with it, so the
+# two defaults are repeated here. Drop them and per-user reporting disappears.
+budgetDimensions:
+  enabled: true
+  config:
+    hierarchy:
+      - id: group
+        expression: 'coalesce(jwt.group, apiKey.group)'
+        displayName: Group
+      # The employee. In this lab the token carries no group, so `sub` is the identity that
+      # every request is attributed to: bob, alice, dave.
+      - id: user
+        expression: 'coalesce(apiKey.user, apiKey.name, apiKey.owner, jwt.sub, jwt.email, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn)'
+        displayName: User
+    attributes:
+      - id: virtualKey
+        expression: apiKey.id
+        displayName: Virtual Key
+      # What the router decided this request was. One of the five task labels.
+      - id: task
+        expression: 'request.headers["x-selected-model"]'
+        displayName: Task
+      # What OPA decided. The pool answers "did this stay inside", the class answers "which
+      # kind of model served it", and both are written by the policy, not by the caller.
+      - id: modelPool
+        expression: 'request.headers["x-model-pool"]'
+        displayName: Model pool
+      - id: modelClass
+        expression: 'request.headers["x-model-class"]'
+        displayName: Model class

@@ -25,34 +25,41 @@ spec:
           headers:
             - {type: Exact, name: x-model-pool, value: private}
             - {type: Exact, name: x-model-class, value: coding}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
       backendRefs:
-        - {name: vllm-qwen, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+        - {name: vllm-qwen, group: agentgateway.dev, kind: AgentgatewayBackend}
     - matches:
         - path: {type: PathPrefix, value: /v1/chat/completions}
           headers:
             - {type: Exact, name: x-model-pool, value: private}
             - {type: Exact, name: x-model-class, value: finance}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
       backendRefs:
-        - {name: vllm-mistral, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+        - {name: vllm-mistral, group: agentgateway.dev, kind: AgentgatewayBackend}
     - matches:
         - path: {type: PathPrefix, value: /v1/chat/completions}
           headers:
             - {type: Exact, name: x-model-pool, value: private}
             - {type: Exact, name: x-model-class, value: general}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
       backendRefs:
-        - {name: vllm-mistral, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+        - {name: vllm-mistral, group: agentgateway.dev, kind: AgentgatewayBackend}
     - matches:
         - path: {type: PathPrefix, value: /v1/chat/completions}
           headers:
             - {type: Exact, name: x-model-pool, value: approved-frontier}
       filters:
-        # Only this rule leaves the cluster, so this is the only place a header could reach a
-        # third party. The employee's identity and the repository they were working in are
-        # removed here. The routing labels stay on the request: they name a pool and a task,
-        # they identify nobody, and the gateway reads them when it records what this request
-        # cost, which is how frontier spend is attributed to a task and a pool in the UI.
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove: [x-routing-user, x-routing-reason, x-source-repo]
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
       backendRefs:
-        - {name: anthropic, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+        - {name: anthropic, group: agentgateway.dev, kind: AgentgatewayBackend}

@@ -13,8 +13,8 @@
 # lint-crd-blocks: allow preserveToken
 # The repo's cached AgentgatewayPolicy schema is the Enterprise 2026.8 chart's; preserveToken
 # is on the OSS v1.5.0 CRD this lab runs (kubectl explain agentgatewaypolicy.spec.traffic.jwtAuthentication).
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayPolicy
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
 metadata:
   name: classify
   namespace: agentgateway-system
@@ -23,19 +23,6 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: model-gateway
-  frontend:
-    # Telemetry for the Enterprise UI. The gateway exports a span per request to the
-    # collector the management chart installs, and the dashboards and Cost Management
-    # read those spans. Without this the UI installs cleanly and shows no data.
-    # It lives on this policy rather than its own, because a second policy targeting the
-    # same Gateway replaces the first rather than adding to it.
-    tracing:
-      backendRef:
-        name: solo-enterprise-telemetry-collector
-        namespace: agentgateway-system
-        port: 4317
-      protocol: GRPC
-      randomSampling: "true"     # every request, which is what a demo wants
   traffic:
     phase: PreRouting
     jwtAuthentication:

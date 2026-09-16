@@ -8,8 +8,8 @@
 # needs to. It re-validates the bearer token itself (the first hop preserves it), so a call
 # that skips the first hop still has to carry a real token.
 ---
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayParameters
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
 metadata:
   name: decision-gateway-params
   namespace: agentgateway-system
@@ -24,11 +24,11 @@ metadata:
   name: decision-gateway
   namespace: agentgateway-system
 spec:
-  gatewayClassName: enterprise-agentgateway
+  gatewayClassName: agentgateway
   infrastructure:
     parametersRef:
-      group: enterpriseagentgateway.solo.io
-      kind: EnterpriseAgentgatewayParameters
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
       name: decision-gateway-params
   listeners:
     - name: http
