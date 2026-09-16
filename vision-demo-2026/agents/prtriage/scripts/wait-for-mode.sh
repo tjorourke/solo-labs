@@ -22,6 +22,17 @@ NS="${NS:-kagent}"
 TRIES="${TRIES:-45}"
 FROM_POD="${FROM_POD:-deploy/prtriagejava}"
 
+# The probe runs from inside the mesh as an agent, because the authorization policy on the
+# backend allows tools per service account. If that workload is missing there is nothing to
+# probe from, and the timeout below would otherwise be reported as the gateway being at
+# fault. Say what is actually wrong instead.
+if ! $K -n "$NS" get "$FROM_POD" >/dev/null 2>&1; then
+  echo "  ✗ cannot check the mode: $FROM_POD does not exist in $NS"
+  echo "    the probe runs from the agent, because tools are authorized per service account"
+  echo "    fix:       ./agents/prtriage/scripts/reset.sh   (it deploys the agent)"
+  exit 1
+fi
+
 tools_via_pod() {
   $K -n "$NS" exec "$FROM_POD" -- sh -c '
     U=http://github-mcp.'"$NS"'.svc.cluster.local/
