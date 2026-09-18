@@ -26,6 +26,14 @@ spec:
     ai:
       # Claude Code posts /v1/messages. Messages in, chat completions out to vLLM, and the
       # chat completion translated back to a Messages response on the way home.
+      # Claude Code asks for max_tokens: 64000, which is more than this model's whole
+      # context, and vLLM rejects the request outright: "max_completion_tokens=64000
+      # cannot be greater than max_model_len". The client is not wrong and the model is
+      # not wrong, so the gateway settles it: an override caps every request here,
+      # whatever the caller asked for. Measured 2026-09-18 against Claude Code.
+      overrides:
+        - field: max_tokens
+          value: 8192
       routes:
         "/v1/messages": Messages
       modelAliases:
@@ -49,6 +57,14 @@ spec:
   policies:
     ai:
       # Same translation as vllm-qwen, for the finance and general rows of the table.
+      # Claude Code asks for max_tokens: 64000, which is more than this model's whole
+      # context, and vLLM rejects the request outright: "max_completion_tokens=64000
+      # cannot be greater than max_model_len". The client is not wrong and the model is
+      # not wrong, so the gateway settles it: an override caps every request here,
+      # whatever the caller asked for. Measured 2026-09-18 against Claude Code.
+      overrides:
+        - field: max_tokens
+          value: 8192
       routes:
         "/v1/messages": Messages
       modelAliases:
