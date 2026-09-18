@@ -1,0 +1,82 @@
+# Claude Code's own path through the same two hops.
+#
+# Claude Code does not speak the OpenAI API. It posts the Anthropic Messages API at
+# /v1/messages, and it is the only client in this lab that does. Everything else about the
+# journey is unchanged: the router still classifies the prompt, OPA still decides the pool
+# and the class, and the decision route still picks the backend from those two headers.
+# These are the same rules as /v1/chat/completions with a different path, so a prompt from
+# Claude Code and the same prompt from an editor take the same decision and land on the
+# same model.
+#
+# The translation is the one extra piece, and it lives on the backends in 40-backends.yaml:
+# the two GPU backends carry `routes: {"/v1/messages": Messages}`, which is what turns an
+# inbound Messages request into chat completions for vLLM and the chat completion back into
+# a Messages response for Claude Code. The Anthropic backend needs no translation, because
+# Messages is already its own API, but it is declared there too so the intent is readable.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: claude-classify-then-decide
+  namespace: agentgateway-system
+spec:
+  hostnames:
+    - model-gateway.agentgateway-system.svc.cluster.local
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: model-gateway
+      sectionName: http
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/messages}
+      backendRefs:
+        - name: decision-gateway
+          port: 80
+---
+# The decision gateway's rules for Messages. One per row of the table in 60-decision-route.yaml,
+# and the same no-catch-all rule: a request that arrives with no pool header gets a 404
+# rather than a default backend.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: claude-decision-routing
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: decision-gateway
+      sectionName: http
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/messages}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: coding}
+      backendRefs:
+        - {name: vllm-qwen, group: agentgateway.dev, kind: AgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/messages}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: finance}
+      backendRefs:
+        - {name: vllm-mistral, group: agentgateway.dev, kind: AgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/messages}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: general}
+      backendRefs:
+        - {name: vllm-mistral, group: agentgateway.dev, kind: AgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/messages}
+          headers:
+            - {type: Exact, name: x-model-pool, value: approved-frontier}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-routing-user, x-routing-reason, x-source-repo]
+      backendRefs:
+        - {name: anthropic, group: agentgateway.dev, kind: AgentgatewayBackend}

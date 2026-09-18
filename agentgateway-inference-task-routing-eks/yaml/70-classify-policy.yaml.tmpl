@@ -57,6 +57,12 @@ spec:
         requestHeaderMode: Send
         requestBodyMode: Buffered
         responseHeaderMode: Send
-        responseBodyMode: Buffered
+        # None, not Buffered. The router classifies the request; it has no use for the
+        # response body. Buffering it breaks the Claude Code path: on /v1/messages the
+        # backend hands back a translated Anthropic Messages response, the router cannot
+        # read that shape, and what reaches the client is a correct envelope with an empty
+        # content array (streaming stops after message_start). Measured on 2026-09-18,
+        # agentgateway-enterprise 2026.9.0. The OpenAI path is unaffected either way.
+        responseBodyMode: None
         allowModeOverride: true
       failureMode: FailClosed

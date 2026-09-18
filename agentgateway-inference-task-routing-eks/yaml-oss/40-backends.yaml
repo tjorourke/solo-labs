@@ -24,6 +24,10 @@ spec:
       path: /v1/chat/completions
   policies:
     ai:
+      # Claude Code posts /v1/messages. Messages in, chat completions out to vLLM, and the
+      # chat completion translated back to a Messages response on the way home.
+      routes:
+        "/v1/messages": Messages
       modelAliases:
         code_review: qwen3-coder-30b
         code_modification: qwen3-coder-30b
@@ -44,6 +48,9 @@ spec:
       path: /v1/chat/completions
   policies:
     ai:
+      # Same translation as vllm-qwen, for the finance and general rows of the table.
+      routes:
+        "/v1/messages": Messages
       modelAliases:
         finance: mistral-small-3.2-24b
         uncertain: mistral-small-3.2-24b
@@ -62,5 +69,9 @@ spec:
       secretRef:
         name: anthropic-secret
     ai:
+      # Declared for symmetry. Messages is already this provider's own API, so nothing is
+      # translated here; the request passes through in the shape Claude Code sent it.
+      routes:
+        "/v1/messages": Messages
       modelAliases:
         generic_coding: claude-sonnet-5

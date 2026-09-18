@@ -44,6 +44,10 @@ spec:
         requestHeaderMode: Send
         requestBodyMode: Buffered
         responseHeaderMode: Send
-        responseBodyMode: Buffered
+        # None, not Buffered. The router classifies the request and has no use for the
+        # response body. Buffering it breaks the Claude Code path: the backend hands back a
+        # translated Anthropic Messages response, the router cannot read that shape, and the
+        # client gets a correct envelope with an empty content array.
+        responseBodyMode: None
         allowModeOverride: true
       failureMode: FailClosed
