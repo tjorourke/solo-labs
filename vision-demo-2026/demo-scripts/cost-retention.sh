@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# cost-retention.sh — put a retention window on the Cost Management rollups so a
-# long-lived demo cluster stays cheap to run.
-#
-# Why this exists. The management ClickHouse refreshes its rollups every sixty
-# seconds. Twenty one of its forty one tables ship with a TTL; the rest keep
-# every five minute bucket forever, whether or not anyone sent a request. The
-# refresh then rescans a table that only ever grows, so CPU climbs with the age
-# of the cluster rather than with the traffic through it. On a cluster left up
-# for nine days that reached 135% of a core and 3.7GB resident, for a database
-# nobody was reading.
-#
-# Restarting does not help, because a restart does not make the data smaller.
-# A retention window does.
+# cost-retention.sh — put a retention window on the Cost Management rollups on a
+# demo cluster that is left up for weeks.
 #
 #   ./demo-scripts/cost-retention.sh            apply the default 3 day window
 #   AD_RETENTION_DAYS=7 ./demo-scripts/cost-retention.sh

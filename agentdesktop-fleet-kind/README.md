@@ -17,7 +17,6 @@ JWT instead of an Anthropic key.
 | `yaml/daemon.yaml` | The entire local configuration on a managed workstation. Everything else arrives from the controller. |
 | `yaml/gateway.yaml` | The gateway half: strict JWT against the controller JWKS, the Anthropic backend and the `/v1/messages` route. |
 | `yaml/enrol-mac.sh` | Downloads and signs the device binary, prints the `/etc/hosts` lines, previews the change, enrols, and shows what landed in Claude Code. |
-| `yaml/cost-retention.sh` | Puts a retention window on the Cost Management rollups so a long-lived cluster does not climb in CPU with age. |
 | `yaml/workstation/` | Builds a workstation image from the published Linux binary and completes the Keycloak sign-in, for bringing up more than one machine. |
 
 ## Prerequisites
@@ -86,15 +85,3 @@ work, so an unreachable cluster still leaves the laptop back to normal. Restart
 Claude Code and Claude Desktop afterwards.
 
 Remove everything with `./yaml/agentdesktop.sh teardown`.
-
-## Where this goes wrong
-
-- The controller chart defaults `image.tag` to its `appVersion`, and only
-  `latest` is published, so the tag has to be pinned or the pod sits in
-  `ImagePullBackOff`.
-- Keycloak 26 raises a `VERIFY_PROFILE` required action on an account with no
-  first name, which interrupts the authorization code flow before a code is
-  issued and leaves the daemon on `awaitingAuthentication`.
-- `policies.ai.routes` decides whether the gateway answers Anthropic's native
-  Messages schema. Without it an AI backend normalises to the OpenAI schema,
-  the request still succeeds, and Claude Code cannot read the reply.

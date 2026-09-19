@@ -381,15 +381,10 @@ spec:
 EOF
 ok "gateway accepts only agentdesktop-controller tokens (aud: agentgateway)"
 
-# ── 7. Keep a long-lived cluster cheap ────────────────────────────────────────
-# The Cost Management rollups refresh every sixty seconds and half of the tables
-# ship with no TTL, so CPU climbs with the age of the cluster rather than with
-# its traffic. Bound it once here.
-if kc -n solo-cost get pod management-clickhouse-shard0-0 >/dev/null 2>&1; then
-  step "Cost Management retention"
-  "$SCRIPT_DIR/cost-retention.sh" >/dev/null 2>&1 \
-    && ok "rollups bounded to ${AD_RETENTION_DAYS:-3} days" \
-    || warn "could not set retention; run ./demo-scripts/cost-retention.sh by hand"
+# ── 7. Housekeeping for a long-lived demo cluster ─────────────────────────────
+# Optional, and only present in the demo driver.
+if [ -x "$SCRIPT_DIR/cost-retention.sh" ] && kc -n solo-cost get pod management-clickhouse-shard0-0 >/dev/null 2>&1; then
+  "$SCRIPT_DIR/cost-retention.sh" >/dev/null 2>&1 || true
 fi
 
 # ── 8. What the workstation needs ─────────────────────────────────────────────
