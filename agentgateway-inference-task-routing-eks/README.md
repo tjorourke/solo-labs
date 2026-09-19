@@ -62,10 +62,11 @@ the table can select; the task determines the preferred one.
 | `generic_coding` | approved-frontier, if permitted; otherwise private | coding | Claude Sonnet, or Qwen3-Coder |
 | `uncertain` | private | general | Mistral-Small-24B |
 
-### What to ask it
+### Prompts
 
-Three models, four areas of expertise. Send these at the one endpoint with nothing but a
-token. Each was run against the gateway on 19 September 2026 and landed where it says.
+Three models, four areas of expertise. Every prompt goes to the same endpoint with the
+same token, and names no model and no place. Each was run against the gateway on
+19 September 2026 and landed where it says.
 
 | Ask | Task | Where it lands |
 |---|---|---|
