@@ -32,8 +32,20 @@ spec:
       # not wrong, so the gateway settles it: an override caps every request here,
       # whatever the caller asked for, and one request cannot claim the whole window.
       # Measured 2026-09-18 against Claude Code.
+      #
+      # Both spellings, because the override matches the field name on the request as the
+      # backend sees it. An OpenAI client sends max_tokens and is capped by the first
+      # entry; Claude Code arrives on /v1/messages and the conversion to chat completions
+      # emits max_completion_tokens, which the first entry does not match, so before the
+      # second entry existed the cap silently did not apply to the one client the note
+      # above names. It showed up as a 400 on Mistral and not on Qwen: 64000 output fits
+      # inside Qwen's 262144 window whatever the prompt, and crosses Mistral's 131072 as
+      # soon as the conversation passes about 67k tokens, which an agent session does
+      # almost immediately. Measured 2026-09-19.
       overrides:
         - field: max_tokens
+          value: 32768
+        - field: max_completion_tokens
           value: 32768
       modelAliases:
         code_review: qwen3-coder-30b
@@ -61,8 +73,20 @@ spec:
       # not wrong, so the gateway settles it: an override caps every request here,
       # whatever the caller asked for, and one request cannot claim the whole window.
       # Measured 2026-09-18 against Claude Code.
+      #
+      # Both spellings, because the override matches the field name on the request as the
+      # backend sees it. An OpenAI client sends max_tokens and is capped by the first
+      # entry; Claude Code arrives on /v1/messages and the conversion to chat completions
+      # emits max_completion_tokens, which the first entry does not match, so before the
+      # second entry existed the cap silently did not apply to the one client the note
+      # above names. It showed up as a 400 on Mistral and not on Qwen: 64000 output fits
+      # inside Qwen's 262144 window whatever the prompt, and crosses Mistral's 131072 as
+      # soon as the conversation passes about 67k tokens, which an agent session does
+      # almost immediately. Measured 2026-09-19.
       overrides:
         - field: max_tokens
+          value: 32768
+        - field: max_completion_tokens
           value: 32768
       modelAliases:
         finance: mistral-small-3.2-24b

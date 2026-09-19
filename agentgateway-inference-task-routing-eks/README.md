@@ -181,7 +181,47 @@ yaml/90-intake-gateway.yaml       the front door, ClusterIP
 yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped
 yaml/92-intake-route.yaml         everything under /v1/ to the public gateway, Host rewritten
 yaml-oss/                         the same set on the OSS CRDs, no licence needed
+tofu/                             optional: the two public names, their certificates and their ELBs
 ```
+
+### Publishing the endpoints (optional)
+
+Everything above is ClusterIP and a port-forward, which serves `curl` and the scripts. A
+real editor needs more than that: Cursor sends its chat completions from Cursor's own
+backend rather than from the laptop, so the endpoint has to be reachable from the internet
+with a certificate a browser already trusts.
+
+`tofu/` is that, and nothing in the flow depends on it. It reads an existing Route53 hosted
+zone and creates, per name, an ACM certificate validated by DNS, a LoadBalancer Service and
+a CNAME pointing at the ELB that came back. The certificate ARN is why this is OpenTofu
+rather than two more files in `yaml/`: it does not exist until ACM has issued it, so a
+manifest would need somebody to paste it in, and then nothing in the repository describes
+the running cluster.
+
+```bash
+ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh            # plan, then apply
+ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh refresh-ip # new home address
+ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh adopt      # take over endpoints made by hand
+ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh destroy
+```
+
+Then point a client at it:
+
+```bash
+HOST=$(tofu -chdir=tofu output -raw gateway_host) ./scripts/10-claude-code.sh
+```
+
+Two endpoints, published differently on purpose. The model endpoint is open, because every
+request carries a JWT the gateway verifies and OPA decides what the subject may reach, so
+the control is the token rather than the address; an allowlist would also refuse Cursor,
+which arrives from Cursor's backend. The UI is not behind that policy and reaching it is
+enough to read every prompt in the decision log, so it is published to the addresses in
+`ui_allowed_cidrs` and the variable has no default.
+
+A dynamic home address is the failure that variable causes most. The security group goes on
+allowing an address your ISP has moved on from, the SYN is dropped rather than refused, and
+the browser reports a timeout with nothing in any cluster log to explain it. `refresh-ip`
+puts the current one back.
 
 ### Teardown
 
