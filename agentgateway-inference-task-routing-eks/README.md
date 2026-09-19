@@ -157,6 +157,46 @@ IdP replaces the inline JWKS with `jwks.remote`. Nothing else changes.
 
 ## Test
 
+### Live decision dashboard
+
+```bash
+kubectl config get-contexts
+KUBE_CONTEXT=your-lab-context python3 scripts/30-dashboard.py
+```
+
+Open <http://localhost:8900/>. This is the dashboard's canonical location; its scripts are
+mirrored with the lab. It reads OPA decisions and decision-gateway access logs, matching
+`traceparent` to the access log's trace **and span** IDs. It does not guess by user or time,
+so concurrent requests cannot swap their backend model or HTTP status.
+
+It loads the last 15 minutes on startup (`DASHBOARD_SINCE=5m` changes that window), follows
+new requests, and binds only to loopback. `DASHBOARD_PORT` defaults to `8900`.
+Requests with no backend result stay pending, not successful. Rows are grouped by caller
+and displayed prompt, not a verified conversation ID. Housekeeping can be hidden with the
+checkbox; system-reminder text is omitted from the displayed question, not from OPA's inspection.
+Classification latency is omitted because this router build does not supply a correlatable
+request ID in its decision log.
+
+### Desktop compatibility
+
+```bash
+python3 scripts/12-test-desktop.py \
+  --base-url https://agw.example.com \
+  --token-file "$HOME/.config/agw/token"
+python3 scripts/test_dashboard.py
+```
+
+Use bob's token for the live suite. It checks telco classification with Claude reminders,
+content-part arrays and tool follow-ups, plus internal-code and credential controls. The
+dashboard tests are isolated and exercise concurrent and out-of-order events.
+
+The intake policy appends the latest human text without system-reminder blocks for VSR
+classification; all original messages remain for OPA and the model. Mistral's final backend
+transformation consolidates system text into one leading message while preserving non-system
+messages and tool-call IDs. This avoids its `Unexpected role 'system' after role 'tool'`
+HTTP 400. Later system instructions move to the beginning of the model context, so this is
+a Mistral compatibility adapter, not a general requirement for every provider.
+
 ```bash
 source identity/tokens.env
 ./scripts/06-test-flow.sh         # 9   bob's six prompts and alice's one

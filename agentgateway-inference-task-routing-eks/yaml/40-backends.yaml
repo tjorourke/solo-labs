@@ -92,6 +92,17 @@ spec:
         finance: mistral-small-3.2-24b
         telco: mistral-small-3.2-24b
         uncertain: mistral-small-3.2-24b
+      # Mistral requires system instructions before user/assistant/tool turns. Claude
+      # can add a system message after tool results, which this tokenizer rejects.
+      # Preserve all system text in order in one leading message. Other messages,
+      # tool-call IDs and results are unchanged. OPA already saw the original body.
+      finalTransformations:
+        - field: messages
+          expression: >-
+            llmRequest.messages.filter(m, m.role == "system").size() == 0 ? llmRequest.messages :
+            [{"role": "system", "content": llmRequest.messages.filter(m, m.role == "system").map(m,
+              type(m.content) == string ? m.content : m.content.map(p, p.text).join("\n")).join("\n\n")}]
+            + llmRequest.messages.filter(m, m.role != "system")
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
