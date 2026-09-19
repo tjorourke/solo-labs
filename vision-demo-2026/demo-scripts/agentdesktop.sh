@@ -12,7 +12,10 @@
 #     an Anthropic route that answers the native /v1/messages API Claude Code
 #     speaks
 #
-#   SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/agentdesktop.sh
+#   ./demo-scripts/agentdesktop.sh
+#
+# No secrets are needed here. The Anthropic key was already stored in the
+# cluster by llm-gateway.sh; this script never sees it.
 #
 # Idempotent — re-run freely. Remove with: ./demo-scripts/agentdesktop.sh teardown
 set -Eeuo pipefail
@@ -26,10 +29,15 @@ CLIENT_ID=agentdesktop
 # The controller image publishes only :latest. The chart would otherwise
 # default image.tag to its appVersion (0.1.0), which is not a published tag.
 CONTROLLER_IMAGE_TAG="${CONTROLLER_IMAGE_TAG:-latest}"
-CHART="${AGENTDESKTOP_CHART:-$HOME/code/solo/agentdesktop/deploy/helm/agentdesktop-controller}"
+# The controller chart ships in the project repository. Point AGENTDESKTOP_CHART
+# at a checkout you already have, otherwise a shallow clone is made next to this
+# script and reused.
+AGENTDESKTOP_REPO="${AGENTDESKTOP_REPO:-https://github.com/agentdesktop-dev/agentdesktop.git}"
+CHART="${AGENTDESKTOP_CHART:-}"
 
 step() { printf '\n\033[1;36m══> %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+log()  { printf '  %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 kc()   { kubectl --context "$CTX" "$@"; }
@@ -48,12 +56,21 @@ fi
 
 # ── Prereqs ───────────────────────────────────────────────────────────────────
 step "Checking prereqs"
-for t in kubectl helm openssl jq curl; do command -v "$t" >/dev/null || die "$t not found"; done
+for t in kubectl helm openssl jq curl git; do command -v "$t" >/dev/null || die "$t not found"; done
 kc get ns "$GW_NS" >/dev/null 2>&1 || die "$GW_NS missing — run ./demo-scripts/setup.sh first"
 kc -n "$GW_NS" get gateway ai-gateway >/dev/null 2>&1 \
   || die "ai-gateway missing — run ./demo-scripts/llm-gateway.sh first"
 kc -n "$GW_NS" get secret anthropic-secret >/dev/null 2>&1 \
   || die "anthropic-secret missing — run ./demo-scripts/llm-gateway.sh first"
+if [ -z "$CHART" ]; then
+  SRC_DIR="$SCRIPT_DIR/.agentdesktop-src"
+  if [ ! -d "$SRC_DIR/.git" ]; then
+    log "fetching the Agentdesktop chart from $AGENTDESKTOP_REPO"
+    git clone --depth 1 "$AGENTDESKTOP_REPO" "$SRC_DIR" >/dev/null 2>&1 \
+      || die "could not clone $AGENTDESKTOP_REPO (set AGENTDESKTOP_CHART to a local checkout instead)"
+  fi
+  CHART="$SRC_DIR/deploy/helm/agentdesktop-controller"
+fi
 [ -d "$CHART" ] || die "controller chart not found at $CHART (set AGENTDESKTOP_CHART)"
 ok "tools, ai-gateway and the Anthropic secret are present"
 
@@ -364,7 +381,18 @@ spec:
 EOF
 ok "gateway accepts only agentdesktop-controller tokens (aud: agentgateway)"
 
-# ── 7. What the workstation needs ─────────────────────────────────────────────
+# ── 7. Keep a long-lived cluster cheap ────────────────────────────────────────
+# The Cost Management rollups refresh every sixty seconds and half of the tables
+# ship with no TTL, so CPU climbs with the age of the cluster rather than with
+# its traffic. Bound it once here.
+if kc -n solo-cost get pod management-clickhouse-shard0-0 >/dev/null 2>&1; then
+  step "Cost Management retention"
+  "$SCRIPT_DIR/cost-retention.sh" >/dev/null 2>&1 \
+    && ok "rollups bounded to ${AD_RETENTION_DAYS:-3} days" \
+    || warn "could not set retention; run ./demo-scripts/cost-retention.sh by hand"
+fi
+
+# ── 8. What the workstation needs ─────────────────────────────────────────────
 cat > "$SCRIPT_DIR/.agentdesktop-env" <<EOF
 export AD_CONTROLLER_IP=$AD_IP
 export AD_KEYCLOAK_IP=$KC_IP

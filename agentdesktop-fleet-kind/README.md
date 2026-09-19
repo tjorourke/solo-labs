@@ -16,6 +16,8 @@ JWT instead of an Anthropic key.
 | `yaml/agentdesktop.sh` | The whole standup: Keycloak `corp` realm and accounts, PostgreSQL, device CA and JWT signing key, the controller by Helm, and the gateway policy. Idempotent, with `teardown`. |
 | `yaml/daemon.yaml` | The entire local configuration on a managed workstation. Everything else arrives from the controller. |
 | `yaml/gateway.yaml` | The gateway half: strict JWT against the controller JWKS, the Anthropic backend and the `/v1/messages` route. |
+| `yaml/enrol-mac.sh` | Downloads and signs the device binary, prints the `/etc/hosts` lines, previews the change, enrols, and shows what landed in Claude Code. |
+| `yaml/cost-retention.sh` | Puts a retention window on the Cost Management rollups so a long-lived cluster does not climb in CPU with age. |
 | `yaml/workstation/` | Builds a workstation image from the published Linux binary and completes the Keycloak sign-in, for bringing up more than one machine. |
 
 ## Prerequisites
@@ -27,15 +29,19 @@ This targets an existing cluster. It does not create one.
 2. The AI gateway standup, which provides the `ai-gateway` Gateway and the
    `anthropic-secret` this lab puts Agentdesktop in front of.
 3. `ANTHROPIC_API_KEY`, read once and stored as a Secret in the cluster.
-4. The Agentdesktop device binary from the project releases. The assets are
-   unsigned, so on macOS run `codesign --force --sign - agentdesktop` or the
-   binary is killed on launch.
+4. The Agentdesktop device binary. `./yaml/enrol-mac.sh binary` downloads the
+   release asset for your platform, checks the digest and adds the ad-hoc
+   signature macOS needs before it will run an unsigned binary.
 
 ## Run it
 
 ```bash
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./yaml/agentdesktop.sh
+./yaml/agentdesktop.sh
 ```
+
+No secrets are needed here. The Anthropic key was already stored in the cluster
+by the AI gateway standup, and the controller chart is fetched from the project
+repository unless `AGENTDESKTOP_CHART` points at a checkout you already have.
 
 It prints the controller and Keycloak addresses and the two `/etc/hosts`
 entries the workstation needs. The device certificate is issued for the
@@ -48,10 +54,16 @@ Console:
 kubectl -n agentdesktop port-forward deploy/agentdesktop 18099:8080
 ```
 
-Enrol this machine:
+Enrol this machine. Preview first: the daemon reconciles into Claude Code's
+real `settings.json`, which affects every Claude Code session on the machine.
+`AD_SAFE=1` sends the managed file to `/tmp` instead.
 
 ```bash
-agentdesktop daemon --user --config yaml/daemon.yaml
+./yaml/enrol-mac.sh binary
+./yaml/enrol-mac.sh hosts      # add the two lines with sudo
+./yaml/enrol-mac.sh preview
+./yaml/enrol-mac.sh up         # browser opens, sign in tom / password
+./yaml/enrol-mac.sh check
 ```
 
 Accounts are `tom`, `priya` and `leaver`, all with the password `password`.

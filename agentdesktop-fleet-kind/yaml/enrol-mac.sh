@@ -2,6 +2,7 @@
 # agentdesktop-enrol-mac.sh — enrol this Mac with the controller and show the
 # policy land in Claude Code's own settings file.
 #
+#   ./demo-scripts/agentdesktop-enrol-mac.sh binary    download + sign the device binary
 #   ./demo-scripts/agentdesktop-enrol-mac.sh hosts     print the /etc/hosts lines
 #   ./demo-scripts/agentdesktop-enrol-mac.sh preview   enrol, then diff without writing
 #   ./demo-scripts/agentdesktop-enrol-mac.sh up        enrol and stay running
@@ -17,7 +18,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$SCRIPT_DIR/.agentdesktop-env" ] || { echo "run ./demo-scripts/agentdesktop.sh first"; exit 1; }
 . "$SCRIPT_DIR/.agentdesktop-env"
 
-AD_BIN="${AD_BIN:-$HOME/code/solo/agentdesktop/bin/agentdesktop}"
+# Use whatever is on PATH, else a copy this script downloaded, else explain how
+# to get one. AD_BIN overrides all of it.
+AD_VERSION="${AD_VERSION:-v0.1.1}"
+BIN_DIR="$SCRIPT_DIR/.agentdesktop-bin"
+AD_BIN="${AD_BIN:-}"
+if [ -z "$AD_BIN" ]; then
+  if command -v agentdesktop >/dev/null 2>&1; then AD_BIN="$(command -v agentdesktop)"
+  else AD_BIN="$BIN_DIR/agentdesktop"; fi
+fi
 CFG="$SCRIPT_DIR/yaml-agentdesktop/daemon.yaml"
 CA=/tmp/agentdesktop-device-ca.pem
 CTRL_HOST=agentdesktop.agentdesktop.svc.cluster.local
@@ -31,7 +40,35 @@ fi
 
 need_hosts() { ! grep -q "$CTRL_HOST" /etc/hosts || ! grep -q "$KC_HOST" /etc/hosts; }
 
+have_bin() { [ -x "$AD_BIN" ]; }
+need_bin() {
+  have_bin || { echo "No agentdesktop binary found."; echo "Run: $0 binary"; exit 1; }
+}
+
 case "${1:-up}" in
+
+binary)
+  # The release assets are not signed, so macOS kills the binary on launch
+  # until it carries an ad-hoc signature.
+  OS=darwin; [ "$(uname -s)" = "Linux" ] && OS=linux
+  ARCH=arm64; [ "$(uname -m)" = "x86_64" ] && ARCH=amd64
+  ASSET="agentdesktop-${OS}-${ARCH}"
+  mkdir -p "$BIN_DIR"; cd "$BIN_DIR"
+  echo "→ downloading $ASSET ($AD_VERSION)"
+  if command -v gh >/dev/null 2>&1; then
+    gh release download "$AD_VERSION" --repo agentdesktop-dev/agentdesktop \
+      --pattern "${ASSET}*" --dir . --clobber
+  else
+    base="https://github.com/agentdesktop-dev/agentdesktop/releases/download/$AD_VERSION"
+    curl -fsSL -o "$ASSET" "$base/$ASSET"
+    curl -fsSL -o "$ASSET.sha256" "$base/$ASSET.sha256"
+  fi
+  shasum -a 256 -c "$ASSET.sha256"
+  mv -f "$ASSET" agentdesktop && chmod +x agentdesktop
+  [ "$OS" = darwin ] && codesign --force --sign - agentdesktop
+  echo "→ $BIN_DIR/agentdesktop"
+  ./agentdesktop --help >/dev/null && echo "✔ runs"
+  ;;
 
 hosts)
   cat <<EOF
@@ -48,15 +85,15 @@ EOF
 
 preview)
   need_hosts && { "$0" hosts; exit 1; }
-  [ -x "$AD_BIN" ] || { echo "no agentdesktop binary at $AD_BIN"; exit 1; }
-  [ -f "$CA" ] || { echo "no device CA at $CA — re-run agentdesktop.sh"; exit 1; }
+  need_bin
+  [ -f "$CA" ] || { echo "no device CA at $CA. Re-run agentdesktop.sh"; exit 1; }
   echo "→ enrols to collect the policy, then prints the diff and writes nothing"
   "$AD_BIN" daemon --user --config "$CFG" "${SAFE_ARGS[@]}" --dry-run
   ;;
 
 up)
   need_hosts && { "$0" hosts; exit 1; }
-  [ -x "$AD_BIN" ] || { echo "no agentdesktop binary at $AD_BIN"; exit 1; }
+  need_bin
   echo "→ starting the daemon. A browser opens: sign in as tom / password."
   [ "${AD_SAFE:-0}" = "1" ] && echo "  (AD_SAFE=1: managed Claude Code settings go to /tmp)"
   exec "$AD_BIN" daemon --user --config "$CFG" "${SAFE_ARGS[@]}"
@@ -92,5 +129,5 @@ keep={k:d[k] for k in ('apiKeyHelper','companyAnnouncements','env','sandbox') if
 print(json.dumps(keep, indent=2))"
   ;;
 
-*) echo "usage: $0 {hosts|preview|up|status|check|settings}"; exit 1 ;;
+*) echo "usage: $0 {binary|hosts|preview|up|status|check|settings}"; exit 1 ;;
 esac
