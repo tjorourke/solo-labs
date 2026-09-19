@@ -68,7 +68,7 @@ real `settings.json`, which affects every Claude Code session on the machine.
 
 Accounts are `tom`, `priya` and `leaver`, all with the password `password`.
 
-## Sharing a laptop with another gateway demo
+## Two demos on one laptop
 
 Claude Code has one base URL and one credential helper, so two demos that route
 it through a gateway will overwrite each other. `enrol-mac.sh` refuses to start
@@ -87,7 +87,7 @@ Claude Code and Claude Desktop afterwards.
 
 Remove everything with `./yaml/agentdesktop.sh teardown`.
 
-## Three things that will catch you out
+## Where this goes wrong
 
 - The controller chart defaults `image.tag` to its `appVersion`, and only
   `latest` is published, so the tag has to be pinned or the pod sits in
