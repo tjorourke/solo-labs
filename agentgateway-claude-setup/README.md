@@ -13,11 +13,48 @@ kubectl apply -f yaml/       # or yaml-oss/
 | File | What it is |
 | --- | --- |
 | `00-gateway.yaml` | A Gateway named `my-gateway`, HTTP listener, ClusterIP Service |
-| `10-backend.yaml` | The backend both clients reach: `/v1/messages` marked as Messages, and a `max_tokens` cap |
+| `10-backend.yaml` | Messages translation, native token counting and fixed replacements for both output-token field spellings |
 | `20-route.yaml` | Everything under `/v1/` to that backend |
 
-Edit before applying: the model and host in `10-backend.yaml`. Drop the `routes` entry if the
-provider behind the gateway is Anthropic, and keep it for anything OpenAI shaped.
+Edit before applying: the model and host in `10-backend.yaml`. `Messages` enables translation
+for an OpenAI-compatible provider; `AnthropicTokenCount` handles the separate sizing endpoint.
+The output-token overrides replace smaller client values too; they are not conditional caps.
+
+## Claude Desktop on macOS: file-based setup
+
+Follow the [managed configuration walkthrough](https://mastertheagent.com/solo/agentgateway-claude-setup/#desktop-managed-setup).
+It contains the complete profile-generation command and was verified with Claude Desktop
+2.2553.1 on 2026-09-19. No Developer menu or manual token entry is required.
+
+1. Set `AGW_BASE_URL` to the gateway base URL, without `/v1`, and `AGW_TOKEN_FILE` to a file
+   holding a valid caller JWT. Remote endpoints require HTTPS; loopback HTTP also works.
+2. Run the Python snippet in the walkthrough to write
+   `$TMPDIR/com.anthropic.claudefordesktop.plist`. It sets `inferenceProvider=gateway`,
+   `inferenceCredentialKind=apiKey`, `inferenceGatewayAuthScheme=bearer`, an explicit model
+   list and discovery off. Every managed value is a string, including JSON and booleans.
+3. Install the generated file, not just the temporary copy:
+
+   ```bash
+   sudo mkdir -p "/Library/Managed Preferences"
+   sudo install -m 644 -o root -g wheel "$TMPDIR/com.anthropic.claudefordesktop.plist" "/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
+   plutil -lint "/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
+   ```
+
+4. Fully quit Claude Desktop and reopen it. Closing its window does not reload settings.
+5. Check the current startup in `~/Library/Logs/Claude-3p/main.log` for
+   `inference apiHost=<your gateway>` and `ConfigHealth` with `provider: 'gateway'` and
+   `state: 'healthy'`.
+6. Send a new Chat prompt. Verify its HTTP status, caller identity and serving model in the
+   gateway logs. If a local decision dashboard is running, refresh it before sending the prompt.
+
+Creating `Claude-3p/claude_desktop_config.json` alone did not switch the tested app into
+third-party mode. Use the managed plist as the configuration source. It takes precedence
+over local settings, so editing `deploymentMode` alone is not a reliable off switch.
+The static JWT is copied into the plist: after renewal, regenerate, reinstall and restart.
+Do not replace an organisation-managed profile locally; update it through the management system.
+
+The [agentgateway Claude Desktop documentation](https://agentgateway.dev/docs/standalone/latest/integrations/llm/clients/claude-desktop/)
+covers interactive sign-in and managed fleet deployments.
 
 The configuration here was validated as part of
 [the prompt-aware model routing labs](https://github.com/tjorourke/solo-labs/tree/main/agentgateway-inference-task-routing-eks),

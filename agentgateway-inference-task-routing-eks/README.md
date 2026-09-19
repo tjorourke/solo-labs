@@ -205,7 +205,7 @@ ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh adopt      # t
 ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh destroy
 ```
 
-Then point a client at it:
+Configure terminal Claude Code, or run the Desktop endpoint preflight:
 
 ```bash
 HOST=$(tofu -chdir=tofu output -raw gateway_host) ./scripts/10-claude-code.sh
@@ -214,23 +214,49 @@ HOST=$(tofu -chdir=tofu output -raw gateway_host) ./scripts/11-claude-desktop.sh
 
 ### Claude Desktop
 
-Claude Desktop is not Claude Code and shares none of its configuration. It never reads
-`~/.claude/settings.json`, so anything that points Claude Code at a gateway does nothing
-here, and one machine can run Claude Code on the gateway and Desktop on Anthropic at the
-same time. Desktop has its own setting, under developer mode: **Help > Troubleshooting >
-Enable Developer Mode**, then **Developer > Configure Third Party Inference > Gateway**.
+The [Claude Desktop section of the lab](https://mastertheagent.com/solo/agentgateway-inference-task-routing-eks/#claude-desktop)
+contains the complete terminal-only setup, including the Python that generates the plist.
+No Developer menu or token pasting is required. Desktop's inference settings are separate
+from terminal Claude Code's `~/.claude/settings.json`.
 
-`./scripts/11-claude-desktop.sh [employee]` prints the values to type and then makes the
-calls Desktop makes, so a broken endpoint fails there rather than in front of an audience.
-Three things it checks that are easy to get wrong:
+1. Run `scripts/01-identity.sh` with this lab's existing signing key and save `BOB_TOKEN`
+   to `~/.config/agw/token` with mode `600`. Do not create a new signing key for a gateway
+   that still trusts a different JWKS.
+2. Generate `$TMPDIR/com.anthropic.claudefordesktop.plist` using the lab's Python snippet.
+   Use your gateway URL, `apiKey` credential kind and `bearer` auth scheme. This sends
+   bob's JWT in `Authorization: Bearer`; it does not send a provider key to the desktop.
+3. Install the generated profile:
 
-- **Bearer token, not API key.** Desktop sends an API key as `X-Api-Key` and a bearer token
-  as `Authorization: Bearer`. The gateway's JWT policy reads the second, so the API key
-  choice arrives with no credential.
-- **HTTPS.** Desktop refuses a plain HTTP base URL anywhere but loopback, so a port-forward
-  cannot serve it. That is what `tofu/` is for.
-- **Restart.** The setting is read once, at launch. A running app keeps what it started
-  with, which looks like the gateway ignoring you.
+   ```bash
+   sudo mkdir -p "/Library/Managed Preferences"
+   sudo install -m 644 -o root -g wheel "$TMPDIR/com.anthropic.claudefordesktop.plist" "/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
+   plutil -lint "/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
+   ```
+
+4. Fully quit and reopen Desktop. Check the current startup log at
+   `~/Library/Logs/Claude-3p/main.log` for your gateway's `inference apiHost` and a healthy
+   gateway configuration. Writing a file into `Claude-3p/` alone did not activate the tested app.
+5. In a new **Chat** conversation, ask `Explain what a Python list comprehension is`.
+   Watch `decision-gateway` for bob, HTTP 200 and the actual serving model. If the separately
+   started dashboard at `http://localhost:8900/` is in use, refresh it and reset filters
+   before asking. It follows new requests after startup; the profile does not start it.
+
+`scripts/11-claude-desktop.sh` tests the endpoint, but does not install Desktop's settings.
+Remote URLs require HTTPS. A local port-forward at `http://127.0.0.1:<port>` also works.
+The managed profile takes precedence over local `deploymentMode` changes. Its static JWT
+must be renewed by regenerating and reinstalling the plist, then restarting Desktop.
+
+Desktop's **Code** mode can attach repository instructions, files and tool results. Such a
+request may stay private even when the typed question looks generic. Title-generation
+requests are also separate from the user's prompt and can route differently.
+
+The gateway prerequisites remain in `yaml/91-intake-policy.yaml`, `yaml/92-intake-route.yaml`
+and `yaml/40-backends.yaml`: request normalisation, Messages and token-count mappings, and
+provider configuration. The private backends' token overrides replace client values,
+including smaller ones; they are not conditional caps. JWT policies authenticate the caller.
+
+See the [agentgateway Claude Desktop documentation](https://agentgateway.dev/docs/standalone/latest/integrations/llm/clients/claude-desktop/)
+for OIDC sign-in and managed fleet delivery.
 
 Two endpoints, published differently on purpose. The model endpoint is open, because every
 request carries a JWT the gateway verifies and OPA decides what the subject may reach, so
