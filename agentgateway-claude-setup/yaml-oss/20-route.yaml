@@ -1,0 +1,18 @@
+# /v1/messages is what both clients send. /v1/models is what a client calls to list what it
+# may ask for, and an empty answer there leaves Claude Desktop's picker empty, so the prefix
+# rule covers both.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: claude-routing
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: my-gateway
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/}
+      backendRefs:
+        - {name: my-model, group: agentgateway.dev, kind: AgentgatewayBackend}

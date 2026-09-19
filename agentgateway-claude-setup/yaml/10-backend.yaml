@@ -1,0 +1,35 @@
+# The backend both Claude clients reach.
+#
+# `routes` is the field that decides whether any of this works toward an OpenAI-shaped
+# provider. It marks /v1/messages as Messages, which turns the Messages request into chat
+# completions on the way in and the chat completion back into a Messages response on the way
+# out, tool calls in both directions. Without it the path falls through as passthrough and the
+# client gets raw chat.completion JSON: a clean 200 that Claude Code cannot read.
+#
+# Toward a real Anthropic provider the `routes` entry is not needed.
+#
+# The max_tokens override is the other thing an agent client forces you to think about. Claude
+# Code asks for 64,000 output tokens, which is more than a self-hosted model's whole context,
+# and vLLM rejects the request outright with "max_completion_tokens=64000 cannot be greater
+# than max_model_len". The client is not wrong and the model is not wrong, so the gateway
+# settles it: every request here is capped, whatever the caller asked for.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: my-model
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: my-model
+      host: vllm.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions
+  policies:
+    ai:
+      routes:
+        "/v1/messages": Messages
+      overrides:
+        - field: max_tokens
+          value: 32768

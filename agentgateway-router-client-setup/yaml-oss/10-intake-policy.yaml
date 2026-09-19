@@ -1,0 +1,83 @@
+# What a client sends is not what the rest of this flow can read, so the intake hop makes it
+# so before anything else looks at it. Two problems, both found by pointing a real editor at
+# the gateway rather than curl.
+#
+# 1. The model name. An editor sends the name its own model picker offers, and the router
+#    answers only to its own. Merging {"model": "auto"} means nobody has to be told which
+#    name to type.
+#
+# 2. The shape of the request. An editor sends its tools on every agent call, some of them in
+#    OpenAI's newer `"type": "custom"` form, which the backends here reject. Keeping the
+#    classic function tools and dropping the rest leaves tool calling working.
+#
+# And one that decides where a request goes, so it matters more than either:
+#
+# 3. The envelope. An editor does not send the question on its own. It sends the files the
+#    person has open, its own instructions, then the question wrapped in <user_query> tags,
+#    all inside one user message. The router classifies the last user message, so it reads
+#    the envelope: a question about a bond portfolio arrives as a payload of Java paths and
+#    comes back as coding, which is the one task allowed to leave the cluster. Appending the
+#    question as its own final message fixes the classification without taking anything away
+#    from the model, which still receives the whole envelope.
+#
+# The branches are first match, so each one that applies to an editor carries the tool filter
+# as well, and the Anthropic branch comes before all of them because the filter would empty
+# its tools. `conditional` cannot be combined with a plain `request` transformation, so the
+# last entry is a catch-all.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: normalise-model
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: intake-gateway
+  traffic:
+    phase: PreRouting
+    transformation:
+      conditional:
+        # Anything on /v1/messages, which on this gateway means Claude Code. Matching the
+        # path rather than the body catches requests with no tools as well.
+        #
+        # Anthropic tools carry `input_schema` and no `type`, so the branches below read them
+        # as shapes the backends reject and drop them, and tool calling stops working with
+        # nothing to show for it. They need no filtering: the next hop converts the request
+        # to chat completions and converts the tools with it.
+        #
+        - condition: 'request.path.startsWith("/v1/messages")'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto"}))'
+        # An editor, with at least one tool the backends can take.
+        - condition: 'has(json(request.body).messages) && json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").contains("<user_query>") && has(json(request.body).tools) && size(json(request.body).tools.filter(t, t.type == "function")) > 0'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto", "tools": json(request.body).tools.filter(t, t.type == "function"), "messages": json(request.body).messages + [{"role": "user", "content": json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").split("<user_query>")[size(json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").split("<user_query>")) - 1].split("</user_query>")[0]}]}))'
+        # An editor whose tools are all shapes the backends reject. An empty list is not an
+        # option: vLLM refuses it outright, so the field goes.
+        - condition: 'has(json(request.body).messages) && json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").contains("<user_query>") && has(json(request.body).tools)'
+          policy:
+            request:
+              body: 'toJson(json(request.body).filterKeys(k, k != "tools" && k != "tool_choice").merge({"model": "auto", "messages": json(request.body).messages + [{"role": "user", "content": json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").split("<user_query>")[size(json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").split("<user_query>")) - 1].split("</user_query>")[0]}]}))'
+        # An editor with no tools attached.
+        - condition: 'has(json(request.body).messages) && json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").contains("<user_query>")'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto", "messages": json(request.body).messages + [{"role": "user", "content": json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").split("<user_query>")[size(json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").split("<user_query>")) - 1].split("</user_query>")[0]}]}))'
+        # Any other client sending tools, at least one of them usable.
+        - condition: 'has(json(request.body).tools) && size(json(request.body).tools.filter(t, t.type == "function")) > 0'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto", "tools": json(request.body).tools.filter(t, t.type == "function")}))'
+        # Any other client whose tools are all unusable.
+        - condition: 'has(json(request.body).tools)'
+          policy:
+            request:
+              body: 'toJson(json(request.body).filterKeys(k, k != "tools" && k != "tool_choice").merge({"model": "auto"}))'
+        # Anything else: just the model name.
+        - condition: 'true'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto"}))'

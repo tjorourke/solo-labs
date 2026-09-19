@@ -1,0 +1,37 @@
+# A gateway for editor traffic. Nothing here is specific to Cursor: it is an ordinary
+# agentgateway Gateway with an HTTP listener, and the editor reaches it over whatever you put
+# in front of it.
+#
+# The Service is ClusterIP on purpose. A plain Gateway renders a LoadBalancer Service, which
+# on a public cloud means a public endpoint before any policy is attached. How the editor on
+# somebody's laptop reaches this is a deployment decision, not part of the configuration.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: my-gateway-params
+  namespace: agentgateway-system
+spec:
+  service:
+    spec:
+      type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: my-gateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: my-gateway-params
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

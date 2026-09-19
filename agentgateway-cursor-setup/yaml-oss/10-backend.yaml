@@ -1,0 +1,19 @@
+# The model the editor talks to. An ordinary AI backend: Cursor needs no special provider and
+# no special listener, it speaks the OpenAI chat completions API and so does this.
+#
+# `provider.openai.model` pins the model, so whatever name the editor's picker sent is
+# overridden here. That is what keeps an editor's own probe names from reaching the provider
+# as model names it has never heard of.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: my-model
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: my-model
+      host: vllm.models.svc.cluster.local
+      port: 8000
+      path: /v1/chat/completions

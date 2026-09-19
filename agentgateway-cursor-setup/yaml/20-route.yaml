@@ -1,0 +1,18 @@
+# Everything under /v1/ goes to the backend. Cursor appends /chat/completions and /models to
+# the base URL you give it, so both have to match: the editor calls /v1/models to find out
+# what it may ask for, and a 404 there leaves the picker empty.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: client-routing
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: my-gateway
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /v1/}
+      backendRefs:
+        - {name: my-model, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
