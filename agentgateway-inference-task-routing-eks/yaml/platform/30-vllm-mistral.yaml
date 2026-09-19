@@ -1,13 +1,16 @@
-# Mistral-Small-3.2-24B on vLLM, sharing one RTX PRO 6000 with Qwen3-Coder. This is Part 1's
-# manifest with four numbers changed so the two servers fit one 96 GB card together:
-# --gpu-memory-utilization 0.90 -> 0.56 (48 GB of bf16 weights plus KV cache),
-# --max-model-len 32768 so an editor can send a whole file, and the CPU and memory requests
-# reduced so both pods fit the
-# node's allocatable. Time-slicing (20-device-plugin-values.yaml) shares the card's compute;
-# these shares divide its memory, and they add up to 0.94 with Qwen's 0.38 because vLLM
-# refuses to start when its share is not free. Part 1's comments explain every other line.
+# Mistral-Small-3.2-24B on vLLM, with an RTX PRO 6000 to itself.
 #
-# The general model: Mistral-Small-3.2-24B, on the first GPU.
+# The general model, on the first of the two GPU nodes. It answers the finance and general
+# classes; Qwen3-Coder answers coding.
+#
+# --gpu-memory-utilization 0.90 leaves the card's 96 GB to this one model: about 48 GB of
+# bf16 weights and the rest KV cache, which is what pays for --max-model-len 131072. An
+# agent spends that window fast. Claude Code sends its instructions and its tools on every
+# turn, a little over 32k tokens before the person has typed anything, and vLLM refuses a
+# request larger than the window rather than shortening it.
+#
+# vLLM prints "GPU KV cache size" at startup. Keep --max-model-len under that number, or it
+# refuses to start.
 #
 # Creates the namespace, the weights PVC, the vLLM Deployment
 # and its Service.
@@ -154,7 +157,7 @@ spec:
             - --served-model-name=mistral-small-3.2-24b
             # ONE GPU, not four. The node carries a single RTX PRO 6000
             # Server with 96 GB. Weights are ~48 GB in bf16, so the whole model sits
-            # on one card with ~48 GB left for KV cache, and there is no tensor
+            # on its card with ~48 GB left for KV cache, and there is no tensor
             # parallelism to configure.
             #
             # This is the setting that removes most of this lab's original pain. TP=4
@@ -171,22 +174,20 @@ spec:
             # not emit tool calls in a shape agentgateway can route.
             - --tool-call-parser=mistral
             - --enable-auto-tool-choice
-            # 16k is conservative on this card, not a limit. 48 GB of KV headroom
-            # would carry far more; raise it once the model is known good rather
-            # than changing two things at once on a first boot.
-            # The KV cache, not the model, is what caps context here: each model gets a
-            # share of one card, and 16-bit KV runs out at about 36k tokens. fp8 KV halves
-            # the bytes per token, which is what makes a 64k window fit. Editors send whole
-            # files and agent clients send tool definitions, so 8k or 32k is not enough.
+            # fp8 KV halves the bytes per token, so the cache holds twice the context
+            # for the same memory. Editors send whole files and agent clients send tool
+            # definitions on every turn, so the window is the thing that runs out first.
             - --kv-cache-dtype=fp8
-            - --max-model-len=65536
+            # vLLM refuses to start when one full-length request would need more KV cache
+            # than the card provides. Check "GPU KV cache size" in the log before raising.
+            - --max-model-len=131072
             # 0.90 is safe here, where 0.85 was mandatory on the L4s. The old note is
             # worth keeping because it explains the shape of the failure: on a 22 GiB
             # card the weights took ~12 GB, the KV cache ate the rest, and the sampler
             # OOMed asking for 128 MiB AFTER the weights had loaded successfully,
             # which reads as a runtime fault rather than a sizing one. On 96 GB with
             # ~48 GB free after weights, that margin is no longer thin.
-            - --gpu-memory-utilization=0.56
+            - --gpu-memory-utilization=0.90
             - --port=8000
           ports:
             - {name: http, containerPort: 8000}

@@ -50,14 +50,17 @@ runs the phase: JWT, then extAuth, then extProc, then route selection.
 
 ## One GPU, two models
 
-Part 1 runs each model on its own g7e.2xlarge because the NVIDIA device plugin hands out
-whole cards. This part installs the plugin from its Helm chart with time-slicing set to
-two replicas, so the one RTX PRO 6000 advertises `nvidia.com/gpu: 2` and both vLLM pods
-schedule onto it. Time-slicing shares compute; it does nothing about memory, so
-`scripts/02-models.sh` applies Part 1's own model manifests with the memory shares
-changed: Mistral takes `--gpu-memory-utilization=0.56` for its 48 GB of bf16 weights,
-Qwen `0.38` for its 31 GB of FP8, both at an 8k context. That is one card at about
-$5.85/hr instead of two at $11.70.
+Each model runs on its own g7e.2xlarge, as Part 1 does. The NVIDIA device plugin hands
+out whole cards, so each node advertises `nvidia.com/gpu: 1` and the scheduler puts one
+vLLM pod on each. `scripts/02-models.sh` applies Part 1's own model manifests with one
+number changed, the context window: 131072 for Mistral, 262144 for Qwen.
+
+Time-slicing fits both models onto one card and halves what each can do. It shares
+compute by turn and does nothing about memory, so the two divide the 96 GB with
+`--gpu-memory-utilization`, the KV cache shrinks with the share, and the context window
+has to shrink to what the cache holds. An agent client runs into that first: Claude Code
+sends its instructions and its tools on every turn, a little over 32k tokens before
+anyone has typed anything. Two cards cost about $11.70/hr against $5.85 for one.
 
 ## Run it
 
@@ -71,7 +74,7 @@ export OPENAI_API_KEY=...
 export ANTHROPIC_API_KEY=...
 
 ./scripts/00-check.sh            # tools, AWS identity, keys
-./scripts/01-cluster.sh          # the cluster (Part 1's, or a one-GPU build of it), agentgateway v1.5.0, time-slicing plugin
+./scripts/01-cluster.sh          # the cluster (Part 1's, or a two-GPU build of it), agentgateway v1.5.0, device plugin
 ./scripts/02-models.sh           # Part 1's two models, on the one card
 ./scripts/03-identity.sh         # a signing key, a JWKS, tokens for alice, bob, carol and two bad ones
 ./scripts/04-opa.sh              # the gateway, then OPA with its policy and entitlement data
@@ -143,7 +146,7 @@ eks/cluster.yaml                    Part 1's cluster config with the gpu nodegro
 identity/                           generated per clone: signing key, JWKS, tokens (gitignored)
 opa/routing.rego                    restricted -> self-hosted, otherwise the contracted provider; or 403
 opa/entitlements.json
-yaml/01-device-plugin-values.yaml   NVIDIA device plugin, time-slicing one card into two
+yaml/01-device-plugin-values.yaml   NVIDIA device plugin, whole cards, one model each
 yaml/10-selfhosted-backends.yaml    Part 1's two vLLM backends plus one alias each
 yaml/20-opa.yaml                    OPA with /config, /policy and /data mounts
 yaml/40-semantic-router-values.yaml the router: two logical models, Part 2's signals and decisions

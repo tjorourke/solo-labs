@@ -1,4 +1,5 @@
-# One rule: everything under /v1/ goes on to the public gateway, normalised.
+# Two rules: everything under /v1/ goes on to the public gateway, normalised, and
+# /v1/messages is converted to chat completions first.
 #
 # The hostname rewrite is the part that is easy to miss. The gateway behind this one binds its
 # route to its own in-cluster Service name, so a request arriving with a client's hostname
@@ -20,6 +21,13 @@ spec:
       kind: Gateway
       name: intake-gateway
   rules:
+    # Claude Code, and anything else that speaks the Anthropic Messages API. This rule
+    # converts it to chat completions here, at the front door, rather than at the far end.
+    - matches:
+        - path: {type: PathPrefix, value: /v1/messages}
+      backendRefs:
+        - {name: model-gateway-messages, group: agentgateway.dev, kind: AgentgatewayBackend}
+    # Everything else is already chat completions and passes straight through.
     - matches:
         - path: {type: PathPrefix, value: /v1/}
       filters:
@@ -28,3 +36,38 @@ spec:
             hostname: model-gateway.agentgateway-system.svc.cluster.local
       backendRefs:
         - {name: model-gateway, kind: Service, group: "", port: 80}
+---
+# Converts an Anthropic Messages request into chat completions, before the router reads it.
+#
+# The router reads one wire format, and which one comes from `api_format` on the model it
+# picked. The models here are task labels every client shares, so it cannot read Anthropic
+# for one client and OpenAI for another. Left alone it rewrites whichever request does not
+# match. That rewrite survives plain text, where the two shapes are close enough, and fails
+# on tools: an assistant message carrying only tool calls has no `content`, and a tool result
+# is a user message in Messages and `role: "tool"` in chat completions. Either one stops the
+# next hop from parsing the body.
+#
+# Converting here avoids that. This backend fronts the same model-gateway Service as the rule
+# above, and `routes` marks /v1/messages as Messages, which turns the request into chat
+# completions on the way in and the reply back into a Messages response on the way out.
+# Everything behind this hop, the router included, reads chat completions.
+#
+# The openai provider names no `model` on purpose. That field overwrites the model in the
+# request, and it has to survive for the intake policy to set it to `auto` and the router to
+# replace it with a task label.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: model-gateway-messages
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai: {}
+      host: model-gateway.agentgateway-system.svc.cluster.local
+      port: 80
+      path: /v1/chat/completions
+  policies:
+    ai:
+      routes:
+        "/v1/messages": Messages

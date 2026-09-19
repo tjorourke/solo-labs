@@ -82,8 +82,8 @@ is not what the community chart is built around). Every step skips what exists.
 
 ```bash
 ./scripts/platform/10-agentgateway.sh   # 1  Gateway API v1.6.1, Enterprise agentgateway v2026.9.0, the UI, the Gateway
-./scripts/platform/20-device-plugin.sh  # 2  NVIDIA device plugin 0.17.4, time-slicing the card into two
-./scripts/platform/30-models.sh         # 3  Mistral-Small-24B and Qwen3-Coder-30B on vLLM, one card (first run pulls 76 GB)
+./scripts/platform/20-device-plugin.sh  # 2  NVIDIA device plugin 0.17.4, whole cards, one model per node
+./scripts/platform/30-models.sh         # 3  Mistral-Small-24B and Qwen3-Coder-30B on vLLM, a card each (first run pulls 76 GB)
 ```
 
 Or `./scripts/platform/up.sh`. Step 1 also installs the management chart, which is the
@@ -164,9 +164,9 @@ default.
 ```
 yaml/platform/05-gateway.yaml              the public Gateway, ClusterIP
 yaml/platform/11-dimensions-values.yaml    cost dimensions: user, task, pool, class
-yaml/platform/20-device-plugin-values.yaml time-slicing, replicas 2, affinity null
-yaml/platform/30-vllm-mistral.yaml         Mistral on vLLM, 0.56 of the card
-yaml/platform/31-vllm-qwen.yaml            Qwen3-Coder on vLLM, 0.38 of the card
+yaml/platform/20-device-plugin-values.yaml whole cards, affinity null
+yaml/platform/30-vllm-mistral.yaml         Mistral on vLLM, a card to itself, 131072 window
+yaml/platform/31-vllm-qwen.yaml            Qwen3-Coder on vLLM, a card to itself, 262144 window
 opa/routing.rego                  the decision: block, force private, prefer, fall back, refuse
 opa/routing-data.json             who may use which pool; task to pool and class; internal-code markers
 yaml/10-router-tasks.yaml         the router as a task classifier: similarity banks, keywords, domains

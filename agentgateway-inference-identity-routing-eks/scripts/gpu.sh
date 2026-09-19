@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Start and stop the GPU meter. The only expensive thing in this lab.
 #
-#   ./scripts/gpu.sh up      one g7e.2xlarge, about $5.85/hr
+#   ./scripts/gpu.sh up      two g7e.2xlarge, about $11.70/hr
 #   ./scripts/gpu.sh down    scale to zero; the weights stay on their volumes
 #   ./scripts/gpu.sh status
 #
-# One node, not Part 1's two: both open-weight models share the card through the device
-# plugin's time-slicing (scripts/01-cluster.sh). down is safe at the end of a session; the
-# weights sit on gp3 volumes pinned to the same AZ, so up brings the models back in
-# minutes rather than re-pulling 76 GB.
+# Two nodes, a card each. One card between the two models works, and costs both of them
+# their context window: the 96 GB is split by --gpu-memory-utilization, the KV cache shrinks
+# with it, and vLLM refuses any request longer than the window it can serve. An agent client
+# feels that first, because it sends its instructions and its tools on every turn. A card
+# each gives Mistral a 131072 window and Qwen 262144.
+#
+# down is safe at the end of a session; the weights sit on gp3 volumes pinned to the same AZ,
+# so up brings the models back in minutes rather than re-pulling 76 GB.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
 NG="${GPU_NODEGROUP:-gpu}"
@@ -36,7 +40,7 @@ wait_gpu() { # wait_gpu <count>  -> until that many nodes advertise a GPU
   return 1
 }
 case "${1:-status}" in
-  up)     scale 1; echo "waiting for the node to advertise its GPU (up to 30m)"; wait_gpu 1 ;;
+  up)     scale 2; echo "waiting for both nodes to advertise a GPU (up to 30m)"; wait_gpu 2 ;;
   down)   scale 0; echo "GPU meter stopped. Weights stay on their volumes." ;;
   status)
     aws eks describe-nodegroup --region "$AWS_REGION" --cluster-name "$EKS_CLUSTER" --nodegroup-name "$NG" \

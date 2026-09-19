@@ -1,8 +1,12 @@
-# Qwen3-Coder-30B-A3B FP8 on vLLM, sharing one RTX PRO 6000 with Mistral. Part 1's manifest
-# with --gpu-memory-utilization 0.90 -> 0.38 (31 GB of FP8 weights plus KV cache),
-# --max-model-len kept at 32768 so an editor can send a whole file, and reduced CPU and
-# memory requests. See 30-vllm-mistral.yaml
-# for why. Part 1's comments explain every other line.
+# Qwen3-Coder-30B-A3B FP8 on vLLM, with an RTX PRO 6000 to itself.
+#
+# The coding model, on the second GPU node. See 30-vllm-mistral.yaml for why each model gets
+# a card rather than a share of one.
+#
+# --gpu-memory-utilization 0.90 leaves about 31 GB of FP8 weights and the rest KV cache,
+# which is what pays for --max-model-len 262144, this model's full context. Coding prompts
+# are where an agent's window goes: Claude Code's own instructions and tools are a little
+# over 32k tokens before the person has typed anything.
 #
 # The second model: Qwen3-Coder-30B-A3B-Instruct-FP8, on the second GPU card.
 #
@@ -170,16 +174,15 @@ spec:
             - --enable-auto-tool-choice
             - --tool-call-parser=qwen3_coder
             - --tensor-parallel-size=1
-            # The KV cache, not the model, is what caps context here: each model gets a
-            # share of one card, and 16-bit KV runs out at about 36k tokens. fp8 KV halves
-            # the bytes per token, which is what makes a 64k window fit. Editors send whole
-            # files and agent clients send tool definitions, so 8k or 32k is not enough.
+            # fp8 KV halves the bytes per token, so the cache holds twice the context
+            # for the same memory. Editors send whole files and agent clients send tool
+            # definitions on every turn, so the window is the thing that runs out first.
             - --kv-cache-dtype=fp8
-            # 40960, not 65536: this model has the smaller share of the card, and vLLM
-            # refuses to start when one full-length request would need more KV cache than
-            # its share provides. It reported 46,272 as the ceiling here.
-            - --max-model-len=40960
-            - --gpu-memory-utilization=0.38
+            # This model's full context. vLLM refuses to start when one full-length
+            # request would need more KV cache than the card provides, so check the
+            # "GPU KV cache size" line in the log if you change the memory share.
+            - --max-model-len=262144
+            - --gpu-memory-utilization=0.90
             - --port=8000
           ports:
             - {name: http, containerPort: 8000}

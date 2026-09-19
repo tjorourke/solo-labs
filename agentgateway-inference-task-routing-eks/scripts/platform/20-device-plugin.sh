@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Platform step 2: the NVIDIA device plugin, time-slicing the one card into two.
+# Platform step 2: the NVIDIA device plugin.
 #
 #   ./scripts/platform/20-device-plugin.sh
 #
-# The plugin hands out whole GPUs by default, so two vLLM pods each asking for one need two
-# cards. From its Helm chart, with yaml/platform/20-device-plugin-values.yaml, it advertises
-# the one card as nvidia.com/gpu: 2 and both pods schedule onto it. Time-slicing shares
-# compute; the memory split is each vLLM's own --gpu-memory-utilization in the next step.
+# The plugin hands out whole GPUs, which is what this lab wants: two GPU nodes, one model on
+# each, and every card's 96 GB available to the model that holds it. From its Helm chart,
+# with yaml/platform/20-device-plugin-values.yaml.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$HERE/scripts/lib.sh"
 NVDP_VERSION="${NVDP_VERSION:-0.17.4}"
@@ -22,12 +21,12 @@ helm_ upgrade --install nvdp nvdp/nvidia-device-plugin \
   -f "$HERE/yaml/platform/20-device-plugin-values.yaml" --wait --timeout 5m >/dev/null
 echo "    installed"
 
-banner "waiting for the node to advertise two GPU slices"
+banner "waiting for both GPU nodes to advertise their card"
 for _ in $(seq 1 40); do
-  g="$(kubectl get nodes -l role=gpu -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || true)"
-  [ "$g" = "2" ] && break; sleep 10
+  n="$(kubectl get nodes -l role=gpu -o jsonpath='{range .items[*]}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}' 2>/dev/null | grep -c '^1$' || true)"
+  [ "${n:-0}" -ge 2 ] && break; sleep 10
 done
-kubectl get nodes -l role=gpu -o custom-columns='NODE:.metadata.name,GPU_SLICES:.status.allocatable.nvidia\.com/gpu,MEM:.status.allocatable.memory'
-[ "$g" = "2" ] || { echo "ERROR: the GPU node does not advertise 2 slices" >&2; exit 1; }
+kubectl get nodes -l role=gpu -o custom-columns='NODE:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu,MEM:.status.allocatable.memory'
+[ "${n:-0}" -ge 2 ] || { echo "ERROR: fewer than two GPU nodes advertise a card. Check ./scripts/gpu.sh status" >&2; exit 1; }
 echo
 echo "Next: ./scripts/platform/30-models.sh"

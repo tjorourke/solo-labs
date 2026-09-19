@@ -1,7 +1,7 @@
 # Part 3 of the prompt-aware model routing series builds this cluster when the Part 1
 # cluster is not there. It is Part 1's eks/cluster.yaml with ONE change: the gpu nodegroup
-# starts at one node, because this part puts both open-weight models on one card with the
-# NVIDIA device plugin time-slicing it (scripts/01-cluster.sh). Everything else, the
+# runs two nodes, one open-weight model on each, so every model has its card's whole 96 GB
+# and the context window that pays for (scripts/01-cluster.sh). Everything else, the
 # platform nodegroup, the AZ pin, the taint and the volume sizes, is unchanged so Part 1
 # and Part 2 keep working on the same cluster after a scale to two.
 #
@@ -65,7 +65,7 @@ managedNodeGroups:
     instanceType: g7e.2xlarge
     # Two nodes, one model each. The device plugin hands out whole GPUs, so a second
     # model on the same node stays Pending on Insufficient nvidia.com/gpu.
-    desiredCapacity: 1
+    desiredCapacity: 2
     minSize: 0
     maxSize: 2
     # 200 GB because the vLLM image alone is 9 GB and the weights are pulled through

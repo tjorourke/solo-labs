@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# The cluster, agentgateway, and a device plugin that lets one card serve two models.
+# The cluster, agentgateway, and the NVIDIA device plugin.
 #
 #   ./scripts/01-cluster.sh
 #
 # Three things, each skipped when already there:
 #   1. the EKS cluster. Part 1's cluster if it exists, otherwise eks/cluster.yaml, which is
-#      Part 1's with the gpu nodegroup at one node. A marker ConfigMap records that this
+#      Part 1's, with two nodes in the gpu nodegroup. A marker ConfigMap records that this
 #      lab built it, so quick.sh teardown knows whether the cluster is its to delete.
 #   2. OSS agentgateway v1.5.0 with the Gateway API experimental channel. Part 1 was
 #      validated on v1.3.0-alpha.1; this part uses jwtAuthentication and extAuth at
 #      PreRouting, which is the v1.5 line.
-#   3. the NVIDIA device plugin, from its Helm chart, with time-slicing set to two
-#      replicas per GPU. eksctl's bundled plugin hands out whole cards, so the second
-#      model sits Pending with Insufficient nvidia.com/gpu. Time-slicing makes the one
-#      card advertise as two; the memory split between the models is in 02-models.sh.
+#   3. the NVIDIA device plugin, from its Helm chart, handing out whole cards. Each GPU
+#      node advertises nvidia.com/gpu: 1, so the scheduler puts one model on each and
+#      every model has the whole 96 GB. Sharing one card between them halves the memory
+#      and, with it, the context window each model can serve.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 set -euo pipefail
 EKS_CLUSTER="${EKS_CLUSTER:-model-routing}"; AWS_REGION="${AWS_REGION:-eu-west-2}"
@@ -25,7 +25,7 @@ if aws eks describe-cluster --region "$AWS_REGION" --name "$EKS_CLUSTER" >/dev/n
   echo "    exists, skipping create"
   CREATED=0
 else
-  echo "    creating (about 20 minutes). --install-nvidia-plugin=false: the plugin is installed below with time-slicing."
+  echo "    creating (about 20 minutes). --install-nvidia-plugin=false: the plugin is installed below."
   eksctl create cluster -f "$HERE/eks/cluster.yaml" --install-nvidia-plugin=false
   CREATED=1
 fi
@@ -66,7 +66,7 @@ helm_ upgrade --install agentgateway oci://cr.agentgateway.dev/charts/agentgatew
 kubectl wait --for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True gatewayclass/agentgateway --timeout=180s
 
 NVDP_VERSION="${NVDP_VERSION:-0.17.4}"
-banner "NVIDIA device plugin $NVDP_VERSION, time-slicing one card into two"
+banner "NVIDIA device plugin $NVDP_VERSION"
 # eksctl's own plugin, if a previous run installed it, hands out whole cards.
 kubectl -n kube-system delete daemonset nvidia-device-plugin-daemonset --ignore-not-found >/dev/null
 helm_ repo add nvdp https://nvidia.github.io/k8s-device-plugin >/dev/null 2>&1 || true
@@ -74,12 +74,12 @@ helm_ repo update nvdp >/dev/null
 helm_ upgrade --install nvdp nvdp/nvidia-device-plugin \
   --namespace nvidia-device-plugin --create-namespace --version "$NVDP_VERSION" \
   -f "$HERE/yaml/01-device-plugin-values.yaml" --wait --timeout 5m >/dev/null
-banner "waiting for the node to advertise two GPU slices"
+banner "waiting for both GPU nodes to advertise their card"
 for _ in $(seq 1 40); do
-  g="$(kubectl get nodes -l role=gpu -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || true)"
-  [ "$g" = "2" ] && break; sleep 10
+  g="$(kubectl get nodes -l role=gpu -o jsonpath='{range .items[*]}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}' 2>/dev/null | grep -c '^1$' || true)"
+  [ "${g:-0}" -ge 2 ] && break; sleep 10
 done
-kubectl get nodes -l role=gpu -o custom-columns='NODE:.metadata.name,GPU_SLICES:.status.allocatable.nvidia\.com/gpu,MEM:.status.allocatable.memory'
-[ "$g" = "2" ] || { echo "ERROR: the GPU node does not advertise 2 slices" >&2; exit 1; }
+kubectl get nodes -l role=gpu -o custom-columns='NODE:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu,MEM:.status.allocatable.memory'
+[ "${g:-0}" -ge 2 ] || { echo "ERROR: fewer than two GPU nodes advertise a card. Check ./scripts/gpu.sh status" >&2; exit 1; }
 echo
 echo "Next: ./scripts/02-models.sh"

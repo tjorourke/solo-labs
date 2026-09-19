@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Platform step 3: the two open-weight models on vLLM, both on the one card.
+# Platform step 3: the two open-weight models on vLLM, a GPU node each.
 #
 #   ./scripts/platform/30-models.sh
 #
@@ -9,7 +9,7 @@
 # a later run against the same volumes reloads in a few minutes.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$HERE/scripts/lib.sh"
-banner "both models on the one card"
+banner "both models, a GPU node each"
 kubectl apply -f "$HERE/yaml/platform/30-vllm-mistral.yaml"
 kubectl apply -f "$HERE/yaml/platform/31-vllm-qwen.yaml"
 # Wait on Available, not rollout status: a pod that waited for a GPU or a volume leaves

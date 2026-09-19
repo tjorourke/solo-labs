@@ -32,6 +32,18 @@ spec:
     phase: PreRouting
     transformation:
       conditional:
+        # Anything on /v1/messages, which on this gateway means Claude Code. Matching the
+        # path rather than the body catches requests with no tools as well.
+        #
+        # Anthropic tools carry `input_schema` and no `type`, so the branches below read them
+        # as shapes the backends reject and drop them, and tool calling stops working with
+        # nothing to show for it. They need no filtering: the next hop converts the request
+        # to chat completions and converts the tools with it.
+        #
+        - condition: 'request.path.startsWith("/v1/messages")'
+          policy:
+            request:
+              body: 'toJson(json(request.body).merge({"model": "auto"}))'
         # Tools, at least one of them usable: keep those, drop the rest, rename the model.
         - condition: 'has(json(request.body).tools) && size(json(request.body).tools.filter(t, t.type == "function")) > 0'
           policy:

@@ -2,8 +2,8 @@
 # Harness entry point: up | test | teardown.
 #
 # `up` reuses the Part 1 cluster when it exists and otherwise builds it with one GPU node,
-# then installs agentgateway v1.5.0 and a time-slicing device plugin, puts both open-weight
-# models on the one card, mints the identities, deploys OPA and the router, the four
+# then installs agentgateway v1.5.0 and the NVIDIA device plugin, puts each open-weight
+# model on its own GPU node, mints the identities, deploys OPA and the router, the four
 # backends, the policy and the route. Needs OPENAI_API_KEY and ANTHROPIC_API_KEY.
 #
 # `teardown` deletes the cluster only if this lab created it (the lab-owner marker in
