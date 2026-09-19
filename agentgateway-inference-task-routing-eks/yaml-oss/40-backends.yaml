@@ -6,7 +6,7 @@
 # The router wrote a task label into the body's model field. OPA decided the pool and the
 # class. The route picks a backend from those two, and the backend's modelAliases turns the
 # task label into the model it actually serves. Private coding is Qwen3-Coder, private
-# finance and the general default are Mistral, and the approved frontier is Anthropic, for
+# finance, telco and the general default are Mistral, and the approved frontier is Anthropic, for
 # generic coding only, so it aliases one label.
 #
 # The two GPU backends are Part 1's, same names, with their aliases replaced.
@@ -90,6 +90,7 @@ spec:
           value: 32768
       modelAliases:
         finance: mistral-small-3.2-24b
+        telco: mistral-small-3.2-24b
         uncertain: mistral-small-3.2-24b
 ---
 apiVersion: agentgateway.dev/v1alpha1

@@ -1,6 +1,6 @@
 # Mistral-Small-3.2-24B on vLLM, with an RTX PRO 6000 to itself.
 #
-# The general model, on the first of the two GPU nodes. It answers the finance and general
+# The general model, on the first of the two GPU nodes. It answers the finance, telco and general
 # classes; Qwen3-Coder answers coding.
 #
 # --gpu-memory-utilization 0.90 leaves the card's 96 GB to this one model: about 48 GB of

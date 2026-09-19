@@ -29,7 +29,7 @@ budgetDimensions:
       - id: virtualKey
         expression: apiKey.id
         displayName: Virtual Key
-      # What the router decided this request was. One of the five task labels.
+      # What the router decided this request was. One of the six task labels.
       - id: task
         expression: 'request.headers["x-selected-model"]'
         displayName: Task

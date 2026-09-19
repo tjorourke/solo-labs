@@ -52,13 +52,13 @@ problems=0
 #    failure is a 502 rather than a 401, because the refusal is plain text and the
 #    Messages path cannot translate it, and that sends people looking at the model.
 body='{"model":"claude-sonnet-5","max_tokens":16,"messages":[{"role":"user","content":"ping"}]}'
-code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST "$BASE/v1/messages" \
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "$BASE/v1/messages" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -H 'anthropic-version: 2023-06-01' -d "$body" || true)"
 [ "$code" = 200 ] && green "POST /v1/messages with a bearer token: 200" \
   || { bad "POST /v1/messages returned $code with a bearer token"; problems=1; }
 
-code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST "$BASE/v1/messages" \
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "$BASE/v1/messages" \
   -H "X-Api-Key: $TOKEN" -H 'Content-Type: application/json' \
   -H 'anthropic-version: 2023-06-01' -d "$body" || true)"
 [ "$code" = 200 ] && warn "X-Api-Key also works; either credential kind will do" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The flow, end to end: bob's five prompts at one endpoint, then alice's one.
+# The flow, end to end: bob's six prompts at one endpoint, then alice's one.
 #
 #   ./scripts/06-test-flow.sh
 #
@@ -19,7 +19,8 @@ CASES=(
   "B2|bob|$BOB_TOKEN|Review this function for concurrency bugs: public void credit(long amt) { balance += amt; }|code_review|private|coding|qwen3-coder-30b"
   "B3|bob|$BOB_TOKEN|Modify this settlement-service function so retries are idempotent: def settle(tx): post(tx); mark_done(tx)|code_modification|private|coding|qwen3-coder-30b"
   "B4|bob|$BOB_TOKEN|Explain the duration risk in this bond portfolio.|finance|private|finance|mistral-small-3.2-24b"
-  "B5|bob|$BOB_TOKEN|Can you improve this?|uncertain|private|general|mistral-small-3.2-24b"
+  "B5|bob|$BOB_TOKEN|How does a 5G network slice guarantee latency for an enterprise customer?|telco|private|telco|mistral-small-3.2-24b"
+  "B6|bob|$BOB_TOKEN|Can you improve this?|uncertain|private|general|mistral-small-3.2-24b"
   "A1|alice|$ALICE_TOKEN|Show a Java dependency-injection example.|generic_coding|private|coding|qwen3-coder-30b"
 )
 ok=0

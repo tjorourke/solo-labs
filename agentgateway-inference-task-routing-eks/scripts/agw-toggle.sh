@@ -17,14 +17,29 @@
 # open keeps whatever it started with. Desktop needs a full quit (Cmd+Q); closing the
 # window is not enough.
 #
-# Desktop needs one manual setup before this script can toggle it, and that is Anthropic's
-# own recommended order: configure one machine in developer mode, then automate. See
-# --setup-desktop below, or
+# The token is minted for you. Turning the gateway on checks ~/.config/agw/token and, if it
+# is missing or has expired, re-runs the lab's ./scripts/01-identity.sh and writes the
+# employee's token there. The signing key is kept when it already exists, so a re-mint still
+# verifies against the JWKS the gateway holds and nothing in the cluster has to change.
+#
+#   ./scripts/agw-toggle.sh --install         copy this to ~/Downloads for quick flipping
+#   ./scripts/agw-toggle.sh --setup-desktop   what to type into Desktop, once
+#   ./scripts/agw-toggle.sh --seed-desktop    write Desktop's config instead of typing it
+#
+# Desktop normally needs one pass through its own developer-mode panel before this script can
+# flip it, which is Anthropic's recommended order: configure one machine, then automate.
+# --seed-desktop skips the typing by writing the file itself. See
 # https://agentgateway.dev/docs/standalone/latest/integrations/llm/clients/claude-desktop/
 set -euo pipefail
 
 HOST="${AGW_HOST:-agw.awslab.masterthemesh.com}"
 TOKEN_FILE="${AGW_TOKEN_FILE:-$HOME/.config/agw/token}"
+# Where the lab lives, so a copy of this file sitting in ~/Downloads can still mint. The
+# scripts it calls are 01-identity.sh (the signing key and the four tokens) and
+# 11-claude-desktop.sh (the preflight).
+LAB_DIR="${LAB_DIR:-$HOME/code/solo/solo-demos/agentgateway-inference-task-routing-eks}"
+SUBJECT="${AGW_SUBJECT:-bob}"
+DESKTOP_MODEL="${AGW_DESKTOP_MODEL:-claude-sonnet-5}"
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 DESKTOP_CFG="${CLAUDE_DESKTOP_3P_CONFIG:-$HOME/Library/Application Support/Claude-3p/claude_desktop_config.json}"
 BASE_URL="https://$HOST"
@@ -130,15 +145,9 @@ EOF
 
 # -------------------------------------------------------------------- shared
 
-preflight() {
-  local problems=0
-  if [ ! -s "$TOKEN_FILE" ]; then
-    echo "  ! no token at $TOKEN_FILE"
-    echo "    run the lab's ./scripts/01-identity.sh, or point AGW_TOKEN_FILE at one"
-    return 1
-  fi
-  local exp now
-  exp="$(python3 - "$TOKEN_FILE" <<'PY'
+token_exp() {  # seconds since epoch, or 0
+  [ -s "$TOKEN_FILE" ] || { echo 0; return; }
+  python3 - "$TOKEN_FILE" <<'PY'
 import base64, json, sys
 try:
     p = open(sys.argv[1]).read().strip().split(".")[1]
@@ -147,15 +156,49 @@ try:
 except Exception:
     print(0)
 PY
-)"
-  now="$(date +%s)"
-  if [ "${exp:-0}" -gt 0 ] && [ "$exp" -lt "$now" ]; then
-    echo "  ! the token expired on $(date -r "$exp" '+%Y-%m-%d'); mint a fresh one with ./scripts/01-identity.sh"
+}
+
+# Mint, rather than telling you to go and mint. 01-identity.sh keeps an existing signing key
+# and only re-issues the tokens, so a fresh one still verifies against the JWKS the gateway
+# already holds and nothing in the cluster has to be reapplied.
+ensure_token() {
+  local exp now; exp="$(token_exp)"; now="$(date +%s)"
+  if [ -s "$TOKEN_FILE" ] && { [ "${exp:-0}" -eq 0 ] || [ "$exp" -gt "$now" ]; }; then
+    [ "${exp:-0}" -gt 0 ] && echo "  token valid to $(date -r "$exp" '+%Y-%m-%d')"
+    return 0
+  fi
+  if [ -s "$TOKEN_FILE" ]; then
+    echo "  token expired on $(date -r "$exp" '+%Y-%m-%d'), minting a fresh one"
+  else
+    echo "  no token yet, minting one"
+  fi
+  if [ ! -x "$LAB_DIR/scripts/01-identity.sh" ]; then
+    echo "  ! cannot mint: no lab at $LAB_DIR"
+    echo "    set LAB_DIR=/path/to/agentgateway-inference-task-routing-eks"
     return 1
   fi
+  ( cd "$LAB_DIR" && ./scripts/01-identity.sh ) >/dev/null 2>&1 || {
+    echo "  ! ./scripts/01-identity.sh failed; run it by hand in $LAB_DIR"; return 1; }
+  local var tok
+  var="$(echo "$SUBJECT" | tr '[:lower:]' '[:upper:]')_TOKEN"
+  # shellcheck disable=SC1090
+  tok="$( . "$LAB_DIR/identity/tokens.env"; echo "${!var:-}" )"
+  [ -n "$tok" ] || { echo "  ! no token for '$SUBJECT' (have: bob, alice, dave)"; return 1; }
+  mkdir -p "$(dirname "$TOKEN_FILE")"
+  printf '%s' "$tok" > "$TOKEN_FILE"; chmod 600 "$TOKEN_FILE"
+  echo "  minted a token for $SUBJECT, valid 30 days, at $TOKEN_FILE"
+}
 
+preflight() {
+  local problems=0
+  ensure_token || return 1
+
+  # 60s, not 15. The backends pin max_tokens rather than capping it, so even a tiny
+  # request gets a full-length answer and a non-streaming call can sit for twenty seconds
+  # before the first byte. A short timeout here reports "the gateway did not answer" for a
+  # gateway that is answering perfectly well.
   local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
       -X POST "$BASE_URL/v1/messages" \
       -H "Authorization: Bearer $(cat "$TOKEN_FILE" 2>/dev/null)" \
       -H 'Content-Type: application/json' -H 'anthropic-version: 2023-06-01' \
@@ -214,12 +257,98 @@ EOF
   return 0
 }
 
+install_copy() {
+  local dest="${AGW_INSTALL_DEST:-$HOME/Downloads/agw-toggle.sh}"
+  local src; src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  # LAB_DIR is baked into the copy so it keeps working away from the repository. The lab is
+  # still the source of truth: re-run --install after changing it rather than editing there.
+  sed "s|^LAB_DIR=.*|LAB_DIR=\"\${LAB_DIR:-$LAB_DIR}\"|" "$src" > "$dest"
+  chmod +x "$dest"
+  cat <<EOF
+Copied to $dest
+
+  $dest on        both clients to the gateway
+  $dest off       both back to Anthropic
+  $dest status    which each one is on
+
+It mints the token itself when there is not a valid one, using
+  $LAB_DIR/scripts/01-identity.sh
+Re-run this from the lab after changing the script; the copy is a copy.
+EOF
+}
+
+seed_desktop() {
+  # The file-driven route, and the one an enterprise actually uses. Claude Desktop reads a
+  # managed configuration at startup, before it decides whether it is talking to Anthropic
+  # or to a gateway: the log line is main_pre_managed_config_read_ms. That file is
+  # /Library/Managed Preferences/com.anthropic.claudefordesktop.plist, which is what Jamf,
+  # Intune or Workspace ONE push, and settings delivered that way cannot be overridden by
+  # the user.
+  #
+  # ~/Library/Application Support/Claude-3p/claude_desktop_config.json is not the input. The
+  # app writes it once it is already in third-party mode, so seeding it by hand does nothing:
+  # a 1p app never looks in the 3p directory. Measured 2026-09-19 on Claude 2.2553.1, by
+  # writing it, restarting, and watching the app sign in to Anthropic regardless.
+  #
+  # Root-owned on purpose. Run with sudo, or take the command this prints.
+  ensure_token || return 1
+  local tmp="${TMPDIR:-/tmp}/com.anthropic.claudefordesktop.plist"
+  python3 - "$tmp" "$BASE_URL" "$(cat "$TOKEN_FILE")" "$DESKTOP_MODEL" <<'PY'
+import plistlib, sys
+path, base_url, token, model = sys.argv[1:5]
+# Every value a string, including the booleans and the nested JSON: that is what the
+# managed-settings reader expects on macOS and Windows.
+payload = {
+    "inferenceProvider": "gateway",
+    "inferenceGatewayBaseUrl": base_url,
+    "inferenceCredentialKind": "apiKey",
+    "inferenceGatewayAuthScheme": "bearer",
+    "inferenceGatewayApiKey": token,
+    "inferenceModels": '["%s"]' % model,
+    "modelDiscoveryEnabled": "false",
+}
+with open(path, "wb") as f:
+    plistlib.dump(payload, f)
+PY
+  local dest="/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
+  if sudo -n true 2>/dev/null; then
+    sudo install -m 644 -o root -g wheel "$tmp" "$dest" && echo "  installed $dest"
+  else
+    cat <<EOF
+
+Built the managed profile at
+  $tmp
+
+It needs root, because a managed setting is one the user cannot override. Run:
+
+  sudo install -m 644 -o root -g wheel "$tmp" "$dest"
+
+then quit Claude Desktop fully (Cmd+Q) and reopen it.
+EOF
+    return 0
+  fi
+  echo "  quit Claude Desktop fully (Cmd+Q) and reopen it"
+}
+
+unseed_desktop() {
+  local dest="/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
+  if sudo -n true 2>/dev/null; then
+    sudo rm -f "$dest" && echo "  removed $dest"
+  else
+    echo "Run:  sudo rm -f \"$dest\""
+  fi
+  echo "  quit Claude Desktop fully (Cmd+Q) and reopen it"
+}
+
 case "${1:-}" in
   on)      apply on ;;
   off)     apply off ;;
   toggle)  if [ "$(code_state)" = on ]; then apply off; else apply on; fi ;;
   status)  show; if [ "$(code_state)" = on ]; then preflight || true; fi ;;
   --setup-desktop|setup-desktop) desktop_setup_help ;;
+  --seed-desktop|seed-desktop)   seed_desktop ;;
+  --unseed-desktop)              unseed_desktop ;;
+  --install|install)             install_copy ;;
   ""|prompt)
     show; echo
     if [ "$(code_state)" = on ]; then
@@ -233,5 +362,5 @@ case "${1:-}" in
       *) echo "Left as it is." ;;
     esac
     ;;
-  *) echo "usage: $(basename "$0") [on|off|toggle|status|--setup-desktop]" >&2; exit 2 ;;
+  *) echo "usage: $(basename "$0") [on|off|toggle|status|--setup-desktop|--seed-desktop|--install]" >&2; exit 2 ;;
 esac

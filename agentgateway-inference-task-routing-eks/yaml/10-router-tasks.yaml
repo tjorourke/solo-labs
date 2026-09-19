@@ -1,14 +1,15 @@
 # vLLM Semantic Router as a task classifier. This is the whole of the router's job in this
-# lab: read the prompt and say what kind of task it is. It writes one of five task labels
+# lab: read the prompt and say what kind of task it is. It writes one of six task labels
 # into the request body's model field and into x-selected-model, and nothing else. Where
 # the request runs, and which model answers, is decided afterwards by OPA and the route.
 #
-# The five labels are the rows of the routing table in opa/routing-data.json:
+# The six labels are the rows of the routing table in opa/routing-data.json:
 #
 #   code_review        look at existing code and report on it
 #   code_modification  change existing code
 #   generic_coding     a coding question about no particular code
 #   finance            the bank's own subject
+#   telco              the network itself: radio, core, roaming, the subscriber
 #   uncertain          nothing above matched with confidence
 #
 # Signals. `domains` is the same MMLU-Pro classifier Parts 1 to 3 use. The similarity
@@ -62,6 +63,8 @@ config:
       - name: generic_coding
         backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
       - name: finance
+        backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
+      - name: telco
         backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
       - name: uncertain
         backend_refs: [{name: gateway, endpoint: model-gateway.agentgateway-system.svc.cluster.local:80, weight: 1}]
@@ -139,6 +142,32 @@ config:
               - Fix the bug in the following code
               - Rewrite this function to be thread safe
               - Update this class to add a retry
+        # The one rule here whose two banks are deliberately on different subjects. Every
+        # other similarity rule keeps both banks on the same subject so it learns the shape
+        # of the ask; this one has to learn the subject, because the domain classifier
+        # cannot. Its fourteen labels are fixed by the model that was trained on them, and
+        # telco is not among them, so a network question lands on engineering, business or
+        # other depending on how it is worded. The bank below is the definition of "this is
+        # about the network". The easy bank is the rest of the lab: finance, coding, law.
+        - name: telco_vs_rest
+          description: The operator's own network, against everything else the bank asks
+          threshold: 0.0
+          hard:
+            candidates:
+              - How does a 5G network slice guarantee latency for an enterprise customer
+              - What happens during an LTE to 5G handover at the cell edge
+              - How is a subscriber authenticated when roaming onto a partner network
+              - What does the IMS core do when a VoLTE call is set up
+              - How should we dimension backhaul capacity for a new base station
+              - What is the difference between the radio access network and the mobile core
+          easy:
+            candidates:
+              - What effect does a central bank raising interest rates have on bond prices
+              - How do I read a file in Python
+              - Explain how a hash map works
+              - How should a company account for deferred revenue on multi-year contracts
+              - What is the difference between a list and a set
+              - Summarise the main provisions of a commercial lease
       keywords:
         - name: review_words
           operator: OR
@@ -150,6 +179,17 @@ config:
           method: bm25
           bm25_threshold: 0.01
           keywords: [modify, change, refactor, fix, rewrite, update, "add a", convert, migrate]
+        # Nouns, not verbs. The other two keyword rules catch what the prompt asks for; this
+        # one catches what it is about, and it is the half of the telco decision that fires
+        # on a blunt question the similarity bank has no phrasing for.
+        - name: telco_words
+          operator: OR
+          method: bm25
+          bm25_threshold: 0.01
+          keywords: [5G, LTE, RAN, "radio access network", gNodeB, eNodeB, VoLTE, IMS,
+                     MSISDN, SIM, roaming, "network slice", "network slicing", BSS, OSS,
+                     "core network", subscriber, spectrum, "base station", "cell site",
+                     MVNO, interconnect, backhaul, "mobile network", tariff, churn]
       domains:
         - name: business
           description: Business, corporate strategy, management, finance, marketing
@@ -261,6 +301,26 @@ config:
             - {type: domain, name: economics}
             - {type: domain, name: business}
         modelRefs: [{model: finance, use_reasoning: false}]
+      # Telco outranks everything, and it has to. The code rules' easy banks are all coding
+      # examples, so a question about a 5G handover is unlike both banks of review_vs_generic
+      # and scores hard against it by a whisker; with telco below them, three network
+      # questions in four came back code_review or code_modification. Measured 2026-09-19.
+      # Ranking it first is safe because both its signals must hold, and neither fires on a
+      # prompt with no network vocabulary in it: "review the settle() method in
+      # com.example.internal" has none, so it is still a review. A network question that is
+      # genuinely about code ("review the handover logic in our RAN adapter") does come back
+      # telco, and goes to Mistral rather than Qwen. That is the cost of ranking a subject
+      # above a shape, and it is the right trade for an operator: the subject is the thing
+      # that must not leave.
+      - name: telco
+        description: The operator's own network
+        priority: 65
+        rules:
+          operator: AND
+          conditions:
+            - {type: keyword, name: telco_words}
+            - {type: complexity, name: telco_vs_rest:hard}
+        modelRefs: [{model: telco, use_reasoning: false}]
       # Generic coding needs to be clearly generic: computer science AND close to the
       # generic examples. A coding question that is neither review, modification nor
       # generic falls through to uncertain.
@@ -281,6 +341,7 @@ config:
       - name: code_modification
       - name: generic_coding
       - name: finance
+      - name: telco
       - name: uncertain
 
   global:

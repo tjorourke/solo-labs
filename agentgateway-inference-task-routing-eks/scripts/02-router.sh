@@ -4,16 +4,27 @@
 #   ./scripts/02-router.sh
 #
 # Re-runs the semantic router's Helm release with yaml/10-router-tasks.yaml, which replaces
-# Part 3's config. The router now answers "what kind of task is this" with one of five
+# Part 3's config. The router now answers "what kind of task is this" with one of six
 # labels, and nothing about models or places. It restarts to load the new signals; the
 # classifier weights are already on its volume, so this takes a minute or two, not ten.
+#
+# Scale to zero and back, rather than `rollout restart`. The Deployment is RollingUpdate,
+# the router holds a ReadWriteOnce volume pinned to one node and asks for a whole CPU, so
+# the replacement pod cannot schedule until the old one goes and the old one will not go
+# until the replacement is ready. It sits Pending with "Insufficient cpu" and "didn't match
+# PersistentVolume's node affinity" until something breaks the tie. Measured 2026-09-19.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
 VSR_VERSION="${VSR_VERSION:-0.3.0}"
 banner "semantic router $VSR_VERSION as a task classifier"
 helm_ upgrade --install semantic-router oci://ghcr.io/vllm-project/charts/semantic-router \
   -n "$NS" --version "$VSR_VERSION" -f "$HERE/yaml/10-router-tasks.yaml" >/dev/null
-kubectl -n "$NS" rollout restart deploy/semantic-router >/dev/null
+kubectl -n "$NS" scale deploy/semantic-router --replicas=0 >/dev/null
+for _ in $(seq 1 30); do
+  [ "$(kubectl -n "$NS" get pods -l app.kubernetes.io/name=semantic-router --no-headers 2>/dev/null | wc -l | tr -d ' ')" = "0" ] && break
+  sleep 5
+done
+kubectl -n "$NS" scale deploy/semantic-router --replicas=1 >/dev/null
 # Wait for the NEW pod, not the Deployment: the old pod stays Available while the new one
 # loads, so a wait on the Deployment returns at once and the log below is the old config.
 for _ in $(seq 1 90); do
@@ -24,7 +35,7 @@ for _ in $(seq 1 90); do
 done
 banner "what it loaded, read back from its log"
 POD="$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=semantic-router --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')"
-# Three lines are the proof. The decisions list must name all six decisions in the file:
+# Three lines are the proof. The decisions list must name every decision in the file:
 # Helm replaces lists rather than merging them, so a dropped decision loads without any
 # error. The other two say the similarity banks were embedded and the classifier started,
 # not merely that the config validated.

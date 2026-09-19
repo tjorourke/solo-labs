@@ -8,6 +8,12 @@ stays private. Evidence that the prompt carries the company's own code keeps it 
 whatever the task looked like. A credential in the prompt blocks it. A caller with no
 permitted private model gets an error, never a frontier model.
 
+Three models answer, and they cover four areas of expertise: private coding on
+Qwen3-Coder, private finance and private telco on Mistral, and generic coding at the
+approved frontier on Claude. Two of the four share a model, which is the point of routing
+on a class rather than on a model name: what the request is about and which weights serve
+it are two different decisions, and only the first one is the company's policy.
+
 This part layers on [Part 3](../agentgateway-inference-identity-routing-eks/): same
 cluster, same single GPU with both open-weight models, same router and OPA. It reorders
 the decision. Part 3 decided where a request runs from the identity alone, before the
@@ -36,10 +42,10 @@ and the class.
 ```
 client ──▶ model-gateway ────────────────▶ decision-gateway ──────────────▶ backend
            1 verify token (keep it)         3 verify token again            Qwen3-Coder    (private, coding)
-           2 router: task label             4 OPA: task + permissions       Mistral        (private, finance / general)
+           2 router: task label             4 OPA: task + permissions       Mistral        (private, finance / telco / general)
              code_review | code_modification   + data checks → pool, class  Anthropic      (approved-frontier, generic coding)
              generic_coding | finance        5 route on pool and class
-             uncertain
+             telco | uncertain
 ```
 
 ### The routing table
@@ -52,6 +58,7 @@ the table can select; the task determines the preferred one.
 | `code_review` | private | coding | Qwen3-Coder-30B |
 | `code_modification` | private | coding | Qwen3-Coder-30B |
 | `finance` | private | finance | Mistral-Small-24B |
+| `telco` | private | telco | Mistral-Small-24B |
 | `generic_coding` | approved-frontier, if permitted; otherwise private | coding | Claude Sonnet, or Qwen3-Coder |
 | `uncertain` | private | general | Mistral-Small-24B |
 
@@ -133,7 +140,7 @@ IdP replaces the inline JWKS with `jwks.remote`. Nothing else changes.
 
 ```bash
 source identity/tokens.env
-./scripts/06-test-flow.sh         # 9   bob's five prompts and alice's one
+./scripts/06-test-flow.sh         # 9   bob's six prompts and alice's one
 ./scripts/08-show-decision.sh bob "Review this function for concurrency bugs: ..."   # 10  one request traced across both hops
 ./scripts/07-test-controls.sh     # 11  internal code, provenance, a credential, dave, spoofing, bad tokens
 ./scripts/classify.sh "Look at this code and tell me if the lock is released on every path."   # 12  tune the classifier
@@ -174,7 +181,7 @@ yaml/20-opa.yaml                  OPA with /config, /policy and /data mounts
 yaml/30-decision-gateway.yaml     the second hop, ClusterIP
 yaml/40-backends.yaml             Qwen3-Coder, Mistral, Anthropic, with the task labels aliased
 yaml/50-decide-policy.yaml.tmpl   verify the token again, ask OPA with the body
-yaml/60-decision-route.yaml       four rules on x-model-pool and x-model-class
+yaml/60-decision-route.yaml       five rules on x-model-pool and x-model-class
 yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
 yaml/90-intake-gateway.yaml       the front door, ClusterIP
@@ -205,7 +212,7 @@ ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh adopt      # t
 ZONE=awslab.example.com ./scripts/platform/40-public-endpoints.sh destroy
 ```
 
-Configure terminal Claude Code, or run the Desktop endpoint preflight:
+Then point a client at it:
 
 ```bash
 HOST=$(tofu -chdir=tofu output -raw gateway_host) ./scripts/10-claude-code.sh
@@ -214,49 +221,23 @@ HOST=$(tofu -chdir=tofu output -raw gateway_host) ./scripts/11-claude-desktop.sh
 
 ### Claude Desktop
 
-The [Claude Desktop section of the lab](https://mastertheagent.com/solo/agentgateway-inference-task-routing-eks/#claude-desktop)
-contains the complete terminal-only setup, including the Python that generates the plist.
-No Developer menu or token pasting is required. Desktop's inference settings are separate
-from terminal Claude Code's `~/.claude/settings.json`.
+Claude Desktop is not Claude Code and shares none of its configuration. It never reads
+`~/.claude/settings.json`, so anything that points Claude Code at a gateway does nothing
+here, and one machine can run Claude Code on the gateway and Desktop on Anthropic at the
+same time. Desktop has its own setting, under developer mode: **Help > Troubleshooting >
+Enable Developer Mode**, then **Developer > Configure Third Party Inference > Gateway**.
 
-1. Run `scripts/01-identity.sh` with this lab's existing signing key and save `BOB_TOKEN`
-   to `~/.config/agw/token` with mode `600`. Do not create a new signing key for a gateway
-   that still trusts a different JWKS.
-2. Generate `$TMPDIR/com.anthropic.claudefordesktop.plist` using the lab's Python snippet.
-   Use your gateway URL, `apiKey` credential kind and `bearer` auth scheme. This sends
-   bob's JWT in `Authorization: Bearer`; it does not send a provider key to the desktop.
-3. Install the generated profile:
+`./scripts/11-claude-desktop.sh [employee]` prints the values to type and then makes the
+calls Desktop makes, so a broken endpoint fails there rather than in front of an audience.
+Three things it checks that are easy to get wrong:
 
-   ```bash
-   sudo mkdir -p "/Library/Managed Preferences"
-   sudo install -m 644 -o root -g wheel "$TMPDIR/com.anthropic.claudefordesktop.plist" "/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
-   plutil -lint "/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
-   ```
-
-4. Fully quit and reopen Desktop. Check the current startup log at
-   `~/Library/Logs/Claude-3p/main.log` for your gateway's `inference apiHost` and a healthy
-   gateway configuration. Writing a file into `Claude-3p/` alone did not activate the tested app.
-5. In a new **Chat** conversation, ask `Explain what a Python list comprehension is`.
-   Watch `decision-gateway` for bob, HTTP 200 and the actual serving model. If the separately
-   started dashboard at `http://localhost:8900/` is in use, refresh it and reset filters
-   before asking. It follows new requests after startup; the profile does not start it.
-
-`scripts/11-claude-desktop.sh` tests the endpoint, but does not install Desktop's settings.
-Remote URLs require HTTPS. A local port-forward at `http://127.0.0.1:<port>` also works.
-The managed profile takes precedence over local `deploymentMode` changes. Its static JWT
-must be renewed by regenerating and reinstalling the plist, then restarting Desktop.
-
-Desktop's **Code** mode can attach repository instructions, files and tool results. Such a
-request may stay private even when the typed question looks generic. Title-generation
-requests are also separate from the user's prompt and can route differently.
-
-The gateway prerequisites remain in `yaml/91-intake-policy.yaml`, `yaml/92-intake-route.yaml`
-and `yaml/40-backends.yaml`: request normalisation, Messages and token-count mappings, and
-provider configuration. The private backends' token overrides replace client values,
-including smaller ones; they are not conditional caps. JWT policies authenticate the caller.
-
-See the [agentgateway Claude Desktop documentation](https://agentgateway.dev/docs/standalone/latest/integrations/llm/clients/claude-desktop/)
-for OIDC sign-in and managed fleet delivery.
+- **Bearer token, not API key.** Desktop sends an API key as `X-Api-Key` and a bearer token
+  as `Authorization: Bearer`. The gateway's JWT policy reads the second, so the API key
+  choice arrives with no credential.
+- **HTTPS.** Desktop refuses a plain HTTP base URL anywhere but loopback, so a port-forward
+  cannot serve it. That is what `tofu/` is for.
+- **Restart.** The setting is read once, at launch. A running app keeps what it started
+  with, which looks like the gateway ignoring you.
 
 Two endpoints, published differently on purpose. The model endpoint is open, because every
 request carries a JWT the gateway verifies and OPA decides what the subject may reach, so

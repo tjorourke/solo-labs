@@ -10,7 +10,7 @@
 #
 # The second model: Qwen3-Coder-30B-A3B-Instruct-FP8, on the second GPU card.
 #
-# This is the coding backend. Mistral serves the lab's finance and general prompts.
+# This is the coding backend. Mistral serves the lab's finance, telco and general prompts.
 #
 # The NVIDIA device plugin allocates whole GPUs. A second GPU pod on a node with
 # nvidia.com/gpu: 1 stays Pending with "Insufficient nvidia.com/gpu". Each model

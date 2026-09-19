@@ -36,6 +36,10 @@
         "pool": "approved-frontier",
         "class": "coding"
       },
+      "telco": {
+        "pool": "private",
+        "class": "telco"
+      },
       "uncertain": {
         "pool": "private",
         "class": "general"
@@ -44,7 +48,8 @@
     "private_classes": [
       "coding",
       "finance",
-      "general"
+      "general",
+      "telco"
     ]
   },
   "dlp": {

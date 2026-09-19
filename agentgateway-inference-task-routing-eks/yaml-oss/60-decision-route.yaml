@@ -2,6 +2,7 @@
 #
 #   pool=private,           class=coding   -> Qwen3-Coder on the GPU
 #   pool=private,           class=finance  -> Mistral on the GPU
+#   pool=private,           class=telco    -> Mistral on the GPU
 #   pool=private,           class=general  -> Mistral on the GPU
 #   pool=approved-frontier                 -> Anthropic
 #
@@ -36,6 +37,17 @@ spec:
           headers:
             - {type: Exact, name: x-model-pool, value: private}
             - {type: Exact, name: x-model-class, value: finance}
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [x-model-pool, x-model-class, x-routing-reason, x-routing-user, x-selected-model, x-source-repo]
+      backendRefs:
+        - {name: vllm-mistral, group: agentgateway.dev, kind: AgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: telco}
       filters:
         - type: RequestHeaderModifier
           requestHeaderModifier:

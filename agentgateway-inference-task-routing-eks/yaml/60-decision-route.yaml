@@ -2,6 +2,7 @@
 #
 #   pool=private,           class=coding   -> Qwen3-Coder on the GPU
 #   pool=private,           class=finance  -> Mistral on the GPU
+#   pool=private,           class=telco    -> Mistral on the GPU
 #   pool=private,           class=general  -> Mistral on the GPU
 #   pool=approved-frontier                 -> Anthropic
 #
@@ -32,6 +33,13 @@ spec:
           headers:
             - {type: Exact, name: x-model-pool, value: private}
             - {type: Exact, name: x-model-class, value: finance}
+      backendRefs:
+        - {name: vllm-mistral, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+    - matches:
+        - path: {type: PathPrefix, value: /v1/chat/completions}
+          headers:
+            - {type: Exact, name: x-model-pool, value: private}
+            - {type: Exact, name: x-model-class, value: telco}
       backendRefs:
         - {name: vllm-mistral, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
     - matches:
