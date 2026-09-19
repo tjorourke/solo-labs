@@ -301,17 +301,12 @@ config:
             - {type: domain, name: economics}
             - {type: domain, name: business}
         modelRefs: [{model: finance, use_reasoning: false}]
-      # Telco outranks everything, and it has to. The code rules' easy banks are all coding
-      # examples, so a question about a 5G handover is unlike both banks of review_vs_generic
-      # and scores hard against it by a whisker; with telco below them, three network
-      # questions in four came back code_review or code_modification. Measured 2026-09-19.
-      # Ranking it first is safe because both its signals must hold, and neither fires on a
-      # prompt with no network vocabulary in it: "review the settle() method in
-      # com.example.internal" has none, so it is still a review. A network question that is
-      # genuinely about code ("review the handover logic in our RAN adapter") does come back
-      # telco, and goes to Mistral rather than Qwen. That is the cost of ranking a subject
-      # above a shape, and it is the right trade for an operator: the subject is the thing
-      # that must not leave.
+      # Telco outranks everything, and it has to: the code rules' easy banks are all coding
+      # examples, so a network question is unlike both banks of review_vs_generic and clears
+      # its threshold. Ranking telco first is safe because both its signals must hold, and
+      # neither fires on a prompt with no network vocabulary in it, so a review is still a
+      # review. A network question genuinely about code goes to Mistral rather than Qwen.
+      # For an operator that is the right way round: the subject is what must not leave.
       - name: telco
         description: The operator's own network
         priority: 65

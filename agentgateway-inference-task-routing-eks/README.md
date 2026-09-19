@@ -62,6 +62,18 @@ the table can select; the task determines the preferred one.
 | `generic_coding` | approved-frontier, if permitted; otherwise private | coding | Claude Sonnet, or Qwen3-Coder |
 | `uncertain` | private | general | Mistral-Small-24B |
 
+### What to ask it
+
+Three models, four areas of expertise. Send these at the one endpoint with nothing but a
+token. Each was run against the gateway on 19 September 2026 and landed where it says.
+
+| Ask | Task | Where it lands |
+|---|---|---|
+| "What is our exposure to counterparty credit risk on uncleared derivatives?" | `finance` | Mistral on your own GPU |
+| "How does a 5G network slice guarantee latency for an enterprise customer?" | `telco` | Mistral on your own GPU |
+| "Review this function for concurrency bugs: `public void credit(long amt) { balance += amt; }`" | `code_review` | Qwen3-Coder on your own GPU, whoever asks |
+| "What is the difference between a list and a tuple in Python?" | `generic_coding` | the approved frontier, only if permitted |
+
 | User | May use |
 |---|---|
 | bob | private, approved-frontier |
