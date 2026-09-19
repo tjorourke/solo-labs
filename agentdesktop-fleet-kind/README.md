@@ -1,4 +1,4 @@
-# Agentdesktop fleet mode: central policy and no provider keys on the laptop
+# Managing client configuration centrally with Agentdesktop
 
 Runnable files for the lab at
 <https://www.masterthemesh.com/solo/agentdesktop-fleet-kind/>
