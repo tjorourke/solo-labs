@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 4 of the flow: the public gateway authenticates, classifies, and hands on, behind an
+# Step 4 of the flow: the classify gateway authenticates, classifies, and hands on, behind an
 # intake gateway that normalises whatever a client sent.
 #
 #   ./scripts/05-classify-gateway.sh

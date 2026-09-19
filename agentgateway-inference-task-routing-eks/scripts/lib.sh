@@ -13,7 +13,7 @@ CTX="${KUBE_CONTEXT:-$(command kubectl config current-context 2>/dev/null || tru
 kubectl() { command kubectl --context "$CTX" "$@"; }
 helm_()   { helm --kube-context "$CTX" "$@"; }
 
-# The public gateway is ClusterIP with no external address, so the scripts reach it
+# The classify gateway is ClusterIP with no external address, so the scripts reach it
 # through a port-forward and send the hostname its route is bound to.
 GW_PORT="${GW_PORT:-18080}"
 # The tests enter where a client enters: the intake hop, which normalises the model name

@@ -1,4 +1,4 @@
-# Two rules: everything under /v1/ goes on to the public gateway, normalised, and
+# Two rules: everything under /v1/ goes on to the classify gateway, normalised, and
 # /v1/messages is converted to chat completions first.
 #
 # The hostname rewrite is the part that is easy to miss. The gateway behind this one binds its

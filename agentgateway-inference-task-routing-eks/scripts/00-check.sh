@@ -4,7 +4,7 @@
 #   ./scripts/00-check.sh
 #
 # The flow steps need the platform: a cluster with both models serving, the semantic router
-# running, the public gateway Programmed, and an Anthropic key in the environment for the one
+# running, the classify gateway Programmed, and an Anthropic key in the environment for the one
 # frontier route. scripts/platform/up.sh builds the platform when it is not there. This stops
 # here rather than failing three steps later with an error about the wrong thing.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -27,9 +27,15 @@ def access(trace, span, model, status=200):
             f'gen_ai.response.model={model} duration=100ms')
 
 
+# What Claude Code posts when it names a conversation, not anything the person typed.
+TITLE_PROMPT = ('Please write a 5-10 word succinct title for an agent chat session. '
+                'Write the title in the predominant language of the conversation.')
+
+
 class CorrelationTests(unittest.TestCase):
     def setUp(self):
         dashboard.cards.clear()
+        dashboard.dropped.clear()
         self.a, self.b = 'a' * 32, 'b' * 32
         self.x, self.y = '1' * 16, '2' * 16
 
@@ -66,6 +72,26 @@ class CorrelationTests(unittest.TestCase):
     def test_zero_trace_is_not_a_valid_correlation(self):
         self.assertIsNone(dashboard.request_key('0' * 32, self.x))
         self.assertIsNone(dashboard.request_key(self.a, '0' * 16))
+
+    def test_housekeeping_never_reaches_the_screen(self):
+        # The client naming the conversation, and the access log for the same request
+        # arriving afterwards. Neither may leave a row behind.
+        dashboard.on_opa(opa(self.a, self.x, 'code_review', TITLE_PROMPT))
+        dashboard.on_gateway(access(self.a, self.x, 'qwen'))
+        self.assertEqual(dashboard.cards, [])
+
+    def test_housekeeping_card_is_withdrawn_when_the_log_arrives_first(self):
+        dashboard.on_gateway(access(self.a, self.x, 'qwen'))
+        self.assertEqual(len(dashboard.cards), 1)
+        dashboard.on_opa(opa(self.a, self.x, 'code_review', TITLE_PROMPT))
+        self.assertEqual(dashboard.cards, [])
+
+    def test_a_real_prompt_beside_a_dropped_one_is_untouched(self):
+        dashboard.on_opa(opa(self.a, self.x, 'code_review', TITLE_PROMPT))
+        dashboard.on_opa(opa(self.b, self.y, 'finance', 'Duration risk in this portfolio?'))
+        dashboard.on_gateway(access(self.b, self.y, 'mistral'))
+        self.assertEqual([(c['task'], c['answered_by']) for c in dashboard.cards],
+                         [('finance', 'mistral')])
 
     def test_reminders_hidden_but_pasted_question_preserved(self):
         body = json.dumps({'messages': [{'role': 'user', 'content':

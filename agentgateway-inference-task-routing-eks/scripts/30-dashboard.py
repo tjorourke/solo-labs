@@ -38,6 +38,7 @@ cards = []            # newest last
 subscribers = []      # queues, one per browser
 lock = threading.Lock()
 followers = set()
+dropped = {}          # request keys taken off the screen, newest last
 
 
 # --- helpers ---------------------------------------------------------------------------
@@ -74,10 +75,33 @@ def event_time(value):
         return time.time()
 
 
+def drop_request(key):
+    """Take a request off the screen and keep it off, whichever log names it next.
+
+    The two logs arrive in either order, so this both removes the card an earlier event
+    already created and remembers the key, which is what stops a later one putting the
+    request back with no prompt on it.
+    """
+    if not key:
+        return
+    with lock:
+        dropped[key] = True
+        for stale in list(dropped)[:-500]:
+            del dropped[stale]
+        card = next((c for c in cards if c.get("request_key") == key), None)
+        if card is None:
+            return
+        cards.remove(card)
+        card_id = card["id"]
+    publish({"id": card_id, "drop": True})
+
+
 def upsert_event(key, **fields):
     # OPA sees the decision-gateway traceparent; the access log contains the same
     # trace.id and span.id. Never guess by user, timing, prompt or completion order.
     with lock:
+        if key in dropped:
+            return None
         card = next((c for c in cards if key and c.get("request_key") == key), None)
         if card is None:
             card = {"id": key or uuid.uuid4().hex, "ts": time.time(),
@@ -135,8 +159,10 @@ _ENVELOPE = re.compile(
 )
 
 # The client's own background calls. Neither is anything the person asked for: the first
-# names the conversation in the sidebar, the second recaps it after a pause. They are worth
-# labelling rather than hiding, because they still cost tokens and still get routed.
+# names the conversation in the sidebar, the second recaps it after a pause. The dashboard
+# drops them. They are real requests and they do spend tokens, but this screen is for the
+# decisions someone typed a prompt for, and a title-generation call classified as a code
+# review reads as a misroute to anyone watching. The gateway's own logs still hold them.
 _HOUSEKEEPING = (
     "succinct title for an agent chat session",
     "Write the title in the predominant language",
@@ -172,12 +198,6 @@ def read_prompt(body_text):
         question = joined.split("<user_query>")[-1].split("</user_query>")[0].strip()
     if not question:
         question = strip_envelope(last)
-    if housekeeping:
-        # Say what it is rather than printing the instructions the client sent itself.
-        # These carry the session content, so the text is a duplicate of a row already on
-        # screen, and the meta-prompt is the noise that makes a real answer look misrouted.
-        which = ("naming the session" if "title" in joined.lower() else "recapping the session")
-        question = f"(client housekeeping: {which})"
     return last, question, (question[:400] or "no prompt"), housekeeping
 
 
@@ -208,6 +228,9 @@ def on_opa(line):
     parent = request_headers.get("traceparent", "").split("-")
     key = request_key(parent[1], parent[2]) if len(parent) == 4 else None
     prompt, question, thread, housekeeping = read_prompt(http_in.get("body", ""))
+    if housekeeping:
+        drop_request(key)
+        return
     upsert_event(
         key,
         decision_ts=event_time(d.get("timestamp")),
@@ -216,7 +239,6 @@ def on_opa(line):
         # The envelope is stripped for display. The raw body is what the gateway routed on
         # and is still in the gateway's own logs; it is not something to put on a screen.
         prompt=question,
-        housekeeping=housekeeping,
         question=question,
         thread=thread,
         task=task,
@@ -339,8 +361,6 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
     <select id="f-pool"><option value="">Any pool</option></select>
     <select id="f-model"><option value="">Any model</option></select>
     <select id="f-status"><option value="">Any status</option></select>
-    <label style="display:flex;gap:5px;align-items:center;font-size:13px;color:#475569;white-space:nowrap">
-      <input id="f-house" type="checkbox"> hide housekeeping</label>
     <input id="f-text" type="search" placeholder="Search the prompt">
     <button class="btn" id="reset">Reset filters</button>
     <button class="btn live" id="pause">Live</button>
@@ -384,7 +404,6 @@ function matches(c) {
   }
   const q = document.getElementById('f-text').value.trim().toLowerCase();
   if (q && !(c.prompt || '').toLowerCase().includes(q)) return false;
-  if (document.getElementById('f-house').checked && c.housekeeping) return false;
   return true;
 }
 function turn(c) {
@@ -438,7 +457,7 @@ function render() {
   const shown = cards.filter(matches);
   const groups = new Map();
   for (const c of shown) {
-    const key = JSON.stringify([c.user || '', c.housekeeping ? c.id : (c.thread || c.prompt || c.id)]);
+    const key = JSON.stringify([c.user || '', c.thread || c.prompt || c.id]);
     if (!groups.has(key)) groups.set(key, {key, cards: []});
     groups.get(key).cards.push(c);
   }
@@ -456,24 +475,28 @@ function upsert(c) {
   const i = cards.findIndex(x => x.id === c.id);
   if (i >= 0) cards[i] = c; else cards.push(c);
 }
+// The server withdraws a card it has decided not to show. A withdrawal can arrive after
+// the card did, so this has to remove one as well as ignore one that never arrived.
+function apply(c) {
+  if (c.drop) { cards = cards.filter(x => x.id !== c.id); return; }
+  upsert(c);
+}
 new EventSource('/events').onmessage = e => {
   const c = JSON.parse(e.data);
   if (paused) { buffer.push(c); document.getElementById('pause').textContent = `Paused (${buffer.length})`; return; }
-  upsert(c); render();
+  apply(c); render();
 };
-for (const id of [...Object.values(F), 'f-text', 'f-house']) {
+for (const id of [...Object.values(F), 'f-text']) {
   document.getElementById(id).addEventListener('input', render);
 }
-document.getElementById('f-house').addEventListener('change', render);
 document.getElementById('reset').onclick = () => {
   for (const id of Object.values(F)) document.getElementById(id).value = '';
   document.getElementById('f-text').value = '';
-  document.getElementById('f-house').checked = false;
   render();
 };
 document.getElementById('pause').onclick = e => {
   paused = !paused;
-  if (!paused) { buffer.forEach(upsert); buffer = []; render(); }
+  if (!paused) { buffer.forEach(apply); buffer = []; render(); }
   e.target.textContent = paused ? 'Paused (0)' : 'Live';
   e.target.className = 'btn ' + (paused ? 'paused' : 'live');
 };
