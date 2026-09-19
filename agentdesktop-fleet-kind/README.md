@@ -68,6 +68,23 @@ real `settings.json`, which affects every Claude Code session on the machine.
 
 Accounts are `tom`, `priya` and `leaver`, all with the password `password`.
 
+## Sharing a laptop with another gateway demo
+
+Claude Code has one base URL and one credential helper, so two demos that route
+it through a gateway will overwrite each other. `enrol-mac.sh` refuses to start
+while another one owns those keys, and snapshots the real default before the
+daemon writes anything.
+
+```bash
+./yaml/enrol-mac.sh state    # which demo owns Claude right now
+./yaml/enrol-mac.sh down     # unenrol and put Claude back
+```
+
+`down` stops the daemon, restores Claude Code, clears the local device identity
+and removes the device from the controller. The restore runs before any remote
+work, so an unreachable cluster still leaves the laptop back to normal. Restart
+Claude Code and Claude Desktop afterwards.
+
 Remove everything with `./yaml/agentdesktop.sh teardown`.
 
 ## Three things that will catch you out
