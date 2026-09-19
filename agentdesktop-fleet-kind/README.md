@@ -9,6 +9,17 @@ signing request, policy is published centrally as a numbered revision, and
 model traffic goes through agentgateway with a five minute controller-minted
 JWT instead of an Anthropic key.
 
+Part 4 of [Pointing your tools at agentgateway](https://mastertheagent.com/solo/#f=series):
+
+1. [Cursor setup](https://mastertheagent.com/solo/agentgateway-cursor-setup/)
+2. [Claude Code and Claude Desktop setup](https://mastertheagent.com/solo/agentgateway-claude-setup/)
+3. [vLLM Semantic Router with Cursor and Claude](https://mastertheagent.com/solo/agentgateway-router-client-setup/)
+4. [Agentdesktop fleet management](https://mastertheagent.com/solo/agentdesktop-fleet-kind/)
+
+This part replaces per-user endpoint configuration and token copying with centrally published
+policy and short-lived gateway credentials. The managed client demonstrated here is Claude Code.
+It has its own platform prerequisites below; the semantic router from Part 3 is not required.
+
 ## What is here
 
 | Path | What it does |
