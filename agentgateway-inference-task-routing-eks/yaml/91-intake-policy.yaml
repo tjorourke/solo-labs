@@ -92,3 +92,44 @@ spec:
           policy:
             request:
               body: 'toJson(json(request.body).merge({"model": "auto"}))'
+---
+# /v1/messages/count_tokens is answered here and never reaches a model.
+#
+# It is a sizing call, not inference: a client posts a conversation and Anthropic returns
+# {"input_tokens": N} so the client can draw a context meter. The intake route matches
+# /v1/messages as a prefix, so without this the sizing call is treated as a question:
+# classified, routed and answered by whichever model won. Measured on this cluster, Mistral
+# replied "The number of tokens in your message is 10 tokens" wrapped in a chat-completion
+# envelope. A client reading input_tokens out of that gets nothing, and every re-count
+# spends GPU time and, on the frontier route, budget.
+#
+# 404 rather than a count, because this gateway cannot produce a true one. The models
+# behind it have their own tokenisers and none of them is Anthropic's, so any number
+# returned here would be invented, and a client sizing a context from an invented number is
+# worse off than one told no. Clients treat the endpoint as best-effort and estimate
+# locally when it is missing.
+#
+# A policy of its own, and PostRouting, for two reasons that are easy to trip over:
+# directResponse is rejected in PreRouting ("PreRouting only supports extAuth,
+# authorization, transformation, ..."), and a second policy targeting the same Gateway in
+# the same phase replaces the first rather than adding to it. Different phase, both apply.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: no-token-counting
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: intake-gateway
+  traffic:
+    phase: PostRouting
+    directResponse:
+      conditional:
+        - condition: 'request.path.startsWith("/v1/messages/count_tokens")'
+          policy:
+            status: 404
+            headers:
+              - {name: content-type, value: application/json}
+            body: '{"type":"error","error":{"type":"not_found_error","message":"This gateway does not implement /v1/messages/count_tokens. The models behind it do not share Anthropic''s tokeniser, so a count returned here would not be the one that matters. Size the context locally."}}'

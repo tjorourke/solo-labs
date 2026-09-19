@@ -178,7 +178,7 @@ yaml/60-decision-route.yaml       four rules on x-model-pool and x-model-class
 yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
 yaml/90-intake-gateway.yaml       the front door, ClusterIP
-yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped
+yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped; count_tokens answered 404
 yaml/92-intake-route.yaml         everything under /v1/ to the public gateway, Host rewritten
 yaml-oss/                         the same set on the OSS CRDs, no licence needed
 tofu/                             optional: the two public names, their certificates and their ELBs
@@ -209,7 +209,28 @@ Then point a client at it:
 
 ```bash
 HOST=$(tofu -chdir=tofu output -raw gateway_host) ./scripts/10-claude-code.sh
+HOST=$(tofu -chdir=tofu output -raw gateway_host) ./scripts/11-claude-desktop.sh bob
 ```
+
+### Claude Desktop
+
+Claude Desktop is not Claude Code and shares none of its configuration. It never reads
+`~/.claude/settings.json`, so anything that points Claude Code at a gateway does nothing
+here, and one machine can run Claude Code on the gateway and Desktop on Anthropic at the
+same time. Desktop has its own setting, under developer mode: **Help > Troubleshooting >
+Enable Developer Mode**, then **Developer > Configure Third Party Inference > Gateway**.
+
+`./scripts/11-claude-desktop.sh [employee]` prints the values to type and then makes the
+calls Desktop makes, so a broken endpoint fails there rather than in front of an audience.
+Three things it checks that are easy to get wrong:
+
+- **Bearer token, not API key.** Desktop sends an API key as `X-Api-Key` and a bearer token
+  as `Authorization: Bearer`. The gateway's JWT policy reads the second, so the API key
+  choice arrives with no credential.
+- **HTTPS.** Desktop refuses a plain HTTP base URL anywhere but loopback, so a port-forward
+  cannot serve it. That is what `tofu/` is for.
+- **Restart.** The setting is read once, at launch. A running app keeps what it started
+  with, which looks like the gateway ignoring you.
 
 Two endpoints, published differently on purpose. The model endpoint is open, because every
 request carries a JWT the gateway verifies and OPA decides what the subject may reach, so
