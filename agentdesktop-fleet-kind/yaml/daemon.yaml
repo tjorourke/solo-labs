@@ -1,0 +1,14 @@
+# Daemon configuration for the managed (fleet) mode of Part 9.
+#
+# This is the whole of the local configuration. Everything else — which gateway
+# to use, what the sandbox allows, what Claude Code is told — arrives from the
+# controller as a versioned revision, so this file does not change when policy
+# changes.
+#
+#   agentdesktop daemon --user --config demo-scripts/yaml-agentdesktop/daemon.yaml
+#
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agentdesktop-dev/agentdesktop/main/schema/daemon-config.json
+controller:
+  address: https://agentdesktop.agentdesktop.svc.cluster.local
+  caCertificatePath: /tmp/agentdesktop-device-ca.pem
+  heartbeatInterval: 30s
