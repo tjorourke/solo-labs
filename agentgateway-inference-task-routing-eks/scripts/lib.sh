@@ -16,11 +16,13 @@ helm_()   { helm --kube-context "$CTX" "$@"; }
 # The classify gateway is ClusterIP with no external address, so the scripts reach it
 # through a port-forward and send the hostname its route is bound to.
 GW_PORT="${GW_PORT:-18080}"
-# The tests enter where a client enters: the intake hop, which normalises the model name
-# and the tool shapes and lifts an editor's question out of its envelope. Set GW_SVC to
-# model-gateway to test the classify hop on its own.
-GW_SVC="${GW_SVC:-intake-gateway}"
-GW_HOST="${GW_HOST:-intake-gateway.agentgateway-system.svc.cluster.local}"
+# The tests enter where a client enters: the intake listener on :8080, which normalises the model name
+# and the tool shapes and lifts an editor's question out of its envelope.
+GW_SVC="${GW_SVC:-model-gateway}"
+# The Service port to forward to. 8080 is the intake listener, where a client enters; set
+# GW_SVC_PORT=80 to reach the classify listener on the same Gateway and skip normalisation.
+GW_SVC_PORT="${GW_SVC_PORT:-8080}"
+GW_HOST="${GW_HOST:-model-gateway.agentgateway-system.svc.cluster.local}"
 GW_URL="http://localhost:${GW_PORT}/v1/chat/completions"
 # A port-forward is a process that can die quietly, and a dead one makes every request
 # look like a gateway failure. This starts one if nothing answers, waits for it to carry a
@@ -30,7 +32,7 @@ gw_up() {
   for i in $(seq 1 3); do
     curl -s -o /dev/null -m 2 -H "Host: $GW_HOST" "http://localhost:${GW_PORT}/" 2>/dev/null && return 0
     [ -n "${GW_PF:-}" ] && kill "$GW_PF" 2>/dev/null
-    kubectl -n "$NS" port-forward "svc/$GW_SVC" "${GW_PORT}:80" >/dev/null 2>&1 &
+    kubectl -n "$NS" port-forward "svc/$GW_SVC" "${GW_PORT}:${GW_SVC_PORT}" >/dev/null 2>&1 &
     GW_PF=$!
     # No EXIT trap to tidy this up, deliberately. An EXIT trap is inherited by every
     # subshell, and this file is full of command substitutions like $(pool), so the trap

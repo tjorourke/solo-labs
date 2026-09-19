@@ -11,13 +11,14 @@
 # HTTP inside the VPC, so neither the Gateway nor the UI needs a certificate of its own.
 
 # ---------------------------------------------------------------------------
-# The model endpoint: the intake gateway, the first of the three hops
+# The model endpoint: the intake listener, the first of the two hops
 # ---------------------------------------------------------------------------
 #
-# The selector is the intake gateway's, not the public gateway's. A client has to arrive
-# at the hop that normalises the request: the model name it sent becomes the one the
-# router answers to, and the tool shapes the backends reject are filtered out. Pointing
-# this at model-gateway instead gets an editor a 503 on its first prompt.
+# Both hops are listeners on model-gateway now, so the selector is the same either way and
+# the port is what decides. 8080 is the intake listener, which normalises the request: the
+# model name the client sent becomes the one the router answers to, and the tool shapes the
+# backends reject are filtered out. Pointing this at 80 skips that and gets an editor a 400
+# on its first prompt, naming a model nobody here serves.
 
 resource "kubernetes_service" "gateway_public" {
   metadata {
@@ -41,13 +42,13 @@ resource "kubernetes_service" "gateway_public" {
     load_balancer_source_ranges = var.gateway_allowed_cidrs
 
     selector = {
-      "gateway.networking.k8s.io/gateway-name" = "intake-gateway"
+      "gateway.networking.k8s.io/gateway-name" = "model-gateway"
     }
 
     port {
       name        = "https"
       port        = 443
-      target_port = 80
+      target_port = 8080
       protocol    = "TCP"
     }
   }

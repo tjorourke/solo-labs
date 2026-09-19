@@ -29,29 +29,32 @@ and `policies.ai.modelAliases` exist in both.
 
 ## Overview
 
-### Why there are three gateways
+### Why there are two gateways and three hops
 
 A Gateway evaluates its policies in a fixed order and picks the route last: JWT, then
-extAuth (OPA), then extProc (the router), then route selection. OPA is asked before the
-router answers, so on one Gateway OPA is asked before the task exists, and a transformation
-runs later still, after the router has already read the body. This flow needs both the other
-way round, so it runs three Gateways with one job each: `intake-gateway` makes what the
-client sent servable, `model-gateway` verifies the token and classifies the task, and
-`decision-gateway` verifies again and lets OPA decide. The router is called once. OPA
-returns both the pool and the class.
+extAuth (OPA), then extProc (the router), then transformation, then route selection.
+Two things in this flow need the other order. OPA is asked before the router answers,
+so on one listener OPA is asked before the task exists. And a transformation runs after
+the router, so a rewrite the router must see cannot share a listener with it (measured:
+with both in one PreRouting policy and the transformation rewriting the body to a finance
+question, a 5G prompt still classified `telco`).
+
+Policies attach to a single listener with `sectionName`, so the answer is two Gateways
+and three hops, not three Gateways:
 
 ```
-client ──▶ intake-gateway ──▶ model-gateway ──▶ decision-gateway ────▶ backend
-           0 model name        1 verify token    3 verify token again  Qwen3-Coder  (private, coding)
-             becomes auto,       (and keep it)   4 OPA: task +         Mistral      (private, finance / telco / general)
-             tool shapes       2 router:            permissions +      Anthropic    (approved-frontier, generic coding)
-             filtered            task label         data checks
-                                                    -> pool, class
-                                                 5 route on the two
+client ─▶ model-gateway :8080 ─▶ model-gateway :80 ──▶ decision-gateway ────▶ backend
+          0 model name -> auto   1 verify token       3 verify token again  Qwen3-Coder  (private, coding)
+            tool shapes filtered   (and keep it)      4 OPA: task +         Mistral      (private, finance / telco / general)
+            question lifted out  2 router:               permissions +      Anthropic    (approved-frontier, generic coding)
+            of the envelope        task label            data checks
+                                                         -> pool, class
+                                                       5 route on the two
 ```
 
-Only `intake-gateway` is reachable from outside the cluster. The other two are ClusterIP,
-and each verifies the bearer token itself rather than trusting the hop before it.
+The first two hops are the same proxy pod, entered twice. Only `:8080` is published;
+`:80` and `decision-gateway` are ClusterIP, and each hop verifies the bearer token
+itself rather than trusting the one before it.
 
 ### The routing table
 
@@ -242,13 +245,13 @@ opa/routing.rego                  the decision: block, force private, prefer, fa
 opa/routing-data.json             who may use which pool; task to pool and class; internal-code markers
 yaml/10-router-tasks.yaml         the router as a task classifier: similarity banks, keywords, domains
 yaml/20-opa.yaml                  OPA with /config, /policy and /data mounts
-yaml/30-decision-gateway.yaml     the third gateway, ClusterIP
+yaml/30-decision-gateway.yaml     the second Gateway, ClusterIP
 yaml/40-backends.yaml             Qwen3-Coder, Mistral, Anthropic, with the task labels aliased
 yaml/50-decide-policy.yaml.tmpl   verify the token again, ask OPA with the body
 yaml/60-decision-route.yaml       five rules on x-model-pool and x-model-class
 yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
-yaml/90-intake-gateway.yaml       the front door, ClusterIP
+yaml/platform/05-gateway.yaml     model-gateway: the intake listener :8080 and the classify listener :80
 yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped
 yaml/92-intake-route.yaml         everything under /v1/ to the classify gateway, Host rewritten; count_tokens answered by the gateway
 yaml-oss/                         the same set on the OSS CRDs, no licence needed

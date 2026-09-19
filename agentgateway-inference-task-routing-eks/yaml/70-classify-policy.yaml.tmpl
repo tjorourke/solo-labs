@@ -23,6 +23,7 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: model-gateway
+      sectionName: http
   frontend:
     # Telemetry for the Enterprise UI. The gateway exports a span per request to the
     # collector the management chart installs, and the dashboards and Cost Management

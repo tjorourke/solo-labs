@@ -33,7 +33,8 @@ spec:
   targetRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: intake-gateway
+      name: model-gateway
+      sectionName: intake
   traffic:
     phase: PreRouting
     transformation:

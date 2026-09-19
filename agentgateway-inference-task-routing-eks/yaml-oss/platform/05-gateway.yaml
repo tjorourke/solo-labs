@@ -41,6 +41,17 @@ spec:
       kind: AgentgatewayParameters
       name: model-gateway-params
   listeners:
+    # The front door, and the reason this lab needs two listeners rather than two Gateways.
+    # Policies are evaluated in a fixed order within one listener, and extProc runs before a
+    # transformation, so a rewrite the router must see cannot share a listener with it. It can
+    # share a Gateway: the normalising policy attaches to this listener by sectionName and its
+    # route forwards to the one below, so the router meets a body that is already fixed.
+    - name: intake
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
     - name: http
       port: 80
       protocol: HTTP

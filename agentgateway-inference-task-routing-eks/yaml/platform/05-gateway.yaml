@@ -41,6 +41,18 @@ spec:
       kind: EnterpriseAgentgatewayParameters
       name: model-gateway-params
   listeners:
+    # The front door, and the reason this lab needs two listeners rather than two Gateways.
+    # A policy is evaluated in a fixed order within one listener, and extProc runs before a
+    # transformation, so a rewrite the router must see cannot share a listener with it. It can
+    # share a Gateway: the normalising policy is attached to this listener by sectionName, its
+    # route forwards to the one below, and the request meets the router with the body already
+    # fixed. One proxy, two listeners, one extra trip through the same pod.
+    - name: intake
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
     - name: http
       port: 80
       protocol: HTTP
