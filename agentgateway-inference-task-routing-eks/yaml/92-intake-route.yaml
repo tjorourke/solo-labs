@@ -73,3 +73,13 @@ spec:
     ai:
       routes:
         "/v1/messages": Messages
+        # Claude Desktop sizes its context by posting the conversation to
+        # /v1/messages/count_tokens and reading {"input_tokens": N} back. That path is
+        # matched by the /v1/messages prefix above, so without an entry of its own the
+        # sizing call is treated as a question: classified, routed, and answered by
+        # whichever model won. Measured here before this line existed, Mistral replied
+        # "The number of tokens in your message is 10 tokens" inside a chat-completion
+        # envelope, and a client reading input_tokens out of that gets nothing while the
+        # GPU bills for it. AnthropicTokenCount makes the gateway answer it directly:
+        # {"input_tokens":12}, no model involved.
+        "/v1/messages/count_tokens": AnthropicTokenCount

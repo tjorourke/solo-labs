@@ -178,8 +178,8 @@ yaml/60-decision-route.yaml       four rules on x-model-pool and x-model-class
 yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
 yaml/90-intake-gateway.yaml       the front door, ClusterIP
-yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped; count_tokens answered 404
-yaml/92-intake-route.yaml         everything under /v1/ to the public gateway, Host rewritten
+yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped
+yaml/92-intake-route.yaml         everything under /v1/ to the public gateway, Host rewritten; count_tokens answered by the gateway
 yaml-oss/                         the same set on the OSS CRDs, no licence needed
 tofu/                             optional: the two public names, their certificates and their ELBs
 ```

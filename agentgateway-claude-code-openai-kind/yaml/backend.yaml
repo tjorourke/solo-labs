@@ -26,3 +26,10 @@ spec:
       # falls back to passthrough and the client gets raw OpenAI JSON.
       routes:
         "/v1/messages": Messages
+        # A Claude client sizes its context by posting the conversation to
+        # /v1/messages/count_tokens and reading {"input_tokens": N} back. The route
+        # matches /v1/messages as a prefix and so does the entry above, so without an
+        # entry of its own the sizing call is translated into a chat completion and
+        # answered in prose by the model: a 200 the client cannot read, billed as
+        # inference. AnthropicTokenCount makes the gateway answer it directly.
+        "/v1/messages/count_tokens": AnthropicTokenCount

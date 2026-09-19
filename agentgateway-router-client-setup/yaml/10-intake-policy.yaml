@@ -46,10 +46,20 @@ spec:
         # nothing to show for it. They need no filtering: the next hop converts the request
         # to chat completions and converts the tools with it.
         #
+        # `output_config` goes, and the deprecated `output_format` with it. Claude Code
+        # asks for structured output on one request per session, the one that names the
+        # session in the sidebar, and sends the JSON schema in `output_config.format`. The
+        # conversion to chat completions sets `response_format: {"type": "json_schema"}`
+        # without carrying the schema into the required `json_schema` field, so an
+        # OpenAI-shaped backend rejects the request in a few milliseconds: "When
+        # response_format type is 'json_schema', the 'json_schema' field must be
+        # provided". Nothing the person typed is affected, but every session shows a red
+        # HTTP 400 next to a prompt nobody sent. Measured 2026-09-19 against Claude Code
+        # 2.1.278.
         - condition: 'request.path.startsWith("/v1/messages")'
           policy:
             request:
-              body: 'toJson(json(request.body).merge({"model": "auto"}))'
+              body: 'toJson(json(request.body).filterKeys(k, k != "output_config" && k != "output_format").merge({"model": "auto"}))'
         # An editor, with at least one tool the backends can take.
         - condition: 'has(json(request.body).messages) && json(request.body).messages.map(m, type(m.content) == string ? m.content : m.content.map(p, has(p.text) ? p.text : "").join(" ")).join("\n").contains("<user_query>") && has(json(request.body).tools) && size(json(request.body).tools.filter(t, t.type == "function")) > 0'
           policy:

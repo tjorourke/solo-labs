@@ -73,3 +73,10 @@ spec:
     ai:
       routes:
         "/v1/messages": Messages
+        # Claude Desktop sizes its context by posting the conversation to
+        # /v1/messages/count_tokens and reading {"input_tokens": N} back. That path is
+        # matched by the /v1/messages prefix above, so without an entry of its own the
+        # sizing call is treated as a question: classified, routed, and answered in prose
+        # by whichever model won, which the client cannot read and the GPU still bills
+        # for. AnthropicTokenCount makes the gateway answer it directly.
+        "/v1/messages/count_tokens": AnthropicTokenCount

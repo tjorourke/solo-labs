@@ -11,4 +11,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 step "Port-forwarding svc/$GW_NAME -> localhost:$PORT"
 log "gateway base URL: http://localhost:$PORT   (Anthropic API path: /v1/messages)"
-exec kctx -n "$GW_NS" port-forward "svc/$GW_NAME" "${PORT}:80"
+# Not `exec kctx`: kctx is a shell function defined in lib.sh, and exec replaces the
+# process with a command, so it cannot run one. That failed with "exec: kctx: not found"
+# before anything was forwarded.
+exec kubectl --context "$CTX" -n "$GW_NS" port-forward "svc/$GW_NAME" "${PORT}:80"

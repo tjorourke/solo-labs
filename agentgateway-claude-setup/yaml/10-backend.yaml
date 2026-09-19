@@ -13,6 +13,19 @@
 # and vLLM rejects the request outright with "max_completion_tokens=64000 cannot be greater
 # than max_model_len". The client is not wrong and the model is not wrong, so the gateway
 # settles it: every request here is capped, whatever the caller asked for.
+#
+# Both spellings of the field, and that is not belt and braces. An override matches the field
+# name on the request as the backend sees it, and a request arriving on /v1/messages has been
+# converted to chat completions by then, where the field is max_completion_tokens. With only
+# the max_tokens entry the cap silently does not apply to either Claude client, which are the
+# only two that reach this backend. Measured 2026-09-19.
+#
+# count_tokens is the other path a Claude client uses. Claude Desktop sizes its context by
+# posting the conversation to /v1/messages/count_tokens and reading {"input_tokens": N} back.
+# The route in 20-route.yaml matches /v1/ as a prefix and the Messages entry below matches
+# /v1/messages as one, so without its own entry the sizing call is treated as a question:
+# classified, routed, and answered in prose by the model, which the client cannot read and
+# the GPU still bills for. AnthropicTokenCount makes the gateway answer it directly.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
 metadata:
@@ -30,6 +43,9 @@ spec:
     ai:
       routes:
         "/v1/messages": Messages
+        "/v1/messages/count_tokens": AnthropicTokenCount
       overrides:
         - field: max_tokens
+          value: 32768
+        - field: max_completion_tokens
           value: 32768
