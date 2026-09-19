@@ -50,7 +50,11 @@
       "finance",
       "general",
       "telco"
-    ]
+    ],
+    "classes_without_vision": [
+      "coding"
+    ],
+    "vision_fallback_class": "general"
   },
   "dlp": {
     "internal_code_markers": [

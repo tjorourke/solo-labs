@@ -86,6 +86,12 @@ the company's own code in the prompt, or an internal repository named in `x-sour
 forces private; then the table's preferred pool if permitted; then private if permitted;
 then an error. There is no fall-through to the frontier.
 
+One adjustment runs after the pool is settled. Qwen3-Coder has no vision tower and vLLM
+refuses a whole request carrying an image, so a pasted screenshot on a coding prompt came
+back `400 qwen3-coder-30b is not a multimodal model`. A private request with an image now
+moves to a class whose model can read it, with `image in prompt` in `x-routing-reason`. It
+moves a request between private models only; the pool is never widened.
+
 ## Install
 
 The prerequisite is a Kubernetes cluster, anywhere: 1.32 or later, a default StorageClass,

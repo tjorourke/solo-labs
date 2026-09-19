@@ -100,3 +100,11 @@ load_tokens() {
 chat() {
   python3 -c 'import json,sys; print(json.dumps({"model": sys.argv[2], "max_tokens": 24, "messages": [{"role": "user", "content": sys.argv[1]}]}))' "$1" "${2:-auto}"
 }
+
+# The same, with an image attached, the way a client sends a pasted screenshot. One opaque
+# black pixel: the point is the content part, not the picture.
+chat_image() {
+  python3 -c 'import json,sys; print(json.dumps({"model": "auto", "max_tokens": 24, "messages": [{"role": "user", "content": [
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64," + sys.argv[2]}},
+    {"type": "text", "text": sys.argv[1]}]}]}))' "$1" "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+}

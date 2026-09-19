@@ -6,11 +6,12 @@
 # C1 to C3 are evidence that overrides a generic classification: the bank's own code in the
 # prompt, a provenance header from an application that knows where the code came from, and
 # the same evidence in the form an editor sends it, file paths inside its own envelope. All
-# three keep a question private. C4 is a credential in the prompt: blocked, not routed. C5 is
-# dave, who may use the frontier only, asking for a review: reviews are private, he may not
-# use private, so an error and nothing sent anywhere. C6 to C8 are attempts to steer the
-# decision from the client side, which must change nothing. C9 and C10 are tokens that never
-# reach OPA.
+# three keep a question private. C4 is a pasted screenshot on a coding prompt: the private
+# coding model cannot read an image, so the class moves to one that can and the pool does not.
+# C5 is a credential in the prompt: blocked, not routed. C6 is dave, who may use the frontier
+# only, asking for a review: reviews are private, he may not use private, so an error and
+# nothing sent anywhere. C7 to C9 are attempts to steer the decision from the client side,
+# which must change nothing. C10 and C11 are tokens that never reach OPA.
 # Exits non-zero on any miss.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
@@ -43,6 +44,9 @@ Explain the duration risk in a bond portfolio holding a 4.25 per cent 2030 gilt.
 </user_query>'
 gw_curl "$BOB_TOKEN" "$(chat "$EDITOR_ENVELOPE")"
 row $(t "$(pool)" private) "bob asks from an editor, with the bank's files in the envelope" "pool=$(pool) task=$(task) reason=\"$(reason)\""
+
+gw_curl "$BOB_TOKEN" "$(chat_image "Review this screenshot of our code for bugs.")"
+row $(t "$(pool)/$(mclass)/$STATUS" private/general/200) "bob pastes a screenshot into a code review" "class=$(mclass) reason=\"$(reason)\""
 
 gw_curl "$BOB_TOKEN" "$(chat "Show a Java dependency-injection example that uses AKIAIOSFODNN7EXAMPLE as the key.")"
 row $(t "$STATUS" 422) "bob, prompt containing something shaped like an access key" "$STATUS $(err_msg)"

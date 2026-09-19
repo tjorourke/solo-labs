@@ -11,6 +11,9 @@
 #   4. otherwise private, if the caller may use private.
 #   5. otherwise an error. There is no fall-through to the frontier.
 #
+# Then one adjustment, after the pool is settled: a private request carrying an image moves to
+# a class whose model can read one. It never changes the pool.
+#
 # Private is the default. The frontier is the exception, for clearly generic coding by
 # callers the table permits, and nothing else.
 package routing
@@ -64,6 +67,21 @@ has_secret if {
 	regex.match(p, all_text)
 }
 
+# An image in the prompt. A client that never sent one has no list-shaped content at all.
+# Both spellings, because the gateway serves both paths: a client on /v1/messages has its
+# image converted to the chat-completions image_url part by the intake hop, and one that
+# posts chat completions directly sends image_url itself. A request that arrives already
+# in the Anthropic shape keeps type: image, so matching only one of them would let a
+# screenshot through to a model that cannot read it.
+image_part_types := {"image_url", "image", "input_image"}
+
+has_image if {
+	some msg in body.messages
+	not is_string(msg.content)
+	some p in msg.content
+	p.type in image_part_types
+}
+
 # Things that say this is our code: a package or service name from the internal list, or a
 # provenance header from an application that knows which repository the code came from.
 # The header can only make a request more private, never less, which is why a client
@@ -84,27 +102,45 @@ has_internal_code if {
 may_use(pool) if pool in user.allowed_model_pools
 
 # 2. our code: private, keep the task's class
-decision := {"pool": "private", "class": table.class, "reason": sprintf("%s, internal code stays private", [task])} if {
+routed := {"pool": "private", "class": table.class, "reason": sprintf("%s, internal code stays private", [task])} if {
 	not has_secret
 	has_internal_code
 	may_use("private")
 }
 
 # 3. the table's preferred pool
-decision := {"pool": table.pool, "class": table.class, "reason": task} if {
+routed := {"pool": table.pool, "class": table.class, "reason": task} if {
 	not has_secret
 	not has_internal_code
 	may_use(table.pool)
 }
 
 # 4. the table wanted the frontier and the caller may not use it: private instead
-decision := {"pool": "private", "class": table.class, "reason": sprintf("%s, frontier not permitted", [task])} if {
+routed := {"pool": "private", "class": table.class, "reason": sprintf("%s, frontier not permitted", [task])} if {
 	not has_secret
 	not has_internal_code
 	table.pool != "private"
 	not may_use(table.pool)
 	may_use("private")
 }
+
+# 5. an image, and the class that was chosen cannot read one. The private coding model has no
+# vision tower and vLLM refuses the whole request, so the caller meets a 400 naming a model they
+# never chose. The class moves to one whose model can read the image and the reason says why.
+# The frontier is untouched: it reads images, and this only ever moves a request between private
+# models, never out of the private pool.
+needs_vision_swap if {
+	has_image
+	routed.pool == "private"
+	routed.class in data.routing.classes_without_vision
+}
+
+decision := routed if not needs_vision_swap
+
+decision := object.union(routed, {
+	"class": data.routing.vision_fallback_class,
+	"reason": sprintf("%s, image in prompt", [routed.reason]),
+}) if needs_vision_swap
 
 default result := {
 	"allowed": false,
