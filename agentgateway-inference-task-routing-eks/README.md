@@ -270,6 +270,39 @@ allowing an address your ISP has moved on from, the SYN is dropped rather than r
 the browser reports a timeout with nothing in any cluster log to explain it. `refresh-ip`
 puts the current one back.
 
+### Toggle both Claude clients
+
+After the lab is running, install a launcher in Downloads:
+
+```bash
+./scripts/agw-toggle.sh --install
+~/Downloads/agw-toggle.sh on
+~/Downloads/agw-toggle.sh off
+~/Downloads/agw-toggle.sh status
+```
+
+The Downloads launcher calls `scripts/agw-toggle.py` in this lab rather than maintaining a
+second copy of its logic. `on` checks the gateway, reuses or renews the caller JWT with the
+existing lab key, sets terminal Claude Code's endpoint and helper, and installs Desktop's
+managed profile. It also replaces the static token in that profile when a new one is minted.
+
+`off` removes this lab's managed inference settings, resets saved Desktop profiles to `1p`,
+and clears the lab's terminal Claude Code endpoint and helper. It does not contact the gateway,
+so it works when the cluster is unavailable. Both directions quit and reopen Claude Desktop;
+resolve any save prompt so the normal quit can finish. Restart existing terminal Claude Code
+sessions yourself. `--no-restart` writes the configuration without restarting Desktop.
+
+macOS requests administrator authorisation when the managed plist needs changing. Cancelling
+that request fails the toggle instead of reporting success. The script preserves unrelated
+settings and stores private backups under `~/.config/agw/toggle/`. It refuses to overwrite a
+different gateway's configuration or a per-user managed inference profile.
+
+`status` reports configuration on disk, not the state of an already-running process. Confirm
+Desktop's new startup in `~/Library/Logs/Claude/main.log` for native mode or
+`~/Library/Logs/Claude-3p/main.log` for gateway mode. A stale `Gateway` label means the running
+app still needs its configuration reloaded; changing only a local flag does not remove a
+managed profile.
+
 ### Teardown
 
 ```bash
