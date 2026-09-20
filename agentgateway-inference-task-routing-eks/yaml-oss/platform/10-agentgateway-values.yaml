@@ -1,4 +1,4 @@
-# OSS agentgateway, the values that matter for an inference gateway that classifies requests.
+# OSS agentgateway, the values this lab sets for an inference gateway that classifies requests.
 #
 # KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES is the one that is not optional. ExtProc, which
 # is how the gateway hands a request body to vLLM Semantic Router, rides on Gateway API

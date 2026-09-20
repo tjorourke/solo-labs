@@ -1,4 +1,4 @@
-# The three backends the decision gateway routes to, and the one thing each of them knows:
+# The three backends the decision gateway routes to, and what each of them knows:
 # what the task labels mean for the model it fronts. Every request reaching them is a chat
 # completion, whatever the client sent: the intake hop converts anything else first
 # (92-intake-route.yaml).

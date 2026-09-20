@@ -10,9 +10,9 @@ permitted private model gets an error, never a frontier model.
 
 Three models answer, and they cover four areas of expertise: private coding on
 Qwen3-Coder, private finance and private telco on Mistral, and generic coding at the
-approved frontier on Claude. Two of the four share a model, which is the point of routing
-on a class rather than on a model name: what the request is about and which weights serve
-it are two different decisions, and only the first one is the company's policy.
+approved frontier on Claude. Two of the four share a model, which is why the routing is written
+on a class and not on a model name: what the request is about and which weights serve it
+are two different decisions, and only the first one is the company's policy.
 
 This part layers on [Part 3](../agentgateway-inference-identity-routing-eks/): same
 cluster, same single GPU with both open-weight models, same router and OPA. It reorders
