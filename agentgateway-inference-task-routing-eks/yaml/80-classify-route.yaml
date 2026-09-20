@@ -1,4 +1,4 @@
-# The classify gateway's route: everything to the decision gateway.
+# The classify listener's route: everything to the decision gateway.
 #
 # One rule, no header matching. The classification has been written into the request by
 # now, but nothing on this hop acts on it; the decision gateway does. Its Service is the one

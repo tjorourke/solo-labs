@@ -4,9 +4,9 @@
 # hops put the router first, and OPA on this hop sees the task label, the verified identity
 # and the prompt together.
 #
-# Internal only: ClusterIP, reached by the classify gateway's route and nothing else that
-# needs to. It re-validates the bearer token itself (the classify gateway preserves it), so a call
-# that skips the classify gateway still has to carry a real token.
+# Internal only: ClusterIP, reached by the classify listener's route and nothing else that
+# needs to. It re-validates the bearer token itself (the classify listener preserves it), so a call
+# that skips the classify listener still has to carry a real token.
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayParameters

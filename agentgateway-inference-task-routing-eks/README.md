@@ -147,7 +147,7 @@ export ANTHROPIC_API_KEY=...
 ./scripts/02-router.sh            # 5  vLLM Semantic Router becomes a task classifier
 ./scripts/03-opa.sh               # 6  OPA with the routing table and the data checks
 ./scripts/04-decision-gateway.sh  # 7  the decision gateway, backends, policy and route
-./scripts/05-classify-gateway.sh  # 8  the classify gateway verifies, classifies, hands on
+./scripts/05-classify-gateway.sh  # 8  the classify listener verifies, classifies, hands on
 ```
 
 Or `./scripts/quick.sh up`, which runs the install steps first and then these.
@@ -253,7 +253,7 @@ yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
 yaml/platform/05-gateway.yaml     model-gateway: the intake listener :8080 and the classify listener :80
 yaml/91-intake-policy.yaml        any model name becomes auto; unusable tool shapes dropped
-yaml/92-intake-route.yaml         everything under /v1/ to the classify gateway, Host rewritten; count_tokens answered by the gateway
+yaml/92-intake-route.yaml         everything under /v1/ to the classify listener, Host rewritten; count_tokens answered by the gateway
 yaml-oss/                         the same set on the OSS CRDs, no licence needed
 tofu/                             optional: the two public names, their certificates and their ELBs
 ```

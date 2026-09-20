@@ -27,7 +27,7 @@ subject := input.attributes.metadataContext.filterMetadata["envoy.filters.http.j
 
 user := data.users[subject]
 
-# The task label the router wrote on the classify gateway.
+# The task label the router wrote on the classify listener.
 task := input.attributes.request.http.headers["x-selected-model"]
 
 table := data.routing.tasks[task]

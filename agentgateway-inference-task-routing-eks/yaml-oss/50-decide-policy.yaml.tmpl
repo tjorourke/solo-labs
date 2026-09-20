@@ -3,7 +3,7 @@
 # scripts/04-decision-gateway.sh renders yaml/50-decide-policy.yaml from this template with
 # the JWKS from identity/jwks.json inlined.
 #
-# The classify gateway preserved the bearer token, so this hop validates it itself and OPA acts on
+# The classify listener preserved the bearer token, so this hop validates it itself and OPA acts on
 # a subject the gateway verified, not on a header. forwardBody is on here, unlike Part 3:
 # OPA needs the prompt for the data checks, a credential pattern or the bank's own code in
 # the text. The task label arrives as the x-selected-model request header the router wrote.
