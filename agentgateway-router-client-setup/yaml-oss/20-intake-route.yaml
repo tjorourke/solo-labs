@@ -21,7 +21,8 @@ spec:
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: intake-gateway
+      name: model-gateway
+      sectionName: intake
   rules:
     # Claude Code, and anything else that speaks the Anthropic Messages API. This rule
     # converts it to chat completions here, at the front door, rather than at the far end.

@@ -33,7 +33,10 @@ spec:
   targetRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: intake-gateway
+      name: model-gateway
+      # One listener, not the whole Gateway: the router runs on the other one, and a policy
+      # that covered both would be read by the router before this rewrite happened.
+      sectionName: intake
   traffic:
     phase: PreRouting
     transformation:

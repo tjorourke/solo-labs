@@ -1,0 +1,37 @@
+# The front door: a second listener on the Gateway you already have, not a second Gateway.
+#
+# It exists because of where a transformation runs. Within one listener the order is JWT, then
+# extAuth, then extProc, then transformation, then route selection, so a transformation that
+# rewrote the request would run AFTER the router had already read it. Measured on v2026.9.0 by
+# putting both in one PreRouting policy: with the transformation rewriting the body to a finance
+# question, a prompt about 5G still came back classified as telco.
+#
+# A policy attaches to one listener through targetRefs.sectionName, so the rewrite does not need
+# its own Gateway. Add a listener, attach the normalising policy to it, and let its route forward
+# to the listener the router is on. The request passes through the same proxy pod twice.
+#
+# The intake listener carries no JWT policy. The classify listener verifies the token, so a
+# request with no token still gets a 401 before any model is involved; this hop only reshapes
+# the body.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: model-gateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    # Where a client arrives. The normalising policy targets this listener by name.
+    - name: intake
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+    # Where the router runs. The intake route forwards here.
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

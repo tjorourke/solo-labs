@@ -12,7 +12,7 @@ tested router setup processes OpenAI-format requests; rewriting a Claude request
 changing what the next backend expects can break tool calls. It also expects the virtual
 model name `auto`, rather than the name in a client's model picker.
 
-The intake Gateway normalises that name and converts Messages into Chat Completions before
+The intake listener normalises that name and converts Messages into Chat Completions before
 classification. Replies are converted back for Claude. These files assume the router and
 model-serving gateways already exist; the task-routing lab linked below builds them.
 
@@ -29,7 +29,7 @@ kubectl apply -f yaml/       # or yaml-oss/
 
 | File | What it is |
 | --- | --- |
-| `00-intake-gateway.yaml` | The front door, a Gateway of its own because a transformation runs after an external processor on the same hop |
+| `00-intake-listener.yaml` | The front door: a second listener on the Gateway you have, because a transformation runs after an external processor on the same listener |
 | `10-intake-policy.yaml` | Model name to `auto`, tool filtering per client shape, the question lifted out of the envelope |
 | `20-intake-route.yaml` | `/v1/messages` converted to chat completions, everything else passed through with the Host rewritten |
 
