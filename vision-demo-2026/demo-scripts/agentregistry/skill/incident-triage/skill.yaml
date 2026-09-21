@@ -7,6 +7,6 @@ spec:
   description: "Field briefing: symptom, domain, next two checks. No invented telemetry."
   source:
     repository:
-      url: https://github.com/tjorourke/solo.git
+      url: https://github.com/tjorourke/solo-labs.git
       branch: main
       subfolder: vision-demo-2026/demo-scripts/agentregistry/skill/incident-triage

@@ -7,6 +7,6 @@ spec:
   description: "Read-only namespace triage: unhealthy pods, evidence, next check."
   source:
     repository:
-      url: https://github.com/tjorourke/solo.git
+      url: https://github.com/tjorourke/solo-labs.git
       branch: main
       subfolder: vision-demo-2026/demo-scripts/agentregistry/skill/k8s-sre

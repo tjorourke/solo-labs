@@ -7,6 +7,6 @@ spec:
   description: Class a ticket as network, billing, device or unknown, and name the owning team.
   source:
     repository:
-      url: https://github.com/tjorourke/solo.git
+      url: https://github.com/tjorourke/solo-labs.git
       branch: main
       subfolder: vision-demo-2026/demo-scripts/agentregistry/skill/ticket-classifier
