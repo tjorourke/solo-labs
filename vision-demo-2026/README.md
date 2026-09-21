@@ -35,7 +35,7 @@ The parts run **independently**: pick one per customer, or run all seven. This l
 
 ### Customer console (localhost:8900)
 
-`demo-console/` is the laptop site for a non-technical audience. Homepage has two cards: live **Gateway decisions** from the task-routing EKS cluster, and **Token economics with MCP** (Standard vs Code mode). Spend, budgets and graphs stay in the agentgateway UI. Stop `scripts/30-dashboard.py` first if it still owns 8900, then:
+`demo-console/` is the laptop site for a non-technical audience. Cards: live **Gateway decisions**, **Token economics with MCP**, **Agentdesktop**, and **My agents** (code-free prompt + skills + MCP tools, deployed to kagent). Spend, budgets and graphs stay in the agentgateway UI. Stop `scripts/30-dashboard.py` first if it still owns 8900, then:
 
 ```bash
 cd demo-console && ./run.sh    # http://localhost:8900
