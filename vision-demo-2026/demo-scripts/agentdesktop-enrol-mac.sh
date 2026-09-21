@@ -47,11 +47,6 @@ BASELINE="$CLAUDE_SETTINGS.pre-agentdesktop"
 AGW_BASELINE="$CLAUDE_SETTINGS.pre-agw"
 STATE_DIR="$HOME/.local/state/agentdesktop"
 
-SAFE_ARGS=()
-if [ "${AD_SAFE:-0}" = "1" ]; then
-  SAFE_ARGS=(--claude-code-settings /tmp/agentdesktop-claude-settings.json)
-fi
-
 need_hosts() { ! grep -q "$CTRL_HOST" /etc/hosts || ! grep -q "$KC_HOST" /etc/hosts; }
 
 claude_base() {
@@ -137,7 +132,11 @@ preview)
   need_bin; guard_other_demo; snapshot_baseline
   [ -f "$CA" ] || { echo "no device CA at $CA. Re-run agentdesktop.sh"; exit 1; }
   echo "→ enrols to collect the policy, then prints the diff and writes nothing"
-  "$AD_BIN" daemon --user --config "$CFG" "${SAFE_ARGS[@]}" --dry-run
+  if [ "${AD_SAFE:-0}" = "1" ]; then
+    "$AD_BIN" daemon --user --config "$CFG" --claude-code-settings /tmp/agentdesktop-claude-settings.json --dry-run
+  else
+    "$AD_BIN" daemon --user --config "$CFG" --dry-run
+  fi
   ;;
 
 up)
@@ -145,7 +144,12 @@ up)
   need_bin; guard_other_demo; snapshot_baseline
   echo "→ starting the daemon. A browser opens: sign in as tom / password."
   [ "${AD_SAFE:-0}" = "1" ] && echo "  (AD_SAFE=1: managed Claude Code settings go to /tmp)"
-  exec "$AD_BIN" daemon --user --config "$CFG" "${SAFE_ARGS[@]}"
+  # macOS /bin/bash 3.2 + set -u treats an empty array expansion as unbound.
+  if [ "${AD_SAFE:-0}" = "1" ]; then
+    exec "$AD_BIN" daemon --user --config "$CFG" --claude-code-settings /tmp/agentdesktop-claude-settings.json
+  else
+    exec "$AD_BIN" daemon --user --config "$CFG"
+  fi
   ;;
 
 status)
