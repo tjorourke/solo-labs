@@ -56,6 +56,14 @@ SYS_SOCK=/var/run/agentdesktop/agentdesktop.sock
 SYS_CODE_SETTINGS="/Library/Application Support/ClaudeCode/managed-settings.d/50-agentdesktop.json"
 SYS_DESKTOP_PLIST="/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
 SYS_DESKTOP_HELPER=/etc/claude-desktop/agentdesktop-credential-helper
+# The path the product itself looks for. Agentdesktop's own desktop app defers to a
+# system LaunchDaemon here and removes its per-user fallback when it finds one, so
+# installing at this path is the supported shape rather than a demo invention.
+SYS_LABEL=dev.agentdesktop.daemon
+SYS_PLIST="/Library/LaunchDaemons/$SYS_LABEL.plist"
+SYS_BIN=/usr/local/bin/agentdesktop
+SYS_ETC=/etc/agentdesktop
+SYS_LOG=/var/log/agentdesktop-daemon.log
 
 need_hosts() { ! grep -q "$CTRL_HOST" /etc/hosts || ! grep -q "$KC_HOST" /etc/hosts; }
 
@@ -179,6 +187,136 @@ up)
   else
     exec "$AD_BIN" daemon --user --config "$CFG"
   fi
+  ;;
+
+install-daemon)
+  # One authorisation, then the daemon is the machine's and everything else is policy.
+  # macOS asks for it in its own dialog, so this works from the demo console as well as
+  # from a terminal.
+  need_hosts && { "$0" hosts; exit 1; }
+  need_bin; guard_other_demo_desktop
+  [ -f "$CA" ] || { echo "no device CA at $CA. Re-run agentdesktop.sh"; exit 1; }
+  PRIV="$(mktemp -t ad-install)"
+  trap 'rm -f "$PRIV"' EXIT
+  cat > "$PRIV" <<SH
+set -e
+/usr/bin/install -d -m 755 -o root -g wheel "$SYS_ETC" /var/lib/agentdesktop
+/usr/bin/install -m 755 -o root -g wheel "$AD_BIN" "$SYS_BIN"
+/usr/bin/install -m 644 -o root -g wheel "$CA" "$SYS_ETC/device-ca.pem"
+cat > "$SYS_ETC/config.yaml" <<'CFG'
+controller:
+  address: https://$CTRL_HOST
+  caCertificatePath: $SYS_ETC/device-ca.pem
+  heartbeatInterval: 30s
+CFG
+chmod 644 "$SYS_ETC/config.yaml"
+# A root daemon serves its socket to one group rather than to everyone, and refuses to
+# start if that group is missing.
+/usr/sbin/dseditgroup -o read agentdesktop >/dev/null 2>&1 || /usr/sbin/dseditgroup -o create agentdesktop
+/usr/sbin/dseditgroup -o edit -a "$(id -un)" -t user agentdesktop >/dev/null 2>&1 || true
+# World readable: the console reads the sign-in URL out of here rather than needing the
+# socket, so it does not have to be restarted to pick up the new group membership.
+[ -f "$SYS_LOG" ] || /usr/bin/install -m 644 -o root -g wheel /dev/null "$SYS_LOG"
+cat > "$SYS_PLIST" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$SYS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$SYS_BIN</string>
+    <string>--socket</string><string>$SYS_SOCK</string>
+    <string>daemon</string>
+    <string>--config</string><string>$SYS_ETC/config.yaml</string>
+    <string>--state-dir</string><string>/var/lib/agentdesktop</string>
+    <string>--oidc-callback-listen</string><string>127.0.0.1:51327</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>$SYS_LOG</string>
+  <key>StandardErrorPath</key><string>$SYS_LOG</string>
+</dict>
+</plist>
+PLIST
+chown root:wheel "$SYS_PLIST"
+chmod 644 "$SYS_PLIST"
+/bin/launchctl bootout system/$SYS_LABEL >/dev/null 2>&1 || true
+/bin/launchctl bootstrap system "$SYS_PLIST"
+/bin/launchctl enable system/$SYS_LABEL
+/bin/launchctl kickstart -k system/$SYS_LABEL
+SH
+  echo "→ macOS will ask for your password once, to install the daemon."
+  osascript -e 'on run argv' \
+    -e 'do shell script "/bin/sh " & quoted form of (item 1 of argv) & " 2>&1" with administrator privileges' \
+    -e 'end run' "$PRIV"
+  echo "-> daemon installed and running as the machine"
+  echo "   Sign in with:  $0 signin-url"
+  ;;
+
+remove-daemon)
+  # Claude Desktop caches its managed preferences, so it goes before the file does.
+  osascript -e 'tell application "Claude" to quit' 2>/dev/null || true
+  PRIV="$(mktemp -t ad-remove)"
+  trap 'rm -f "$PRIV"' EXIT
+  cat > "$PRIV" <<SH
+/bin/launchctl bootout system/$SYS_LABEL >/dev/null 2>&1 || true
+rm -f "$SYS_PLIST"
+rm -f "$SYS_CODE_SETTINGS" "$(dirname "$SYS_CODE_SETTINGS")/.$(basename "$SYS_CODE_SETTINGS").owner"
+# Only if Agentdesktop wrote it. Without the marker the managed profile belongs to
+# agw-toggle.sh, and removing this daemon must not take the other demo down with it.
+if [ -f "$(dirname "$SYS_DESKTOP_PLIST")/.$(basename "$SYS_DESKTOP_PLIST").owner" ]; then
+  rm -f "$SYS_DESKTOP_PLIST" "$(dirname "$SYS_DESKTOP_PLIST")/.$(basename "$SYS_DESKTOP_PLIST").owner"
+fi
+rm -f "$SYS_DESKTOP_HELPER" "$(dirname "$SYS_DESKTOP_HELPER")/.$(basename "$SYS_DESKTOP_HELPER").owner"
+rm -rf /var/lib/agentdesktop "$SYS_ETC" "$SYS_BIN" "$SYS_LOG"
+SH
+  osascript -e 'on run argv' \
+    -e 'do shell script "/bin/sh " & quoted form of (item 1 of argv) & " 2>&1" with administrator privileges' \
+    -e 'end run' "$PRIV"
+  echo "-> daemon removed; both clients are back to native"
+  echo "   Restart Claude Code, and reopen Claude Desktop."
+  ;;
+
+signin-url)
+  # The daemon's own prompt page, not the raw provider URL: it carries the state and
+  # nonce the daemon is waiting on, and it is what the product's desktop app opens.
+  #
+  # Read it out of the tracing line rather than the plain one the daemon also prints.
+  # Rust block-buffers stdout into a file, so that line can sit unflushed for a long
+  # time, while tracing goes to stderr unbuffered. The tracing line is ANSI-coloured
+  # even when it is not a terminal, and the escapes land *between* the field name and
+  # the `=`, so the colour has to come off before anything can match.
+  URL="$(python3 - "$SYS_LOG" <<'PYEOF' || true
+import re, sys
+try:
+    raw = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
+except OSError:
+    raise SystemExit
+plain = re.sub(r"\x1b\[[0-9;]*m", "", raw)
+found = re.findall(r"prompt_url=(http://127\.0\.0\.1:\d+/)", plain)
+print(found[-1] if found else "", end="")
+PYEOF
+)"
+  [ -n "$URL" ] || URL="$(curl -sS --unix-socket "$SYS_SOCK" http://localhost/v1/enrollment 2>/dev/null \
+         | sed -n 's/.*"authorizationUrl":"\([^"]*\)".*/\1/p' || true)"
+  [ -n "$URL" ] || { echo "no sign-in pending (already enrolled, or the daemon is not running)"; exit 1; }
+  # A URL left behind by a finished enrolment points at a listener that has gone.
+  case "$URL" in
+    http://127.0.0.1:*)
+      PORT="${URL#http://127.0.0.1:}"; PORT="${PORT%%/*}"
+      nc -z 127.0.0.1 "$PORT" 2>/dev/null || { echo "no sign-in pending (this device is already enrolled)"; exit 1; }
+      ;;
+  esac
+  echo "$URL"
+  ;;
+
+daemon-state)
+  printf '  %-22s %s\n' "launch daemon"  "$([ -f "$SYS_PLIST" ] && echo installed || echo "not installed")"
+  printf '  %-22s %s\n' "running"        "$(pgrep -f "$SYS_BIN" >/dev/null && echo yes || echo no)"
+  printf '  %-22s %s\n' "Claude Code"    "$([ -f "$SYS_CODE_SETTINGS" ] && echo managed || echo native)"
+  printf '  %-22s %s\n' "Claude Desktop" "$([ -f "$SYS_DESKTOP_PLIST" ] && echo managed || echo native)"
   ;;
 
 up-system)
@@ -353,7 +491,10 @@ usage: $0 <action>
   Claude Code only, no sudo:
     binary hosts preview up status check settings state down
 
-  Claude Code and Claude Desktop, needs sudo:
+  Claude Code and Claude Desktop, one macOS authorisation:
+    install-daemon signin-url daemon-state remove-daemon
+
+  The same thing in the foreground, for watching it work:
     preview-system up-system down-system
 EOF
    exit 1 ;;
