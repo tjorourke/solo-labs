@@ -25,7 +25,17 @@ import rego.v1
 # The subject the gateway verified. agentgateway validates the JWT before calling extAuth
 # and forwards the claims under the envoy.filters.http.jwt_authn metadata key, camel-cased
 # by the OPA plugin's protojson decoding.
-subject := input.attributes.metadataContext.filterMetadata["envoy.filters.http.jwt_authn"].jwt_payload.sub
+payload := input.attributes.metadataContext.filterMetadata["envoy.filters.http.jwt_authn"].jwt_payload
+
+# Lab tokens put the employee in sub (bob, alice, dave). Agentdesktop tokens
+# put a Keycloak UUID in sub and the login in email (bob@corp.example).
+subject := payload.sub if object.get(data.users, payload.sub, false)
+
+subject := split(payload.email, "@")[0] if {
+	not object.get(data.users, payload.sub, false)
+	is_string(payload.email)
+	object.get(data.users, split(payload.email, "@")[0], false)
+}
 
 user := data.users[subject]
 

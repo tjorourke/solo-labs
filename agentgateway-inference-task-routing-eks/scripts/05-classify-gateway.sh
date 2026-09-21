@@ -17,9 +17,14 @@ kubectl -n "$NS" delete enterpriseagentgatewaypolicy identity-then-semantic --ig
 kubectl -n "$NS" delete httproute identity-routing --ignore-not-found
 banner "policy, with the lab JWKS inlined"
 JWKS="$(tr -d '\n' < "$HERE/identity/jwks.json")"
-JWKS="$JWKS" python3 - "$HERE/yaml/70-classify-policy.yaml.tmpl" "$HERE/yaml/70-classify-policy.yaml" <<'PY'
+AD_JWKS="$(tr -d '\n' < "$HERE/identity/agentdesktop-jwks.json")"
+JWKS="$JWKS" AD_JWKS="$AD_JWKS" python3 - "$HERE/yaml/70-classify-policy.yaml.tmpl" "$HERE/yaml/70-classify-policy.yaml" <<'PY'
 import os, sys
-open(sys.argv[2], "w").write(open(sys.argv[1]).read().replace("__JWKS__", os.environ["JWKS"]))
+open(sys.argv[2], "w").write(
+    open(sys.argv[1]).read()
+    .replace("__JWKS__", os.environ["JWKS"])
+    .replace("__AD_JWKS__", os.environ["AD_JWKS"])
+)
 PY
 kubectl apply -f "$HERE/yaml/70-classify-policy.yaml"
 banner "route"

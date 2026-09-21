@@ -148,6 +148,7 @@ add_user() { # username firstName email
   fi
 }
 add_user tom    Tom   tom@corp.example
+add_user bob    Bob   bob@corp.example
 add_user priya  Priya priya@corp.example
 add_user leaver Alex  leaver@corp.example
 
@@ -258,26 +259,16 @@ service:
   port: 443
 daemonConfig:
   llmGateway:
-    url: http://$GW_IP
+    url: https://agw.awslab.masterthemesh.com
     authentication:
       type: controllerJwt
-      audience: agentgateway
+      audience: model-gateway
       allowedClientIds: [claude-code]
   programs:
     claudeCode:
       useLlmGateway: true
       companyAnnouncements:
-        - "Managed by Agentdesktop. Model traffic goes through the corporate gateway."
-  sandbox:
-    filesystem:
-      denied:
-        - ~/.ssh
-        - ~/.aws
-      writable:
-        - ~/src
-    network:
-      allowedDomains:
-        - github.com
+        - "Managed by Agentdesktop. Model traffic goes through the EKS model gateway."
 EOF
 helm --kube-context "$CTX" upgrade -i agentdesktop "$CHART" \
   -n "$AD_NS" -f /tmp/agentdesktop-values.yaml >/dev/null

@@ -48,6 +48,12 @@ spec:
             - model-gateway
           jwks:
             inline: '__JWKS__'
+        # Agentdesktop controller JWKS, inlined because EKS cannot reach kind-mesh1.
+        - issuer: agentdesktop-controller
+          audiences:
+            - model-gateway
+          jwks:
+            inline: '__AD_JWKS__'
     # FailClosed: a router outage is a refused request, not an unclassified one sent on.
     extProc:
       backendRef:
