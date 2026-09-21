@@ -94,11 +94,23 @@ the company's own code in the prompt, or an internal repository named in `x-sour
 forces private; then the table's preferred pool if permitted; then private if permitted;
 then an error. There is no fall-through to the frontier.
 
-One adjustment runs after the pool is settled. Qwen3-Coder has no vision tower and vLLM
+Two adjustments run after the pool is settled. Qwen3-Coder has no vision tower and vLLM
 refuses a whole request carrying an image, so a pasted screenshot on a coding prompt came
 back `400 qwen3-coder-30b is not a multimodal model`. A private request with an image now
-moves to a class whose model can read it, with `image in prompt` in `x-routing-reason`. It
-moves a request between private models only; the pool is never widened.
+moves to a class whose model can read it, with `image in prompt` in `x-routing-reason`.
+
+The second adjustment is the context window. Qwen3-Coder holds 262,144 tokens and
+Mistral-Small holds 131,072, and vLLM refuses a request longer than its window rather than
+shortening it. A private request estimated to exceed the smaller window moves to the coding
+class, with `too long for the smaller window` in `x-routing-reason`. The estimate is the size
+of the forwarded body divided by `bytes_per_token`, set to 3.5 against the 4.0 measured on
+Mistral-Small's own tokenizer, plus the request's `max_tokens`. An agent client needs this:
+Claude Code sends about 33,000 tokens of instructions and tool definitions before the person
+has typed anything, and it sizes its own budget from the model name the gateway advertises
+rather than the window behind it. An image takes precedence, because no private model both
+reads images and holds the larger window.
+
+Both adjustments move a request between private models only; the pool is never widened.
 
 ## Install
 

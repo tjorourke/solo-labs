@@ -13,8 +13,9 @@
 #   5. otherwise private, if the caller may use private.
 #   6. otherwise an error. There is no fall-through to the frontier.
 #
-# Then one adjustment, after the pool is settled: a private request carrying an image moves to
-# a class whose model can read one. It never changes the pool.
+# Then two adjustments, after the pool is settled, neither of which moves a request out of the
+# private pool: a request carrying an image takes a class whose model can read one, and a
+# request too long for the smaller window takes the class whose model holds it.
 #
 # Private is the default. The frontier is the exception, for clearly generic coding by
 # callers the table permits, and nothing else.
@@ -179,12 +180,54 @@ needs_vision_swap if {
 	routed.class in data.routing.classes_without_vision
 }
 
-decision := routed if not needs_vision_swap
+# 7. the request is longer than the smaller models can hold. The private coding model's window
+# is 262,144 tokens and the other private models are 131,072, so a long conversation only fits
+# on one of them. vLLM refuses a request over its window outright rather than shortening it, so
+# the caller meets a 400 quoting a limit they never asked for. An agent client meets it every
+# time: Claude Code sends about 33,000 tokens of instructions and tool definitions before the
+# person has typed anything, and it sizes its own budget from the model name the gateway
+# advertises rather than the window behind it, so it keeps growing past 131,072 and cannot be
+# told otherwise.
+#
+# The gateway cannot count tokens, so the size of the body stands in for them, and the estimate
+# is deliberately low: bytes_per_token is 3.5 against the 4.0 measured on this model's own
+# tokenizer, so the class moves before the window runs out. The requested output counts too,
+# because vLLM checks the input and max_tokens against one limit. OPA counts characters, which
+# is the same as bytes for the ASCII a code prompt is made of.
+#
+# An image beats the window. A long request carrying one fits nowhere: the coding model has the
+# window but no vision tower, and the model that reads images has the smaller window. Reading
+# the image is the one requirement the caller stated, so it keeps the class that can read it and
+# the window error stands. Same for a body that arrived truncated, which rule 2 has already put
+# on the class that reads anything precisely because nothing has looked inside it.
+estimated_input_tokens := count(input.attributes.request.http.body) / data.routing.bytes_per_token
+
+reserved_output := object.get(body, "max_tokens", 0) if body_readable
+
+reserved_output := 0 if not body_readable
+
+needs_long_context_swap if {
+	estimated_input_tokens + reserved_output > data.routing.small_window_tokens
+	body_readable
+	not has_image
+	routed.pool == "private"
+	routed.class != data.routing.long_context_class
+}
+
+decision := routed if {
+	not needs_vision_swap
+	not needs_long_context_swap
+}
 
 decision := object.union(routed, {
 	"class": data.routing.vision_fallback_class,
 	"reason": sprintf("%s, image in prompt", [routed.reason]),
 }) if needs_vision_swap
+
+decision := object.union(routed, {
+	"class": data.routing.long_context_class,
+	"reason": sprintf("%s, too long for the smaller window", [routed.reason]),
+}) if needs_long_context_swap
 
 default result := {
 	"allowed": false,

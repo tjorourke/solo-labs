@@ -54,7 +54,10 @@
     "classes_without_vision": [
       "coding"
     ],
-    "vision_fallback_class": "general"
+    "vision_fallback_class": "general",
+    "long_context_class": "coding",
+    "small_window_tokens": 131072,
+    "bytes_per_token": 3.5
   },
   "dlp": {
     "internal_code_markers": [
