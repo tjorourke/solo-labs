@@ -21,10 +21,12 @@ budgetDimensions:
         expression: 'coalesce(jwt.group, apiKey.group)'
         displayName: Group
       # The employee. Lab JWTs put bob in sub. Agentdesktop Keycloak puts a UUID in sub
-      # and bob in email; OPA writes that as x-routing-user. Prefer that header so Cost
-      # Management and budgets match the dashboard, not the UUID.
+      # and bob@corp.example in email; OPA also writes x-routing-user=bob, but the
+      # frontier HTTPRoute strips that header before Anthropic, and PostRouting budget
+      # CEL sees the stripped request. jwt.sub is always set (the UUID), so it must not
+      # sit in front of email. Take the email local-part before sub.
       - id: user
-        expression: 'coalesce(apiKey.user, apiKey.name, apiKey.owner, request.headers["x-routing-user"], jwt.preferred_username, jwt.sub, jwt.email, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn)'
+        expression: 'coalesce(apiKey.user, apiKey.name, apiKey.owner, request.headers["x-routing-user"], jwt.preferred_username, jwt.email.split("@")[0], jwt.sub, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn)'
         displayName: User
     attributes:
       - id: virtualKey
