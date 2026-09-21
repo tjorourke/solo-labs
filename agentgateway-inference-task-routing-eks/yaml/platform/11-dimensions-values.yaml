@@ -20,10 +20,11 @@ budgetDimensions:
       - id: group
         expression: 'coalesce(jwt.group, apiKey.group)'
         displayName: Group
-      # The employee. In this lab the token carries no group, so `sub` is the identity that
-      # every request is attributed to: bob, alice, dave.
+      # The employee. Lab JWTs put bob in sub. Agentdesktop Keycloak puts a UUID in sub
+      # and bob in email; OPA writes that as x-routing-user. Prefer that header so Cost
+      # Management and budgets match the dashboard, not the UUID.
       - id: user
-        expression: 'coalesce(apiKey.user, apiKey.name, apiKey.owner, jwt.sub, jwt.email, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn)'
+        expression: 'coalesce(apiKey.user, apiKey.name, apiKey.owner, request.headers["x-routing-user"], jwt.preferred_username, jwt.sub, jwt.email, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn)'
         displayName: User
     attributes:
       - id: virtualKey
