@@ -4,12 +4,14 @@
 #
 # Rule precedence, first match wins:
 #   1. a secret in the prompt: block. Nothing that looks like a key leaves the caller.
-#   2. the prompt carries the bank's own code, or came from an internal repository: private,
+#   2. a body the gateway could not forward whole: private, and a class that can read anything,
+#      because none of the checks below have seen it.
+#   3. the prompt carries the bank's own code, or came from an internal repository: private,
 #      whatever the task said. A clean scan does not prove code is public; evidence that it
 #      is ours overrides a generic classification.
-#   3. the task's preferred pool from the routing table, if the caller may use it.
-#   4. otherwise private, if the caller may use private.
-#   5. otherwise an error. There is no fall-through to the frontier.
+#   4. the task's preferred pool from the routing table, if the caller may use it.
+#   5. otherwise private, if the caller may use private.
+#   6. otherwise an error. There is no fall-through to the frontier.
 #
 # Then one adjustment, after the pool is settled: a private request carrying an image moves to
 # a class whose model can read one. It never changes the pool.
@@ -34,6 +36,15 @@ table := data.routing.tasks[task]
 
 # The prompt, for the data checks. The body is forwarded by the gateway (forwardBody).
 body := json.unmarshal(input.attributes.request.http.body)
+
+# The gateway forwards at most forwardBody.maxSize bytes and cuts the rest off, so a body over
+# that limit reaches here as a fragment that will not parse and body is undefined. Every check
+# below reads body, and an undefined body silently turns all of them off at once: the secret
+# scan, the internal code check and the vision swap. That is not theoretical. An editor session
+# with two screenshots pasted into it passed a megabyte, arrived truncated, and went to the
+# coding model, which has no vision tower and refused the request with a 400 naming a model the
+# caller never chose. Name the condition here and decide on it below rather than degrading.
+body_readable if is_object(body)
 
 # Every message, joined. The checks below read this rather than the last message alone,
 # because an editor sends the question and the files it has open as separate parts of one
@@ -82,6 +93,17 @@ has_image if {
 	p.type in image_part_types
 }
 
+# The same image one level down. A tool that reads a file returns its result as a part whose
+# own content is a list, so a screenshot an agent opened for itself is nested inside a
+# tool_result rather than sitting next to the question.
+has_image if {
+	some msg in body.messages
+	not is_string(msg.content)
+	some p in msg.content
+	some q in p.content
+	q.type in image_part_types
+}
+
 # Things that say this is our code: a package or service name from the internal list, or a
 # provenance header from an application that knows which repository the code came from.
 # The header can only make a request more private, never less, which is why a client
@@ -101,22 +123,34 @@ has_internal_code if {
 
 may_use(pool) if pool in user.allowed_model_pools
 
-# 2. our code: private, keep the task's class
+# 2. the body arrived truncated. Nothing in it has been scanned, so it stays private whatever
+# the table says, and it takes the class whose model reads images as well as text, because what
+# could not be read might be one. A caller with no private pool gets the 403 below: an
+# unscanned body is not something to send to the frontier.
+routed := {"pool": "private", "class": data.routing.vision_fallback_class, "reason": sprintf("%s, body too large to inspect", [task])} if {
+	not body_readable
+	may_use("private")
+}
+
+# 3. our code: private, keep the task's class
 routed := {"pool": "private", "class": table.class, "reason": sprintf("%s, internal code stays private", [task])} if {
+	body_readable
 	not has_secret
 	has_internal_code
 	may_use("private")
 }
 
-# 3. the table's preferred pool
+# 4. the table's preferred pool
 routed := {"pool": table.pool, "class": table.class, "reason": task} if {
+	body_readable
 	not has_secret
 	not has_internal_code
 	may_use(table.pool)
 }
 
-# 4. the table wanted the frontier and the caller may not use it: private instead
+# 5. the table wanted the frontier and the caller may not use it: private instead
 routed := {"pool": "private", "class": table.class, "reason": sprintf("%s, frontier not permitted", [task])} if {
+	body_readable
 	not has_secret
 	not has_internal_code
 	table.pool != "private"
@@ -124,7 +158,7 @@ routed := {"pool": "private", "class": table.class, "reason": sprintf("%s, front
 	may_use("private")
 }
 
-# 5. an image, and the class that was chosen cannot read one. The private coding model has no
+# 6. an image, and the class that was chosen cannot read one. The private coding model has no
 # vision tower and vLLM refuses the whole request, so the caller meets a 400 naming a model they
 # never chose. The class moves to one whose model can read the image and the reason says why.
 # The frontier is untouched: it reads images, and this only ever moves a request between private

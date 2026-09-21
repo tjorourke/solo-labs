@@ -28,6 +28,10 @@ data:
       envoy_ext_authz_grpc:
         addr: :9191
         path: routing/result
+        # gRPC refuses a message over 4 MiB by default, and the body travels inside the
+        # check request, so this has to clear the gateway's forwardBody.maxSize or a long
+        # conversation is refused at the transport rather than judged by the policy.
+        grpc-max-recv-msg-size-bytes: 10485760
     decision_logs:
       # Every decision with its full input to stdout. This is how the lab shows what
       # the gateway actually sent OPA, verified claims included.
@@ -71,7 +75,9 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              # A forwarded body of several megabytes is held, decoded and walked per
+              # request. 64Mi was enough when the body was capped at 1 MiB and is not now.
+              memory: 256Mi
           volumeMounts:
             - name: config
               mountPath: /config

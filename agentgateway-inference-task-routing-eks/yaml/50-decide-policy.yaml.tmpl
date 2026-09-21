@@ -47,6 +47,11 @@ spec:
         namespace: agentgateway-system
         port: 9191
       grpc: {}
+      # Big enough for a real editor session. A client sends its whole conversation every
+      # turn, and a couple of pasted screenshots take it past a megabyte, at which point the
+      # gateway forwards a fragment and the policy cannot read anything. The policy now says
+      # so rather than skipping its checks, and this keeps an ordinary session under the
+      # limit so it never has to.
       forwardBody:
-        maxSize: 1Mi
+        maxSize: 8Mi
       failureMode: FailClosed
