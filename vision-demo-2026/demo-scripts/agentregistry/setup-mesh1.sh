@@ -31,6 +31,10 @@ SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
 export KAGENT_ENT_LICENSE_KEY="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-${SOLO_ISTIO_LICENSE_KEY:-}}}"
 [[ -n "${ANTHROPIC_API_KEY:-}" ]]      || die "ANTHROPIC_API_KEY not set (SECRETS_FILE)"
 [[ -n "${KAGENT_ENT_LICENSE_KEY:-}" ]] || die "SOLO_LICENSE_KEY not set (SECRETS_FILE)"
+# CORP_API_KEY currently 401s from Anthropic. kagent model calls need a live key.
+if [ -n "${PERSONAL_API_KEY:-}" ]; then
+  ANTHROPIC_API_KEY="$PERSONAL_API_KEY"
+fi
 
 # ── GAR auth for the Solo enterprise charts ────────────────────────────────────
 GAR_HOST=us-docker.pkg.dev
