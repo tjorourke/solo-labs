@@ -1,0 +1,12 @@
+apiVersion: ar.dev/v1alpha1
+kind: Skill
+metadata:
+  name: incident-triage
+spec:
+  title: Incident triage
+  description: "Field briefing: symptom, domain, next two checks. No invented telemetry."
+  source:
+    repository:
+      url: https://github.com/tjorourke/solo.git
+      branch: main
+      subfolder: vision-demo-2026/demo-scripts/agentregistry/skill/incident-triage

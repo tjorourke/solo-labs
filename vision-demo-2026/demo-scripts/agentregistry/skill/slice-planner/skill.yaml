@@ -1,0 +1,12 @@
+apiVersion: ar.dev/v1alpha1
+kind: Skill
+metadata:
+  name: slice-planner
+spec:
+  title: Network slice planner
+  description: Explain a 5G slice as a committed service, with SLA and congestion behaviour.
+  source:
+    repository:
+      url: https://github.com/tjorourke/solo.git
+      branch: main
+      subfolder: vision-demo-2026/demo-scripts/agentregistry/skill/slice-planner
