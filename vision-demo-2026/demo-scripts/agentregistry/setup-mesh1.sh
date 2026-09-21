@@ -123,15 +123,15 @@ ok "Keycloak up"
 step "Scraping confidential client secrets (ar-backend, kagent-backend)"
 scrape() {
   local client="$1" pf admtok cid
-  kc -n "$KEYCLOAK_NS" port-forward svc/keycloak 18099:8080 >/dev/null 2>&1 & pf=$!
-  for _ in $(seq 1 30); do curl -sf -m2 http://localhost:18099/realms/master/.well-known/openid-configuration >/dev/null 2>&1 && break; sleep 1; done
-  admtok="$(curl -s -X POST http://localhost:18099/realms/master/protocol/openid-connect/token \
+  kc -n "$KEYCLOAK_NS" port-forward svc/keycloak 18180:8080 >/dev/null 2>&1 & pf=$!
+  for _ in $(seq 1 30); do curl -sf -m2 http://localhost:18180/realms/master/.well-known/openid-configuration >/dev/null 2>&1 && break; sleep 1; done
+  admtok="$(curl -s -X POST http://localhost:18180/realms/master/protocol/openid-connect/token \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     -d 'grant_type=password&client_id=admin-cli&username=admin&password=admin' | jq -r '.access_token // empty')"
   cid="$(curl -s -H "Authorization: Bearer $admtok" \
-    "http://localhost:18099/admin/realms/${KEYCLOAK_REALM}/clients?clientId=${client}" | jq -r '.[0].id // empty')"
+    "http://localhost:18180/admin/realms/${KEYCLOAK_REALM}/clients?clientId=${client}" | jq -r '.[0].id // empty')"
   curl -s -H "Authorization: Bearer $admtok" \
-    "http://localhost:18099/admin/realms/${KEYCLOAK_REALM}/clients/${cid}/client-secret" | jq -r '.value // empty'
+    "http://localhost:18180/admin/realms/${KEYCLOAK_REALM}/clients/${cid}/client-secret" | jq -r '.value // empty'
   kill "$pf" 2>/dev/null || true
 }
 AR_BACKEND_SECRET="$(scrape ar-backend)"
@@ -146,16 +146,16 @@ ok "client secrets scraped"
 # validates the audience and rejects a token minted for the registry's own client.
 enable_service_account() {
   local client="$1" pf admtok cid
-  kc -n "$KEYCLOAK_NS" port-forward svc/keycloak 18099:8080 >/dev/null 2>&1 & pf=$!
-  for _ in $(seq 1 30); do curl -sf -m2 http://localhost:18099/realms/master/.well-known/openid-configuration >/dev/null 2>&1 && break; sleep 1; done
-  admtok="$(curl -s -X POST http://localhost:18099/realms/master/protocol/openid-connect/token \
+  kc -n "$KEYCLOAK_NS" port-forward svc/keycloak 18180:8080 >/dev/null 2>&1 & pf=$!
+  for _ in $(seq 1 30); do curl -sf -m2 http://localhost:18180/realms/master/.well-known/openid-configuration >/dev/null 2>&1 && break; sleep 1; done
+  admtok="$(curl -s -X POST http://localhost:18180/realms/master/protocol/openid-connect/token \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     -d 'grant_type=password&client_id=admin-cli&username=admin&password=admin' | jq -r '.access_token // empty')"
   cid="$(curl -s -H "Authorization: Bearer $admtok" \
-    "http://localhost:18099/admin/realms/${KEYCLOAK_REALM}/clients?clientId=${client}" | jq -r '.[0].id // empty')"
+    "http://localhost:18180/admin/realms/${KEYCLOAK_REALM}/clients?clientId=${client}" | jq -r '.[0].id // empty')"
   [ -n "$cid" ] && curl -s -o /dev/null -X PUT -H "Authorization: Bearer $admtok" \
     -H 'Content-Type: application/json' \
-    "http://localhost:18099/admin/realms/${KEYCLOAK_REALM}/clients/${cid}" \
+    "http://localhost:18180/admin/realms/${KEYCLOAK_REALM}/clients/${cid}" \
     -d '{"serviceAccountsEnabled":true}'
   kill "$pf" 2>/dev/null || true
 }
