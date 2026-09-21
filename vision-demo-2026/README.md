@@ -33,6 +33,14 @@ there, so nothing scatters across the lab root.
 
 The parts run **independently**: pick one per customer, or run all seven. This lab is a personal demo driver: no `index.html`, not on the site.
 
+### Customer console (localhost:8900)
+
+`demo-console/` is the laptop site for a non-technical audience. Homepage has two cards: live **Gateway decisions** from the task-routing EKS cluster, and **Token economy** (spend, budgets, GitHub MCP Standard vs CodeSearch). Stop `scripts/30-dashboard.py` first if it still owns 8900, then:
+
+```bash
+cd demo-console && ./run.sh    # http://localhost:8900
+```
+
 ## Stack (validated live)
 
 | Piece | Version |
