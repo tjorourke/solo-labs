@@ -31,3 +31,38 @@ spec:
       window:
         unit: Day
       onBudgetExceeded: Block
+---
+# Private GPU spend, its own budget object so the UI does not mix it with Bob's cap.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBudget
+metadata:
+  name: private-pool-budget
+  namespace: agentgateway-system
+spec:
+  budgets:
+    - name: private-pool-daily
+      subject:
+        modelPool: private
+      limit:
+        amount: 3000000
+        unit: Tokens
+      window:
+        unit: Day
+      onBudgetExceeded: Audit
+---
+# Org-wide token cap, Audit only.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBudget
+metadata:
+  name: org-budget
+  namespace: agentgateway-system
+spec:
+  budgets:
+    - name: org-daily
+      subject: {}
+      limit:
+        amount: 4000000
+        unit: Tokens
+      window:
+        unit: Day
+      onBudgetExceeded: Audit
