@@ -25,6 +25,7 @@ import time
 import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 NS = os.environ.get("DASHBOARD_NAMESPACE", "agentgateway-system")
 PORT = int(os.environ.get("DASHBOARD_PORT", "8900"))
@@ -94,6 +95,26 @@ def drop_request(key):
         cards.remove(card)
         card_id = card["id"]
     publish({"id": card_id, "drop": True})
+
+
+# Lab tokens put the employee in sub (bob, alice, dave). An Agentdesktop token puts a
+# Keycloak UUID there and the login in email, so the same rule OPA applies in
+# opa/routing.rego has to apply here or every enrolled request is filed under a UUID.
+KNOWN_USERS = set(
+    json.loads(
+        (Path(__file__).resolve().parents[1] / "opa/routing-data.json").read_text()
+    ).get("users", {})
+)
+
+
+def resolve_subject(payload):
+    sub = payload.get("sub")
+    if sub in KNOWN_USERS:
+        return sub
+    email = payload.get("email")
+    if isinstance(email, str) and email.split("@")[0] in KNOWN_USERS:
+        return email.split("@")[0]
+    return sub
 
 
 def upsert_event(key, **fields):
@@ -219,8 +240,9 @@ def on_opa(line):
     http_in = attrs.get("request", {}).get("http", {})
     if http_in.get("method") != "POST":
         return
-    sub = (attrs.get("metadataContext", {}).get("filterMetadata", {})
-           .get("envoy.filters.http.jwt_authn", {}).get("jwt_payload", {}).get("sub"))
+    payload = (attrs.get("metadataContext", {}).get("filterMetadata", {})
+               .get("envoy.filters.http.jwt_authn", {}).get("jwt_payload", {}))
+    sub = resolve_subject(payload)
     result = d.get("result") or {}
     headers = result.get("headers", {}) if result.get("allowed") else {}
     request_headers = http_in.get("headers", {})
@@ -270,7 +292,10 @@ def on_gateway(line):
         "trace_id": f.get("trace.id"),
         "span_id": f.get("span.id"),
     }
-    if sub:
+    # The access log carries the raw sub. For an enrolled laptop that is a Keycloak UUID,
+    # and the OPA event for the same request already resolved it to the login, so this
+    # only fills the gap when OPA has not been seen yet.
+    if sub and sub in KNOWN_USERS:
         patch["user"] = sub
     upsert_event(key, **patch)
 

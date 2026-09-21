@@ -40,6 +40,15 @@ spec:
             - model-gateway
           jwks:
             inline: '__JWKS__'
+        # Agentdesktop controller JWKS, inlined because EKS cannot reach kind-mesh1.
+        # An enrolled laptop presents a controller-minted token, and the classify listener
+        # preserves it, so this hop has to know the same key or every enrolled request is a
+        # 401 here after passing the first gateway.
+        - issuer: agentdesktop-controller
+          audiences:
+            - model-gateway
+          jwks:
+            inline: '__AD_JWKS__'
     # FailClosed: an OPA outage is a refused request, not a default pool.
     extAuth:
       backendRef:

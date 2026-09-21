@@ -46,6 +46,16 @@ BASELINE="$CLAUDE_SETTINGS.pre-agentdesktop"
 # real default for this machine, whatever the live file happens to say now.
 AGW_BASELINE="$CLAUDE_SETTINGS.pre-agw"
 STATE_DIR="$HOME/.local/state/agentdesktop"
+# System mode. Agentdesktop can only manage Claude Desktop from here: Desktop reads its
+# policy through CFPreferencesCopyAppValue against /Library/Managed Preferences, and a
+# daemon running as the logged-in user cannot write that. `--user` refuses
+# programs.claudeDesktop outright, and it refuses the whole revision, so a fleet policy
+# with Claude Desktop in it leaves Claude Code unmanaged as well.
+SYS_STATE_DIR=/var/lib/agentdesktop
+SYS_SOCK=/var/run/agentdesktop/agentdesktop.sock
+SYS_CODE_SETTINGS="/Library/Application Support/ClaudeCode/managed-settings.d/50-agentdesktop.json"
+SYS_DESKTOP_PLIST="/Library/Managed Preferences/com.anthropic.claudefordesktop.plist"
+SYS_DESKTOP_HELPER=/etc/claude-desktop/agentdesktop-credential-helper
 
 need_hosts() { ! grep -q "$CTRL_HOST" /etc/hosts || ! grep -q "$KC_HOST" /etc/hosts; }
 
@@ -57,6 +67,25 @@ other_demo_on() {
   b="$(claude_base)"
   [ -n "$b" ] || return 1
   case "$b" in *"$AD_GATEWAY"*) return 1 ;; *) return 0 ;; esac
+}
+
+# agw-toggle.sh writes the same managed plist by hand, so system mode and that demo
+# cannot both own Claude Desktop.
+guard_other_demo_desktop() {
+  [ -f "$SYS_DESKTOP_PLIST" ] || return 0
+  [ -f "$SYS_DESKTOP_PLIST.owner" ] && return 0
+  cat <<EOF
+
+Claude Desktop already has a managed inference profile that Agentdesktop did not write:
+
+  $SYS_DESKTOP_PLIST
+
+That is the task-routing demo's toggle. Turn it off first, then come back:
+
+  ~/Downloads/agw-toggle.sh off
+
+EOF
+  exit 1
 }
 
 guard_other_demo() {
@@ -152,6 +181,56 @@ up)
   fi
   ;;
 
+up-system)
+  # Both clients. Runs as root so Claude Desktop's managed preferences can be written,
+  # which is the only path that reaches Desktop at all.
+  need_hosts && { "$0" hosts; exit 1; }
+  need_bin; guard_other_demo; guard_other_demo_desktop
+  [ -f "$CA" ] || { echo "no device CA at $CA. Re-run agentdesktop.sh"; exit 1; }
+  echo "→ system mode: Claude Code and Claude Desktop"
+  echo "  Claude Code   $SYS_CODE_SETTINGS"
+  echo "  Claude Desktop $SYS_DESKTOP_PLIST"
+  echo "  Your own ~/.claude/settings.json is not touched; the managed file wins over it."
+  echo
+  echo "→ sudo is needed for those two paths. A sign-in URL is printed: open it as tom / password."
+  sudo mkdir -p "$SYS_STATE_DIR" "$(dirname "$SYS_SOCK")" \
+                "$(dirname "$SYS_CODE_SETTINGS")" "$(dirname "$SYS_DESKTOP_HELPER")"
+  # The browser opens in root's session or not at all, so bind the callback to a fixed
+  # port and let the printed URL be the way in.
+  exec sudo "$AD_BIN" daemon \
+    --config "$CFG" \
+    --state-dir "$SYS_STATE_DIR" \
+    --socket "$SYS_SOCK" \
+    --oidc-callback-listen 127.0.0.1:18456
+  ;;
+
+preview-system)
+  need_hosts && { "$0" hosts; exit 1; }
+  need_bin
+  echo "→ enrols to collect the policy, prints the diff for both clients, writes nothing"
+  sudo mkdir -p "$SYS_STATE_DIR" "$(dirname "$SYS_SOCK")"
+  sudo "$AD_BIN" daemon --config "$CFG" --state-dir "$SYS_STATE_DIR" \
+    --socket "$SYS_SOCK" --oidc-callback-listen 127.0.0.1:18456 --dry-run
+  ;;
+
+down-system)
+  # Claude Desktop caches its managed preferences, so quit it before the file goes and
+  # the next launch reads an absent profile rather than the one it started with.
+  pkill -f "agentdesktop daemon" 2>/dev/null && echo "-> daemon stopped" || echo "-> daemon was not running"
+  sudo pkill -f "agentdesktop daemon" 2>/dev/null || true
+  sleep 1
+  osascript -e 'tell application "Claude" to quit' 2>/dev/null || true
+  sudo rm -f "$SYS_CODE_SETTINGS" "$SYS_CODE_SETTINGS.owner" \
+             "$SYS_DESKTOP_PLIST" "$SYS_DESKTOP_PLIST.owner" \
+             "$SYS_DESKTOP_HELPER" "$SYS_DESKTOP_HELPER.owner"
+  echo "-> managed files for both clients removed"
+  sudo rm -rf "${SYS_STATE_DIR:?}" && echo "-> device identity cleared"
+  sudo rm -rf "$(dirname "$SYS_SOCK")" 2>/dev/null || true
+  echo
+  echo "Restart Claude Code, and reopen Claude Desktop."
+  echo "The other demo is free now:  ~/Downloads/agw-toggle.sh on"
+  ;;
+
 status)
   "$AD_BIN" status
   curl -sS --unix-socket "$SOCK" http://localhost/v1/enrollment 2>/dev/null; echo
@@ -191,7 +270,18 @@ state)
   else                                      echo "  owner                  this lab (demo-9 agentdesktop)"; fi
   [ -f "$BASELINE" ]     && printf '  %-22s %s\n' "this lab's baseline" "$BASELINE"
   [ -f "$AGW_BASELINE" ] && printf '  %-22s %s\n' "machine default"     "$AGW_BASELINE"
-  if [ -S "$SOCK" ]; then
+  if [ -f "$SYS_CODE_SETTINGS" ] || [ -f "$SYS_DESKTOP_PLIST" ]; then
+    printf '  %-22s %s\n' "system mode" "on"
+    [ -f "$SYS_CODE_SETTINGS" ] && printf '  %-22s %s\n' "  Claude Code" "managed"
+    if [ -f "$SYS_DESKTOP_PLIST" ]; then
+      if [ -f "$SYS_DESKTOP_PLIST.owner" ]; then
+        printf '  %-22s %s\n' "  Claude Desktop" "managed by Agentdesktop"
+      else
+        printf '  %-22s %s\n' "  Claude Desktop" "managed by agw-toggle.sh"
+      fi
+    fi
+  fi
+  if [ -S "$SOCK" ] || [ -S "$SYS_SOCK" ]; then
     printf '  %-22s %s\n' "agentdesktop daemon" "running"
     printf '  %-22s %s\n' "enrolment" "$(curl -sS --unix-socket "$SOCK" http://localhost/v1/enrollment 2>/dev/null)"
   else
@@ -257,5 +347,14 @@ for x in ds:
   echo "The other demo is free now:  ~/Downloads/agw-toggle.sh on"
   ;;
 
-*) echo "usage: $0 {binary|hosts|preview|up|status|check|settings|state|down}"; exit 1 ;;
+*) cat <<EOF
+usage: $0 <action>
+
+  Claude Code only, no sudo:
+    binary hosts preview up status check settings state down
+
+  Claude Code and Claude Desktop, needs sudo:
+    preview-system up-system down-system
+EOF
+   exit 1 ;;
 esac

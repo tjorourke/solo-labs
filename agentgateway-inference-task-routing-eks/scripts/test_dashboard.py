@@ -100,6 +100,20 @@ class CorrelationTests(unittest.TestCase):
         _, question, _, _ = dashboard.read_prompt(body)
         self.assertEqual(question, 'How does 5G slicing work?')
 
+    def test_an_enrolled_laptop_is_filed_under_its_login_not_a_uuid(self):
+        # An Agentdesktop token carries a Keycloak UUID in sub and the login in email.
+        uuid_sub = '11111111-2222-3333-4444-555555555555'
+        decision = json.loads(opa(self.a, self.x, 'finance', 'Duration risk?'))
+        payload = (decision['input']['attributes']['metadataContext']['filterMetadata']
+                   ['envoy.filters.http.jwt_authn']['jwt_payload'])
+        payload['sub'] = uuid_sub
+        payload['email'] = 'bob@corp.example'
+        dashboard.on_opa(json.dumps(decision))
+        self.assertEqual(dashboard.cards[0]['user'], 'bob')
+        # The access log only carries the raw sub, so it must not undo that.
+        dashboard.on_gateway(access(self.a, self.x, 'mistral').replace('jwt.sub=bob', f'jwt.sub={uuid_sub}'))
+        self.assertEqual(dashboard.cards[0]['user'], 'bob')
+
 
 if __name__ == '__main__':
     unittest.main()

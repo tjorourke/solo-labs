@@ -12,8 +12,23 @@ set -Eeuo pipefail
 : "${AD_CONTROLLER_IP:?}" "${AD_KEYCLOAK_IP:?}" "${AD_USER:?}" "${AD_PASSWORD:?}"
 CONTROLLER_HOST=agentdesktop.agentdesktop.svc.cluster.local
 KEYCLOAK_HOST=keycloak.keycloak.svc.cluster.local
-SOCK="$HOME/.local/state/agentdesktop/agentdesktop.sock"
 JAR=/tmp/kc-cookies.txt
+# --user manages this user's own tool settings. System mode manages the machine's, and
+# it is the only mode that can reach Claude Desktop: Desktop reads its policy from the
+# system-managed location, and --user refuses programs.claudeDesktop for the whole
+# revision, which leaves every other program on the device unmanaged too. Set
+# AD_SYSTEM=1 when the fleet policy carries Claude Desktop.
+if [ "${AD_SYSTEM:-0}" = "1" ]; then
+  MODE=""
+  MODE_LABEL=system
+  SOCK=/run/agentdesktop/agentdesktop.sock
+  STATE=/var/lib/agentdesktop
+else
+  MODE="--user"
+  MODE_LABEL=user
+  SOCK="$HOME/.local/state/agentdesktop/agentdesktop.sock"
+  STATE="$HOME/.local/state/agentdesktop"
+fi
 
 # Resolve the two cluster names the same way the laptop does with /etc/hosts.
 grep -q "$CONTROLLER_HOST" /etc/hosts || echo "$AD_CONTROLLER_IP $CONTROLLER_HOST" >> /etc/hosts
@@ -40,7 +55,7 @@ seed_tools() {
 }
 seed_tools
 
-mkdir -p "$HOME/.config/agentdesktop" "$HOME/.local/state/agentdesktop"
+mkdir -p "$HOME/.config/agentdesktop" "$STATE" "$(dirname "$SOCK")"
 cat > "$HOME/.config/agentdesktop/config.yaml" <<EOF
 controller:
   address: https://$CONTROLLER_HOST
@@ -48,8 +63,10 @@ controller:
   heartbeatInterval: 30s
 EOF
 
-echo "→ [$(hostname)] starting daemon"
-agentdesktop daemon --user --config "$HOME/.config/agentdesktop/config.yaml" \
+echo "→ [$(hostname)] starting daemon in $MODE_LABEL mode"
+# shellcheck disable=SC2086
+agentdesktop daemon $MODE --config "$HOME/.config/agentdesktop/config.yaml" \
+  --state-dir "$STATE" --socket "$SOCK" \
   > /tmp/daemon.log 2>&1 &
 DAEMON_PID=$!
 

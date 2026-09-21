@@ -18,9 +18,14 @@ kubectl -n "$NS" create secret generic anthropic-secret --from-literal=Authoriza
 kubectl apply -f "$HERE/yaml/40-backends.yaml"
 banner "policy, with the lab JWKS inlined"
 JWKS="$(tr -d '\n' < "$HERE/identity/jwks.json")"
-JWKS="$JWKS" python3 - "$HERE/yaml/50-decide-policy.yaml.tmpl" "$HERE/yaml/50-decide-policy.yaml" <<'PY'
+AD_JWKS="$(tr -d '\n' < "$HERE/identity/agentdesktop-jwks.json")"
+JWKS="$JWKS" AD_JWKS="$AD_JWKS" python3 - "$HERE/yaml/50-decide-policy.yaml.tmpl" "$HERE/yaml/50-decide-policy.yaml" <<'PY'
 import os, sys
-open(sys.argv[2], "w").write(open(sys.argv[1]).read().replace("__JWKS__", os.environ["JWKS"]))
+open(sys.argv[2], "w").write(
+    open(sys.argv[1]).read()
+    .replace("__JWKS__", os.environ["JWKS"])
+    .replace("__AD_JWKS__", os.environ["AD_JWKS"])
+)
 PY
 kubectl apply -f "$HERE/yaml/50-decide-policy.yaml"
 banner "route"
