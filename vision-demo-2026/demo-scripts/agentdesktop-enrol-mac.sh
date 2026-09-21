@@ -67,6 +67,39 @@ SYS_LOG=/var/log/agentdesktop-daemon.log
 
 need_hosts() { ! grep -q "$CTRL_HOST" /etc/hosts || ! grep -q "$KC_HOST" /etc/hosts; }
 
+# Each enrol mints a new device id. Logout only clears the local identity, so
+# failed or repeated enrols leave Mac rows in the fleet console. The mesh1
+# fleet is Linux; any macos/darwin record, or this hostname, is this laptop.
+remove_controller_device() {
+  local PF_PORT=18099 PF="" IDS
+  if ! curl -sS -m 2 "http://127.0.0.1:$PF_PORT/api/v1/overview" >/dev/null 2>&1; then
+    kubectl --context "${CTX:-kind-mesh1}" -n agentdesktop port-forward deploy/agentdesktop $PF_PORT:8080 >/tmp/ad-down-pf.log 2>&1 &
+    PF=$!; sleep 4
+  fi
+  IDS="$(curl -sS -m 5 "http://127.0.0.1:$PF_PORT/api/v1/devices" 2>/dev/null | python3 -c "
+import json,socket,subprocess,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit
+ds=d if isinstance(d,list) else d.get('devices') or []
+names={socket.gethostname().split('.')[0].lower()}
+for key in ('ComputerName','LocalHostName','HostName'):
+    p=subprocess.run(['scutil','--get',key], capture_output=True, text=True)
+    if p.returncode==0 and p.stdout.strip():
+        names.add(p.stdout.strip().split('.')[0].lower())
+for x in ds:
+    osn=str(x.get('os') or '').lower()
+    hn=str(x.get('hostname') or '').split('.')[0].lower()
+    if osn in ('macos','darwin') or hn in names:
+        print(x['id'])
+" 2>/dev/null)"
+  for id in $IDS; do
+    curl -sS -m 5 -o /dev/null -X DELETE "http://127.0.0.1:$PF_PORT/api/v1/devices/$id" \
+      && echo "-> device $id removed from the controller"
+  done
+  [ -n "$PF" ] && kill "$PF" 2>/dev/null
+  [ -z "$IDS" ] && echo "-> no leftover device for this Mac in the controller"
+}
+
 claude_base() {
   python3 -c "import json,os,sys; p=sys.argv[1]; d=json.load(open(p)) if os.path.exists(p) else {}; print(d.get('env',{}).get('ANTHROPIC_BASE_URL',''))" "$CLAUDE_SETTINGS" 2>/dev/null
 }
@@ -263,6 +296,7 @@ remove-daemon)
   cat > "$PRIV" <<SH
 /bin/launchctl bootout system/$SYS_LABEL >/dev/null 2>&1 || true
 rm -f "$SYS_PLIST"
+rm -rf "$(dirname "$SYS_SOCK")"
 rm -f "$SYS_CODE_SETTINGS" "$(dirname "$SYS_CODE_SETTINGS")/.$(basename "$SYS_CODE_SETTINGS").owner"
 # Only if Agentdesktop wrote it. Without the marker the managed profile belongs to
 # agw-toggle.sh, and removing this daemon must not take the other demo down with it.
@@ -277,6 +311,9 @@ SH
     -e 'end run' "$PRIV"
   echo "-> daemon removed; both clients are back to native"
   echo "   Restart Claude Code, and reopen Claude Desktop."
+  set +e
+  command -v kubectl >/dev/null 2>&1 && remove_controller_device
+  set -e
   ;;
 
 signin-url)
@@ -367,6 +404,9 @@ down-system)
   echo "-> managed files for both clients removed"
   sudo rm -rf "${SYS_STATE_DIR:?}" && echo "-> device identity cleared"
   sudo rm -rf "$(dirname "$SYS_SOCK")" 2>/dev/null || true
+  set +e
+  command -v kubectl >/dev/null 2>&1 && remove_controller_device
+  set -e
   echo
   echo "Restart Claude Code, and reopen Claude Desktop."
   echo "The other demo is free now:  ~/Downloads/agw-toggle.sh on"
@@ -459,28 +499,7 @@ down)
   # Best effort from here: a ghost row in the console is cosmetic, and an
   # unreachable cluster must not stop a laptop being put back.
   set +e
-  if command -v kubectl >/dev/null 2>&1; then
-    PF_PORT=18099; PF=""
-    if ! curl -sS -m 2 "http://127.0.0.1:$PF_PORT/api/v1/overview" >/dev/null 2>&1; then
-      kubectl -n agentdesktop port-forward deploy/agentdesktop $PF_PORT:8080 >/tmp/ad-down-pf.log 2>&1 &
-      PF=$!; sleep 4
-    fi
-    IDS="$(curl -sS -m 5 "http://127.0.0.1:$PF_PORT/api/v1/devices" 2>/dev/null | python3 -c "
-import json,socket,sys
-try: d=json.load(sys.stdin)
-except Exception: raise SystemExit
-ds=d if isinstance(d,list) else d.get('devices',d)
-hn=socket.gethostname().split('.')[0]
-for x in ds:
-    if str(x.get('hostname','')).split('.')[0]==hn: print(x['id'])
-" 2>/dev/null)"
-    for id in $IDS; do
-      curl -sS -m 5 -o /dev/null -X DELETE "http://127.0.0.1:$PF_PORT/api/v1/devices/$id" \
-        && echo "-> device $id removed from the controller"
-    done
-    [ -n "$PF" ] && kill "$PF" 2>/dev/null
-    [ -z "$IDS" ] && echo "-> no device for this hostname in the controller (nothing to remove)"
-  fi
+  command -v kubectl >/dev/null 2>&1 && remove_controller_device
   set -e
 
   echo

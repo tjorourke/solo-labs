@@ -181,25 +181,17 @@ needs_vision_swap if {
 }
 
 # 7. the request is longer than the smaller models can hold. The private coding model's window
-# is 262,144 tokens and the other private models are 131,072, so a long conversation only fits
-# on one of them. vLLM refuses a request over its window outright rather than shortening it, so
-# the caller meets a 400 quoting a limit they never asked for. An agent client meets it every
-# time: Claude Code sends about 33,000 tokens of instructions and tool definitions before the
-# person has typed anything, and it sizes its own budget from the model name the gateway
-# advertises rather than the window behind it, so it keeps growing past 131,072 and cannot be
-# told otherwise.
+# is 262,144 tokens and the other private models are 131,072, and vLLM refuses a request over
+# its window rather than shortening it, so a long conversation on those models returns a 400
+# quoting a limit the caller never chose.
 #
-# The gateway cannot count tokens, so the size of the body stands in for them, and the estimate
-# is deliberately low: bytes_per_token is 3.5 against the 4.0 measured on this model's own
-# tokenizer, so the class moves before the window runs out. The requested output counts too,
-# because vLLM checks the input and max_tokens against one limit. OPA counts characters, which
-# is the same as bytes for the ASCII a code prompt is made of.
+# The gateway cannot count tokens, so the size of the forwarded body stands in for them, and the
+# estimate is deliberately low: bytes_per_token is 3.5 against the 4.0 measured on this model's
+# own tokenizer. max_tokens counts too, because vLLM checks the input and the requested output
+# against one limit.
 #
-# An image beats the window. A long request carrying one fits nowhere: the coding model has the
-# window but no vision tower, and the model that reads images has the smaller window. Reading
-# the image is the one requirement the caller stated, so it keeps the class that can read it and
-# the window error stands. Same for a body that arrived truncated, which rule 2 has already put
-# on the class that reads anything precisely because nothing has looked inside it.
+# An image takes precedence, and so does a body too large to inspect: no model both reads an
+# image and holds the larger window, and rule 2 has already chosen for an unreadable body.
 estimated_input_tokens := count(input.attributes.request.http.body) / data.routing.bytes_per_token
 
 reserved_output := object.get(body, "max_tokens", 0) if body_readable
