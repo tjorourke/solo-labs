@@ -65,6 +65,57 @@ class ToggleTests(unittest.TestCase):
         self.toggle.apply('off', restart=False)  # Repeated off must remain off.
         self.assertFalse(self.toggle.managed.exists())
 
+    def test_on_denies_the_server_side_tools_and_off_restores_them(self):
+        self.seed()
+        self.toggle.apply('on', restart=False)
+        profile = module.read_plist(self.toggle.managed)
+        self.assertEqual(json.loads(profile['disabledBuiltinTools']), ['WebSearch', 'WebFetch'])
+        self.assertTrue(all(isinstance(value, str) for value in profile.values()))
+        code = module.read_json(self.toggle.code)
+        self.assertEqual(code['permissions']['deny'], ['WebSearch', 'WebFetch'])
+        self.toggle.apply('off', restart=False)
+        self.assertFalse(self.toggle.managed.exists())
+        self.assertNotIn('permissions', module.read_json(self.toggle.code))
+
+    def test_off_keeps_denials_this_lab_did_not_add(self):
+        module.atomic_write(self.toggle.code, module.json_bytes(
+            {'permissions': {'deny': ['Bash(rm *)'], 'allow': ['Read']}}))
+        for path in self.toggle.desktop:
+            module.atomic_write(path, module.json_bytes({'deploymentMode': '1p'}))
+        self.toggle.apply('on', restart=False)
+        self.assertEqual(module.read_json(self.toggle.code)['permissions']['deny'],
+                         ['Bash(rm *)', 'WebSearch', 'WebFetch'])
+        self.toggle.apply('off', restart=False)
+        permissions = module.read_json(self.toggle.code)['permissions']
+        self.assertEqual(permissions, {'deny': ['Bash(rm *)'], 'allow': ['Read']})
+
+    def test_off_keeps_a_managed_tool_denial_from_another_owner(self):
+        self.seed()
+        module.atomic_write(self.toggle.managed, plistlib.dumps(
+            {'disabledBuiltinTools': json.dumps(['Bash'])}))
+        self.toggle.apply('on', restart=False)
+        self.assertEqual(json.loads(module.read_plist(self.toggle.managed)['disabledBuiltinTools']),
+                         ['Bash', 'WebSearch', 'WebFetch'])
+        self.toggle.apply('off', restart=False)
+        self.assertEqual(json.loads(module.read_plist(self.toggle.managed)['disabledBuiltinTools']),
+                         ['Bash'])
+
+    def test_repeated_on_does_not_duplicate_denials(self):
+        self.seed()
+        self.toggle.apply('on', restart=False)
+        self.toggle.apply('on', restart=False)
+        self.assertEqual(json.loads(module.read_plist(self.toggle.managed)['disabledBuiltinTools']),
+                         ['WebSearch', 'WebFetch'])
+        self.assertEqual(module.read_json(self.toggle.code)['permissions']['deny'],
+                         ['WebSearch', 'WebFetch'])
+
+    def test_status_names_the_denied_tools(self):
+        self.seed()
+        self.toggle.apply('on', restart=False)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.toggle.status()
+        self.assertIn('Server-side tools denied: WebSearch, WebFetch', output.getvalue())
+
     def test_reproduces_original_bug_with_plist_but_no_local_gateway_key(self):
         self.seed()
         self.toggle.apply('on', restart=False)

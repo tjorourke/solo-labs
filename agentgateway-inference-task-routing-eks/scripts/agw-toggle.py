@@ -21,6 +21,36 @@ PROFILE_KEYS = {
     "modelDiscoveryEnabled",
 }
 
+# Built-in tools that cannot work behind a gateway serving self-hosted models, because they
+# are Anthropic *server-side* tools: the client asks for them by declaring
+# `{"type": "web_search_20250305"}`, Anthropic runs the search inside that call, and the
+# results come back as `server_tool_use` and `web_search_tool_result` blocks.
+#
+# Translating Messages to chat completions has nothing to map that entry onto, so it is
+# dropped, and vLLM answers the sub-call in prose ("I can't perform live web searches").
+# The client gets a 200 with no results, the tool never resolves, and the turn retries
+# until someone gives up. Measured on 2026-09-21: seven rounds, 13-18s each, and the app
+# sat on "Running tools..." for over three minutes without ever printing a reply.
+#
+# Desktop already locks WebSearch for third-party inference, but only for one provider
+# family (`bedrockFamily`), so a `gateway` provider keeps the tool and hits the above.
+# Denying it explicitly is the supported way: `disabledBuiltinTools` is a managed
+# preference whose own placeholder is "WebSearch or Bash(curl *)", and it covers both
+# Cowork and Code.
+DENIED_TOOLS = ["WebSearch", "WebFetch"]
+DENIED_TOOLS_KEY = "disabledBuiltinTools"
+
+
+def with_denied_tools(existing):
+    """Add the lab's denials without disturbing anyone else's."""
+    names = list(existing or [])
+    return names + [name for name in DENIED_TOOLS if name not in names]
+
+
+def without_denied_tools(existing):
+    """Remove only what this lab added, so an unrelated denial survives `off`."""
+    return [name for name in (existing or []) if name not in DENIED_TOOLS]
+
 
 def read_json(path):
     return json.loads(path.read_text()) if path.exists() else {}
@@ -28,6 +58,16 @@ def read_json(path):
 
 def read_plist(path):
     return plistlib.loads(path.read_bytes()) if path.exists() else {}
+
+
+def read_list(value):
+    """A managed profile carries a list as a JSON string; a settings file carries it plainly."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
 def atomic_write(path, content, mode=0o600):
@@ -202,6 +242,14 @@ class Toggle:
                 'inferenceGatewayApiKey': self.token.read_text().strip(),
                 'inferenceModels': json.dumps([self.model]), 'modelDiscoveryEnabled': 'false',
             })
+        # Desktop reads a flat managed value as a string and parses it, the same way
+        # inferenceModels above is carried, so every value in this profile stays a string.
+        denied = read_list(profile.get(DENIED_TOOLS_KEY))
+        denied = with_denied_tools(denied) if mode == 'on' else without_denied_tools(denied)
+        if denied:
+            profile[DENIED_TOOLS_KEY] = json.dumps(denied)
+        else:
+            profile.pop(DENIED_TOOLS_KEY, None)
         env = code.setdefault('env', {})
         if mode == 'on':
             env['ANTHROPIC_BASE_URL'] = self.base
@@ -212,6 +260,17 @@ class Toggle:
         env.pop('CLAUDE_CODE_SIMPLE', None)
         if not env:
             code.pop('env', None)
+        # Claude Code has its own denial list, and it is the one that stops a terminal
+        # session issuing the sub-call. Desktop's managed key does not reach it.
+        permissions = code.setdefault('permissions', {})
+        deny = read_list(permissions.get('deny'))
+        deny = with_denied_tools(deny) if mode == 'on' else without_denied_tools(deny)
+        if deny:
+            permissions['deny'] = deny
+        else:
+            permissions.pop('deny', None)
+        if not permissions:
+            code.pop('permissions', None)
         updates = {self.code: code}
         for path in self.desktop:
             if path.exists():
@@ -252,8 +311,14 @@ class Toggle:
         print("Restart existing terminal Claude Code sessions; they keep their startup settings.")
 
     def status(self):
-        code_url = read_json(self.code).get('env', {}).get('ANTHROPIC_BASE_URL')
+        code = read_json(self.code)
+        code_url = code.get('env', {}).get('ANTHROPIC_BASE_URL')
         print('Claude Code configured:', code_url or 'native (no gateway base URL)')
+        denied = sorted(set(read_list(code.get('permissions', {}).get('deny')))
+                        | set(read_list(read_plist(self.managed).get(DENIED_TOOLS_KEY))))
+        lab_denied = [name for name in DENIED_TOOLS if name in denied]
+        print('Server-side tools denied:', ', '.join(lab_denied) if lab_denied else
+              'none (a search will hang: the gateway cannot serve them)')
         profiles = [read_plist(p) for p in (self.managed, self.user_managed)]
         active = [p for p in profiles if p.get('inferenceProvider') or p.get('inferenceGatewayBaseUrl')]
         if active:
