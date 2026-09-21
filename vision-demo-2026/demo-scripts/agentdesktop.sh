@@ -404,6 +404,8 @@ cat <<EOF
 
     agentdesktop daemon --user --config demo-scripts/yaml-agentdesktop/daemon.yaml
 
-  Sign in as tom / password. Users: tom, priya, leaver (all password 'password').
+  Sign in as tom / password. Users: tom, bob, priya, leaver (all password 'password').
+  Sign in as bob for anything that sends a client at the model gateway: that gateway's OPA
+  table knows bob, alice and dave, and refuses every other subject with a 403.
 
 EOF

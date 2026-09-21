@@ -330,7 +330,10 @@ up-system)
   echo "  Claude Desktop $SYS_DESKTOP_PLIST"
   echo "  Your own ~/.claude/settings.json is not touched; the managed file wins over it."
   echo
-  echo "→ sudo is needed for those two paths. A sign-in URL is printed: open it as tom / password."
+  echo "→ sudo is needed for those two paths. A sign-in URL is printed: open it as bob / password."
+  echo "  bob, not tom. The model gateway decides on the subject in the token, and its OPA"
+  echo "  table knows bob, alice and dave. Any other subject gets 403 no suitable permitted"
+  echo "  backend for this task on every request, from both clients."
   sudo mkdir -p "$SYS_STATE_DIR" "$(dirname "$SYS_SOCK")" \
                 "$(dirname "$SYS_CODE_SETTINGS")" "$(dirname "$SYS_DESKTOP_HELPER")"
   # The browser opens in root's session or not at all, so bind the callback to a fixed
