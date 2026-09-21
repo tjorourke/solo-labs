@@ -1,16 +1,37 @@
-# Claude Code speaks Anthropic Messages. Budget Block returns HTTP 429 with a plain
-# text body ("rate limit exceeded"). The intake hop then tries to parse that as JSON
-# and Claude sees 502 "expected value at line 1 column 1".
+# What a refused request looks like to the client.
 #
-# CEL uses response.code, not response.status. The 429 is an upstream response on
-# classify-then-decide (decision-gateway -> model-gateway). Rewrite it to OpenAI
-# JSON there so the Messages translator can turn it into an Anthropic error.
-# Intake still rewrites 429/502 as a backstop.
----
+# Budget Block answers 429 with a plain text body, "rate limit exceeded". That is readable
+# in curl and useless everywhere else. An OpenAI client gets a body it cannot parse, and a
+# Claude Code or Claude Desktop user gets worse: the intake backend converts Messages to
+# chat completions and back, the converter cannot parse plain text, and the refusal reaches
+# the editor as
+#
+#   502 failed to process LLM response: failed to parse response: expected value at line 1 column 1
+#
+# with no mention of a budget. Rewriting the body into an error object both formats
+# understand is the whole fix.
+#
+# It goes on classify-then-decide because that is the hop that sees the 429 come back from
+# the decision gateway, before the Messages converter reads it. Rewritten to an OpenAI error
+# there, the converter turns it into an Anthropic error on the way out on its own, so one
+# policy covers both wire formats and the intake route needs nothing.
+#
+# Two things in the CEL fail silently.
+#
+# `conditional` branches are evaluated against the request, so a branch on `response.code`
+# never matches and the policy does nothing at all. The branch has to be a ternary inside an
+# ordinary response transformation, which is why the rewrite below is unconditional and
+# every non-429 response is handed back its own body unchanged.
+#
+# `has(response.headers["content-type"])` is not valid CEL. has() takes a field selection,
+# not a map index, so it errors, the whole header expression fails with it, and content-type
+# is dropped from the response instead of being set. Index the map. Keeping the current
+# value on every other response matters here: a streamed reply is text/event-stream, and
+# forcing application/json onto it breaks the client that asked for the stream.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:
-  name: budget-error-openai
+  name: budget-error
   namespace: agentgateway-system
 spec:
   targetRefs:
@@ -19,32 +40,8 @@ spec:
       name: classify-then-decide
   traffic:
     transformation:
-      conditional:
-        - condition: 'response.code == 429'
-          policy:
-            response:
-              set:
-                - name: content-type
-                  value: '"application/json"'
-              body: "'{\"error\":{\"message\":\"Daily frontier token budget reached. Use a private model, or wait until the window resets.\",\"type\":\"insufficient_quota\",\"code\":\"budget_exceeded\"}}'"
----
-apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-kind: EnterpriseAgentgatewayPolicy
-metadata:
-  name: budget-error-anthropic
-  namespace: agentgateway-system
-spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: intake-routing
-  traffic:
-    transformation:
-      conditional:
-        - condition: 'response.code == 429 || response.code == 502'
-          policy:
-            response:
-              set:
-                - name: content-type
-                  value: '"application/json"'
-              body: "'{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Daily frontier token budget reached. Use a private model, or wait until the window resets.\"}}'"
+      response:
+        set:
+          - name: content-type
+            value: 'response.code == 429 ? "application/json" : response.headers["content-type"]'
+        body: 'response.code == 429 ? "{\"error\":{\"message\":\"Daily frontier token budget reached. Ask a private model, or wait for the window to reset.\",\"type\":\"insufficient_quota\",\"code\":\"budget_exceeded\"}}" : response.body'
