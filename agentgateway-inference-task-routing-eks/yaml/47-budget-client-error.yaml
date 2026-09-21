@@ -1,0 +1,51 @@
+# Claude Code speaks Anthropic Messages. Budget Block returns HTTP 429 with a plain
+# text body ("rate limit exceeded"). The intake hop then tries to parse that as a
+# chat-completion JSON document, fails, and the editor shows 502 "expected value at
+# line 1 column 1". Rewrite the 429 as JSON the client can display.
+#
+# Two hops, two shapes. The decision gateway is OpenAI-shaped. The messages backend
+# is what Claude Code talks to.
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: budget-error-openai
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: decision-routing
+  traffic:
+    transformation:
+      conditional:
+        - condition: 'response.status == 429'
+          policy:
+            response:
+              set:
+                - name: content-type
+                  value: '"application/json"'
+              body: >-
+                '{"error":{"message":"Daily frontier token budget reached. Use a private model, or wait until the window resets.","type":"insufficient_quota","code":"budget_exceeded"}}'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: budget-error-anthropic
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: intake-routing
+  traffic:
+    transformation:
+      conditional:
+        - condition: 'response.status == 429 || response.status == 502'
+          policy:
+            response:
+              set:
+                - name: content-type
+                  value: '"application/json"'
+              body: >-
+                '{"type":"error","error":{"type":"rate_limit_error","message":"Daily frontier token budget reached. Use a private model, or wait until the window resets."}}'
