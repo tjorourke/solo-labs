@@ -1,0 +1,80 @@
+# The vendor's API lives on a path, and agentgateway posts to /request and
+# /response. A static Backend carries a host and a port and no path, so the
+# path is set on the hop with a request transformation.
+#
+# One Backend per phase, because the path differs per phase.
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: guard-saas-request
+  namespace: agentgateway-system
+spec:
+  static:
+    host: guard.vendor.example.com
+    port: 443
+  policies:
+    tls: {}
+    auth:
+      secretRef:
+        name: guard-api-key
+      location:
+        header:
+          name: X-Guard-Api-Key
+    transformation:
+      request:
+        set:
+          # A CEL expression, so the literal is quoted inside the string.
+          - name: ":path"
+            value: '"/v1/ai/guard"'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: guard-saas-response
+  namespace: agentgateway-system
+spec:
+  static:
+    host: guard.vendor.example.com
+    port: 443
+  policies:
+    tls: {}
+    auth:
+      secretRef:
+        name: guard-api-key
+      location:
+        header:
+          name: X-Guard-Api-Key
+    transformation:
+      request:
+        set:
+          - name: ":path"
+            value: '"/v1/ai/guard/output"'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: external-guardrail-saas
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - webhook:
+              failureMode: FailClosed
+              backendRef:
+                group: enterpriseagentgateway.solo.io
+                kind: EnterpriseAgentgatewayBackend
+                name: guard-saas-request
+        response:
+          - webhook:
+              failureMode: FailClosed
+              backendRef:
+                group: enterpriseagentgateway.solo.io
+                kind: EnterpriseAgentgatewayBackend
+                name: guard-saas-response
