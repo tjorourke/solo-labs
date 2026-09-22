@@ -147,7 +147,7 @@ def _call_guard(text: str, phase: str) -> dict[str, Any]:
           header X-TG-API-Key: <key>
           body   { policy_id, conversation: { messages: [{role, content}] }, direction }
           resp   { is_flagged, transformed_payload, findings:[{detection_type,...}], ... }
-      - "zscaler"    → Zscale detection API (shapes from their docs + one captured
+      - "zscaler"    → Zscaler detection API (shapes from their docs + one captured
           response from a live tenant; not yet run end to end from this lab):
           POST $GUARD_URL  (.../v1/detection/resolve-and-execute-policy, or
                             .../v1/detection/execute-policy with a policyId)
@@ -204,7 +204,7 @@ def _call_guard(text: str, phase: str) -> dict[str, Any]:
 
 
 def _map_zscaler(resp: dict[str, Any]) -> dict[str, Any]:
-    """Map a Zscale detection response to the adapter's internal verdict.
+    """Map a Zscaler detection response to the adapter's internal verdict.
 
     Shape (verified from customer run, 2026-09-22):
       { "transactionId": "...", "statusCode": 200, "action": "BLOCK"|"ALLOW",
@@ -214,7 +214,7 @@ def _map_zscaler(resp: dict[str, Any]) -> dict[str, Any]:
         "maskedContent": "..." }
 
     sendToApplication:false is the authoritative block signal; action:"BLOCK" also
-    implies a block. Zscale does not return masked content for the PII it detects,
+    implies a block. Zscaler does not return masked content for the PII it detects,
     so the adapter always rejects on a block rather than masking.
     """
     send = resp.get("sendToApplication", True)
