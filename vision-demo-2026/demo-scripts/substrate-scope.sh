@@ -11,6 +11,7 @@
 #
 #   (no args)        start it, prints the URL
 #   load [N] [B]     N agents, then B real chats at them
+#   pause            stop the chats, leave the viewer and the agents up
 #   stop             stop the viewer and any load
 #   clean            delete the agents load created
 #
@@ -69,6 +70,12 @@ scope_stop() {
   return 1
 }
 
+if [ "${1:-}" = "pause" ]; then
+  load_stop
+  echo "✔ chats stopped — the board and the agents stay up"
+  exit 0
+fi
+
 if [ "${1:-}" = "stop" ]; then
   scope_stop && echo "✔ Substrate Scope stopped" || echo "not running"
   exit 0
@@ -105,6 +112,28 @@ YAML
     kubectl --context "$CTX" -n kagent wait sandboxagent/scope-agent-$i --for=condition=Ready --timeout=120s >/dev/null 2>&1       || echo "  scope-agent-$i not Ready yet (it will join the board when it is)"
   done
   echo "✔ $N agents Ready"
+  # One real chat before the load. The A2A envelope carries a model failure inside
+  # status.state rather than as a JSON-RPC error, so the stimulator counts a rejected
+  # key as a success with no text: 40 ticks, half a second each, an empty board and
+  # no clue why. Read the state here instead and say it.
+  probe="$(curl -s -m 60 -X POST "http://127.0.0.1:8083/api/a2a-sandboxes/kagent/scope-agent-1/" \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":"probe","method":"message/send","params":{"message":{"kind":"message","messageId":"probe","contextId":"probe","role":"user","parts":[{"kind":"text","text":"Reply with one word."}]}}}' 2>/dev/null || true)"
+  if printf '%s' "$probe" | grep -q '"state":"failed"'; then
+    echo "✗ the agents answer, but the model call fails, so a load would just flash the board:"
+    printf '%s' "$probe" | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+    print("   ", d["result"]["status"]["message"]["parts"][0]["text"][:220])
+except Exception:
+    pass' 2>/dev/null || true
+    echo "  fix the key, then run this again:"
+    echo "    kubectl --context $CTX -n kagent delete secret kagent-anthropic"
+    echo "    kubectl --context $CTX -n kagent create secret generic kagent-anthropic --from-literal=ANTHROPIC_API_KEY=\$ANTHROPIC_API_KEY"
+    echo "    kubectl --context $CTX -n kagent rollout restart deploy/kagent-controller"
+    echo "  (set SUBSTRATE_SKIP_PROBE=1 to run the load anyway)"
+    [ "${SUBSTRATE_SKIP_PROBE:-}" = "1" ] || exit 1
+  fi
   # /demo is the visualiser's billing switch and defaults to OFF, so the load
   # generator refuses to dispatch until it is flipped. These are REAL model calls.
   curl -s -X POST "http://localhost:${PORT}/demo" -d '{"run":true}' -m 5 >/dev/null
