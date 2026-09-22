@@ -10,6 +10,7 @@
 #   ./substrate-scope.sh [cmd]                # from demo-scripts/
 #
 #   (no args)        start it, prints the URL
+#   workers [N]      scale the worker pool to N bays and wait for them
 #   load [N] [B]     N agents, then B real chats at them
 #   pause            stop the chats, leave the viewer and the agents up
 #   stop             stop the viewer and any load
@@ -69,6 +70,22 @@ scope_stop() {
   pkill -f 'node server.mjs --live' 2>/dev/null && return 0
   return 1
 }
+
+if [ "${1:-}" = "workers" ]; then
+  require_substrate
+  N="${2:-3}"
+  kubectl --context "$CTX" -n kagent scale workerpool kagent-default --replicas="$N" >/dev/null
+  # The stimulator sizes its in-flight count off the live worker count, so the bays have to
+  # be up before the load starts or it paces itself for the pool it found on the way in.
+  ready=0
+  for _ in $(seq 1 45); do
+    ready="$(kubectl --context "$CTX" -n kagent get workerpool kagent-default -o jsonpath='{.status.replicas}' 2>/dev/null)"
+    [ "${ready:-0}" -ge "$N" ] && break
+    sleep 2
+  done
+  echo "✔ worker pool at ${ready:-?} of $N"
+  exit 0
+fi
 
 if [ "${1:-}" = "pause" ]; then
   load_stop
@@ -145,6 +162,13 @@ except Exception:
   echo "  watch http://localhost:${PORT} : bays light up, actors resume from snapshots, then checkpoint back"
   echo "  log: ${TMPDIR:-/tmp}/substrate-stimulate.log   stop early: $0 stop"
   exit 0
+fi
+
+# A typo used to fall through to the start path, which stops the running viewer and
+# brings it back up. That looks like the board resetting itself for no reason.
+if [ -n "${1:-}" ]; then
+  echo "✗ unknown command '$1'. Use: (no args) | workers [N] | load [N] [B] | pause | stop | clean"
+  exit 2
 fi
 
 command -v node >/dev/null 2>&1 || { echo "✗ node 18+ required (it has no npm dependencies, just the runtime)"; exit 1; }

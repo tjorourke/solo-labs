@@ -17,7 +17,7 @@
 # ends in forty seconds leaves you presenting a still picture.
 #
 # Tuning, if you ever want it (defaults are fine for a demo):
-#   AGENTS=20 MINUTES=4 ./demo-scripts/substrate-load.sh
+#   AGENTS=20 MINUTES=4 WORKERS=4 ./demo-scripts/substrate-load.sh
 #   CHATS=60 ./demo-scripts/substrate-load.sh       # stop after 60 chats instead of on the clock
 #   SUBSTRATE_CTX=<context>            target a different cluster
 set -euo pipefail
@@ -25,6 +25,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCOPE="$SCRIPT_DIR/substrate-scope.sh"
 AGENTS="${AGENTS:-12}"
 MINUTES="${MINUTES:-2}"
+# Actors per worker is the whole point, so it is a knob rather than whatever the pool
+# happens to be. Two bays under twelve actors saturates: the queue is the demo, but a
+# third of the chats coming back 503 is not. Three holds a visible queue and answers.
+WORKERS="${WORKERS:-3}"
 # A ceiling, not the plan. The clock ends a healthy run long before this. It exists so a
 # run whose chats fail instantly cannot sit there dispatching for the full two minutes.
 CHATS="${CHATS:-$(( MINUTES * 60 ))}"
@@ -66,6 +70,7 @@ else
 fi
 
 stop_watchdog
+"$SCOPE" workers "$WORKERS"
 "$SCOPE" load "$AGENTS" "$CHATS"
 
 # Ends the traffic on the clock, and leaves the board and the agents up so you can keep
@@ -74,7 +79,7 @@ nohup bash -c "sleep $(( MINUTES * 60 )); '$SCOPE' pause" >/dev/null 2>&1 </dev/
 echo $! > "$WATCHDOG_PID"
 
 echo
-echo "  Running for ${MINUTES} min, then the chats stop on their own and the board stays up."
+echo "  ${AGENTS} actors on ${WORKERS} workers for ${MINUTES} min, then the chats stop on their own."
 echo "  Watch it: http://localhost:${PORT}"
 echo "  Stop the chats now:  $SCOPE pause"
 echo "  Done for now:  $0 stop"
