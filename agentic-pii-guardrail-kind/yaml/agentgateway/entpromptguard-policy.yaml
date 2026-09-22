@@ -1,0 +1,54 @@
+# The same two layers under entPromptGuard, the Enterprise block.
+#
+# entPromptGuard is a superset of promptGuard: every layer below is the same,
+# and it adds purviewDlp, which evaluates content against the tenant's own
+# Microsoft Purview policies rather than a pattern list.
+#
+# The CRD accepts promptGuard or entPromptGuard, never both, so this is the
+# whole policy rather than an addition to the one next to it. Take it only if
+# you want Purview: everything else here runs unchanged on either edition.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: anthropic-guardrails
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      entPromptGuard:
+        request:
+          # Layer 1 — built-in regex masks. Zero code, ships with AGW.
+          - regex:
+              action: Mask
+              builtins: [CreditCard, Ssn, Email, PhoneNumber, CaSin]
+          # Layer 2 — corporate classification, decided per signed-in user.
+          - purviewDlp:
+              tenantId: 00000000-0000-0000-0000-000000000000
+              clientId: 00000000-0000-0000-0000-000000000000
+              purviewAppName: agentgateway
+              guardrailName: anthropic-guardrails
+              activity: both
+              policies:
+                tokenExchange:
+                  entra: {}
+          # Layer 3 — the custom webhook for the rest.
+          - webhook:
+              backendRef:
+                kind: Service
+                name: pii-guardrail-webhook
+                namespace: pii-demo
+                port: 8000
+        response:
+          - regex:
+              action: Mask
+              builtins: [CreditCard, Ssn, Email, PhoneNumber, CaSin]
+          - webhook:
+              backendRef:
+                kind: Service
+                name: pii-guardrail-webhook
+                namespace: pii-demo
+                port: 8000

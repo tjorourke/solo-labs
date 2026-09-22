@@ -1,0 +1,46 @@
+# Layers stack. One layer per list entry, up to 8 per phase, and they run in the
+# order you list them.
+#
+# Measured on enterprise-agentgateway v2026.8.2:
+#   - the regex Mask is applied BEFORE the webhooks are called, so the vendor
+#     receives "my card is <CREDIT_CARD>", never the raw number
+#   - a Reject stops the chain: later layers are not called at all
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: guard-chain
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      promptGuard:
+        request:
+          # 1. Local and free. Redacts before anything leaves the cluster.
+          # scope sits beside the layer, not inside it, and narrows which parts
+          # are inspected. It applies to the regex and bedrockGuardrails layers.
+          # ToolOutput is where an agent's retrieved documents come back.
+          - scope: [Messages, SystemPrompt, ToolInput, ToolOutput]
+            regex:
+              action: Mask
+              builtins: [CreditCard, Ssn]
+          # 2. The external service, which now sees redacted text.
+          - webhook:
+              failureMode: FailClosed
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: guard-saas-request
+        response:
+          - regex:
+              action: Mask
+              builtins: [CreditCard, Ssn]
+          - webhook:
+              failureMode: FailClosed
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: guard-saas-response
