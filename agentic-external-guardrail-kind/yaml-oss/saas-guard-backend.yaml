@@ -1,0 +1,47 @@
+# Reaching a guardrail vendor who ships an HTTPS API and no container.
+# Needs the Secret guard-api-key, key Authorization, holding the vendor's key.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: guard-saas
+  namespace: agentgateway-system
+spec:
+  # No ai: section. Just where the guardrail lives.
+  static:
+    host: guard.vendor.example.com
+    port: 443
+  policies:
+    # Empty tls: {} is enough for a public endpoint signed by a public CA.
+    # Add caCertificateRefs for a private one.
+    tls: {}
+    # The vendor's key, out of a Secret, in whatever header they expect.
+    auth:
+      secretRef:
+        name: guard-api-key
+      location:
+        header:
+          name: X-Guard-Api-Key
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: external-guardrail-saas
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - webhook:
+              # FailClosed rejects the prompt when the guard cannot be reached,
+              # FailOpen lets it through. Decide this one deliberately.
+              failureMode: FailClosed
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: guard-saas
