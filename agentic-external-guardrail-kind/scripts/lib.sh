@@ -57,7 +57,8 @@ export TRUSTGUARD_STUB_IMAGE="trustguard-stub:dev"
 # External guardrail wiring. Stub by default; set these to flip to real mode.
 #   GUARD_URL      — the external guardrail evaluate endpoint
 #   GUARD_API_KEY  — bearer token for the external guardrail (empty for stub)
-#   GUARD_MODE     — label shown in /events ("stub" | "neuraltrust")
+#   GUARD_MODE     — which vendor mapping _call_guard uses, and the label shown
+#                    in /events ("stub" | "neuraltrust" | "zscaler")
 export GUARD_URL="${GUARD_URL:-http://trustguard-stub.extguard-demo.svc:8080/v1/guard}"
 export GUARD_API_KEY="${GUARD_API_KEY:-}"
 export GUARD_MODE="${GUARD_MODE:-stub}"

@@ -52,7 +52,7 @@ EVENT_BUFFER_SIZE = int(os.getenv("EVENT_BUFFER_SIZE", "200"))
 # Outbound guardrail service. Stub by default; real NeuralTrust = URL + key swap.
 GUARD_URL = os.getenv("GUARD_URL", "http://trustguard-stub.extguard-demo.svc:8080/v1/guard")
 GUARD_API_KEY = os.getenv("GUARD_API_KEY", "")
-GUARD_MODE = os.getenv("GUARD_MODE", "stub")  # "stub" | "neuraltrust"; also surfaced in /events
+GUARD_MODE = os.getenv("GUARD_MODE", "stub")  # "stub" | "neuraltrust" | "zscaler"; also surfaced in /events
 GUARD_TIMEOUT = float(os.getenv("GUARD_TIMEOUT", "10"))
 # NeuralTrust GAF actions API: keyed to a specific policy. Header is X-TG-API-Key.
 GUARD_POLICY_ID = os.getenv("GUARD_POLICY_ID", "")
@@ -140,16 +140,39 @@ def _call_guard(text: str, phase: str) -> dict[str, Any]:
     """POST one piece of text to the external guardrail and return a normalised
     verdict: { verdict: allow|flag|block, sanitized: str|null, categories: [...] }.
 
-    Two providers, dispatched on GUARD_MODE:
+    Three providers, dispatched on GUARD_MODE:
       - "stub"       → the bundled trustguard-stub (its own {input, phase} shape)
       - "neuraltrust"→ NeuralTrust GAF actions API (verified live 2026-06-30):
           POST $GUARD_URL  (https://actions.neuraltrust.ai/v1/actions)
           header X-TG-API-Key: <key>
           body   { policy_id, conversation: { messages: [{role, content}] }, direction }
           resp   { is_flagged, transformed_payload, findings:[{detection_type,...}], ... }
+      - "zscaler"    → Zscale detection API (shapes from their docs + one captured
+          response from a live tenant; not yet run end to end from this lab):
+          POST $GUARD_URL  (.../v1/detection/resolve-and-execute-policy, or
+                            .../v1/detection/execute-policy with a policyId)
+          header Authorization: <key verbatim>
+          body   { direction: IN|OUT, content }
+          resp   { action: ALLOW|BLOCK, sendToApplication, detectorResponses, ... }
     """
     try:
         with httpx.Client(timeout=GUARD_TIMEOUT) as client:
+            if GUARD_MODE == "zscaler":
+                headers = {"Content-Type": "application/json"}
+                if GUARD_API_KEY:
+                    headers["Authorization"] = GUARD_API_KEY
+                body = {
+                    "direction": "IN" if phase == "request" else "OUT",
+                    "content": text,
+                }
+                # resolve-and-execute-policy picks the policy itself;
+                # execute-policy needs the id. Setting GUARD_POLICY_ID selects
+                # the second, so the same code serves both endpoints.
+                if GUARD_POLICY_ID:
+                    body["policyId"] = int(GUARD_POLICY_ID)
+                r = client.post(GUARD_URL, headers=headers, json=body)
+                r.raise_for_status()
+                return _map_zscaler(r.json())
             if GUARD_MODE == "neuraltrust":
                 headers = {"Content-Type": "application/json", "X-TG-API-Key": GUARD_API_KEY}
                 # Always send the text in a single `user` turn. Verified live
@@ -178,6 +201,35 @@ def _call_guard(text: str, phase: str) -> dict[str, Any]:
         if GUARD_FAIL_OPEN:
             return {"verdict": "allow", "categories": ["guard_error"], "sanitized": None}
         return {"verdict": "block", "categories": ["guard_error"], "sanitized": None}
+
+
+def _map_zscaler(resp: dict[str, Any]) -> dict[str, Any]:
+    """Map a Zscale detection response to the adapter's internal verdict.
+
+    Shape (verified from customer run, 2026-09-22):
+      { "transactionId": "...", "statusCode": 200, "action": "BLOCK"|"ALLOW",
+        "sendToApplication": bool,
+        "detectorResponses": { "<detector>": { "triggered": bool,
+          "details": { "detectedEntityTypes": { "PHONE_NUMBER": 1, ... } } } },
+        "maskedContent": "..." }
+
+    sendToApplication:false is the authoritative block signal; action:"BLOCK" also
+    implies a block. Zscale does not return masked content for the PII it detects,
+    so the adapter always rejects on a block rather than masking.
+    """
+    send = resp.get("sendToApplication", True)
+    action = resp.get("action", "ALLOW")
+    if not send or action == "BLOCK":
+        categories: list[str] = []
+        for dr in resp.get("detectorResponses", {}).values():
+            for etype in (dr.get("details") or {}).get("detectedEntityTypes", {}).keys():
+                categories.append(f"pii:{etype.lower()}")
+        return {
+            "verdict": "block",
+            "categories": categories or ["policy_violation"],
+            "sanitized": None,
+        }
+    return {"verdict": "allow", "categories": [], "sanitized": None}
 
 
 def _map_neuraltrust(resp: dict[str, Any]) -> dict[str, Any]:
