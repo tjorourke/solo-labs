@@ -1,0 +1,101 @@
+# 1 of 3. The adapter proxy, the vendor Backend and the two-rule route.
+# Apply this, then -mapping, then -policy.
+# The Enterprise manifest in ../yaml/ is verified live on enterprise-agentgateway
+# 2026.8.2. This is a group and kind swap of it; the OSS run is still pending.
+---
+# The adapter proxy. Its own Gateway so the Service can be ClusterIP: /request
+# and /response forward to the vendor with the key attached, and nothing outside
+# the cluster should be able to call them. A listener added to the public LLM
+# Gateway shares that Gateway's LoadBalancer Service and would be reachable.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: guard-adapter-params
+  namespace: agentgateway-system
+spec:
+  service:
+    spec:
+      type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: guard-adapter
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: guard-adapter-params
+  listeners:
+    - name: guardrail
+      port: 8081
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# The vendor's API. Host and port only; the path is set per phase on the route.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: zscaler-api
+  namespace: agentgateway-system
+spec:
+  static:
+    host: api.zseclipse.net
+    port: 443
+  policies:
+    tls: {}
+    auth:
+      # kubectl -n agentgateway-system create secret generic zscaler-api-key \
+      #   --from-literal=Authorization=<the vendor's key>
+      secretRef:
+        name: zscaler-api-key
+      location:
+        header:
+          name: Authorization
+---
+# One rule per phase, because each phase maps a different body.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: zscaler-guardrail-adapter
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: guard-adapter
+      sectionName: guardrail
+  rules:
+    - name: request
+      matches:
+        - path:
+            type: Exact
+            value: /request
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /v1/detection/resolve-and-execute-policy
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: zscaler-api
+    - name: response
+      matches:
+        - path:
+            type: Exact
+            value: /response
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /v1/detection/resolve-and-execute-policy
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: zscaler-api

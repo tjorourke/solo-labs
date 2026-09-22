@@ -1,0 +1,32 @@
+# 3 of 3. Point the route's prompt guard at the adapter listener.
+# Verified live on enterprise-agentgateway 2026.8.2 against a stub returning
+# Zscaler's captured response shape. Request leg and response leg both enforce.
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: external-guardrail-declarative
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: anthropic
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - webhook:
+              # The adapter proxy is unreachable, not the vendor: the gateway decides.
+              failureMode: FailClosed
+              backendRef:
+                kind: Service
+                name: guard-adapter
+                port: 8081
+        response:
+          - webhook:
+              failureMode: FailClosed
+              backendRef:
+                kind: Service
+                name: guard-adapter
+                port: 8081

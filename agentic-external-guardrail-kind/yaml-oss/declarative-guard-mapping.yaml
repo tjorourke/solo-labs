@@ -1,0 +1,77 @@
+# 2 of 3. The mapping. One policy per phase, because each maps a different body:
+# the request phase is handed messages, the response phase is handed choices.
+# The Enterprise manifest in ../yaml/ is verified live on enterprise-agentgateway
+# 2026.8.2. This is a group and kind swap of it; the OSS run is still pending.
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: zscaler-guardrail-request
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: zscaler-guardrail-adapter
+      sectionName: request
+  traffic:
+    transformation:
+      request:
+        # Send the prompt text, not the serialised array. toJson(messages) would
+        # hand the vendor role names and escaped quotes to scan as user content.
+        body: |
+          json(request.body).with(b, toJson({
+            "content": b.body.messages.map(m, m.content).join("\n"),
+            "direction": "IN"
+          }))
+      response:
+        # Allow only on an explicit allow. A vendor error object arrives as a 200
+        # with no verdict in it, and testing for BLOCK would let that through.
+        # sendToApplication is the field that answers the gateway's question and
+        # survives a policy returning something other than ALLOW or BLOCK.
+        body: |
+          json(response.body).with(z,
+            has(z.sendToApplication) && z.sendToApplication == true
+              ? toJson({"action": {}})
+              : toJson({"action": {
+                  "status_code": 403,
+                  "body": "Blocked by the guardrail.",
+                  "reason": "guardrail blocked the prompt"
+                }})
+          )
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: zscaler-guardrail-response
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: zscaler-guardrail-adapter
+      sectionName: response
+  traffic:
+    transformation:
+      request:
+        body: |
+          json(request.body).with(b, toJson({
+            "content": b.body.choices.map(c, c.message.content).join("\n"),
+            "direction": "OUT"
+          }))
+      response:
+        # A Mask replaces the completion and the client still gets a 200. Swap
+        # the body for {"status_code": 403, "body": "..."} to reject instead;
+        # both are enforced on this phase.
+        body: |
+          json(response.body).with(z,
+            has(z.sendToApplication) && z.sendToApplication == true
+              ? toJson({"action": {}})
+              : toJson({"action": {
+                  "body": {"choices": [{"message": {
+                    "role": "assistant",
+                    "content": "[removed by the guardrail]"
+                  }}]},
+                  "reason": "guardrail blocked the completion"
+                }})
+          )
