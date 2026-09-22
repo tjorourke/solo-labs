@@ -1,0 +1,87 @@
+# The NeuralTrust variant of the same two policies. The listener and the guard
+# policy are unchanged; only the Backend host, the header the key goes in and
+# these two bodies differ from the Zscaler mapping.
+#
+# Derived from the live actions contract captured on 2026-06-30 against a real
+# NeuralTrust GAF policy. The Zscaler mapping next to it is the one that has run
+# on the gateway; this variant has not been run, so treat it as correct against
+# that capture rather than as a tested integration.
+#
+# Their API always answers HTTP 200: the verdict is the body's status field,
+# 200 for allow and 403 for blocked, with error.message carrying the reason.
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: neuraltrust-guardrail-request
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: neuraltrust-guardrail-adapter
+      sectionName: request
+  traffic:
+    transformation:
+      request:
+        # The actions API takes a conversation, so the prompt goes in as a
+        # single user turn. Never send it as an assistant turn: their
+        # moderation plugin mis-scores that and false-positives.
+        body: |
+          json(request.body).with(b, toJson({
+            "policy_id": "REPLACE_WITH_POLICY_ID",
+            "conversation": {"messages": [{
+              "role": "user",
+              "content": b.body.messages.map(m, m.content).join("\n")
+            }]}
+          }))
+      response:
+        # Allow only on an explicit allow, so an error object arriving as a 200
+        # with no status in it fails closed rather than passing the prompt.
+        body: |
+          json(response.body).with(n,
+            has(n.status) && n.status == 200
+              ? toJson({"action": {}})
+              : toJson({"action": {
+                  "status_code": 403,
+                  "body": "Blocked by the guardrail.",
+                  "reason": "guardrail blocked the prompt"
+                }})
+          )
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: neuraltrust-guardrail-response
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: neuraltrust-guardrail-adapter
+      sectionName: response
+  traffic:
+    transformation:
+      request:
+        # The completion is presented the same way, as a user turn.
+        body: |
+          json(request.body).with(b, toJson({
+            "policy_id": "REPLACE_WITH_POLICY_ID",
+            "conversation": {"messages": [{
+              "role": "user",
+              "content": b.body.choices.map(c, c.message.content).join("\n")
+            }]}
+          }))
+      response:
+        body: |
+          json(response.body).with(n,
+            has(n.status) && n.status == 200
+              ? toJson({"action": {}})
+              : toJson({"action": {
+                  "body": {"choices": [{"message": {
+                    "role": "assistant",
+                    "content": "[removed by the guardrail]"
+                  }}]},
+                  "reason": "guardrail blocked the completion"
+                }})
+          )

@@ -1,4 +1,4 @@
-# 3 of 3. Point the route's prompt guard at the adapter listener.
+# 3 of 3. Point the route's prompt guard at the guard listener.
 # The Enterprise manifest in ../yaml/ is verified live on enterprise-agentgateway
 # 2026.8.2. This is a group and kind swap of it; the OSS run is still pending.
 ---

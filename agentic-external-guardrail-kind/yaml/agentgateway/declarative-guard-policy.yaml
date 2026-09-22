@@ -1,4 +1,4 @@
-# 3 of 3. Point the route's prompt guard at the adapter listener.
+# 3 of 3. Point the route's prompt guard at the guard listener.
 # Verified live on enterprise-agentgateway 2026.8.2 against a stub returning
 # Zscaler's captured response shape. Request leg and response leg both enforce.
 ---
