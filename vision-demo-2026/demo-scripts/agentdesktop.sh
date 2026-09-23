@@ -47,7 +47,8 @@ if [ "${1:-}" = "teardown" ]; then
   helm --kube-context "$CTX" uninstall agentdesktop -n "$AD_NS" 2>/dev/null || true
   kc delete ns "$AD_NS" --ignore-not-found
   kc -n "$KC_NS" delete svc keycloak-lb --ignore-not-found
-  kc -n "$GW_NS" delete enterpriseagentgatewaypolicy agentdesktop-jwt --ignore-not-found
+  kc -n "$GW_NS" delete enterpriseagentgatewaypolicy agentdesktop-jwt agentdesktop-access-log --ignore-not-found
+  kc -n "$GW_NS" delete enterpriseagentgatewaybackend agentdesktop-anthropic --ignore-not-found
   kc -n "$GW_NS" delete httproute agentdesktop-messages --ignore-not-found
   kc -n "$AD_NS" delete agentgatewaypolicy agentdesktop-controller-tls --ignore-not-found 2>/dev/null || true
   echo ""; echo "Done. The corp realm is removed with the namespace; Keycloak itself stays."
@@ -283,12 +284,14 @@ ok "controller running at $AD_IP (gateway JWT lifetime 5m)"
 # ── 6. Gateway: accept only controller-minted tokens ──────────────────────────
 # jwtAuthentication in Strict mode means a laptop cannot skip the daemon, and
 # the Anthropic key it would need to skip the gateway is not on the laptop.
+# ai-gateway is shared with Part 7, so the policy targets this route only; on
+# the Gateway it would turn every Part 7 call into a 401.
 step "ai-gateway JWT policy + Anthropic /v1/messages route"
 kc apply -f - >/dev/null <<EOF
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:
-  name: agentdesktop-jwt
+  name: agentdesktop-access-log
   namespace: $GW_NS
 spec:
   targetRefs:
@@ -303,6 +306,17 @@ spec:
             expression: jwt.client_id
           - name: user
             expression: jwt.email
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: agentdesktop-jwt
+  namespace: $GW_NS
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: agentdesktop-messages
   traffic:
     jwtAuthentication:
       mode: Strict
@@ -337,11 +351,12 @@ spec:
 ---
 # policies.ai.routes is what makes this answer Anthropic's native /v1/messages
 # shape. Without it the backend normalises replies to the OpenAI schema and
-# Claude Code cannot read them.
+# Claude Code cannot read them. Its own name, because Part 7 creates and resets
+# an anthropic-claude backend without that route.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
 metadata:
-  name: anthropic-claude
+  name: agentdesktop-anthropic
   namespace: $GW_NS
 spec:
   ai:
@@ -367,7 +382,7 @@ spec:
     - matches:
         - path: { type: PathPrefix, value: /v1/messages }
       backendRefs:
-        - { name: anthropic-claude, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend }
+        - { name: agentdesktop-anthropic, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend }
       timeouts: { request: 120s }
 EOF
 ok "gateway accepts only agentdesktop-controller tokens (aud: agentgateway)"

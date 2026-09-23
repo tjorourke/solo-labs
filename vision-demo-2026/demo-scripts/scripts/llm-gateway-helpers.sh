@@ -26,7 +26,7 @@ mcp_tools() {  # <token|""> — list the tools this identity can see
   curl -sS -m 20 -X POST "http://$GATEWAY/mcp" ${1:+-H "Authorization: Bearer $1"} \
     -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
     -H "mcp-session-id: $S" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
-    | sed 's/^data: //' | jq -r '.result.tools[].name'
+    | sed -e '/^event:/d' -e 's/^data: //' | jq -r '.result.tools[].name'
 }
 
 mcp_call() {  # <token> <tool> <args-json>
@@ -35,5 +35,5 @@ mcp_call() {  # <token> <tool> <args-json>
     -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
     -H "mcp-session-id: $S" \
     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"'$2'","arguments":'$3'}}' \
-    | sed 's/^data: //' | jq -c 'if .error then {denied: .error.message} else {result: (.result.content[0].text // (.result|tostring) | .[:70])} end'
+    | sed -e '/^event:/d' -e 's/^data: //' | jq -c 'if .error then {denied: .error.message} else {result: (.result.content[0].text // (.result|tostring) | .[:70])} end'
 }
