@@ -32,6 +32,19 @@ TITLE_PROMPT = ('Please write a 5-10 word succinct title for an agent chat sessi
                 'Write the title in the predominant language of the conversation.')
 
 
+class LogLineTests(unittest.TestCase):
+    def test_a_line_bigger_than_one_chunk_still_arrives_whole(self):
+        body = b'{"decision_id":"x"}' + b'y' * 200
+        chunks = [body[:80], body[80:150], body[150:] + b'\n' + b'next\n', b'']
+
+        class Stream:
+            def read(self, _n):
+                return chunks.pop(0)
+
+        lines = list(dashboard.read_log_lines(Stream(), chunk=64))
+        self.assertEqual(lines, [body.decode(), 'next'])
+
+
 class CorrelationTests(unittest.TestCase):
     def setUp(self):
         dashboard.cards.clear()

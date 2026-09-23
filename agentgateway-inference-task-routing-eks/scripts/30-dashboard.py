@@ -139,18 +139,42 @@ def upsert_event(key, **fields):
     return card
 
 
+def read_log_lines(stream, chunk=65536):
+    """Yield complete lines from a binary log stream.
+
+    A decision is one JSON line, and a real editor session makes that line
+    hundreds of kilobytes. A text-mode readline does not return until the
+    newline, and a macOS pipe holds 64KB, so kubectl blocks mid-line and the
+    reader blocks waiting for the newline. The page then stays empty from the
+    first large turn onwards. Reading fixed chunks drains the pipe, so the
+    rest of the line, including the newline, can arrive.
+    """
+    pending = b""
+    while True:
+        incoming = stream.read(chunk)
+        if not incoming:
+            break
+        pending += incoming
+        while True:
+            end = pending.find(b"\n")
+            if end < 0:
+                break
+            yield pending[:end].decode("utf-8", "replace")
+            pending = pending[end + 1:]
+
+
 def follow(target, handler):
     """Follow one deployment's log, restarting if the pod goes away."""
     while True:
         p = subprocess.Popen(
             ["kubectl", "--context", CTX, "-n", NS, "logs", "-f", f"--since={SINCE}", f"deploy/{target}"],
-            stdout=subprocess.PIPE, text=True, bufsize=1)
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
         with lock:
             followers.add(p)
         try:
-            for line in p.stdout:
+            for line in read_log_lines(p.stdout):
                 try:
-                    handler(line.rstrip("\n"))
+                    handler(line)
                 except Exception as error:
                     print(f"Could not process a {target} event: {type(error).__name__}", flush=True)
         finally:
@@ -158,6 +182,8 @@ def follow(target, handler):
                 p.terminate()
             with lock:
                 followers.discard(p)
+        if p.poll():
+            print(f"{target} log follow ended ({p.poll()})", flush=True)
         time.sleep(2)
 
 
