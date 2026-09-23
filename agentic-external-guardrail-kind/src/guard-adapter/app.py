@@ -206,20 +206,23 @@ def _call_guard(text: str, phase: str) -> dict[str, Any]:
 def _map_zscaler(resp: dict[str, Any]) -> dict[str, Any]:
     """Map a Zscaler detection response to the adapter's internal verdict.
 
-    Shape (verified from customer run, 2026-09-22):
-      { "transactionId": "...", "statusCode": 200, "action": "BLOCK"|"ALLOW",
+    Shape (verified from two tenant runs, 2026-09-22 and 2026-09-23; the casing of
+    `action` differs between them, hence the case-insensitive compare below):
+      { "transactionId": "...", "statusCode": 200, "action": "BLOCK"|"Allow",
         "sendToApplication": bool,
         "detectorResponses": { "<detector>": { "triggered": bool,
           "details": { "detectedEntityTypes": { "PHONE_NUMBER": 1, ... } } } },
         "maskedContent": "..." }
 
-    sendToApplication:false is the authoritative block signal; action:"BLOCK" also
-    implies a block. Zscaler does not return masked content for the PII it detects,
-    so the adapter always rejects on a block rather than masking.
+    `action` is the verdict, and only an explicit allow is an allow: anything else,
+    including a 200 carrying an error object with no `action` in it, blocks. Do not
+    read `sendToApplication`. A live tenant returns it as false on an allow, so an
+    adapter gated on it blocks every prompt. Casing varies between tenants, so the
+    comparison is case-insensitive. Zscaler does not return masked content for the
+    PII it detects, so the adapter always rejects on a block rather than masking.
     """
-    send = resp.get("sendToApplication", True)
-    action = resp.get("action", "ALLOW")
-    if not send or action == "BLOCK":
+    action = str(resp.get("action", "")).strip().lower()
+    if action != "allow":
         categories: list[str] = []
         for dr in resp.get("detectorResponses", {}).values():
             for etype in (dr.get("details") or {}).get("detectedEntityTypes", {}).keys():

@@ -1,7 +1,8 @@
 # 2 of 3. The mapping. One policy per phase, because each maps a different body:
 # the request phase is handed messages, the response phase is handed choices.
 # Verified live on enterprise-agentgateway 2026.8.2 against a stub returning
-# Zscaler's captured response shape. Request leg and response leg both enforce.
+# Zscaler's captured response shapes: an allow, a BLOCK, a 200 carrying an error
+# object and a 500. Request leg and response leg both enforce.
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
@@ -25,13 +26,15 @@ spec:
             "direction": "IN"
           }))
       response:
-        # Allow only on an explicit allow. A vendor error object arrives as a 200
-        # with no verdict in it, and testing for BLOCK would let that through.
-        # sendToApplication is the field that answers the gateway's question and
-        # survives a policy returning something other than ALLOW or BLOCK.
+        # Allow only on an explicit allow, and read action to decide it. A vendor
+        # error object arrives as a 200 with no verdict in it, and testing for
+        # BLOCK would let that through, so the reject has to be the else branch.
+        # Do not gate on sendToApplication: a live tenant returns it as false on
+        # an allow, so a policy keyed on it blocks every prompt. The casings are
+        # both real, ALLOW in one capture and Allow in another.
         body: |
           json(response.body).with(z,
-            has(z.sendToApplication) && z.sendToApplication == true
+            has(z.action) && z.action in ["ALLOW", "Allow", "allow"]
               ? toJson({"action": {}})
               : toJson({"action": {
                   "status_code": 403,
@@ -65,7 +68,7 @@ spec:
         # both are enforced on this phase.
         body: |
           json(response.body).with(z,
-            has(z.sendToApplication) && z.sendToApplication == true
+            has(z.action) && z.action in ["ALLOW", "Allow", "allow"]
               ? toJson({"action": {}})
               : toJson({"action": {
                   "body": {"choices": [{"message": {
