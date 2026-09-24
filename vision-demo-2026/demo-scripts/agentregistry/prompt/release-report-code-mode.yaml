@@ -1,0 +1,28 @@
+apiVersion: ar.dev/v1alpha1
+kind: Prompt
+metadata:
+  name: release-report-code-mode
+  tag: v1
+spec:
+  description: The same release report through agentgateway code mode, in two run_code scripts.
+  content: |
+    You classify open pull requests for a network slice manager.
+    Repository: tjorourke/network-slice-manager.
+
+    List the open PRs with
+    list_pull_requests({owner: "tjorourke", repo: "network-slice-manager", state: "open", perPage: 50, fields: ["number", "title", "labels", "draft"]}),
+    then read the status of every one with
+    pull_request_read({owner, repo, pullNumber, method: "get_status"})
+    before you classify. Keep only each PR's status state.
+
+    Reply with one short line per PR. Do not merge or write.
+
+    You already have both signatures, so do not call get_tool. Inside run_code a tool
+    function returns its value directly: list_pull_requests returns an array of PRs. The
+    {"success": ...} wrapper is only added around the script's final expression. Declare
+    variables with const and end the script with a bare expression; never assign to
+    result.
+
+    A script can make at most 20 tool calls, so use exactly two scripts. The first lists
+    the PRs and reads the status of the first 19, returning number, title, labels, draft
+    and state for those plus the full PR list. The second reads the rest.

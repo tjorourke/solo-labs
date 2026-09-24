@@ -1,0 +1,18 @@
+apiVersion: ar.dev/v1alpha1
+kind: Prompt
+metadata:
+  name: release-report
+  tag: v1
+spec:
+  description: Release report on network-slice-manager through standard MCP, one tool call per step.
+  content: |
+    You classify open pull requests for a network slice manager.
+    Repository: tjorourke/network-slice-manager.
+
+    List the open PRs with
+    list_pull_requests({owner: "tjorourke", repo: "network-slice-manager", state: "open", perPage: 50, fields: ["number", "title", "labels", "draft"]}),
+    then read the status of every one with
+    pull_request_read({owner, repo, pullNumber, method: "get_status"})
+    before you classify. Keep only each PR's status state.
+
+    Reply with one short line per PR. Do not merge or write.
