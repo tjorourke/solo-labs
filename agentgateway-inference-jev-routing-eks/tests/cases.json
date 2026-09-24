@@ -1,0 +1,10 @@
+[
+  {"id":"review", "label":"code_review", "prompt":"Review this synthetic Python function for correctness: def add(a, b): return a - b"},
+  {"id":"modify", "label":"code_modification", "prompt":"Fix this synthetic function so it adds its arguments: def add(a, b): return a - b"},
+  {"id":"generic", "label":"generic_coding", "prompt":"What is the difference between a list and a tuple in Python?"},
+  {"id":"finance", "label":"finance", "prompt":"Explain counterparty credit risk on uncleared derivatives using an invented example."},
+  {"id":"telco", "label":"telco", "prompt":"How does a 5G network slice support a latency target?"},
+  {"id":"unrelated", "label":"uncertain", "prompt":"Suggest three names for a fictional garden."},
+  {"id":"underspecified", "label":"uncertain", "prompt":"Please fix it."},
+  {"id":"precedence", "label":"code_review", "prompt":"Review this synthetic interest calculator for bugs: def interest(principal, rate): return principal + rate"}
+]

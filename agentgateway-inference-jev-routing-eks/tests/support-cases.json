@@ -1,0 +1,5 @@
+[
+  {"id":"invoice", "label":"billing", "prompt":"In this fictional example, I was charged twice for my subscription. Which team can arrange a refund?"},
+  {"id":"api-error", "label":"technical", "prompt":"My synthetic API integration fails to parse a JSON response. Help me debug the client code."},
+  {"id":"unrelated", "label":"other", "prompt":"Suggest three names for a fictional garden."}
+]
