@@ -1,4 +1,4 @@
-# The decision gateway's route. It reads the two headers OPA wrote and nothing else.
+# The decision gateway's route. It reads the two headers native AGW CEL wrote.
 #
 #   pool=private,           class=coding   -> Qwen3-Coder on the GPU
 #   pool=private,           class=finance  -> Mistral on the GPU
@@ -6,9 +6,10 @@
 #   pool=private,           class=general  -> Mistral on the GPU
 #   pool=approved-frontier                 -> Anthropic
 #
-# No catch-all. A request with no pool header, which can only happen if extAuth did not
-# run, gets a 404 rather than a default. The internal headers are removed after the match,
-# so no backend sees them.
+# No default model. yaml/52-denied-route.yaml is a backendless catch-all so the
+# native PostRouting policy can refuse a denied or missing metadata decision.
+# The audit envelope is removed before any backend; frontier rules also remove
+# the employee identity, routing reason and source repository.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

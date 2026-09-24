@@ -1,7 +1,7 @@
 # Prompt-aware model routing, Part 4: private by default, frontier by exception
 
 One endpoint for everyone in the company. The router says what kind of task a prompt is.
-OPA turns the task and the caller's permissions into where it runs and which class of
+Native agentgateway CEL turns the task and the caller's permissions into where it runs and which class of
 model answers. Private GPUs are the default. The frontier is an exception: a clearly
 generic coding question, from someone permitted to use it, and nothing else. Uncertain
 stays private. Evidence that the prompt carries the company's own code keeps it private
@@ -15,7 +15,7 @@ on a class and not on a model name: what the request is about and which weights 
 are two different decisions, and only the first one is the company's policy.
 
 This part layers on [Part 3](../agentgateway-inference-identity-routing-eks/): same
-cluster, same single GPU with both open-weight models, same router and OPA. It reorders
+cluster, the same open-weight models and the same router. It reorders
 the decision. Part 3 decided where a request runs from the identity alone, before the
 prompt was read. Here the task comes first.
 
@@ -24,20 +24,20 @@ agentgateway v2026.9.0, because the Enterprise UI is what reports on this flow: 
 and spend per person, per task and per pool. `yaml-oss/` is the same set on the OSS CRDs, a
 group and kind swap away, validated on upstream agentgateway v1.5.0. The routing needs
 nothing Enterprise: `traffic.jwtAuthentication` with `preserveToken`, `traffic.extProc`,
-`traffic.extAuth` with `forwardBody`, `traffic.transformation`, all at `phase: PreRouting`,
-and `policies.ai.modelAliases` exist in both.
+`traffic.transformation` at `phase: PreRouting`, post-routing `traffic.directResponse`,
+`traffic.extAuth` for immediate audit events, and `policies.ai.modelAliases` exist in both.
 
 ## Overview
 
 ### Why there are two gateways and three hops
 
-A Gateway evaluates its policies in a fixed order and picks the route last: JWT, then
-extAuth (OPA), then extProc (the router), then transformation, then route selection.
-Two things in this flow need the other order. OPA is asked before the router answers,
-so on one listener OPA is asked before the task exists. And a transformation runs after
-the router, so a rewrite the router must see cannot share a listener with it (measured:
-with both in one PreRouting policy and the transformation rewriting the body to a finance
-question, a 5G prompt still classified `telco`).
+A Gateway evaluates pre-routing policies before selecting a route. Transformations
+run after external processing, so request normalisation must use an earlier listener
+than the classifier. The decision gateway independently verifies the JWT, evaluates
+the native CEL once into gateway-local metadata, and writes the routing headers.
+After route selection, a native direct response refuses a denied decision before
+the personal-data webhook or model runs. Response transformations return the decision
+headers without relying on headers that a backend route may have removed.
 
 Policies attach to a single listener with `sectionName`, so the answer is two Gateways
 and three hops, not three Gateways:
@@ -45,7 +45,7 @@ and three hops, not three Gateways:
 ```
 client ─▶ model-gateway :8080 ─▶ model-gateway :80 ──▶ decision-gateway ────▶ backend
           0 model name -> auto   1 verify token       3 verify token again  Qwen3-Coder  (private, coding)
-            tool shapes filtered   (and keep it)      4 OPA: task +         Mistral      (private, finance / telco / general)
+            tool shapes filtered   (and keep it)      4 native CEL: task +  Mistral      (private, finance / telco / general)
             question lifted out  2 router:               permissions +      Anthropic    (approved-frontier, generic coding)
             of the envelope        task label            data checks
                                                          -> pool, class
@@ -58,7 +58,7 @@ itself rather than trusting the one before it.
 
 ### The routing table
 
-`opa/routing-data.json`, loaded into OPA as data. Permissions constrain the destinations
+`opa/routing-data.json`, rendered into AGW's CEL expression. Permissions constrain the destinations
 the table can select; the task determines the preferred one.
 
 | Task (from the router) | Pool | Class | Model |
@@ -89,7 +89,7 @@ same token, and names no model and no place. Each was run against the gateway on
 | alice | private |
 | dave | approved-frontier only, so a review from dave is an error |
 
-Rule precedence in `opa/routing.rego`, first match wins: a credential in the prompt blocks;
+Rule precedence in `native/decision.cel`, first match wins: a credential in the prompt blocks;
 the company's own code in the prompt, or an internal repository named in `x-source-repo`,
 forces private; then the table's preferred pool if permitted; then private if permitted;
 then an error. There is no fall-through to the frontier.
@@ -119,7 +119,7 @@ one node with an NVIDIA GPU of at least 96 GB labelled `role: gpu` (or change th
 `nodeSelector` in the model manifests), two or three CPU nodes, and outbound access to
 Hugging Face, ghcr.io, us-docker.pkg.dev and nvcr.io. This guide was run on EKS 1.34 and
 nothing in it is specific to that. On your machine: `kubectl` pointed at the cluster,
-`helm`, `openssl`, `python3`, `curl`, and `AGENTGATEWAY_LICENSE_KEY` in the environment for
+`helm`, `openssl`, `python3` with PyYAML, `curl`, and `AGENTGATEWAY_LICENSE_KEY` in the environment for
 the Enterprise charts. The OSS set in `yaml-oss/` needs no licence.
 
 Where a component has a Helm chart it is installed from it with a values file; vLLM and OPA
@@ -134,7 +134,7 @@ is not what the community chart is built around). Every step skips what exists.
 
 Or `./scripts/platform/up.sh`. Step 1 also installs the management chart, which is the
 Enterprise UI, and the cost dimensions in `yaml/platform/11-dimensions-values.yaml`: the
-task the router chose, and the pool and class OPA decided, alongside the built-in `model`,
+task the router chose, and the pool and class AGW decided, alongside the built-in `model`,
 `provider` and `user`. Installing and operating that UI is covered in the
 [agentgateway quickstart](../agentgateway-quickstart-kind/) and
 [LLM cost management](../agentgateway-cost-management-kind/) rather than repeated here.
@@ -157,18 +157,34 @@ export ANTHROPIC_API_KEY=...
 ./scripts/00-check.sh             # 4  the platform is serving
 ./scripts/01-identity.sh          #    tokens for bob, alice, dave, and a forgery; reuses Part 3's signing key
 ./scripts/02-router.sh            # 5  vLLM Semantic Router becomes a task classifier
-./scripts/03-opa.sh               # 6  OPA with the routing table and the data checks
+./scripts/03-opa.sh               # 6  immediate audit transport; no routing logic in OPA
 ./scripts/04-decision-gateway.sh  # 7  the decision gateway, backends, policy and route
 ./scripts/05-classify-gateway.sh  # 8  the classify listener verifies, classifies, hands on
 ```
 
 Or `./scripts/quick.sh up`, which runs the install steps first and then these.
 
-**Do not ship the ConfigMap.** It is the lab's entitlement source because it is the
-smallest thing that proves the point. Kubernetes caps a ConfigMap at 1 MiB of data, every
-change is a full rewrite and an OPA restart, and the data is readable by anything with
-access to the namespace. A company-wide table belongs behind OPA's bundle API or in a data
-source OPA queries at decision time; the gateway and the router do not change.
+**The entitlement table is a lab configuration.** The renderer embeds it in the CEL
+expression, whose CRD limit is 16,384 characters. It is not an organisation-wide identity
+directory. Larger deployments should use verified entitlement claims or an external
+entitlement source. The console's agent-registration flow patches the native expression
+and retains the shared ConfigMap; it no longer restarts OPA.
+
+### Upgrading an existing demo
+
+`scripts/migrate-native-routing.py --context <context> --backup /path/to/rollback.json`
+preserves the live JWT providers and registered users, installs the audit transport,
+then switches to native decisions and enforcement. `--restore /path/to/rollback.json`
+restores the saved policies. The old authoriser remains available for rollback and Part 3.
+
+### The remaining Rego
+
+`opa/routing.rego` contains one unconditional allow rule. It has no routing table,
+patterns, permissions or header mutations. Its deployment is named `routing-audit` and
+exists only to emit the console's immediate, trace-correlated event before a model finishes.
+AGW's post-routing policy enforces the result independently. Keeping this adapter preserves
+the live pending cards; native access logs alone arrive when a response completes.
+Native access-log fields also populate requests refused by a budget before the audit hook.
 
 There is no Keycloak. The lab is about routing, and all the gateway needs from an identity
 provider is a JWKS to check signatures against, so `01-identity.sh` generates an RSA key
@@ -185,7 +201,7 @@ KUBE_CONTEXT=your-lab-context python3 scripts/30-dashboard.py
 ```
 
 Open <http://localhost:8900/>. This is the dashboard's canonical location; its scripts are
-mirrored with the lab. It reads OPA decisions and decision-gateway access logs, matching
+mirrored with the lab. It reads native decisions from audit events and decision-gateway access logs, matching
 `traceparent` to the access log's trace **and span** IDs. It does not guess by user or time,
 so concurrent requests cannot swap their backend model or HTTP status.
 
@@ -193,7 +209,7 @@ It loads the last 15 minutes on startup (`DASHBOARD_SINCE=5m` changes that windo
 new requests, and binds only to loopback. `DASHBOARD_PORT` defaults to `8900`.
 Requests with no backend result stay pending, not successful. Rows are grouped by caller
 and displayed prompt, not a verified conversation ID. Housekeeping can be hidden with the
-checkbox; system-reminder text is omitted from the displayed question, not from OPA's inspection.
+checkbox; system-reminder text is omitted from the displayed question, not from AGW's inspection.
 Classification latency is omitted because this router build does not supply a correlatable
 request ID in its decision log.
 
@@ -211,7 +227,7 @@ content-part arrays and tool follow-ups, plus internal-code and credential contr
 dashboard tests are isolated and exercise concurrent and out-of-order events.
 
 The intake policy appends the latest human text without system-reminder blocks for VSR
-classification; all original messages remain for OPA and the model. Mistral's final backend
+classification; all original messages remain for native inspection and the model. Mistral's final backend
 transformation consolidates system text into one leading message while preserving non-system
 messages and tool-call IDs. This avoids its `Unexpected role 'system' after role 'tool'`
 HTTP 400. Later system instructions move to the beginning of the model context, so this is
@@ -226,7 +242,7 @@ source identity/tokens.env
 ```
 
 The flow reads three things off every response: `x-vsr-selected-model` is the router's task
-label, `x-model-pool` and `x-model-class` are OPA's decision, and the `model` field in the
+label, `x-model-pool` and `x-model-class` are AGW's decision, and the `model` field in the
 body is the serving model's own statement of which model answered.
 
 ## Reference
@@ -236,14 +252,31 @@ body is the serving model's own statement of which model answered.
 The body's `model` field is not a request. The intake hop replaces whatever the client sent
 with the router's own name, so a real model name in the body changes nothing: the task and
 the caller's permissions still decide where it goes. The routing headers a client sends are
-removed by OPA before it writes its own, and the task header is overwritten by the router.
+overwritten by the native transformation, and the task header is overwritten by the router.
 `07-test-controls.sh` proves each of those, including an editor's envelope.
 
 ### Fail closed
 
-Both policy components are `FailClosed`. With OPA down the gateway answers 403. With the
-router down it answers 500. Neither case reaches a backend, and neither falls back to a
-default.
+Both external components are `FailClosed`. With the audit transport down the gateway
+answers 403; with the router down it answers 500. Neither reaches a backend. Missing
+native decision metadata also returns 403, even when routing headers have been forged.
+
+### Native migration regression suite
+
+`scripts/test_native_routing.py --context <context> [--edition oss]` creates an isolated
+gateway and compares 898 cases with the policy at commit `45de1be1`. It checks statuses,
+pools, classes, reasons, response headers, claim resolution, multipart/tool messages,
+Unicode size estimates and forged headers. It also removes the transformation to prove
+that the post-routing metadata gate fails closed. Outside this repository, supply an
+exported legacy policy with `--oracle`. Requires `opa`, PyYAML and `cryptography`.
+
+`scripts/test_native_clients.py --context <context> --base-url <url> --signing-key <path>`
+checks the Kernwerk overlay through both streaming client APIs, including all three data
+classes, native refusals, redaction and actual audit/access-log correlation. It makes short
+real model calls. Run `scripts/test_dashboard.py` for the isolated dashboard checks.
+`scripts/test_native_budget.py` takes the same arguments and checks 429 conversion and
+the native dashboard event with a temporary identity and budget. It restores the policy
+and removes its budget afterwards.
 
 ### Files
 
@@ -253,13 +286,16 @@ yaml/platform/11-dimensions-values.yaml    cost dimensions: user, task, pool, cl
 yaml/platform/20-device-plugin-values.yaml whole cards, affinity null
 yaml/platform/30-vllm-mistral.yaml         Mistral on vLLM, a card to itself, 131072 window
 yaml/platform/31-vllm-qwen.yaml            Qwen3-Coder on vLLM, a card to itself, 262144 window
-opa/routing.rego                  the decision: block, force private, prefer, fall back, refuse
+native/decision.cel               native decision: block, force private, prefer, fall back, refuse
+opa/routing.rego                  unconditional audit-transport allow; no policy decisions
 opa/routing-data.json             who may use which pool; task to pool and class; internal-code markers
 yaml/10-router-tasks.yaml         the router as a task classifier: similarity banks, keywords, domains
-yaml/20-opa.yaml                  OPA with /config, /policy and /data mounts
+yaml/20-opa.yaml                  routing-audit deployment, with no entitlement data mounted
 yaml/30-decision-gateway.yaml     the second Gateway, ClusterIP
 yaml/40-backends.yaml             Qwen3-Coder, Mistral, Anthropic, with the task labels aliased
-yaml/50-decide-policy.yaml.tmpl   verify the token again, ask OPA with the body
+yaml/50-decide-policy.yaml.tmpl   verify JWT; native metadata and routing headers; response shaping
+yaml/51-routing-outcome.yaml     post-routing audit event and native structured refusals
+yaml/52-denied-route.yaml        backendless route for denied or missing decisions
 yaml/60-decision-route.yaml       five rules on x-model-pool and x-model-class
 yaml/70-classify-policy.yaml.tmpl verify and keep the token, run the router
 yaml/80-classify-route.yaml       everything to the decision gateway
@@ -319,7 +355,7 @@ Three things it checks that are easy to get wrong:
   with, which looks like the gateway ignoring you.
 
 Two endpoints, published differently on purpose. The model endpoint is open, because every
-request carries a JWT the gateway verifies and OPA decides what the subject may reach, so
+request carries a JWT the gateway verifies and native policy decides what the subject may reach, so
 the control is the token rather than the address; an allowlist would also refuse Cursor,
 which arrives from Cursor's backend. The UI is not behind that policy and reaching it is
 enough to read every prompt in the decision log, so it is published to the addresses in

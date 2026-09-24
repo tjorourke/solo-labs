@@ -6,7 +6,7 @@
 #
 # `subject` is a set of cost dimensions, and the dimensions come from
 # yaml/platform/11-dimensions-values.yaml: `user` from the verified token, `modelPool` from
-# the header OPA writes. So this budget reads "bob, on the approved frontier", and it
+# the header AGW writes. So this budget reads "bob, on the approved frontier", and it
 # cannot be dodged by asking differently: the values are written by the gateway and the
 # policy, never by the caller.
 #

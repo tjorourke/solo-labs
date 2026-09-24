@@ -17,7 +17,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
 load_tokens; gw_up
 MARK="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-opa_decisions() { kubectl -n "$NS" logs deploy/opa --since-time="$MARK" 2>/dev/null | grep -c '"decision_id"' || true; }
+opa_decisions() { kubectl -n "$NS" logs deploy/routing-audit --since-time="$MARK" 2>/dev/null | grep -c '"decision_id"' || true; }
 err_msg() { python3 -c 'import json,sys
 try: print(json.load(open(sys.argv[1])).get("error",{}).get("message",""))
 except Exception: print(open(sys.argv[1]).read()[:60])' "$BODY"; }

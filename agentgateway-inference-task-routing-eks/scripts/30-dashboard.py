@@ -4,10 +4,10 @@
     KUBE_CONTEXT=<lab-context> python3 scripts/30-dashboard.py
     Then open http://localhost:8900
 
-One card per request: who asked, the task the router chose, what OPA decided and why,
+One card per request: who asked, the task the router chose, what AGW decided and why,
 which model answered and with what status. Join two logs by trace ID AND span ID:
 
-    opa                decision log       task label, subject, prompt, pool and class
+    routing-audit      immediate event    native decision, subject and prompt
     decision-gateway   access log         the backend that answered, the model, the status
 
 Nothing is written to the cluster. Close it with ctrl-c.
@@ -273,6 +273,26 @@ def on_opa(line):
                .get("envoy.filters.http.jwt_authn", {}).get("jwt_payload", {}))
     sub = resolve_subject(payload)
     result = d.get("result") or {}
+    # The audit service always allows. Its result is not an access decision.
+    # AGW computed this envelope from verified identity and the request body,
+    # overwrote any caller-supplied value, and enforces it after the audit hop.
+    native_text = http_in.get("headers", {}).get("x-agw-routing-decision")
+    if native_text:
+        try:
+            native = json.loads(native_text)
+        except (ValueError, TypeError):
+            return
+        if not isinstance(native, dict) or native.get("status") not in (200, 403, 422):
+            return
+        sub = native.get("user") or sub
+        allowed = native["status"] == 200
+        result = {"allowed": allowed, "http_status": native["status"],
+                  "headers": {"x-model-pool": native.get("pool"),
+                              "x-model-class": native.get("class"),
+                              "x-routing-reason": native.get("reason") if native["status"] != 403 else None,
+                              "x-kernwerk-lane": native.get("lane") or None},
+                  "body": json.dumps({"error": {"type": "blocked" if native["status"] == 422 else "forbidden",
+                                                "message": native.get("error")}})}
     headers = result.get("headers", {}) if result.get("allowed") else {}
     request_headers = http_in.get("headers", {})
     task = request_headers.get("x-selected-model")
@@ -361,14 +381,37 @@ def apply_pii(trace_id, fields):
             pending_pii.pop(k, None)
 
 
-ACCESS = re.compile(r'(\w[\w.]*)=([^\s]+)')
+ACCESS = re.compile(r'(\w[\w.]*)=("(?:\\.|[^"\\])*"|[^\s]+)')
 
 def on_gateway(line):
     if "http.path=/v1/chat/completions" not in line:
         return
-    f = dict(ACCESS.findall(line))
+    f = {}
+    for name, value in ACCESS.findall(line):
+        if value.startswith('"'):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                continue
+        f[name] = value
     sub = f.get("jwt.sub")
     key = request_key(f.get("trace.id"), f.get("span.id"))
+    # A native budget refusal happens before the post-routing audit hook. Use
+    # AGW's metadata snapshot to populate that card, without guessing correlation
+    # or inventing an allow from the audit transport's unconditional success.
+    if f.get("routing.decision") and key:
+        with lock:
+            has_decision = any(c.get("request_key") == key and "decision_ts" in c for c in cards)
+        if not has_decision:
+            on_opa(json.dumps({
+                "decision_id": key, "timestamp": line.split()[0],
+                "input": {"attributes": {"request": {"http": {
+                    "method": "POST", "body": f.get("routing.body", ""),
+                    "headers": {"traceparent": f"00-{f.get('trace.id')}-{f.get('span.id')}-01",
+                                "x-selected-model": json.loads(f["routing.decision"]).get("task"),
+                                "x-agw-routing-decision": f["routing.decision"]},
+                }}}}, "result": {"allowed": True},
+            }))
     patch = {
         "status": f.get("http.status"),
         "answered_by": f.get("gen_ai.response.model") or f.get("gen_ai.request.model"),
@@ -485,7 +528,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
       </g>
       <circle cx="24" cy="7" r="5" fill="#a78bfa"/><circle cx="7" cy="24" r="5" fill="#7c3aed"/>
       <circle cx="41" cy="24" r="5" fill="#7c3aed"/><circle cx="24" cy="41" r="5" fill="#5b21b6"/>
-    </svg><h1>Gateway decisions</h1></span><span class="tag">VSR classification, OPA policy and backend result · matched by trace ID</span>
+    </svg><h1>Gateway decisions</h1></span><span class="tag">VSR classification, native AGW policy and backend result · matched by trace ID</span>
     <span id="count"></span>
   </div>
   <div class="filters">
@@ -794,8 +837,8 @@ def main():
         raise SystemExit("Set KUBE_CONTEXT to the task-routing cluster before starting the dashboard.")
     # Fail before opening an empty UI if the wrong context or namespace was supplied.
     subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deployment",
-                    "opa", "decision-gateway", "-o", "name"], check=True)
-    watch = [("opa", on_opa), ("decision-gateway", on_gateway)]
+                    "routing-audit", "decision-gateway", "-o", "name"], check=True)
+    watch = [("routing-audit", on_opa), ("decision-gateway", on_gateway)]
     # Only present when the Kernwerk overlay is installed. Without it the page is the
     # task router's own and simply has no redactions to show.
     if subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deploy", "kernwerk-pii"],

@@ -32,8 +32,8 @@ for line in sys.stdin:
     if d.get("event") == "router_replay_start":
         print("signals:   " + json.dumps({k: v for k, v in d.get("signals", {}).items() if v}))'
 
-section "OPA, second hop (decision log)"
-kubectl -n "$NS" logs deploy/opa --since-time="$MARK" | { grep '"decision_id"' || true; } | tail -1 | python3 -c '
+section "AGW native decision (immediate audit event)"
+kubectl -n "$NS" logs deploy/routing-audit --since-time="$MARK" | { grep '"decision_id"' || true; } | tail -1 | python3 -c '
 import json, sys
 line = sys.stdin.readline()
 if not line.strip(): print("no decision logged"); sys.exit()
@@ -41,10 +41,8 @@ d = json.loads(line); r = d.get("result", {}); inp = d.get("input", {}).get("att
 sub = inp.get("metadataContext", {}).get("filterMetadata", {}).get("envoy.filters.http.jwt_authn", {}).get("jwt_payload", {}).get("sub")
 print("verified sub:      " + str(sub))
 print("task header seen:  " + str(inp.get("request", {}).get("http", {}).get("headers", {}).get("x-selected-model")))
-if r.get("allowed"):
-    for k in ("x-model-pool", "x-model-class", "x-routing-reason"): print(f"{k + chr(58):19} {r[chr(104)+chr(101)+chr(97)+chr(100)+chr(101)+chr(114)+chr(115)][k]}")
-else:
-    print("refused:           " + str(r.get("http_status")) + " " + str(r.get("body")))'
+r = json.loads(inp.get("request", {}).get("http", {}).get("headers", {}).get("x-agw-routing-decision", "{}"))
+for k in ("status", "pool", "class", "reason"): print(f"{k + chr(58):19} {r.get(k)}")'
 
 section "DECISION GATEWAY (access log)"
 kubectl -n "$NS" logs deploy/decision-gateway --since-time="$MARK" \

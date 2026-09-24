@@ -9,7 +9,7 @@
 # `model` and `provider` are built in and need no expression here, so "which model answered"
 # is always available. Everything else is a CEL expression evaluated per request, and the
 # context includes the verified JWT claims and the request headers, which is exactly where
-# this flow's decisions live: the router writes the task, OPA writes the pool and the class.
+# this flow's decisions live: the router writes the task, AGW writes the pool and the class.
 #
 # The hierarchy list REPLACES the chart's default list rather than merging with it, so the
 # two defaults are repeated here. Drop them and per-user reporting disappears.
@@ -21,7 +21,7 @@ budgetDimensions:
         expression: 'coalesce(jwt.group, apiKey.group)'
         displayName: Group
       # The employee. Lab JWTs put bob in sub. Agentdesktop Keycloak puts a UUID in sub
-      # and bob@corp.example in email; OPA also writes x-routing-user=bob, but the
+      # and bob@corp.example in email; AGW also writes x-routing-user=bob, but the
       # frontier HTTPRoute strips that header before Anthropic, and PostRouting budget
       # CEL sees the stripped request. jwt.sub is always set (the UUID), so it must not
       # sit in front of email. Take the email local-part before sub.
@@ -36,7 +36,7 @@ budgetDimensions:
       - id: task
         expression: 'request.headers["x-selected-model"]'
         displayName: Task
-      # What OPA decided. The pool answers "did this stay inside", the class answers "which
+      # What AGW decided. The pool answers "did this stay inside", the class answers "which
       # kind of model served it", and both are written by the policy, not by the caller.
       - id: modelPool
         expression: 'request.headers["x-model-pool"]'

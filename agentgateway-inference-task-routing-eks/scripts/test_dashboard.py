@@ -128,5 +128,55 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(dashboard.cards[0]['user'], 'bob')
 
 
+class NativeDecisionTests(CorrelationTests):
+    def native(self, status=200, user='martink'):
+        event = json.loads(opa(self.a, self.x, 'generic_coding', 'Kernwerk personal data', user))
+        event['result'] = {'allowed': True}
+        event['input']['attributes']['request']['http']['headers']['x-agw-routing-decision'] = json.dumps({
+            'user': user, 'status': status, 'task': 'generic_coding', 'pool': 'eu-hosted', 'class': 'coding',
+            'lane': 'eu', 'reason': 'generic_coding, class 2, must stay in the EU', 'error': 'native refusal',
+        })
+        return event
+
+    def test_transport_allow_is_not_native_allow(self):
+        dashboard.on_opa(json.dumps(self.native(status=422)))
+        card = dashboard.cards[0]
+        self.assertFalse(card['allowed'])
+        self.assertEqual(card['refused_status'], 422)
+        self.assertIn('native refusal', card['refused_body'])
+        self.assertIsNone(card['pool'])
+
+    def test_native_identity_and_pii_survive_event_reordering(self):
+        dashboard.on_pii(json.dumps({'kind': 'request', 'trace': self.a, 'original': 'Anna', 'masked': '{NAME}', 'replaced': 1}))
+        dashboard.on_gateway(access(self.a, self.x, 'claude'))
+        dashboard.on_opa(json.dumps(self.native(user='new-agent')))
+        self.assertEqual(len(dashboard.cards), 1)
+        self.assertEqual(dashboard.cards[0]['user'], 'new-agent')
+        self.assertEqual(dashboard.cards[0]['lane'], 'eu')
+        self.assertEqual(dashboard.cards[0]['masked'], '{NAME}')
+
+    def test_budget_refusal_has_native_decision_without_audit_event(self):
+        event = self.native()
+        headers = event['input']['attributes']['request']['http']['headers']
+        line = access(self.a, self.x, 'claude', 429).replace('jwt.sub=bob', 'jwt.sub=martink')
+        line += ' routing.decision=' + json.dumps(headers['x-agw-routing-decision'])
+        line += ' routing.body=' + json.dumps(event['input']['attributes']['request']['http']['body'])
+        dashboard.on_gateway(line)
+        self.assertEqual(len(dashboard.cards), 1)
+        card = dashboard.cards[0]
+        self.assertEqual((card['user'], card['pool'], card['status']), ('martink', 'eu-hosted', '429'))
+        self.assertEqual(card['prompt'], 'Kernwerk personal data')
+        self.assertEqual(card['reason'], 'generic_coding, class 2, must stay in the EU')
+
+    def test_access_log_does_not_overwrite_original_audit_timestamp(self):
+        event = self.native()
+        dashboard.on_opa(json.dumps(event))
+        ts = dashboard.cards[0]['decision_ts']
+        line = access(self.a, self.x, 'claude') + ' routing.decision=' + json.dumps(
+            event['input']['attributes']['request']['http']['headers']['x-agw-routing-decision'])
+        dashboard.on_gateway(line)
+        self.assertEqual(dashboard.cards[0]['decision_ts'], ts)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -4,8 +4,8 @@
 #   ANTHROPIC_API_KEY=... ./scripts/04-decision-gateway.sh
 #
 # The second hop. A Gateway of its own, ClusterIP; the three backends with the task labels
-# aliased to the models they serve; a policy that verifies the token again and asks OPA with
-# the body forwarded; and a route that reads the two headers OPA writes.
+# aliased to the models they serve; native pre-routing decisions and post-routing
+# enforcement; and routes that read the headers AGW writes.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
 : "${ANTHROPIC_API_KEY:?export ANTHROPIC_API_KEY first}"
@@ -17,6 +17,7 @@ banner "backends: two on the GPU, one frontier"
 kubectl -n "$NS" create secret generic anthropic-secret --from-literal=Authorization="Bearer $ANTHROPIC_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$HERE/yaml/40-backends.yaml"
 banner "policy, with the lab JWKS inlined"
+python3 "$HERE/scripts/render-native-routing.py"
 JWKS="$(tr -d '\n' < "$HERE/identity/jwks.json")"
 AD_JWKS="$(tr -d '\n' < "$HERE/identity/agentdesktop-jwks.json")"
 JWKS="$JWKS" AD_JWKS="$AD_JWKS" python3 - "$HERE/yaml/50-decide-policy.yaml.tmpl" "$HERE/yaml/50-decide-policy.yaml" <<'PY'
@@ -27,6 +28,10 @@ open(sys.argv[2], "w").write(
     .replace("__AD_JWKS__", os.environ["AD_JWKS"])
 )
 PY
+# Install the enforcement fence before switching decision producers. Existing
+# traffic is refused during this short migration window rather than bypassing it.
+kubectl apply -f "$HERE/yaml/52-denied-route.yaml"
+kubectl apply -f "$HERE/yaml/51-routing-outcome.yaml"
 kubectl apply -f "$HERE/yaml/50-decide-policy.yaml"
 banner "route"
 kubectl apply -f "$HERE/yaml/60-decision-route.yaml"

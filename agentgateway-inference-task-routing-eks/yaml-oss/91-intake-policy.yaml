@@ -64,7 +64,7 @@ spec:
               # Claude includes repository instructions in user-message system-reminder
               # blocks. Append the most recent human text without those blocks so VSR
               # classifies the question, not the repository instructions. Original
-              # messages, images and tool results remain for OPA and the serving model.
+              # messages, images and tool results remain for native inspection and the serving model.
               # This follows the same append-only approach as the Cursor branches below.
               body: >-
                 json(request.body).with(b,

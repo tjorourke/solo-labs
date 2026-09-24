@@ -7,6 +7,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PART3_DIR="$(cd "${PART3_DIR:-$HERE/../agentgateway-inference-identity-routing-eks}" 2>/dev/null && pwd || echo "${PART3_DIR:-}")"
 NS=agentgateway-system
+IDENTITY_DIR="${IDENTITY_DIR:-$HERE/identity}"
 banner() { echo; echo "==> $*"; }
 CTX="${KUBE_CONTEXT:-$(command kubectl config current-context 2>/dev/null || true)}"
 [ -n "$CTX" ] || { echo "error: no kubectl context. Set KUBE_CONTEXT or point kubectl at your cluster." >&2; exit 1; }
@@ -95,8 +96,8 @@ except Exception:
     print("ERR " + open(sys.argv[1]).read()[:70].strip())' "$BODY"
 }
 load_tokens() {
-  [ -f "$HERE/identity/tokens.env" ] || { echo "error: no identity/tokens.env. Run ./scripts/01-identity.sh" >&2; exit 1; }
-  . "$HERE/identity/tokens.env"
+  [ -f "$IDENTITY_DIR/tokens.env" ] || { echo "error: no identity/tokens.env. Run ./scripts/01-identity.sh" >&2; exit 1; }
+  . "$IDENTITY_DIR/tokens.env"
 }
 # chat <prompt> [model] -> a chat-completions body. The model is auto: the gateway chooses.
 chat() {

@@ -1,0 +1,15 @@
+# A native refusal still needs a selected route for PostRouting to run. Allowed
+# pool/class rules have more header matches and win over this backendless rule.
+# A failed decision transformation therefore reaches the same native 403 fence,
+# even if the caller supplied plausible routing headers.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: decision-denied
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+  - {name: decision-gateway, sectionName: http}
+  rules:
+  - matches:
+    - path: {type: PathPrefix, value: /v1/chat/completions}

@@ -3,7 +3,7 @@
 # completion, whatever the client sent: the intake hop converts anything else first
 # (92-intake-route.yaml).
 #
-# The router wrote a task label into the body's model field. OPA decided the pool and the
+# The router wrote a task label into the body's model field. AGW decided the pool and the
 # class. The route picks a backend from those two, and the backend's modelAliases turns the
 # task label into the model it actually serves. Private coding is Qwen3-Coder, private
 # finance, telco and the general default are Mistral, and the approved frontier is Anthropic, for
@@ -95,7 +95,7 @@ spec:
       # Mistral requires system instructions before user/assistant/tool turns. Claude
       # can add a system message after tool results, which this tokenizer rejects.
       # Preserve all system text in order in one leading message. Other messages,
-      # tool-call IDs and results are unchanged. OPA already saw the original body.
+      # tool-call IDs and results are unchanged. Native CEL already inspected the original body.
       finalTransformations:
         - field: messages
           expression: >-

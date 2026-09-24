@@ -1,26 +1,11 @@
-# OPA as the gateway's external authorizer, with three mounts.
-#
-#   /config   the plugin config (this file)
-#   /policy   opa/routing.rego, built into the opa-policy ConfigMap by scripts/02-opa.sh
-#   /data     opa/entitlements.json, built into opa-entitlements the same way
-#
-# OPA loads policy and data at start, so a change to either ConfigMap takes effect on
-# `kubectl rollout restart deploy/opa`. That is the lab's "change only the entitlement"
-# step, and the restart is deliberate: it makes the reload visible rather than relying
-# on a file watch.
-#
-# The entitlement ConfigMap is a lab device, not a design. Kubernetes caps a ConfigMap at
-# 1 MiB, around fourteen thousand users at this file's shape, every change is a full rewrite
-# plus a restart, and the data is readable by anything with access to the namespace. A real
-# deployment feeds OPA the same data through its bundle API or a queried data source, and
-# nothing on the gateway changes.
-#
-# The -static tag is the one published for both amd64 and arm64.
----
+# An immediate audit event for the live console, using OPA's existing log format.
+# This service has no routing data and makes no access-control decision. Native
+# AGW PreRouting CEL decides; the PostRouting policy refuses or forwards.
+# Separate names allow migration without replacing the old authoriser in place.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: opa-config
+  name: routing-audit-config
   namespace: agentgateway-system
 data:
   config.yaml: |
@@ -28,87 +13,48 @@ data:
       envoy_ext_authz_grpc:
         addr: :9191
         path: routing/result
-        # gRPC refuses a message over 4 MiB by default, and the body travels inside the
-        # check request, so this has to clear the gateway's forwardBody.maxSize or a long
-        # conversation is refused at the transport rather than judged by the policy.
         grpc-max-recv-msg-size-bytes: 10485760
     decision_logs:
-      # Every decision with its full input to stdout. This is how the lab shows what
-      # the gateway actually sent OPA, verified claims included.
       console: true
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: opa
+  name: routing-audit
   namespace: agentgateway-system
 spec:
   replicas: 1
   selector:
-    matchLabels:
-      app: opa
+    matchLabels: {app: routing-audit}
   template:
     metadata:
-      labels:
-        app: opa
+      labels: {app: routing-audit}
     spec:
       containers:
-        - name: opa
-          image: openpolicyagent/opa:1.20.2-envoy-static
-          args:
-            - run
-            - --server
-            - --config-file=/config/config.yaml
-            - --addr=0.0.0.0:8181
-            - --diagnostic-addr=0.0.0.0:8282
-            - /policy/routing.rego
-            - /data/entitlements.json
-          ports:
-            - name: grpc
-              containerPort: 9191
-            - name: http
-              containerPort: 8181
-          readinessProbe:
-            httpGet:
-              path: "/health?plugins"
-              port: 8282
-          resources:
-            requests:
-              cpu: 50m
-              # A forwarded body of several megabytes is held, decoded and walked per
-              # request. 64Mi was enough when the body was capped at 1 MiB and is not now.
-              memory: 256Mi
-          volumeMounts:
-            - name: config
-              mountPath: /config
-            - name: policy
-              mountPath: /policy
-            - name: data
-              mountPath: /data
+      - name: audit
+        image: openpolicyagent/opa:1.20.2-envoy-static
+        args: [run, --server, --config-file=/config/config.yaml, --addr=0.0.0.0:8181, --diagnostic-addr=0.0.0.0:8282, /policy/routing.rego]
+        ports:
+        - {name: grpc, containerPort: 9191}
+        readinessProbe:
+          httpGet: {path: '/health?plugins', port: 8282}
+        resources:
+          requests: {cpu: 50m, memory: 256Mi}
+        volumeMounts:
+        - {name: config, mountPath: /config}
+        - {name: policy, mountPath: /policy}
       volumes:
-        - name: config
-          configMap:
-            name: opa-config
-        - name: policy
-          configMap:
-            name: opa-policy
-        - name: data
-          configMap:
-            name: opa-entitlements
+      - name: config
+        configMap: {name: routing-audit-config}
+      - name: policy
+        configMap: {name: routing-audit-policy}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: opa
+  name: routing-audit
   namespace: agentgateway-system
 spec:
-  selector:
-    app: opa
+  selector: {app: routing-audit}
   ports:
-    - name: grpc
-      port: 9191
-      targetPort: 9191
-      appProtocol: grpc
-    - name: http
-      port: 8181
-      targetPort: 8181
+  - {name: grpc, port: 9191, targetPort: 9191, appProtocol: grpc}

@@ -1,8 +1,7 @@
 # The second Gateway. The classify listener authenticates and classifies; this one decides and
-# routes. It exists because of the order agentgateway runs a phase in: extAuth before
-# extProc, so on one hop OPA would answer before the router had said what the task is. Two
-# hops put the router first, and OPA on this hop sees the task label, the verified identity
-# and the prompt together.
+# routes. Native PreRouting CEL sees the task label, verified identity and prompt
+# together. PostRouting enforces the result before a model is called. The audit
+# transport records the decision but carries no routing or access-control rules.
 #
 # Internal only: ClusterIP, reached by the classify listener's route and nothing else that
 # needs to. It re-validates the bearer token itself (the classify listener preserves it), so a call

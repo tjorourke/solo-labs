@@ -1,7 +1,7 @@
 # vLLM Semantic Router as a task classifier. This is the whole of the router's job in this
 # lab: read the prompt and say what kind of task it is. It writes one of six task labels
 # into the request body's model field and into x-selected-model, and nothing else. Where
-# the request runs, and which model answers, is decided afterwards by OPA and the route.
+# the request runs, and which model answers, is decided afterwards by native AGW policy and the route.
 #
 # The six labels are the rows of the routing table in opa/routing-data.json:
 #

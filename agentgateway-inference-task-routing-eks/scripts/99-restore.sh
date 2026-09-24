@@ -10,8 +10,9 @@
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$HERE/scripts/lib.sh"
 banner "this part's objects"
-kubectl -n "$NS" delete enterpriseagentgatewaypolicy classify decide normalise-model --ignore-not-found
-kubectl -n "$NS" delete httproute classify-then-decide decision-routing intake-routing --ignore-not-found
+kubectl -n "$NS" delete enterpriseagentgatewaypolicy classify decide routing-outcome normalise-model --ignore-not-found
+kubectl -n "$NS" delete httproute classify-then-decide decision-routing decision-denied intake-routing --ignore-not-found
+kubectl -n "$NS" delete deployment/routing-audit service/routing-audit configmap/routing-audit-policy configmap/routing-audit-config --ignore-not-found
 kubectl -n "$NS" delete gateway decision-gateway --ignore-not-found
 kubectl -n "$NS" delete enterpriseagentgatewayparameters decision-gateway-params --ignore-not-found
 banner "Part 3's OPA policy and data"
