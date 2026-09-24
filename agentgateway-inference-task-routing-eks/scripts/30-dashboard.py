@@ -438,7 +438,9 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
  .pill.bad { border-color:#dc2626; color:#b91c1c; background:rgba(220,38,38,.08); }
  /* The class of the caller's own data. Filled rather than outlined, because this is the
     thing data protection reads first and it has to win the row at a glance. */
- .pill.lane { font-weight:600; border:0; color:#fff; }
+ .pill.lane { font-weight:600; border:0; color:#fff; display:inline-flex; align-items:center; gap:5px; }
+ .pill.lane .li { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.5;
+                  stroke-linecap:round; stroke-linejoin:round; flex:0 0 auto; }
  .pill.lane-public { background:#0e7490; }
  .pill.lane-eu { background:#2563eb; }
  .pill.lane-private { background:#15803d; }
@@ -452,6 +454,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
  .dlp-note { margin-top:6px; font-size:12.5px; color:#64748b; }
  .dlp-note b { color:#0f172a; font-weight:600; }
  .dlp-clean { color:#15803d; }
+ .kw-rose { font-size:12px; color:#b45309; }
  .prompt { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:9px 11px; font:13.5px ui-monospace,Menlo,monospace; color:#334155; white-space:pre-wrap; word-break:break-word; max-height:120px; overflow:auto; }
  .meta { margin-top:8px; color:#64748b; font-size:13px; display:flex; gap:16px; flex-wrap:wrap; }
  .meta b { color:#0f172a; font-weight:600; }
@@ -511,8 +514,16 @@ const KERNWERK = document.body.classList.contains('page-kernwerk');
 const LANES = {public: 'Class 1 \u00b7 can go anywhere',
                eu: 'Class 2 \u00b7 stays in the EU',
                private: 'Class 3 \u00b7 never leaves Kernwerk'};
+// A globe for what may leave, a globe inside a boundary for what may leave but not the
+// region, a padlock for what stays. Read before the words are, which is the point.
+const LANE_ICON = {
+  public:  '<svg viewBox="0 0 16 16" class="li"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.8 2 1.8 10.4 0 12.4M8 1.8c-1.8 2-1.8 10.4 0 12.4"/></svg>',
+  eu:      '<svg viewBox="0 0 16 16" class="li"><path d="M8 1.6 2.6 3.8v4c0 3 2.3 5.4 5.4 6.6 3.1-1.2 5.4-3.6 5.4-6.6v-4z"/><circle cx="8" cy="7.8" r="2.3"/></svg>',
+  private: '<svg viewBox="0 0 16 16" class="li"><rect x="3.2" y="7" width="9.6" height="7" rx="1.6"/><path d="M5.5 7V5.1a2.5 2.5 0 0 1 5 0V7"/></svg>',
+};
 function lanePill(c) {
-  return KERNWERK && c.lane ? `<span class="pill lane lane-${c.lane}">${esc(LANES[c.lane] || c.lane)}</span>` : '';
+  if (!KERNWERK || !c.lane) return '';
+  return `<span class="pill lane lane-${c.lane}">${LANE_ICON[c.lane] || ''}${esc(LANES[c.lane] || c.lane)}</span>`;
 }
 
 function when(ts) {
@@ -611,26 +622,48 @@ function promptBlock(c) {
 }
 
 const opened = new Set();
+// A conversation can move between classes: the opening turn carries only a filename and
+// is unrestricted, then the assistant reads the document and everything after it is
+// restricted. Showing every class it passed through puts Class 1 next to Class 3 on one
+// card and reads as a contradiction. Show the strictest one, which is the one that
+// governed, and say plainly that it rose.
+const LANE_RANK = {public: 0, eu: 1, private: 2};
+
+function strictestLane(cards) {
+  const seen = [...new Set(cards.map(c => c.lane).filter(Boolean))];
+  if (!seen.length) return {lane: null, rose: null};
+  seen.sort((a, b) => LANE_RANK[a] - LANE_RANK[b]);
+  return {lane: seen[seen.length - 1], rose: seen.length > 1 ? seen[0] : null};
+}
+
 function group(g) {
   g.cards.sort((a, b) => a.ts - b.ts);
   const first = g.cards[0], latest = g.cards[g.cards.length - 1];
   const pools = [...new Set(g.cards.map(c => c.pool).filter(Boolean))];
   const models = [...new Set(g.cards.map(c => c.answered_by).filter(Boolean))];
   const bad = g.cards.some(c => c.allowed === false || (c.status && c.status !== '200'));
-  const cls = bad ? 'refused' : (g.cards.some(c => !c.status) ? 'pending' : (pools.includes('approved-frontier') ? 'frontier'
+  const {lane, rose} = strictestLane(g.cards);
+  // The colour follows the strictest class too, for the same reason.
+  const cls = bad ? 'refused' : (g.cards.some(c => !c.status) ? 'pending'
+            : (pools.includes('private') ? 'private'
             : (pools.includes('eu-hosted') ? 'eu'
-            : (pools.includes('private') ? 'private' : 'pending'))));
+            : (pools.includes('approved-frontier') ? 'frontier' : 'pending'))));
   const n = g.cards.length;
+  // The turn worth showing is the one the check actually acted on, not whichever came
+  // first. A card that says nothing was replaced, above a turn that replaced seventeen
+  // things, is worse than showing no note at all.
+  const shown = g.cards.reduce((best, c) => (c.replaced || 0) > (best.replaced || 0) ? c : best, first);
   return `<div class="card ${cls}">
     <div class="top">
       <span class="who">${esc(first.user || 'unknown')}</span>
-      ${[...new Set(g.cards.map(c => c.lane).filter(Boolean))].map(l => lanePill({lane: l})).join('')}
+      ${lane ? lanePill({lane}) : ''}
+      ${rose ? `<span class="kw-rose">rose from ${esc(LANES[rose].split(' · ')[0])} when the document was read</span>` : ''}
       ${pools.map(p => pill(p, 'pool-' + p)).join('')}
       ${models.map(m => pill(m)).join('')}
       ${first.source_repo ? pill('repo ' + first.source_repo) : ''}
       <span class="when">${when(first.ts)}${n > 1 ? ' to ' + when(latest.ts).split(' ')[1] : ''}</span>
     </div>
-    ${promptBlock(first)}
+    ${promptBlock(shown)}
     <details data-key="${encodeURIComponent(g.key)}"${(n === 1 || opened.has(g.key)) ? ' open' : ''}>
       <summary>${n > 1 ? `${n} requests with the same displayed prompt` : '1 request'}</summary>
       ${g.cards.map(turn).join('')}
