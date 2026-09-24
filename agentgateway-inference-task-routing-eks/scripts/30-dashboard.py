@@ -293,6 +293,10 @@ def on_opa(line):
         allowed=bool(result.get("allowed")),
         pool=headers.get("x-model-pool"),
         mclass=headers.get("x-model-class"),
+        # The class of the caller's own data, for callers whose organisation classifies it.
+        # OPA writes this only when it enforced the class, so a class on a card is always a
+        # class that was applied, never one that was merely noticed.
+        lane=headers.get("x-kernwerk-lane"),
         reason=headers.get("x-routing-reason") or (result.get("headers", {}) or {}).get("x-routing-reason"),
         refused_status=None if result.get("allowed") else result.get("http_status"),
         refused_body=None if result.get("allowed") else str(result.get("body", ""))[:300],
@@ -362,6 +366,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
  #list { padding:18px 22px 60px; max-width:1100px; }
  .card { background:#fff; border:1px solid #d8e0ea; border-left-width:5px; border-radius:10px; padding:14px 16px; margin:0 0 12px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
  .card.private { border-left-color:#16a34a; }
+ .card.eu { border-left-color:#2563eb; }
  .card.frontier { border-left-color:#d97706; }
  .card.refused  { border-left-color:#dc2626; }
  .card.pending  { border-left-color:#94a3b8; }
@@ -371,8 +376,16 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
  .pill { font:12px ui-monospace,Menlo,monospace; padding:2px 8px; border-radius:999px; border:1px solid #cbd5e1; background:#f8fafc; color:#334155; }
  .pill.task { border-color:#0e7490; color:#0e7490; background:rgba(14,116,144,.07); }
  .pill.pool-private { border-color:#16a34a; color:#15803d; background:rgba(22,163,74,.08); }
+ .pill.pool-eu-hosted { border-color:#2563eb; color:#1d4ed8; background:rgba(37,99,235,.08); }
  .pill.pool-approved-frontier { border-color:#d97706; color:#b45309; background:rgba(217,119,6,.09); }
  .pill.bad { border-color:#dc2626; color:#b91c1c; background:rgba(220,38,38,.08); }
+ /* The class of the caller's own data. Filled rather than outlined, because this is the
+    thing data protection reads first and it has to win the row at a glance. */
+ .pill.lane { font-weight:600; border:0; color:#fff; }
+ .pill.lane-public { background:#0e7490; }
+ .pill.lane-eu { background:#2563eb; }
+ .pill.lane-private { background:#15803d; }
+ body:not(.page-kernwerk) .lane-filter { display:none; }
  .prompt { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:9px 11px; font:13.5px ui-monospace,Menlo,monospace; color:#334155; white-space:pre-wrap; word-break:break-word; max-height:120px; overflow:auto; }
  .meta { margin-top:8px; color:#64748b; font-size:13px; display:flex; gap:16px; flex-wrap:wrap; }
  .meta b { color:#0f172a; font-weight:600; }
@@ -410,6 +423,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
     <select id="f-user"><option value="">Everyone</option></select>
     <select id="f-task"><option value="">Any task</option></select>
     <select id="f-pool"><option value="">Any pool</option></select>
+    <select id="f-lane" class="lane-filter"><option value="">Any data class</option></select>
     <select id="f-model"><option value="">Any model</option></select>
     <select id="f-status"><option value="">Any status</option></select>
     <input id="f-text" type="search" placeholder="Search the prompt">
@@ -421,8 +435,19 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
 <div id="list"><div class="empty">Waiting for a request.</div></div>
 <script>
 const list = document.getElementById('list');
-const F = {user:'f-user', task:'f-task', pool:'f-pool', model:'f-model', status:'f-status'};
+const F = {user:'f-user', task:'f-task', pool:'f-pool', lane:'f-lane', model:'f-model', status:'f-status'};
 let cards = [], paused = false, buffer = [];
+
+// The data class is only shown where the story is about data classes. Everywhere else the
+// page is about the task and the pool, and an extra pill would be noise. OPA writes the
+// class only for callers whose organisation classifies its data, so most rows have none.
+const KERNWERK = document.body.classList.contains('page-kernwerk');
+const LANES = {public: 'Class 1 \u00b7 can go anywhere',
+               eu: 'Class 2 \u00b7 stays in the EU',
+               private: 'Class 3 \u00b7 never leaves Kernwerk'};
+function lanePill(c) {
+  return KERNWERK && c.lane ? `<span class="pill lane lane-${c.lane}">${esc(LANES[c.lane] || c.lane)}</span>` : '';
+}
 
 function when(ts) {
   const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
@@ -435,6 +460,7 @@ function kind(c) {
   if (c.status && c.status !== '200') return 'refused';
   if (!c.status) return 'pending';
   if (c.pool === 'private') return 'private';
+  if (c.pool === 'eu-hosted') return 'eu';
   if (c.pool === 'approved-frontier') return 'frontier';
   return 'pending';
 }
@@ -445,7 +471,7 @@ function options() {
   for (const [key, id] of Object.entries(F)) {
     const sel = document.getElementById(id), have = new Set([...sel.options].map(o => o.value));
     const seen = [...new Set(cards.map(c => value(c, key)).filter(Boolean))].sort();
-    for (const v of seen) if (!have.has(v)) sel.add(new Option(v, v));
+    for (const v of seen) if (!have.has(v)) sel.add(new Option(key === 'lane' ? (LANES[v] || v) : v, v));
   }
 }
 function matches(c) {
@@ -460,6 +486,7 @@ function matches(c) {
 function turn(c) {
   return `<div class="turn ${kind(c)}">
     <span class="tw">${when(c.ts).split(' ')[1]}</span>
+    ${lanePill(c)}
     ${pill(c.task, 'task')}
     ${pill(c.pool, 'pool-' + (c.pool || ''))}
     ${pill(c.mclass)}
@@ -478,11 +505,13 @@ function group(g) {
   const models = [...new Set(g.cards.map(c => c.answered_by).filter(Boolean))];
   const bad = g.cards.some(c => c.allowed === false || (c.status && c.status !== '200'));
   const cls = bad ? 'refused' : (g.cards.some(c => !c.status) ? 'pending' : (pools.includes('approved-frontier') ? 'frontier'
-            : (pools.includes('private') ? 'private' : 'pending')));
+            : (pools.includes('eu-hosted') ? 'eu'
+            : (pools.includes('private') ? 'private' : 'pending'))));
   const n = g.cards.length;
   return `<div class="card ${cls}">
     <div class="top">
       <span class="who">${esc(first.user || 'unknown')}</span>
+      ${[...new Set(g.cards.map(c => c.lane).filter(Boolean))].map(l => lanePill({lane: l})).join('')}
       ${pools.map(p => pill(p, 'pool-' + p)).join('')}
       ${models.map(m => pill(m)).join('')}
       ${first.source_repo ? pill('repo ' + first.source_repo) : ''}

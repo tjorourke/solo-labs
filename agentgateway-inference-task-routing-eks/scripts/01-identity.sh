@@ -51,12 +51,16 @@ echo "==> tokens (30 days, issuer $ISS, audience $AUD)"
   echo "export BOB_TOKEN='$(mint "$ID/signing-key.pem" "$(claims bob $EXP)")'"
   echo "export ALICE_TOKEN='$(mint "$ID/signing-key.pem" "$(claims alice $EXP)")'"
   echo "export DAVE_TOKEN='$(mint "$ID/signing-key.pem" "$(claims dave $EXP)")'"
+  # The caller whose organisation classifies its own data. Same key, same issuer: the
+  # difference is in the entitlements, not the token, which is the point the token makes.
+  echo "export MARTINK_TOKEN='$(mint "$ID/signing-key.pem" "$(claims martink $EXP)")'"
   echo "export BADSIG_TOKEN='$(mint "$ID/wrong-key.pem" "$(claims bob $EXP)")'"
 } > "$ID/tokens.env"
 chmod 600 "$ID/tokens.env" "$ID"/*.pem
 . "$ID/tokens.env"
-show() { printf '    %-13s sub=%-6s %s...\n' "$1" "$2" "${3:0:24}"; }
-show BOB_TOKEN bob "$BOB_TOKEN"; show ALICE_TOKEN alice "$ALICE_TOKEN"; show DAVE_TOKEN dave "$DAVE_TOKEN"; show BADSIG_TOKEN bob "$BADSIG_TOKEN"
+show() { printf '    %-13s sub=%-7s %s...\n' "$1" "$2" "${3:0:24}"; }
+show BOB_TOKEN bob "$BOB_TOKEN"; show ALICE_TOKEN alice "$ALICE_TOKEN"; show DAVE_TOKEN dave "$DAVE_TOKEN"
+show MARTINK_TOKEN martink "$MARTINK_TOKEN"; show BADSIG_TOKEN bob "$BADSIG_TOKEN"
 echo
 echo "Use them in a shell with:  source identity/tokens.env"
 echo "Next: ./scripts/02-router.sh"

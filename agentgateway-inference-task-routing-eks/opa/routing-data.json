@@ -15,6 +15,14 @@
       "allowed_model_pools": [
         "approved-frontier"
       ]
+    },
+    "martink": {
+      "allowed_model_pools": [
+        "private",
+        "eu-hosted",
+        "approved-frontier"
+      ],
+      "data_classes": true
     }
   },
   "routing": {
@@ -72,6 +80,22 @@
     "internal_repo_prefixes": [
       "git.internal/",
       "internal/"
+    ],
+    "data_classes": [
+      {
+        "class": "private",
+        "label": "Class 3",
+        "pool": "private",
+        "why": "class 3, never leaves Kernwerk",
+        "pattern": "(?i)(klasse 3|class 3|streng vertraulich|kernwerk restricted|\\[\\[attachment\\]\\])"
+      },
+      {
+        "class": "eu",
+        "label": "Class 2",
+        "pool": "eu-hosted",
+        "why": "class 2, must stay in the EU",
+        "pattern": "(?i)([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}|\\bDE\\d{2} ?\\d{4}|\\bKW-\\d{6}\\b|\\+49|personal data|personenbezogen|personnel|personalakte)"
+      }
     ]
   }
 }

@@ -9,6 +9,9 @@
 #   3. the prompt carries the bank's own code, or came from an internal repository: private,
 #      whatever the task said. A clean scan does not prove code is public; evidence that it
 #      is ours overrides a generic classification.
+#   3b. the caller's organisation classifies its data and the prompt carries a restricted
+#      class: the class picks the pool, whatever the task said. Off for callers without
+#      data_classes, so it changes nothing for anyone who has not opted in.
 #   4. the task's preferred pool from the routing table, if the caller may use it.
 #   5. otherwise private, if the caller may use private.
 #   6. otherwise an error. There is no fall-through to the frontier.
@@ -130,6 +133,28 @@ has_internal_code if {
 	startswith(repo, prefix)
 }
 
+# Which class of the caller's own data this prompt carries. Only for a caller whose
+# organisation has told us it classifies its data; for everyone else data_class is
+# undefined and every rule below that reads it is off, so their decisions are unchanged.
+#
+# data.dlp.data_classes is an ordered list, most restricted first, and the first pattern
+# that matches wins. The patterns are the same ones the Kernwerk DLP gateway routes on, so
+# a prompt cannot be Class 3 on one page and Class 2 on another. Anything that matches
+# nothing is the unrestricted class and this says nothing about it: the task table decides,
+# exactly as it does today.
+classifies_data if user.data_classes
+
+matched_classes := [c |
+	some c in data.dlp.data_classes
+	regex.match(c.pattern, all_text)
+]
+
+data_class := matched_classes[0] if {
+	classifies_data
+	body_readable
+	count(matched_classes) > 0
+}
+
 # --- the decision ---------------------------------------------------------------------------
 
 may_use(pool) if pool in user.allowed_model_pools
@@ -151,11 +176,38 @@ routed := {"pool": "private", "class": table.class, "reason": sprintf("%s, inter
 	may_use("private")
 }
 
+# 3b. the caller's data class, which outranks the task. A class only ever narrows where a
+# request may run: the unrestricted class names no pool and leaves data_class undefined, so
+# this rule and the one below are off and rule 4 decides as it always has.
+routed := {"pool": data_class.pool, "class": table.class, "reason": sprintf("%s, %s", [task, data_class.why])} if {
+	body_readable
+	not has_secret
+	not has_internal_code
+	data_class
+	may_use(data_class.pool)
+}
+
+# 3c. the class wants a pool this caller may not use. Private, which holds any class, rather
+# than falling through to the table and sending restricted data somewhere wider.
+routed := {
+	"pool": "private",
+	"class": table.class,
+	"reason": sprintf("%s, %s, %s not permitted", [task, data_class.why, data_class.pool]),
+} if {
+	body_readable
+	not has_secret
+	not has_internal_code
+	data_class
+	not may_use(data_class.pool)
+	may_use("private")
+}
+
 # 4. the table's preferred pool
 routed := {"pool": table.pool, "class": table.class, "reason": task} if {
 	body_readable
 	not has_secret
 	not has_internal_code
+	not data_class
 	may_use(table.pool)
 }
 
@@ -164,6 +216,7 @@ routed := {"pool": "private", "class": table.class, "reason": sprintf("%s, front
 	body_readable
 	not has_secret
 	not has_internal_code
+	not data_class
 	table.pool != "private"
 	not may_use(table.pool)
 	may_use("private")
@@ -241,9 +294,14 @@ result := {
 
 # Allow, and write the decision where the route can match it. Any routing header the client
 # sent is removed first, so where a request runs is decided here and nowhere else.
-result := {
+result := object.union(allowed_result, lane_header) if {
+	not has_secret
+	decision
+}
+
+allowed_result := {
 	"allowed": true,
-	"request_headers_to_remove": ["x-model-pool", "x-model-class", "x-routing-reason", "x-routing-user"],
+	"request_headers_to_remove": ["x-model-pool", "x-model-class", "x-routing-reason", "x-routing-user", "x-kernwerk-lane"],
 	"headers": {
 		"x-model-pool": decision.pool,
 		"x-model-class": decision.class,
@@ -255,7 +313,20 @@ result := {
 		"x-model-class": decision.class,
 		"x-routing-reason": decision.reason,
 	},
-} if {
-	not has_secret
-	decision
 }
+
+# The class this policy classified on, named so the decision can be read back. Written only
+# for a caller whose data is classified, and only when this policy did the classifying, so a
+# class on the page always means a class that was enforced: there is no way to show one
+# beside a destination it did not allow. A caller's own x-kernwerk-lane is stripped above.
+lane_header := {"headers": object.union(allowed_result.headers, {"x-kernwerk-lane": data_class.class})} if {
+	data_class
+}
+
+lane_header := {"headers": object.union(allowed_result.headers, {"x-kernwerk-lane": "public"})} if {
+	classifies_data
+	body_readable
+	not data_class
+}
+
+default lane_header := {}

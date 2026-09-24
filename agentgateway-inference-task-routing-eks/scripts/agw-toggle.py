@@ -132,9 +132,20 @@ class Toggle:
         for path in self.desktop:
             read_json(path)  # Fail on malformed config before making any changes.
 
+    def known_subjects(self):
+        """Who there is an entitlement for, read from the file OPA is given. One list, so
+        adding a caller to the routing data is all it takes to sign in as them and there is
+        no second copy here to fall behind. 01-identity.sh mints a token per caller."""
+        try:
+            users = json.loads((self.lab / 'opa/routing-data.json').read_text())['users']
+        except (OSError, ValueError, KeyError, TypeError):
+            return ('bob', 'alice', 'dave')
+        return tuple(users) or ('bob', 'alice', 'dave')
+
     def ensure_token(self):
-        if self.subject not in ('bob', 'alice', 'dave'):
-            raise RuntimeError("AGW_SUBJECT must be bob, alice or dave")
+        known = self.known_subjects()
+        if self.subject not in known:
+            raise RuntimeError("AGW_SUBJECT must be one of: " + ", ".join(sorted(known)))
         try:
             raw = self.token.read_text().strip().split('.')[1]
             claims = json.loads(base64.urlsafe_b64decode(raw + '=' * (-len(raw) % 4)))
