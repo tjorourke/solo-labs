@@ -285,6 +285,14 @@ SH
     -e 'do shell script "/bin/sh " & quoted form of (item 1 of argv) & " 2>&1" with administrator privileges' \
     -e 'end run' "$PRIV"
   echo "-> daemon installed and running as the machine"
+  # System mode leaves ~/.claude/settings.json alone, which is wrong on a laptop
+  # configured for Vertex: CLAUDE_CODE_USE_VERTEX survives in the user file and
+  # sends the Agentdesktop token to the Vertex front door, which 401s with
+  # 'token uses the unknown key "agentdesktop"'. This watcher parks the Vertex
+  # keys while the managed file exists and puts them back when it goes.
+  # Idempotent, and a no-op on a machine that never had Vertex configured.
+  "$(dirname "$0")/claude-vertex-reconcile.sh" install || \
+    echo "   (vertex watcher failed to install; run claude-vertex-reconcile.sh status)"
   echo "   Sign in with:  $0 signin-url"
   ;;
 
