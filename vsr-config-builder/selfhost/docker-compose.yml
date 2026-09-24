@@ -1,0 +1,23 @@
+# Run the wizard on http://localhost:8080
+#
+#   cd vsr-config-builder
+#   docker compose -f selfhost/docker-compose.yml up --build
+#
+# Context is the parent directory on purpose: the wizard's files live there and the
+# image is built from them, so there is no copy of the source to keep in step.
+services:
+  vsr-config-wizard:
+    build:
+      context: ..
+      dockerfile: selfhost/Dockerfile
+    image: vsr-config-wizard:local
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

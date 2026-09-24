@@ -1,0 +1,72 @@
+# The wizard on Kubernetes. Static files, no backend, no state, so this is a
+# Deployment and a Service and nothing else.
+#
+#   kubectl apply -f selfhost/k8s.yaml
+#   kubectl -n vsr-tools port-forward svc/vsr-config-wizard 8080:80
+#
+# Set the image to wherever you pushed it. There is no published image for this:
+# build it yourself so you can see exactly what is in it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vsr-tools
+  labels:
+    # The image runs unprivileged on 8080, so it satisfies the restricted policy.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vsr-config-wizard
+  namespace: vsr-tools
+  labels: {app: vsr-config-wizard}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: vsr-config-wizard}
+  template:
+    metadata:
+      labels: {app: vsr-config-wizard}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: nginx
+          # Replace with your registry, e.g. ghcr.io/<you>/vsr-config-wizard:1
+          image: vsr-config-wizard:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 10m, memory: 24Mi}
+            limits:   {cpu: 200m, memory: 128Mi}
+          volumeMounts:
+            # The only writable path it needs: nginx's pid and temp files.
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vsr-config-wizard
+  namespace: vsr-tools
+spec:
+  selector: {app: vsr-config-wizard}
+  ports:
+    - {name: http, port: 80, targetPort: http}

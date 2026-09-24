@@ -1,0 +1,311 @@
+/* wizard.css — everything scoped under .vw so nothing collides with site.css,
+ * and so tools/vsr-workbench can drop the same markup into its own page. */
+
+.vw {
+  --w-surface: #ffffff;
+  --w-surf2: #f5f7fa;
+  --w-ink: #16202b;
+  --w-soft: #3d4753;
+  --w-muted: #667281;
+  --w-line: #dbe1e8;
+  --w-accent: #0891b2;
+  --w-accent-dk: #0e3a4a;
+  --w-err: #b3261e;
+  --w-err-bg: #fdeceb;
+  --w-err-line: #f0b3ae;
+  --w-warn: #a86a00;
+  --w-warn-bg: #fdf3e0;
+  --w-warn-line: #eccb8d;
+  --w-note: #3b5bb5;
+  --w-note-bg: #eaeffb;
+  --w-note-line: #b3c4ea;
+  --w-ok: #0f7a52;
+  --w-ok-bg: #e6f4ec;
+  --w-ok-line: #9fd3ba;
+  --w-mono: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  --w-shadow: 0 1px 2px rgba(20, 26, 34, .06), 0 10px 28px rgba(20, 26, 34, .10);
+  margin: 22px 0;
+  color: var(--w-ink);
+}
+
+/* The published page is always light, because css/site.css has no dark mode and a
+ * wizard that flipped on its own would be the one dark block on a light page.
+ * tools/vsr-workbench does follow the OS, so it opts in with data-theme="auto"
+ * and gets the workbench's palette rather than a light island in a dark window. */
+@media (prefers-color-scheme: dark) {
+  .vw[data-theme="auto"] {
+    --w-surface: #1c1f25;
+    --w-surf2: #22262e;
+    --w-ink: #e8eaee;
+    --w-soft: #c3c8d2;
+    --w-muted: #9aa0ad;
+    --w-line: #2b2f37;
+    --w-accent: #a894ff;
+    --w-accent-dk: #4b3bc4;
+    --w-err: #ef8279;
+    --w-err-bg: #331c1a;
+    --w-err-line: #6d3630;
+    --w-warn: #e0ad5a;
+    --w-warn-bg: #2d2415;
+    --w-warn-line: #6b5326;
+    --w-note: #8fa8ee;
+    --w-note-bg: #1c2438;
+    --w-note-line: #35456d;
+    --w-ok: #5cc38f;
+    --w-ok-bg: #1a2c23;
+    --w-ok-line: #2f5a45;
+    --w-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .35);
+  }
+}
+
+.vw * { box-sizing: border-box; }
+.vw [hidden] { display: none !important; }
+.vw h2, .vw h3, .vw h4 { color: var(--w-ink); }
+
+/* ---------------------------------------------------------------- stepper --
+ * A connected rail: numbered nodes joined by a track that fills up behind you.
+ * Grid columns rather than flex, so every node sits on the centre of its column
+ * and the connectors line up whatever the labels do. */
+.vw .steps {
+  display: grid;
+  grid-template-columns: repeat(var(--steps, 6), 1fr);
+  margin: 4px 0 26px; padding: 0; list-style: none; border: 0;
+}
+.vw .step {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 9px; padding: 2px 4px 0; border: 0; background: none; font: inherit;
+  color: var(--w-muted); cursor: pointer; text-align: center;
+  -webkit-appearance: none; appearance: none;
+}
+
+/* The track into this node, drawn from the previous node's centre. */
+.vw .step::before {
+  content: ""; position: absolute; top: 15px; right: 50%; width: 100%; height: 2px;
+  background: var(--w-line); z-index: 0;
+}
+.vw .step:first-child::before { display: none; }
+.vw .step.done::before,
+.vw .step[aria-current="step"]::before { background: var(--w-accent); }
+
+.vw .step .n {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 50%; flex: none;
+  background: var(--w-surface); border: 2px solid var(--w-line);
+  color: var(--w-muted); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+}
+.vw .step .lbl {
+  font-size: 12.5px; line-height: 1.35; font-weight: 550; max-width: 15ch;
+  transition: color .15s;
+}
+
+.vw .step.done .n {
+  background: var(--w-accent); border-color: var(--w-accent); color: #fff;
+}
+.vw .step.done .lbl { color: var(--w-soft); }
+.vw .step.done .n svg { width: 15px; height: 15px; }
+
+.vw .step[aria-current="step"] .n {
+  background: var(--w-accent-dk); border-color: var(--w-accent-dk); color: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--w-accent) 22%, transparent);
+}
+.vw .step[aria-current="step"] .lbl { color: var(--w-ink); font-weight: 700; }
+
+.vw .step:hover .n { border-color: var(--w-accent); }
+.vw .step:hover .lbl { color: var(--w-ink); }
+.vw .step:focus-visible { outline: none; }
+.vw .step:focus-visible .n { box-shadow: 0 0 0 4px color-mix(in srgb, var(--w-accent) 35%, transparent); }
+
+/* Narrow screens: the rail stops being readable long before it stops fitting, so
+ * swap it for one line that says where you are, with a track under it. */
+.vw .steps-compact { display: none; margin: 4px 0 22px; }
+.vw .steps-compact .sc-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin: 0 0 9px;
+}
+.vw .steps-compact .sc-now { font-size: 15px; font-weight: 700; color: var(--w-ink); }
+.vw .steps-compact .sc-of { font-size: 12.5px; color: var(--w-muted); white-space: nowrap; }
+.vw .steps-compact .sc-track {
+  height: 5px; border-radius: 999px; background: var(--w-line); overflow: hidden;
+}
+.vw .steps-compact .sc-fill {
+  height: 100%; border-radius: 999px; background: var(--w-accent); transition: width .2s;
+}
+
+@media (max-width: 680px) {
+  .vw .steps { display: none; }
+  .vw .steps-compact { display: block; }
+}
+
+/* ------------------------------------------------------------------ panel -- */
+.vw .panel {
+  background: var(--w-surface); border: 1px solid var(--w-line); border-radius: 14px;
+  padding: 20px 22px; margin: 0 0 16px; box-shadow: var(--w-shadow);
+}
+.vw .panel > h3 { margin: 0 0 6px; font-size: 18px; }
+.vw .lede { margin: 0 0 18px; color: var(--w-soft); font-size: 14.5px; line-height: 1.6; max-width: 72ch; }
+.vw .lede code { font-family: var(--w-mono); font-size: 12.5px; background: var(--w-surf2);
+  padding: 1px 5px; border-radius: 4px; }
+.vw .hint { color: var(--w-muted); font-size: 12.5px; line-height: 1.55; }
+
+/* Teaching prose, folded away. The explanations are worth having and they are not
+ * worth blocking a first-time user with, so each step says one plain sentence and
+ * keeps the reasoning behind a summary they can open. */
+.vw details.why {
+  border: 1px solid var(--w-line); border-radius: 10px; background: var(--w-surf2);
+  margin: 0 0 18px; overflow: hidden;
+}
+.vw details.why > summary {
+  cursor: pointer; list-style: none; padding: 10px 14px;
+  font-size: 13px; font-weight: 600; color: var(--w-soft);
+  display: flex; align-items: center; gap: 9px; user-select: none;
+}
+.vw details.why > summary::-webkit-details-marker { display: none; }
+.vw details.why > summary::before {
+  content: "\25b8"; color: var(--w-accent); width: 10px; display: inline-block;
+  transition: transform .15s;
+}
+.vw details.why[open] > summary::before { transform: rotate(90deg); }
+.vw details.why > summary:hover { color: var(--w-ink); }
+.vw details.why .why-body { padding: 0 16px 14px; }
+.vw details.why .why-body p {
+  margin: 0 0 10px; font-size: 13.5px; line-height: 1.65; color: var(--w-soft); max-width: 72ch;
+}
+.vw details.why .why-body p:last-child { margin-bottom: 0; }
+.vw details.why .why-body code {
+  font-family: var(--w-mono); font-size: 12px; background: var(--w-surface);
+  border: 1px solid var(--w-line); padding: 1px 5px; border-radius: 4px;
+}
+
+/* An advanced block: a field with a sane default that nobody should have to read. */
+.vw details.adv { margin: 4px 0 0; }
+.vw details.adv > summary {
+  cursor: pointer; list-style: none; font-size: 12.5px; color: var(--w-muted);
+  user-select: none; padding: 4px 0;
+}
+.vw details.adv > summary::-webkit-details-marker { display: none; }
+.vw details.adv > summary::before { content: "\25b8  "; color: var(--w-accent); }
+.vw details.adv[open] > summary::before { content: "\25be  "; }
+.vw details.adv > summary:hover { color: var(--w-ink); }
+.vw details.adv .adv-body { padding: 12px 0 0; }
+
+.vw .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vw .spread { justify-content: space-between; }
+.vw .grow { flex: 1 1 auto; min-width: 0; }
+
+/* -------------------------------------------------------------- controls -- */
+.vw input[type="text"], .vw input[type="number"], .vw textarea, .vw select {
+  font: inherit; font-size: 14px; color: var(--w-ink);
+  padding: 8px 11px; border: 1px solid var(--w-line); border-radius: 8px;
+  background: var(--w-surface); width: 100%; min-width: 0;
+}
+.vw textarea { font-family: var(--w-mono); font-size: 12.5px; line-height: 1.6; resize: vertical; }
+.vw input:focus, .vw textarea:focus, .vw select:focus {
+  outline: 2px solid var(--w-accent); outline-offset: -1px; border-color: var(--w-accent);
+}
+.vw label.field { display: block; margin: 0 0 12px; }
+.vw label.field > span.lbl {
+  display: block; font-size: 12px; font-weight: 700; color: var(--w-soft);
+  margin: 0 0 5px; letter-spacing: .01em;
+}
+
+.vw .btn {
+  padding: 8px 15px; border: 1px solid var(--w-line); border-radius: 8px;
+  background: var(--w-surface); font: inherit; font-size: 13.5px; color: var(--w-soft);
+  cursor: pointer;
+}
+.vw .btn:hover { border-color: var(--w-accent); color: var(--w-ink); }
+.vw .btn.primary {
+  background: var(--w-accent-dk); border-color: var(--w-accent-dk); color: #fff; font-weight: 600;
+}
+.vw .btn.primary:hover { background: #12495c; }
+.vw .btn.danger { color: var(--w-err); border-color: var(--w-err-line); }
+.vw .btn.danger:hover { background: var(--w-err-bg); border-color: var(--w-err); }
+.vw .btn.tiny { padding: 4px 9px; font-size: 12px; border-radius: 6px; }
+.vw .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ------------------------------------------------------------- categories -- */
+.vw .cat {
+  border: 1px solid var(--w-line); border-radius: 12px; padding: 16px 18px;
+  margin: 0 0 12px; background: var(--w-surf2);
+}
+.vw .cat-head { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.vw .cat-head .ord {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 7px; flex: none;
+  background: var(--w-accent-dk); color: #fff; font-size: 12.5px; font-weight: 700;
+}
+.vw .cat-head .nm { font-family: var(--w-mono); font-size: 14px; font-weight: 600; }
+.vw .cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 720px) { .vw .cat-grid { grid-template-columns: 1fr; } }
+
+.vw .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.vw .chip {
+  padding: 5px 11px; border: 1px solid var(--w-line); border-radius: 999px;
+  background: var(--w-surface); font: inherit; font-size: 12.5px; color: var(--w-soft);
+  cursor: pointer;
+}
+.vw .chip:hover { border-color: var(--w-accent); }
+.vw .chip[aria-pressed="true"] {
+  background: var(--w-accent-dk); border-color: var(--w-accent-dk); color: #fff;
+}
+.vw .chip.fallback[aria-pressed="true"] {
+  background: var(--w-note); border-color: var(--w-note);
+}
+
+/* ------------------------------------------------------------------ pairs -- */
+.vw .pair {
+  display: flex; align-items: center; gap: 12px; padding: 11px 14px;
+  border: 1px solid var(--w-line); border-radius: 10px; background: var(--w-surface);
+  margin: 0 0 8px;
+}
+.vw .pair.on { border-color: var(--w-accent); background: #f2fbfd; }
+.vw .pair .rulename { font-family: var(--w-mono); font-size: 12.5px; color: var(--w-muted); }
+.vw .pair .why { font-size: 12.5px; color: var(--w-muted); }
+
+/* --------------------------------------------------------------- findings -- */
+.vw .verdict {
+  display: flex; align-items: center; gap: 12px; padding: 13px 16px;
+  border-radius: 10px; border: 1px solid; margin: 0 0 14px; font-size: 14px;
+}
+.vw .verdict.clean { background: var(--w-ok-bg); border-color: var(--w-ok-line); color: var(--w-ok); }
+.vw .verdict.bad { background: var(--w-err-bg); border-color: var(--w-err-line); color: var(--w-err); }
+.vw .verdict.meh { background: var(--w-warn-bg); border-color: var(--w-warn-line); color: var(--w-warn); }
+.vw .verdict b { font-weight: 700; }
+
+.vw .finding {
+  border: 1px solid var(--w-line); border-left-width: 4px; border-radius: 8px;
+  padding: 11px 14px; margin: 0 0 8px; background: var(--w-surface); font-size: 13.5px;
+}
+.vw .finding.error { border-left-color: var(--w-err); background: var(--w-err-bg); }
+.vw .finding.warn { border-left-color: var(--w-warn); background: var(--w-warn-bg); }
+.vw .finding.note { border-left-color: var(--w-note); background: var(--w-note-bg); }
+.vw .finding .where { font-family: var(--w-mono); font-size: 12px; color: var(--w-soft); }
+.vw .finding .msg { margin: 3px 0 0; color: var(--w-ink); }
+.vw .finding .fix { margin: 5px 0 0; font-size: 12.5px; color: var(--w-soft); }
+.vw .finding .fix b { font-weight: 700; }
+
+/* ------------------------------------------------------------------ table -- */
+.vw .tablewrap { overflow-x: auto; }
+.vw table.dec { border-collapse: collapse; width: 100%; font-size: 13px; }
+.vw table.dec th, .vw table.dec td {
+  text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--w-line);
+  vertical-align: top;
+}
+.vw table.dec th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--w-muted); white-space: nowrap; }
+.vw table.dec td.p { font-family: var(--w-mono); font-weight: 700; white-space: nowrap; }
+.vw table.dec td.n { font-family: var(--w-mono); }
+.vw table.dec code { font-family: var(--w-mono); font-size: 11.5px; background: var(--w-surf2);
+  border: 1px solid var(--w-line); border-radius: 4px; padding: 1px 5px;
+  display: inline-block; margin: 1px 3px 1px 0; }
+.vw table.dec .op { font-size: 11px; font-weight: 700; color: var(--w-muted); }
+
+/* ------------------------------------------------------------------- yaml -- */
+.vw pre.yaml {
+  background: #0f1720; color: #dbe6ef; border-radius: 10px; padding: 16px 18px;
+  font-family: var(--w-mono); font-size: 12.5px; line-height: 1.65;
+  overflow: auto; max-height: 560px; margin: 0;
+}
+.vw .navrow { display: flex; justify-content: space-between; gap: 10px; margin: 18px 0 0; }
