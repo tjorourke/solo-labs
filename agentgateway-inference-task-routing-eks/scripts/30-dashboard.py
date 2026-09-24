@@ -511,7 +511,7 @@ let cards = [], paused = false, buffer = [];
 // page is about the task and the pool, and an extra pill would be noise. OPA writes the
 // class only for callers whose organisation classifies its data, so most rows have none.
 const KERNWERK = document.body.classList.contains('page-kernwerk');
-const LANES = {public: 'Class 1 \u00b7 can go anywhere',
+const LANES = {public: 'Class 1 \u00b7 nothing restricted',
                eu: 'Class 2 \u00b7 stays in the EU',
                private: 'Class 3 \u00b7 never leaves Kernwerk'};
 // A globe for what may leave, a globe inside a boundary for what may leave but not the

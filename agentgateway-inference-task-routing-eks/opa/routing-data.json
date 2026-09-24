@@ -86,8 +86,8 @@
         "class": "private",
         "label": "Class 3",
         "pool": "private",
-        "why": "class 3, never leaves Kernwerk",
-        "pattern": "(?i)(klasse 3|class 3|streng vertraulich|kernwerk restricted|\\[\\[attachment\\]\\])"
+        "why": "class 3, an attachment the gateway cannot read, or marked restricted",
+        "pattern": "(?i)(klasse 3|class 3|streng vertraulich|kernwerk restricted|\\[\\[attachment\\]\\]|<uploaded_files>)"
       },
       {
         "class": "eu",
