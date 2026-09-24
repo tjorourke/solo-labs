@@ -1,0 +1,118 @@
+# Shared by both editions. render.py selects the image and profile ConfigMap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jev-extproc
+  namespace: jev-routing-kb
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: jev-extproc}
+  template:
+    metadata:
+      labels: {app: jev-extproc}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - name: profile
+          configMap:
+            name: __PROFILE_CONFIGMAP__
+      containers:
+        - name: adapter
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TYPESAFE_API_KEY
+              valueFrom:
+                secretKeyRef: {name: typesafe, key: TYPESAFE_API_KEY}
+            - name: JEV_PROFILE_PATH
+              value: /etc/jev/profile.json
+          volumeMounts:
+            - {name: profile, mountPath: /etc/jev, readOnly: true}
+          ports: [{name: grpc, containerPort: 50051}]
+          readinessProbe: {tcpSocket: {port: grpc}, initialDelaySeconds: 2}
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: "1", memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: jev-extproc, namespace: jev-routing-kb}
+spec:
+  selector: {app: jev-extproc}
+  ports: [{name: grpc, port: 50051, targetPort: grpc, appProtocol: kubernetes.io/h2c}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: coding-fixture, namespace: jev-routing-kb}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: coding-fixture}
+  template:
+    metadata:
+      labels: {app: coding-fixture}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: fixture
+          image: __IMAGE__
+          args: ["-fixture-model=kb-coding"]
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: coding-fixture, namespace: jev-routing-kb}
+spec:
+  selector: {app: coding-fixture}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: general-fixture, namespace: jev-routing-kb}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: general-fixture}
+  template:
+    metadata:
+      labels: {app: general-fixture}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: fixture
+          image: __IMAGE__
+          args: ["-fixture-model=kb-general"]
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: general-fixture, namespace: jev-routing-kb}
+spec:
+  selector: {app: general-fixture}
+  ports: [{name: http, port: 8080, targetPort: http}]

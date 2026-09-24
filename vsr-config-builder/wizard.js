@@ -19,6 +19,16 @@
   // config, Kubernetes manifests and a README.
   var REPO = 'https://github.com/tjorourke/solo-labs/tree/main/vsr-config-builder';
 
+  // Declared by standalone.html, the build that ships in the container, as an
+  // attribute on <html> rather than an inline script: the container serves a strict
+  // script-src 'self' policy, which blocks inline script and would have left this
+  // false with nothing on screen to say why.
+  //
+  // A self-hosted copy has no site around it and no labs to point at, so anything
+  // that reads from one, or even mentions one, is off there.
+  var STANDALONE = !!window.VSR_STANDALONE ||
+    document.documentElement.hasAttribute('data-vsr-standalone');
+
   var STEPS = [
     { id: 'start', label: 'Start' },
     { id: 'categories', label: 'Categories' },
@@ -105,11 +115,6 @@
     // and survives a reload because it is saved with the plan.
     state.plan.fromPreset = key;
     save();
-  }
-
-  function planExample() {
-    var p = window.VSR_PRESETS[state.plan && state.plan.fromPreset];
-    return p && p.example ? p.example : null;
   }
 
   function cats() { return state.plan.categories; }
@@ -227,7 +232,10 @@
     var picks = el('div', { class: 'panel' }, [
       el('h3', { text: 'Start from' })
     ]);
-    Object.keys(window.VSR_PRESETS).forEach(function (key) {
+    Object.keys(window.VSR_PRESETS).filter(function (key) {
+      // A self-hosted build offers a blank start and nothing else.
+      return !(STANDALONE && window.VSR_PRESETS[key].siteOnly);
+    }).forEach(function (key) {
       var p = window.VSR_PRESETS[key];
       var reveal = el('div');
       picks.appendChild(el('div', { class: 'cat' }, [
@@ -237,7 +245,7 @@
             el('p', { class: 'hint', style: 'margin:5px 0 0;max-width:70ch' }, [p.blurb])
           ]),
           el('div', { class: 'row' }, [
-            p.example ? el('button', {
+            (p.example && !STANDALONE) ? el('button', {
               class: 'btn', type: 'button',
               onclick: function (e) { toggleExample(p.example, reveal, e.target); }
             }, ['Show the lab\'s config']) : null,
@@ -369,31 +377,6 @@
     return wrap;
   }
 
-  function differencesPanel(ex) {
-    var list = el('ul', { style: 'margin:0;padding-left:20px' });
-    (ex.differences || []).forEach(function (d) {
-      list.appendChild(el('li', { html: d, style: 'margin:0 0 9px;line-height:1.6' }));
-    });
-    var reveal = el('div');
-    return el('div', { class: 'panel' }, [
-      el('h3', { text: 'How this compares with the lab\'s own file' }),
-      el('p', {
-        class: 'lede',
-        html: 'The preset is the Part 4 lab expressed as answers, so what you get here is ' +
-          'the same six labels and the same signals. It is not the same file byte for ' +
-          'byte, and the differences are worth knowing before you diff the two:'
-      }),
-      list,
-      el('div', { class: 'row', style: 'margin-top:14px' }, [
-        el('button', {
-          class: 'btn', type: 'button',
-          onclick: function (e) { toggleExample(ex, reveal, e.target); }
-        }, ['Show the lab\'s config'])
-      ]),
-      reveal
-    ]);
-  }
-
   /* ---------------------------------------------------------------- step 1 -- */
   function stepCategories(body) {
     body.appendChild(el('div', { class: 'panel' }, [
@@ -458,9 +441,9 @@
               'request. The router is a classifier on this path, not a proxy.'
             ]),
             el('div', { class: 'hint', style: 'margin-top:5px' }, [
-              'Every lab on this site has that Service running, so "the router does not ' +
-              'connect to it" has not been tested with the Service missing. Point it at ' +
-              'the real one rather than relying on it being ignored.'
+              'This has not been tested with that Service missing, so "the router does not ' +
+              'connect to it" is a statement about the request path, not a promise that ' +
+              'the address can be nonsense. Point it at the real one.'
             ])
           ])
         ])
@@ -629,9 +612,9 @@
         el('div', { class: 'hint', style: 'margin-top:7px' }, [
           el('b', {}, ['Nothing here fits? Leave them all off. ']),
           'That is normal, and it is not a gap you have to work around: define the ' +
-          'category with example prompts below instead. That is how the lab identifies telco, ' +
-          'and how a data class like "must stay in the EU" gets identified, because ' +
-          'neither of those is a subject.'
+          'category with example prompts below instead. That is how a subject like telco ' +
+          'gets identified, and how a data class like "must stay in the EU" does, ' +
+          'because neither of those is on the list.'
         ]),
         why('Why you cannot add a fifteenth', [
           'This list is not configuration. It is the output of a fine-tuned classifier ' +
@@ -643,9 +626,8 @@
           'new name would never fire. A question about a 5G handover comes back as ' +
           'computer science, engineering or business depending on how it was worded.',
           'So a category the list has no word for is built the other way round: a ' +
-          'list of words plus a comparison. In the lab, telco is a list of network terms ' +
-          'and six network questions, and it works well enough to outrank ' +
-          'everything else.'
+          'list of words plus a comparison. Telco, for instance, works as a list of network ' +
+          'terms and six network questions, well enough to outrank everything else.'
         ])
       ]),
 
@@ -812,7 +794,7 @@
       why('When this is the right shape, and when it is not', [
         'This is the answer for a category the subject list has no word for, where the ' +
         'thing that defines it is the subject itself rather than what the prompt asks ' +
-        'for. The lab uses exactly this for telco.',
+        'for. Telco is the usual example: the classifier has no word for it.',
         'It is the one comparison whose two sides are deliberately on different ' +
         'subjects, because here learning the subject is the point rather than the trap.',
         'If a category already has a subject ticked, you usually do not need this as ' +
@@ -1052,16 +1034,7 @@
     }
 
     var panel = el('div', { class: 'panel' }, [
-      el('h3', { text: 'What the validator will not tell you' }),
-      el('p', {
-        class: 'lede',
-        html: 'The router has its own validator and it is good: point a decision at a ' +
-          'signal that does not exist and it will name it. What it cannot tell you is ' +
-          'that a decision is perfectly legal and still never wins, because a ' +
-          'higher-priority decision asks for a subset of its conditions and therefore ' +
-          'matches whenever it does. These are the checks this repo\'s workbench runs, ' +
-          'the same ones, running here.'
-      }),
+      el('h3', { text: 'Checks' }),
       el('div', { class: 'verdict ' + cls }, [
         el('b', { text: counts.error ? 'Needs work' : (counts.warn ? 'Worth a look' : 'Clean') }),
         verdict
@@ -1081,10 +1054,7 @@
 
     body.appendChild(decisionPanel(config));
 
-    // When the plan came from a preset that mirrors a real lab config, offer the
-    // actual file next to what was just generated, and say where the two differ.
-    var ex = planExample();
-    if (ex) body.appendChild(differencesPanel(ex));
+    body.appendChild(outputPanel(config));
 
     body.appendChild(el('div', { class: 'panel' }, [
       el('div', { class: 'row spread', style: 'margin-bottom:12px' }, [
@@ -1112,35 +1082,21 @@
     // Hosted in the workbench, "go and get the workbench" is useless advice: the
     // corpus is three tabs away. Say what is actually next in each host.
     var hosted = !!(window.VSR_HOST && window.VSR_HOST.validate);
-    var labHref = hosted
-      ? 'https://mastertheagent.com/solo/agentgateway-inference-task-routing-eks/'
-      : '/solo/agentgateway-inference-task-routing-eks/';
-
     body.appendChild(el('div', { class: 'panel' }, [
-      el('h3', { text: hosted ? 'What is left to find out' : 'What this page cannot do' }),
-      el('p', {
-        class: 'lede',
-        html: 'Every check above is structural. None of it tells you whether your ' +
-          'example prompts actually separate your categories. That needs the router\'s ' +
-          'embedding model, a 768-dimension classifier on a volume in your cluster, ' +
-          'which cannot run in a browser.'
-      }),
-      el('p', {
-        class: 'lede',
-        html: hosted
-          ? 'Download the file, restart this workbench with <code>--values</code> pointed ' +
-            'at it, and the Test tab will run a labelled corpus through the router and ' +
-            'give you a confusion matrix and the signals behind every miss. It can do ' +
-            'that before you deploy, by computing the signals locally from the router\'s ' +
-            'own embeddings. This tab writes the file; Test tells you whether the file ' +
-            'was right.'
-          : 'For that part, take the file to <code>tools/vsr-workbench</code> in the ' +
-            'solo-demos repo. It runs a labelled corpus through the router and gives you ' +
-            'a confusion matrix and the signals behind every miss, and it can do that for ' +
-            'a config you have not deployed yet by computing the signals locally from the ' +
-            'router\'s own embeddings. This wizard writes the file; the workbench tells ' +
-            'you whether the file was right.'
-      }),
+      el('h3', { text: 'What is not checked' }),
+      el('p', { class: 'lede' }, [
+        'The checks above read the config. They cannot tell you whether your example ' +
+        'prompts actually work, because deciding that means running the prompts through ' +
+        'the router\'s language model, and that only exists in your cluster.'
+      ]),
+      el('p', { class: 'lede' }, [
+        hosted
+          ? 'The Test tab does it: give it prompts and the answer you expect for each, ' +
+            'and it reports which ones came out wrong.'
+          : 'Deploy the file and try some prompts. There is also a workbench in the ' +
+            'repo that does it for you: give it prompts and the answer you expect for ' +
+            'each, and it reports which ones came out wrong.'
+      ]),
       el('div', { class: 'row' }, [
         el('button', {
           class: 'btn', type: 'button',
@@ -1149,17 +1105,112 @@
           }
         }, ['Download the answers as JSON']),
         el('a', {
-          class: 'btn', href: labHref,
-          target: hosted ? '_blank' : null,
-          rel: hosted ? 'noopener' : null
-        }, ['The lab this came from']),
-        el('a', {
           class: 'btn', href: REPO, target: '_blank', rel: 'noopener'
         }, ['Run this yourself \u2197'])
       ])
     ]));
 
     body.appendChild(navRow('Order'));
+  }
+
+  /* What downstream actually receives. Everything named here comes out of the config
+   * on screen, so it is the reader's own labels rather than a generic example. The
+   * two numbers the router measures rather than reads are left as placeholders: a
+   * plausible-looking confidence score would be a made-up measurement. */
+  function outputPanel(config) {
+    var labels = (config.routing.modelCards || []).map(function (c) { return c.name; });
+    var def = ((config.providers || {}).defaults || {}).default_model;
+
+    // The decision the router tries first, so the worked shape matches what a reader
+    // is most likely to see.
+    var top = (config.routing.decisions || []).slice()
+      .sort(function (a, b) { return (b.priority || 0) - (a.priority || 0); })[0];
+
+    var label = top ? ((top.modelRefs || [{}])[0] || {}).model : def;
+    var conds = top ? ((top.rules || {}).conditions || []) : [];
+    function ofType(kind) {
+      return conds.filter(function (c) { return c.type === kind; })
+        .map(function (c) {
+          return kind === 'complexity' ? String(c.name).split(':')[0] : c.name;
+        });
+    }
+
+    var onWire =
+      '# what the client sent\n' +
+      '{ "model": "auto", "messages": [ ... ] }\n' +
+      '\n' +
+      '# what agentgateway forwards after the router has seen it\n' +
+      '{ "model": "' + label + '", "messages": [ ... ] }\n' +
+      'x-selected-model: ' + label;
+
+    var classify =
+      '{\n' +
+      '  "routing_decision": "' + (top ? top.name : '') + '",\n' +
+      '  "recommended_model": "' + label + '",\n' +
+      '  "classification": {\n' +
+      '    "confidence": <0 to 1, measured>,\n' +
+      '    "processing_time_ms": <around 170>\n' +
+      '  },\n' +
+      '  "matched_signals": {\n' +
+      '    "domains": ' + JSON.stringify(ofType('domain')) + ',\n' +
+      '    "keywords": ' + JSON.stringify(ofType('keyword')) + ',\n' +
+      '    "complexity": ' + JSON.stringify(ofType('complexity')) + '\n' +
+      '  }\n' +
+      '}';
+
+    var curl =
+      'kubectl -n agentgateway-system port-forward deploy/semantic-router 8080:8080\n' +
+      '\n' +
+      'curl -s localhost:8080/api/v1/classify/intent \\\n' +
+      '  -H \'content-type: application/json\' \\\n' +
+      '  -d \'{"text": "one of your prompts"}\'';
+
+    var chips = el('div', { class: 'chips', style: 'margin:8px 0 0' });
+    labels.forEach(function (l) {
+      chips.appendChild(el('span', {
+        class: 'chip',
+        style: l === def ? 'border-color:var(--w-note);color:var(--w-note)' : null,
+        title: l === def ? 'written when nothing matches' : null
+      }, [l + (l === def ? '  (fallback)' : '')]));
+    });
+
+    return el('div', { class: 'panel' }, [
+      el('h3', { text: 'What comes out' }),
+      el('p', { class: 'lede' }, [
+        'The router changes two things on the request and nothing else: the ' +
+        'body\'s model field, and one header. It does not pick a destination and it ' +
+        'does not answer the prompt.'
+      ]),
+      el('pre', { class: 'yaml', text: onWire }),
+      el('p', { class: 'hint', style: 'margin:12px 0 0' },
+        ['The complete set of values it can write, from this config:']),
+      chips,
+      el('p', { class: 'hint', style: 'margin:10px 0 0' }, [
+        'Whatever reads these next, a route, a policy or an OPA rule, only ever sees ' +
+        'one of those strings. That is the whole contract between the router and the ' +
+        'rest of the path.'
+      ]),
+
+      el('h3', { text: 'Checking one prompt', style: 'margin:26px 0 6px' }),
+      el('p', { class: 'lede' }, [
+        'The router answers a classification call directly, without going through the ' +
+        'gateway, so you can try a prompt against a deployed config in about 170ms.'
+      ]),
+      el('pre', { class: 'yaml', text: curl }),
+      el('p', { class: 'hint', style: 'margin:12px 0 6px' }, [
+        'A match against the first decision in this config comes back shaped like this. ' +
+        'The names are yours; the two values in angle brackets are measured by the ' +
+        'router, so they are marked rather than invented here.'
+      ]),
+      el('pre', { class: 'yaml', text: classify }),
+      el('p', { class: 'hint', style: 'margin:12px 0 0' }, [
+        'On semantic-router 0.3.0 this endpoint panics on a prompt that matches no ' +
+        'decision, and the caller sees a dropped connection. It is the classification ' +
+        'call only. The ExtProc path the gateway uses handles the same prompt and ' +
+        'returns ',
+        el('code', { text: String(def) }), ', so normal traffic never hits it.'
+      ])
+    ]);
   }
 
   function hostValidateRow(config) {

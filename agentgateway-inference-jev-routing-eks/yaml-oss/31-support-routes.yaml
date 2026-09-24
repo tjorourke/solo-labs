@@ -1,0 +1,38 @@
+# Alternative route profile. Same adapter image and fixture services.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata: {name: coding, namespace: jev-routing-kb}
+spec:
+  ai:
+    provider:
+      openai: {model: kb-coding}
+      host: coding-fixture.jev-routing-kb.svc.cluster.local
+      port: 8080
+      path: /v1/chat/completions
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata: {name: general, namespace: jev-routing-kb}
+spec:
+  ai:
+    provider:
+      openai: {model: kb-general}
+      host: general-fixture.jev-routing-kb.svc.cluster.local
+      port: 8080
+      path: /v1/chat/completions
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: jev-routes, namespace: jev-routing-kb}
+spec:
+  parentRefs: [{name: jev-kb, sectionName: http}]
+  rules:
+    - matches:
+        - path: {type: Exact, value: /v1/chat/completions}
+          headers: [{name: x-jev-task, value: technical}]
+      backendRefs:
+        - {group: agentgateway.dev, kind: AgentgatewayBackend, name: coding}
+    - matches:
+        - path: {type: Exact, value: /v1/chat/completions}
+      backendRefs:
+        - {group: agentgateway.dev, kind: AgentgatewayBackend, name: general}

@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jev-routing-kb
+  labels:
+    app.kubernetes.io/part-of: jev-routing-kb

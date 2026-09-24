@@ -1,0 +1,46 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayParameters
+metadata: {name: jev-kb, namespace: jev-routing-kb}
+spec:
+  service:
+    spec: {type: ClusterIP}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: {name: jev-kb, namespace: jev-routing-kb}
+spec:
+  gatewayClassName: enterprise-agentgateway
+  infrastructure:
+    parametersRef:
+      group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayParameters
+      name: jev-kb
+  listeners:
+    - name: http
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces: {from: Same}
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: jev-classify, namespace: jev-routing-kb}
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: jev-kb}
+  frontend:
+    http:
+      maxBufferSize: 32Ki
+  traffic:
+    phase: PreRouting
+    extProc:
+      backendRef: {name: jev-extproc, port: 50051}
+      failureMode: FailClosed
+      processingOptions:
+        requestHeaderMode: Send
+        requestBodyMode: Buffered
+        requestTrailerMode: Skip
+        responseHeaderMode: Send
+        responseBodyMode: None
+        responseTrailerMode: Skip
+        allowModeOverride: false

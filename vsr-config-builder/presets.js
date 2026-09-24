@@ -33,6 +33,9 @@
     // their own three tiers here without having to translate from someone else's
     // industry.
     'data-classes': {
+      // Site only. A self-hosted copy ships with no worked examples: they are
+      // teaching material for the site, and a customer's build should start empty.
+      siteOnly: true,
       title: 'Three data classes: anywhere, EU only, never leaves',
       blurb: 'One class of data that can go to any approved model, one that must stay ' +
         'on models hosted in the EU, and one that must never reach a model you do not ' +
@@ -104,7 +107,11 @@
     },
 
     'task-routing': {
-      title: 'Task routing, from the Part 4 lab',
+      // Site only, and more strongly than the one above: it is modelled on a lab and
+      // its worked example is fetched from the site, neither of which exists in a
+      // container someone runs themselves.
+      siteOnly: true,
+      title: 'Task routing: two kinds of code work, two subjects, a fallback',
       blurb: 'Six labels for a bank that also runs a network: two kinds of work on ' +
         'existing code, a general coding question, its own subject, the operator ' +
         'network, and a fallback for everything it is not sure about.',
@@ -117,20 +124,6 @@
           'yaml/10-router-tasks.yaml',
         lab: '/solo/agentgateway-inference-task-routing-eks/',
         name: '10-router-tasks.yaml',
-        // What the wizard will not reproduce, and why. Worth saying plainly: a reader
-        // who diffs the two should find the difference explained rather than be left
-        // wondering which one is wrong.
-        differences: [
-          'Two decisions the wizard does not generate: <code>code_review_in_code</code> ' +
-          'and <code>code_modification_in_code</code>. Both drop the domain condition, ' +
-          'because a real prompt arrives with the file attached and a long code block ' +
-          'hands the classifier the vocabulary of the code rather than of the question. ' +
-          'Ledger code reads as business, not computer science.',
-          'The lab\'s comments. They are most of the file and they are the teaching ' +
-          'material, so read the real one for the reasoning behind each threshold.',
-          'Hand-tuned priorities. The lab interleaves them by specificity across ' +
-          'categories; the wizard lays them out ten apart from your ordering.'
-        ]
       },
       plan: {
         endpoint: 'model-gateway.agentgateway-system.svc.cluster.local:80',
