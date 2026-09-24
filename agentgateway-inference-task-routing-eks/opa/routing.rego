@@ -144,6 +144,33 @@ has_internal_code if {
 # exactly as it does today.
 classifies_data if user.data_classes
 
+# Attempts to talk the model out of its instructions, and a password typed into a
+# prompt. Refused outright: nothing is redacted and nothing is forwarded, which is what
+# separates a guardrail from the personal-data check.
+#
+# Decided here rather than as a prompt guard on the route. A guard's rejection is
+# returned as if it were a model response, and the intake hop cannot convert that back
+# for a client speaking the Messages API, so the caller sees a 502 instead of a refusal
+# they can read. An extAuth denial carries its own status and arrives intact.
+#
+# Only for a caller whose organisation classifies its data, for the same reason the
+# classes are: it is their policy, and nobody else's traffic changes.
+jailbreak_patterns := [
+	`(?i)ignore (all |any )?(previous|prior|your) (instructions|rules)`,
+	`(?i)you (now )?have no (rules|restrictions)`,
+	`(?i)(print|reveal|show) (me )?your system prompt`,
+	`(?i)(password|passwort|kennwort)\s*[:=]\s*\S+`,
+]
+
+default has_jailbreak := false
+
+has_jailbreak if {
+	classifies_data
+	body_readable
+	some p in jailbreak_patterns
+	regex.match(p, all_text)
+}
+
 matched_classes := [c |
 	some c in data.dlp.data_classes
 	regex.match(c.pattern, all_text)
@@ -292,10 +319,23 @@ result := {
 	has_secret
 }
 
+# 1b. an attempt to override the model's instructions, or a password in the prompt
+result := {
+	"allowed": false,
+	"http_status": 422,
+	"headers": {"content-type": "application/json", "x-routing-reason": "blocked, tries to override the model or carries a password"},
+	"body": `{"error": {"type": "blocked", "message": "Stopped at the Kernwerk gateway. This request tries to override the model's rules or carries a password, so no model received it."}}`,
+} if {
+	subject
+	not has_secret
+	has_jailbreak
+}
+
 # Allow, and write the decision where the route can match it. Any routing header the client
 # sent is removed first, so where a request runs is decided here and nowhere else.
 result := object.union(allowed_result, lane_header) if {
 	not has_secret
+	not has_jailbreak
 	decision
 }
 

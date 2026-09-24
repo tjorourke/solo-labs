@@ -200,29 +200,27 @@
   /* ---------------------------------------------------------------- step 0 -- */
   function stepStart(body) {
     body.appendChild(el('div', { class: 'panel' }, [
-      el('h3', { text: 'What this does' }),
+      el('h3', { text: 'Before you start' }),
       el('p', { class: 'lede' }, [
-        'Five questions about the kinds of request you want to tell apart, and it writes ' +
-        'the router\'s values file for you. Then it checks the file for the mistake that ' +
-        'is hardest to spot by eye: a rule that looks fine and can never actually fire.'
+        'Four steps of questions, then a review. Your answers stay in this browser and ' +
+        'are saved as you go, so a reload will not lose them.'
       ]),
       el('p', { class: 'lede' }, [
-        'Nothing leaves the browser, and your answers are saved here so a reload does ' +
-        'not lose them. Pick a starting point below, or ',
+        'You can also ',
         el('a', { href: REPO, target: '_blank', rel: 'noopener' },
-          ['run it yourself from the repo']),
-        ': it is a static page, so self-hosting it is an nginx image and five files.'
+          ['run this yourself']),
+        '. It is a static page, so self-hosting it is an nginx image and five files.'
       ]),
-      why('The two ideas the questions are built on', [
+      why('How a router config is put together', [
         'A config is a set of <b>signals</b> and a set of <b>decisions</b>.',
         'A signal is something the router can measure about a prompt: its subject, ' +
         'whether it contains certain words, and how close it sounds to one set of ' +
         'example prompts rather than another.',
         'A decision is a list of signals that must all hold, a priority, and the label ' +
         'to write when they do.',
-        'The YAML is never the hard part. Choosing which signals separate your ' +
-        'categories, and what order to try them in, is the hard part, and that is what ' +
-        'these questions are for.'
+        'Most of the work is choosing which signals separate your categories, and what ' +
+        'order to try them in. That is what the questions ask about. The YAML comes out ' +
+        'at the end.'
       ])
     ]));
 
@@ -762,8 +760,8 @@
         'usually right. Untick any pair that could never be mistaken for one another.'
       ]),
       why('Why it asks about pairs, when you already gave each category its examples', [
-        'Because there is no "whichever category is closest wins" setting. That is the ' +
-        'thing most people expect, and the router does not work that way.',
+        'Because there is no "whichever category is closest wins" setting. Most people ' +
+        'expect one. The router does not have it.',
         'A comparison scores <b>one category minus another</b>: how close the prompt ' +
         'sits to the first category\'s examples, minus how close it sits to the ' +
         'second\'s. One number, from exactly two sets of examples. So "is this A or B" ' +
@@ -1123,9 +1121,9 @@
       el('p', {
         class: 'lede',
         html: 'Every check above is structural. None of it tells you whether your ' +
-          'example prompts actually separate your categories, because that needs the router\'s ' +
-          'embedding model, and that is a 768-dimension classifier on a volume in your ' +
-          'cluster rather than anything that can run in a browser.'
+          'example prompts actually separate your categories. That needs the router\'s ' +
+          'embedding model, a 768-dimension classifier on a volume in your cluster, ' +
+          'which cannot run in a browser.'
       }),
       el('p', {
         class: 'lede',

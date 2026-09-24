@@ -36,9 +36,8 @@
       title: 'Three data classes: anywhere, EU only, never leaves',
       blurb: 'One class of data that can go to any approved model, one that must stay ' +
         'on models hosted in the EU, and one that must never reach a model you do not ' +
-        'run yourself. Usually that distinction lives in a policy document and in a few ' +
-        'people\'s heads, and every developer is trusted to apply it. This is the same ' +
-        'rule applied to every prompt instead.',
+        'run yourself. Usually that rule lives in a policy document and a few people\'s ' +
+        'heads. This applies it to every prompt.',
       plan: {
         endpoint: 'model-gateway.agentgateway-system.svc.cluster.local:80',
 
@@ -217,8 +216,7 @@
 
     'blank': {
       title: 'Start from nothing',
-      blurb: 'Two categories and a fallback, so the shape is visible and every answer ' +
-        'is yours.',
+      blurb: 'Two categories and a fallback. Everything else is yours to fill in.',
       plan: {
         endpoint: 'model-gateway.agentgateway-system.svc.cluster.local:80',
         fallback: 'uncertain',
