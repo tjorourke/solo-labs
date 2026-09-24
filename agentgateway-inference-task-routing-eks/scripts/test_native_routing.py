@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Differential tests against the pre-migration Rego, on a real isolated AGW.
+"""Hybrid routing regressions against the original decisions, on an isolated AGW.
 
 Requires kubectl, opa, PyYAML and cryptography. No model/provider calls. The
 temporary namespace and port-forward are removed even when an assertion fails.
@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--oracle", type=Path)
     parser.add_argument("--keep", action="store_true", help="keep the isolated test namespace for diagnosis")
     args = parser.parse_args()
-    namespace = "native-routing-check"
+    namespace = "hybrid-routing-check"
     kubectl = ["kubectl", "--context", args.context]
 
     def kube(*parts, **kwargs):
@@ -110,20 +110,46 @@ def main():
     numbers = key.public_key().public_numbers()
     jwks = {"keys": [{"kty": "RSA", "kid": "native-test", "alg": "RS256", "use": "sig",
                        "n": b64(numbers.n.to_bytes(256, "big")), "e": b64(numbers.e.to_bytes(3, "big"))}]}
+    controller_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    controller_numbers = controller_key.public_key().public_numbers()
+    controller_jwks = {"keys": [{"kty": "RSA", "kid": "controller-test", "alg": "RS256", "use": "sig",
+                                  "n": b64(controller_numbers.n.to_bytes(256, "big")), "e": b64(controller_numbers.e.to_bytes(3, "big"))}]}
 
     def token(claims):
         payload = {"iss": "https://identity.lab", "aud": "model-gateway", "exp": int(time.time()) + 3600, **claims}
-        part = b64(json.dumps({"alg": "RS256", "kid": "native-test"}).encode()) + "." + b64(json.dumps(payload).encode())
-        return part + "." + b64(key.sign(part.encode(), padding.PKCS1v15(), hashes.SHA256()))
+        controller = payload["iss"] == "agentdesktop-controller"
+        part = b64(json.dumps({"alg": "RS256", "kid": "controller-test" if controller else "native-test"}).encode()) + "." + b64(json.dumps(payload).encode())
+        return part + "." + b64((controller_key if controller else key).sign(part.encode(), padding.PKCS1v15(), hashes.SHA256()))
 
     data = json.loads((ROOT / "opa/routing-data.json").read_text())
+    memberships = json.loads((ROOT / "identity/demo-users.json").read_text())
+    legacy_data = copy.deepcopy(data)
+    legacy_data["users"] = {}
+    for user, groups in memberships.items():
+        legacy_data["users"][user] = {
+            "allowed_model_pools": sorted({pool for group in groups for pool in data["roles"][group]["allowed_model_pools"]}),
+            "data_classes": any(data["roles"][group].get("data_classes", False) for group in groups),
+        }
     for user, pools in [("class-private-only", ["private"]), ("class-frontier-only", ["approved-frontier"]), ("class-none", [])]:
-        data["users"][user] = {"allowed_model_pools": pools, "data_classes": True}
-    pre, post = renderer.policies(args.edition, data=data)
+        legacy_data["users"][user] = {"allowed_model_pools": pools, "data_classes": True}
+        memberships[user] = ["data-classification"] + ["model-private" if pool == "private" else "model-frontier" for pool in pools]
+
+    def group_claims(claims):
+        # Only this IdP fixture knows the demo people. The policies never do.
+        claims = dict(claims)
+        if claims.get("sub") in memberships:
+            claims["groups"] = memberships[claims["sub"]]
+        elif claims.get("sub") and "email" in claims:
+            claims["iss"] = "agentdesktop-controller"
+            claims["idp"] = {"email": claims["email"], "groups": memberships.get(claims["email"].split("@")[0], [])}
+        return claims
+
+    pre, post = renderer.policies(args.edition)
     pre["spec"].get("frontend", {}).pop("tracing", None)
     pre["spec"]["traffic"]["jwtAuthentication"]["providers"] = [
-        {"issuer": "https://identity.lab", "audiences": ["model-gateway"], "jwks": {"inline": json.dumps(jwks)}}]
-    post["spec"]["traffic"]["extAuth"]["backendRef"]["namespace"] = namespace
+        {"issuer": issuer, "audiences": ["model-gateway"], "jwks": {"inline": json.dumps(keys)}}
+        for issuer, keys in [("https://identity.lab", jwks), ("agentdesktop-controller", controller_jwks)]]
+    pre["spec"]["traffic"]["extAuth"]["backendRef"]["namespace"] = namespace
     # Same pre-routing transformation, post-routing denials and metadata fence.
     # Success exposes the computed result without involving any model/provider.
     post["spec"]["traffic"]["directResponse"]["conditional"].append({"condition": "metadata.routing.status == 200", "policy": {
@@ -139,14 +165,16 @@ def main():
     audit_docs = list(yaml.safe_load_all((ROOT / "yaml/20-opa.yaml").read_text()))
     for doc in audit_docs:
         doc["metadata"]["namespace"] = namespace
-    docs += audit_docs + [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "routing-audit-policy", "namespace": namespace},
-                          "data": {"routing.rego": (ROOT / "opa/routing.rego").read_text()}}]
+    docs += audit_docs + [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "routing-policy-code", "namespace": namespace},
+                          "data": {"routing.rego": (ROOT / "opa/routing.rego").read_text()}},
+                         {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "routing-policy-data", "namespace": namespace},
+                          "data": {"routing-data.json": json.dumps(data)}}]
     proc = None
     try:
         kube("apply", "-f", "-", input=yaml.safe_dump_all(docs))
         kube("-n", namespace, "wait", "--for=condition=Programmed", "gateway/decision-gateway", "--timeout=180s")
         kube("-n", namespace, "rollout", "status", "deploy/decision-gateway", "--timeout=180s")
-        kube("-n", namespace, "rollout", "status", "deploy/routing-audit", "--timeout=180s")
+        kube("-n", namespace, "rollout", "status", "deploy/routing-policy", "--timeout=180s")
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
@@ -163,12 +191,12 @@ def main():
             case["raw"] = json.dumps({"model": "auto", **case["body"]}, ensure_ascii=False, separators=(",", ":"))
         policy = args.oracle.read_text() if args.oracle else subprocess.check_output(
             ["git", "show", "45de1be1:agentgateway-inference-task-routing-eks/opa/routing.rego"], cwd=ROOT, text=True)
-        expected = oracle(corpus, data, policy)
+        expected = oracle(corpus, legacy_data, policy)
 
         def check(pair):
             case, want = pair
             request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", data=case["raw"].encode(), headers={
-                "Authorization": "Bearer " + token(case["claims"]), "Content-Type": "application/json", "x-selected-model": case["task"], **case["headers"]})
+                "Authorization": "Bearer " + token(case.get("signed_claims", group_claims(case["claims"]))), "Content-Type": "application/json", "x-selected-model": case["task"], **case["headers"]})
             try:
                 response = urllib.request.urlopen(request, timeout=30)
             except urllib.error.HTTPError as error:
@@ -195,10 +223,35 @@ def main():
             failures = [error for error in executor.map(check, zip(corpus, expected)) if error]
         for error in failures[:30]:
             print(error)
-        print(f"{args.edition}: {len(corpus) - len(failures)}/{len(corpus)} native/legacy decisions match")
+        print(f"{args.edition}: {len(corpus) - len(failures)}/{len(corpus)} hybrid/legacy decisions match")
         if failures:
             kube("-n", namespace, "get", pre["kind"], "-o", "jsonpath={range .items[*]}{.metadata.name}{': '}{.status}{'\\n'}{end}")
             raise SystemExit(1)
+        # New staff and workloads with valid groups need no configuration edit.
+        plain = next(case for case in corpus if case["name"] == "bob/generic_coding/plain")
+        allowed = expected[corpus.index(plain)]
+        denied = {"allowed": False, "http_status": 403, "body": '{"error":{"message":"no suitable permitted backend for this task"}}'}
+        for index in range(32):
+            probe = copy.deepcopy(plain)
+            subject = f"new-identity-{index}"
+            probe["signed_claims"] = {"sub": subject, "groups": ["model-private", "model-frontier"]}
+            want = copy.deepcopy(allowed)
+            want["headers"]["x-routing-user"] = subject
+            failure = check((probe, want))
+            if failure:
+                raise AssertionError("new group member: " + failure)
+        for claims in [{"sub": "bob"}, {"sub": "bob", "groups": "model-frontier"},
+                       {"sub": "bob", "groups": ["unknown-role"]}, {"groups": ["model-frontier"]},
+                       {"sub": "", "groups": ["model-frontier"]},
+                       {"iss": "agentdesktop-controller", "sub": "bob", "groups": ["model-frontier"]}]:
+            probe = copy.deepcopy(plain)
+            probe["signed_claims"] = claims
+            probe["name"] = f"invalid-claims/{claims}"
+            failure = check((probe, denied))
+            if failure:
+                raise AssertionError("missing/invalid group claims: " + failure)
+        print("32 unseen identities and 6 missing/invalid claim cases: passed")
+
         # Remove the producer entirely and supply forged outputs. Native post-
         # routing enforcement must refuse using metadata, never those headers.
         broken = copy.deepcopy(pre)
@@ -207,11 +260,29 @@ def main():
         time.sleep(2)
         probe = copy.deepcopy(corpus[0])
         probe["headers"] = {"x-model-pool": "approved-frontier", "x-model-class": "coding", "x-agw-routing-decision": '{"status":200,"user":"bob"}'}
-        denied = {"allowed": False, "http_status": 403, "body": '{"error":{"message":"no suitable permitted backend for this task"}}'}
         failure = check((probe, denied))
         if failure:
             raise AssertionError("missing-metadata fence: " + failure)
         print("missing-metadata/spoofed-header fence: passed")
+        broken = copy.deepcopy(pre)
+        broken["spec"]["traffic"].pop("extAuth")
+        kube("apply", "-f", "-", input=yaml.safe_dump(broken))
+        time.sleep(2)
+        failure = check((probe, denied))
+        if failure:
+            raise AssertionError("missing-policy-service fence: " + failure)
+        print("missing-policy-service/spoofed-header fence: passed")
+        kube("apply", "-f", "-", input=yaml.safe_dump(pre))
+        kube("-n", namespace, "scale", "deployment/routing-policy", "--replicas=0")
+        time.sleep(4)
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", data=plain["raw"].encode(),
+            headers={"Authorization": "Bearer " + token(group_claims(plain["claims"])), "Content-Type": "application/json"})
+        try:
+            response = urllib.request.urlopen(req, timeout=30)
+        except urllib.error.HTTPError as error:
+            response = error
+        assert response.status == 403, f"policy outage did not fail closed: {response.status}"
+        print("policy service outage: fails closed")
     finally:
         if proc:
             proc.terminate()

@@ -1,0 +1,6 @@
+{
+  "bob": ["model-private", "model-frontier"],
+  "alice": ["model-private"],
+  "dave": ["model-frontier"],
+  "martink": ["model-private", "model-frontier", "model-eu", "data-classification"]
+}

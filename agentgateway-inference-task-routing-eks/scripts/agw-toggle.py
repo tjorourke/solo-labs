@@ -133,11 +133,9 @@ class Toggle:
             read_json(path)  # Fail on malformed config before making any changes.
 
     def known_subjects(self):
-        """Who there is an entitlement for, read from the file OPA is given. One list, so
-        adding a caller to the routing data is all it takes to sign in as them and there is
-        no second copy here to fall behind. 01-identity.sh mints a token per caller."""
+        """Demo identities belong to the lab IdP fixture, not the gateway policy."""
         try:
-            users = json.loads((self.lab / 'opa/routing-data.json').read_text())['users']
+            users = json.loads((self.lab / 'identity/demo-users.json').read_text())
         except (OSError, ValueError, KeyError, TypeError):
             return ('bob', 'alice', 'dave')
         return tuple(users) or ('bob', 'alice', 'dave')
@@ -150,6 +148,7 @@ class Toggle:
             raw = self.token.read_text().strip().split('.')[1]
             claims = json.loads(base64.urlsafe_b64decode(raw + '=' * (-len(raw) % 4)))
             if (isinstance(claims, dict) and claims.get('sub') == self.subject
+                    and claims.get('groups') == json.loads((self.lab / 'identity/demo-users.json').read_text()).get(self.subject)
                     and int(claims.get('exp', 0)) > time.time() + 60):
                 return
         except (OSError, ValueError, IndexError, TypeError):

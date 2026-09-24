@@ -32,8 +32,8 @@ for line in sys.stdin:
     if d.get("event") == "router_replay_start":
         print("signals:   " + json.dumps({k: v for k, v in d.get("signals", {}).items() if v}))'
 
-section "AGW native decision (immediate audit event)"
-kubectl -n "$NS" logs deploy/routing-audit --since-time="$MARK" | { grep '"decision_id"' || true; } | tail -1 | python3 -c '
+section "AGW routing decision (trusted metadata)"
+kubectl -n "$NS" logs deploy/routing-policy --since-time="$MARK" | { grep '"decision_id"' || true; } | tail -1 | python3 -c '
 import json, sys
 line = sys.stdin.readline()
 if not line.strip(): print("no decision logged"); sys.exit()

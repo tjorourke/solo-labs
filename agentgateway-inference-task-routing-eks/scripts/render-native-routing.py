@@ -1,39 +1,16 @@
 #!/usr/bin/env python3
-"""Render the native decision policy from the shared routing data and CEL source.
+"""Render the native JWT, shaping and enforcement policies for the hybrid router.
 
 The rendered templates are checked in for the Manifests page and OSS mirror.
 JWKS substitution remains the install script's job. --check never writes files.
 """
 import argparse
-import json
-import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def decision_expression(data=None):
-    if data is None:
-        data = json.loads((ROOT / "opa/routing-data.json").read_text())
-    return (ROOT / "native/decision.cel").read_text().replace(
-        "__DATA__", json.dumps(data, separators=(",", ":")))
-
-
-def apply_data(data, context, namespace="agentgateway-system"):
-    """Update only native routing metadata; retain live JWKS, tracing and overlays."""
-    kube = ["kubectl", "--context", context, "-n", namespace]
-    current = subprocess.run(kube + ["get", "enterpriseagentgatewaypolicy", "decide", "-o", "json"],
-                             text=True, capture_output=True, check=True)
-    policy = json.loads(current.stdout)
-    patch = [
-        {"op": "test", "path": "/metadata/resourceVersion", "value": policy["metadata"]["resourceVersion"]},
-        {"op": "replace", "path": "/spec/traffic/transformation/request/metadata/routing", "value": decision_expression(data)},
-    ]
-    subprocess.run(kube + ["patch", "enterpriseagentgatewaypolicy", "decide", "--type=json", "-p", json.dumps(patch)],
-                   text=True, capture_output=True, check=True)
-
-
-def policies(edition="enterprise", data=None):
+def policies(edition="enterprise"):
     group = "enterpriseagentgateway.solo.io" if edition == "enterprise" else "agentgateway.dev"
     kind = "EnterpriseAgentgatewayPolicy" if edition == "enterprise" else "AgentgatewayPolicy"
     target = {"group": "gateway.networking.k8s.io", "kind": "Gateway", "name": "decision-gateway"}
@@ -50,16 +27,17 @@ def policies(edition="enterprise", data=None):
               "x-model-class": "metadata.routing.class",
               "x-routing-reason": "metadata.routing.reason",
               "x-routing-user": "metadata.routing.user",
-              "x-kernwerk-lane": 'metadata.routing.lane != "" ? metadata.routing.lane : null',
-              "x-agw-routing-decision": "toJson(metadata.routing)"}
+               "x-kernwerk-lane": 'metadata.routing.lane != "" ? metadata.routing.lane : null'}
     pre = policy("decide", {
         "phase": "PreRouting",
         "jwtAuthentication": {"mode": "Strict", "providers": [
             {"issuer": "https://identity.lab", "audiences": ["model-gateway"], "jwks": {"inline": "__JWKS__"}},
             {"issuer": "agentdesktop-controller", "audiences": ["model-gateway"], "jwks": {"inline": "__AD_JWKS__"}},
         ]},
+        "extAuth": {"backendRef": {"name": "routing-policy", "namespace": "agentgateway-system", "port": 9191},
+                    "grpc": {}, "forwardBody": {"maxSize": "8Mi"}, "failureMode": "FailClosed"},
         "transformation": {
-            "request": {"metadata": {"routing": decision_expression(data), "routing_body": "string(request.body)"},
+            "request": {"metadata": {"routing": "extauthz.routing", "routing_body": "string(request.body)"},
                         "set": [{"name": k, "value": v} for k, v in fields.items()]},
             "response": {"set": [{"name": name, "value": expr} for name, expr in {
                 "x-model-pool": "metadata.routing.status == 200 ? metadata.routing.pool : null",
@@ -68,8 +46,7 @@ def policies(edition="enterprise", data=None):
             }.items()]},
         },
     })
-    # Also record the native result at completion. A budget may refuse before
-    # PostRouting extAuth runs; this preserves those cards as well as audit ones.
+    # Retain the decision at completion, including requests refused by a budget.
     pre["spec"]["frontend"] = {"accessLog": {"attributes": {"add": [
         {"name": "routing.decision", "expression": "toJson(metadata.routing)"},
         {"name": "routing.body", "expression": "metadata.routing_body"},
@@ -80,10 +57,6 @@ def policies(edition="enterprise", data=None):
             "protocol": "GRPC", "randomSampling": "true"}
 
     post = policy("routing-outcome", {
-        # The audit adapter records an immediate event for the existing live
-        # console. It always allows; AGW alone enforces the decision below.
-        "extAuth": {"backendRef": {"name": "routing-audit", "namespace": "agentgateway-system", "port": 9191},
-                    "grpc": {}, "forwardBody": {"maxSize": "8Mi"}, "failureMode": "FailClosed"},
         "directResponse": {"conditional": [
             {"condition": '!has(metadata.routing) || !(metadata.routing.status in [200, 422])',
              "policy": {"status": 403, "headers": [{"name": "content-type", "value": "application/json"}],
@@ -95,6 +68,39 @@ def policies(edition="enterprise", data=None):
         "transformation": {"request": {"remove": ["x-agw-routing-decision"]}},
     })
     return pre, post
+
+
+def annotate_policy(text, name):
+    """Keep the walkthrough comments in both generated editions of the CRD."""
+    if name == "decide":
+        notes = {
+            "  targetRefs:": "Attach to decision-gateway, so these checks run for its requests.",
+            "    phase: PreRouting": "Make the decision before AGW selects an HTTPRoute.",
+            "    jwtAuthentication:": "Verify the signature, issuer and audience before forwarding claims to Rego.",
+            "    extAuth:": "Rego evaluates group permissions and data rules. An unavailable service fails closed.",
+            "          routing:": "Copy the trusted extAuth result. No users, permissions or decision programme live here.",
+            "          routing_body:": "Keep the original body for the decision dashboard.",
+            "        set:": "Overwrite caller-supplied routing headers with the trusted decision.",
+            "      response:": "Return the pool, model class and reason to the client where applicable.",
+            "  frontend:": "Record the decision even when a later budget check refuses the request.",
+        }
+    else:
+        notes = {
+            "    directResponse:": "After route selection, enforce the saved decision before any model call.",
+            "      - condition:": "Missing metadata or no permitted route returns 403; a blocked prompt returns 422.",
+            "    transformation:": "Remove the audit-only header before forwarding an allowed request.",
+        }
+    lines = []
+    for line in text.splitlines():
+        for prefix in list(notes):
+            if line.startswith(prefix):
+                indent = line[:len(line) - len(line.lstrip())]
+                lines.append(indent + "# " + notes.pop(prefix))
+                break
+        lines.append(line)
+    if notes:
+        raise ValueError(f"annotation fields missing from {name}: {list(notes)}")
+    return "\n".join(lines) + "\n"
 
 
 def main():
@@ -112,8 +118,9 @@ def main():
     args = parser.parse_args()
     for edition, folder in [("enterprise", "yaml"), ("oss", "yaml-oss")]:
         for policy, filename in zip(policies(edition), ["50-decide-policy.yaml.tmpl", "51-routing-outcome.yaml"]):
-            text = "# Generated by scripts/render-native-routing.py. Edit native/decision.cel or opa/routing-data.json.\n"
-            text += yaml.dump(policy, Dumper=Dumper, sort_keys=False, width=100)
+            text = "# Generated by scripts/render-native-routing.py. Business rules live in opa/routing.rego.\n"
+            text += annotate_policy(yaml.dump(policy, Dumper=Dumper, sort_keys=False, width=100),
+                                    policy["metadata"]["name"])
             path = ROOT / folder / filename
             if args.check:
                 if path.read_text() != text:

@@ -35,6 +35,7 @@ def main():
     def token(user):
         part = b64(b'{"alg":"RS256","kid":"lab-key"}') + "." + b64(json.dumps({
             "iss": "https://identity.lab", "aud": "model-gateway", "sub": user,
+            "groups": json.loads((ROOT / "identity/demo-users.json").read_text()).get(user, []),
             "iat": int(time.time()), "exp": int(time.time()) + 1800}).encode())
         return part + "." + b64(key.sign(part.encode(), padding.PKCS1v15(), hashes.SHA256()))
 
@@ -96,7 +97,7 @@ def main():
         dashboard.on_pii(line)
     for line in logs("decision-gateway"):
         dashboard.on_gateway(line)
-    for line in logs("routing-audit"):
+    for line in logs("routing-policy"):
         dashboard.on_opa(line)
     for result in results:
         matches = [card for card in dashboard.cards if (card.get("request_key") or "").startswith(result["trace"] + ":")]

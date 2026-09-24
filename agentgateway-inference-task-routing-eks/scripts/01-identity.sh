@@ -3,9 +3,9 @@
 #
 #   ./scripts/01-identity.sh
 #
-# Three employees and one forgery. bob may use private models and the approved frontier,
-# alice private only, dave the frontier only; what each may use is in opa/routing-data.json,
-# not in the token. The token carries who they are, nothing about where they may go.
+# identity/demo-users.json is this lab's IdP fixture. It assigns group memberships
+# to demo identities. Production gets these claims from its IdP, without changing
+# the gateway or adding people to Rego's routing data.
 #
 # There is no Keycloak here on purpose: the lab is about routing, and all the gateway needs
 # from an identity provider is a JWKS to verify signatures against. Part 3's signing key is
@@ -13,7 +13,7 @@
 # Production swaps jwks.inline for jwks.remote pointing at the real IdP.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 set -euo pipefail
-ID="$HERE/identity"; mkdir -p "$ID"
+ID="${LAB_ID_DIR:-$HERE/identity}"; mkdir -p "$ID"
 PART3_ID="$(cd "${PART3_DIR:-$HERE/../agentgateway-inference-identity-routing-eks}" 2>/dev/null && pwd || true)/identity"
 ISS="${LAB_ISSUER:-https://identity.lab}"
 AUD="${LAB_AUDIENCE:-model-gateway}"
@@ -44,15 +44,23 @@ mint() { # mint <key.pem> <json claims> -> compact JWT
   printf '%s.%s.%s' "$h" "$p" "$s"
 }
 NOW=$(date +%s); EXP=$((NOW + 86400 * 30))
-claims() { printf '{"iss":"%s","aud":"%s","sub":"%s","iat":%s,"exp":%s}' "$ISS" "$AUD" "$1" "$NOW" "$2"; }
+claims() {
+  python3 - "$HERE/identity/demo-users.json" "$ISS" "$AUD" "$1" "$NOW" "$2" <<'PY'
+import json, sys
+path, issuer, audience, subject, issued, expires = sys.argv[1:]
+with open(path) as source:
+    groups = json.load(source)[subject]
+print(json.dumps({"iss": issuer, "aud": audience, "sub": subject,
+                  "groups": groups, "iat": int(issued), "exp": int(expires)}))
+PY
+}
 
 echo "==> tokens (30 days, issuer $ISS, audience $AUD)"
 {
   echo "export BOB_TOKEN='$(mint "$ID/signing-key.pem" "$(claims bob $EXP)")'"
   echo "export ALICE_TOKEN='$(mint "$ID/signing-key.pem" "$(claims alice $EXP)")'"
   echo "export DAVE_TOKEN='$(mint "$ID/signing-key.pem" "$(claims dave $EXP)")'"
-  # The caller whose organisation classifies its own data. Same key, same issuer: the
-  # difference is in the entitlements, not the token, which is the point the token makes.
+  # Membership of data-classification enables this organisation's data rules.
   echo "export MARTINK_TOKEN='$(mint "$ID/signing-key.pem" "$(claims martink $EXP)")'"
   echo "export BADSIG_TOKEN='$(mint "$ID/wrong-key.pem" "$(claims bob $EXP)")'"
 } > "$ID/tokens.env"

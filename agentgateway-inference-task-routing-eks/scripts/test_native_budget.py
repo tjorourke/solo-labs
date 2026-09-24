@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Verify native routing with a one-token budget on a temporary test identity.
+"""Verify hybrid routing with a one-token budget on an unseen test identity.
 
 No existing user's limit is changed. Makes short real model calls, restores the
-decision expression and deletes the temporary budget in finally.
+temporary budget in finally. No identity is added to any gateway or policy data.
 """
 import argparse
 import base64
@@ -33,26 +33,19 @@ def main():
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--signing-key", type=Path, required=True)
     args = parser.parse_args()
-    renderer, dashboard = load("render-native-routing.py"), load("30-dashboard.py")
+    dashboard = load("30-dashboard.py")
     kube = ["kubectl", "--context", args.context, "-n", "agentgateway-system"]
 
     def run(*parts, **kwargs):
         return subprocess.run(kube + list(parts), text=True, check=True, capture_output=True, **kwargs)
 
-    original = json.loads(run("get", "EnterpriseAgentgatewayPolicy", "decide", "-o", "json").stdout)
-    pointer = "/spec/traffic/transformation/request/metadata/routing"
-    previous = original["spec"]["traffic"]["transformation"]["request"]["metadata"]["routing"]
-    data = json.loads(json.loads(run("get", "cm", "opa-entitlements", "-o", "json").stdout)["data"]["entitlements.json"])
     user = "native-budget-" + uuid.uuid4().hex[:8]
-    data["users"][user] = {"allowed_model_pools": ["private", "approved-frontier"]}
-    expression = renderer.decision_expression(data)
     key = serialization.load_pem_private_key(args.signing_key.read_bytes(), password=None)
     enc = lambda b: base64.urlsafe_b64encode(b).decode().rstrip("=")
-    part = enc(b'{"alg":"RS256","kid":"lab-key"}') + "." + enc(json.dumps({"iss": "https://identity.lab", "aud": "model-gateway", "sub": user, "exp": int(time.time()) + 1800}).encode())
+    part = enc(b'{"alg":"RS256","kid":"lab-key"}') + "." + enc(json.dumps({"iss": "https://identity.lab", "aud": "model-gateway", "sub": user, "groups": ["model-private", "model-frontier"], "exp": int(time.time()) + 1800}).encode())
     token = part + "." + enc(key.sign(part.encode(), padding.PKCS1v15(), hashes.SHA256()))
     budget = {"apiVersion": "enterpriseagentgateway.solo.io/v1alpha1", "kind": "EnterpriseAgentgatewayBudget", "metadata": {"name": user, "namespace": "agentgateway-system"},
               "spec": {"budgets": [{"name": user, "subject": {"user": user, "modelPool": "approved-frontier"}, "limit": {"amount": 1, "unit": "Tokens"}, "window": {"unit": "Day"}, "onBudgetExceeded": "Block"}]}}
-    changed = False
     mark = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     def request(path):
@@ -66,8 +59,6 @@ def main():
         return response.status, json.loads(response.read()), trace
 
     try:
-        renderer.apply_data(data, args.context)
-        changed = True
         run("apply", "-f", "-", input=json.dumps(budget))
         time.sleep(4)
         for attempt in range(8):
@@ -91,12 +82,6 @@ def main():
         print("PASS budget 429 in Chat Completions and Messages; native access-log card includes identity, prompt and pool")
     finally:
         run("delete", "EnterpriseAgentgatewayBudget", user, "--ignore-not-found")
-        if changed:
-            # Refuse to overwrite a concurrent policy edit while cleaning up.
-            run("patch", "EnterpriseAgentgatewayPolicy", "decide", "--type=json", "-p", json.dumps([
-                {"op": "test", "path": pointer, "value": expression},
-                {"op": "replace", "path": pointer, "value": previous},
-            ]))
 
 
 if __name__ == "__main__":

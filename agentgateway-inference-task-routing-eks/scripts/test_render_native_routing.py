@@ -2,7 +2,6 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 
 import yaml
 
@@ -21,16 +20,14 @@ class NativeRenderingTests(unittest.TestCase):
             providers = rendered["spec"]["traffic"]["jwtAuthentication"]["providers"]
             self.assertEqual([p["jwks"]["inline"] for p in providers], [jwks, jwks])
 
-    def test_entitlement_update_changes_only_the_native_expression(self):
-        from subprocess import CompletedProcess
-        current = {"metadata": {"resourceVersion": "123"}, "spec": {"traffic": {"jwtAuthentication": {"providers": ["live-provider"]}}}}
-        with patch.object(renderer.subprocess, "run", side_effect=[CompletedProcess([], 0, json.dumps(current)), CompletedProcess([], 0)]) as run:
-            renderer.apply_data({"users": {}}, "test-context")
-        args = run.call_args_list[1].args[0]
-        operations = json.loads(args[args.index("-p") + 1])
-        self.assertEqual(operations[0], {"op": "test", "path": "/metadata/resourceVersion", "value": "123"})
-        self.assertEqual(operations[1]["path"], "/spec/traffic/transformation/request/metadata/routing")
-        self.assertEqual(len(operations), 2)
+    def test_generated_policies_round_trip_without_embedding_the_identity_directory(self):
+        for edition, directory in [("enterprise", "yaml"), ("oss", "yaml-oss")]:
+            expected = renderer.policies(edition)
+            for policy, filename in zip(expected, ["50-decide-policy.yaml.tmpl", "51-routing-outcome.yaml"]):
+                self.assertEqual(yaml.safe_load((ROOT / directory / filename).read_text()), policy)
+                text = json.dumps(policy)
+                self.assertNotIn('"users"', text)
+                self.assertNotIn('.with(', text)
 
 
 if __name__ == "__main__":

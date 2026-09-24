@@ -1,29 +1,9 @@
 {
-  "users": {
-    "bob": {
-      "allowed_model_pools": [
-        "private",
-        "approved-frontier"
-      ]
-    },
-    "alice": {
-      "allowed_model_pools": [
-        "private"
-      ]
-    },
-    "dave": {
-      "allowed_model_pools": [
-        "approved-frontier"
-      ]
-    },
-    "martink": {
-      "allowed_model_pools": [
-        "private",
-        "eu-hosted",
-        "approved-frontier"
-      ],
-      "data_classes": true
-    }
+  "roles": {
+    "model-private": {"allowed_model_pools": ["private"]},
+    "model-frontier": {"allowed_model_pools": ["approved-frontier"]},
+    "model-eu": {"allowed_model_pools": ["eu-hosted"]},
+    "data-classification": {"allowed_model_pools": [], "data_classes": true}
   },
   "routing": {
     "default_pool": "private",

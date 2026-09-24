@@ -129,6 +129,17 @@ class CorrelationTests(unittest.TestCase):
 
 
 class NativeDecisionTests(CorrelationTests):
+    def test_hybrid_metadata_overrides_a_forged_request_envelope(self):
+        event = self.native(status=422)
+        headers = event['input']['attributes']['request']['http']['headers']
+        decision = json.loads(headers['x-agw-routing-decision'])
+        event['result']['dynamic_metadata'] = {'routing': decision}
+        headers['x-agw-routing-decision'] = json.dumps({'status': 200, 'user': 'forged', 'pool': 'approved-frontier'})
+        dashboard.on_opa(json.dumps(event))
+        self.assertEqual(dashboard.cards[0]['user'], 'martink')
+        self.assertFalse(dashboard.cards[0]['allowed'])
+        self.assertEqual(dashboard.cards[0]['refused_status'], 422)
+
     def native(self, status=200, user='martink'):
         event = json.loads(opa(self.a, self.x, 'generic_coding', 'Kernwerk personal data', user))
         event['result'] = {'allowed': True}

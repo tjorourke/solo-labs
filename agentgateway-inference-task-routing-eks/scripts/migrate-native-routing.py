@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Migrate an existing Enterprise demo, preserving its live IdP keys and users.
+"""Migrate an existing Enterprise demo to hybrid, group-based routing.
 
 Use --backup PATH --context CONTEXT to apply, or --restore PATH --context CONTEXT
 to restore the exact policies saved before migration. No secrets or signing keys
-are read. The original OPA deployment is left available for rollback/Part 3.
+are read. Prepare group-bearing tokens and refresh Agentdesktop enrolments first.
+The original OPA and audit deployments stay available for rollback/Part 3.
 """
 import argparse
 import importlib.util
@@ -49,6 +50,8 @@ def main():
 
     if args.restore:
         backup = json.loads(args.restore.read_text())
+        if backup["context"] != args.context:
+            raise SystemExit("Rollback context does not match the snapshot")
         run("apply", "-f", "-", input=yaml.safe_dump_all(backup["objects"]))
         for item in backup["created"]:
             run("delete", item["kind"], item["name"], "--ignore-not-found")
@@ -57,8 +60,7 @@ def main():
         raise SystemExit("Refusing to overwrite an existing rollback snapshot")
 
     old = get("EnterpriseAgentgatewayPolicy", "decide")
-    data = json.loads(get("ConfigMap", "opa-entitlements")["data"]["entitlements.json"])
-    pre, post = renderer.policies(data=data)
+    pre, post = renderer.policies()
     pre["spec"]["traffic"]["jwtAuthentication"] = old["spec"]["traffic"]["jwtAuthentication"]
     # Keep any live telemetry configuration while adding the native audit fields.
     native_log = pre["spec"]["frontend"]["accessLog"]["attributes"]["add"]
@@ -66,8 +68,10 @@ def main():
     attributes = pre["spec"]["frontend"].setdefault("accessLog", {}).setdefault("attributes", {})
     attributes["add"] = [item for item in attributes.get("add", []) if item["name"] not in {"routing.decision", "routing.body"}] + native_log
     setup = list(yaml.safe_load_all((ROOT / "yaml/20-opa.yaml").read_text()))
-    setup.append({"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "routing-audit-policy", "namespace": "agentgateway-system"},
+    setup.append({"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "routing-policy-code", "namespace": "agentgateway-system"},
                   "data": {"routing.rego": (ROOT / "opa/routing.rego").read_text()}})
+    setup.append({"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "routing-policy-data", "namespace": "agentgateway-system"},
+                  "data": {"routing-data.json": (ROOT / "opa/routing-data.json").read_text()}})
     denied = yaml.safe_load((ROOT / "yaml/52-denied-route.yaml").read_text())
     objects = setup + [denied, post, pre]
     overlay = get("EnterpriseAgentgatewayPolicy", "kernwerk-decision-dlp", optional=True)
@@ -85,9 +89,9 @@ def main():
     args.backup.write_text(json.dumps(backup, indent=2))
     run("apply", "--dry-run=server", "-f", "-", input=yaml.safe_dump_all(objects))
     run("apply", "-f", "-", input=yaml.safe_dump_all(setup))
-    run("rollout", "status", "deploy/routing-audit", "--timeout=180s")
+    run("rollout", "status", "deploy/routing-policy", "--timeout=180s")
     run("apply", "-f", "-", input=yaml.safe_dump_all(objects[len(setup):]))
-    print(f"Applied native routing. Rollback: --context {args.context} --restore {args.backup}")
+    print(f"Applied hybrid routing. Rollback: --context {args.context} --restore {args.backup}")
 
 
 if __name__ == "__main__":

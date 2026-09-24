@@ -152,10 +152,9 @@ add_user tom    Tom   tom@corp.example
 add_user bob    Bob   bob@corp.example
 add_user priya  Priya priya@corp.example
 add_user leaver Alex  leaver@corp.example
-# Kernwerk's data protection lead. Enrol as him rather than bob to see the data
-# classes: the routing policy gives martink an entitlement that classifies his
-# data, and OPA reads the login out of the email the same way it does for bob.
+# Kernwerk's data protection lead. His IdP groups enable the data-classification policy.
 add_user martink Martin martink@corp.example
+python3 "$SCRIPT_DIR/agentdesktop-groups.py" --context "$CTX" --realm "$REALM" --client "$CLIENT_ID"
 
 # ── 3. PostgreSQL for controller state ────────────────────────────────────────
 step "PostgreSQL in $AD_NS"

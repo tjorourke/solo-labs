@@ -7,7 +7,7 @@
 One card per request: who asked, the task the router chose, what AGW decided and why,
 which model answered and with what status. Join two logs by trace ID AND span ID:
 
-    routing-audit      immediate event    native decision, subject and prompt
+    routing-policy     immediate event    Rego decision, subject and prompt
     decision-gateway   access log         the backend that answered, the model, the status
 
 Nothing is written to the cluster. Close it with ctrl-c.
@@ -97,22 +97,14 @@ def drop_request(key):
     publish({"id": card_id, "drop": True})
 
 
-# Lab tokens put the employee in sub (bob, alice, dave). An Agentdesktop token puts a
-# Keycloak UUID there and the login in email, so the same rule OPA applies in
-# opa/routing.rego has to apply here or every enrolled request is filed under a UUID.
-KNOWN_USERS = set(
-    json.loads(
-        (Path(__file__).resolve().parents[1] / "opa/routing-data.json").read_text()
-    ).get("users", {})
-)
-
-
 def resolve_subject(payload):
+    """Display verified identity claims without maintaining a directory of people."""
     sub = payload.get("sub")
-    if sub in KNOWN_USERS:
+    if payload.get("iss") == "https://identity.lab":
         return sub
-    email = payload.get("email")
-    if isinstance(email, str) and email.split("@")[0] in KNOWN_USERS:
+    identity = payload.get("idp") if isinstance(payload.get("idp"), dict) else payload
+    email = identity.get("email")
+    if isinstance(email, str) and email:
         return email.split("@")[0]
     return sub
 
@@ -273,15 +265,17 @@ def on_opa(line):
                .get("envoy.filters.http.jwt_authn", {}).get("jwt_payload", {}))
     sub = resolve_subject(payload)
     result = d.get("result") or {}
-    # The audit service always allows. Its result is not an access decision.
-    # AGW computed this envelope from verified identity and the request body,
-    # overwrote any caller-supplied value, and enforces it after the audit hop.
-    native_text = http_in.get("headers", {}).get("x-agw-routing-decision")
-    if native_text:
+    # The hybrid service returns its decision through dynamic metadata. Never let
+    # a forged request header override this trusted result. Retain the old audit
+    # envelope only for historical logs emitted before the hybrid migration.
+    native = result.get("dynamic_metadata", {}).get("routing")
+    native_text = http_in.get("headers", {}).get("x-agw-routing-decision") if result == {"allowed": True} else None
+    if native is None and native_text:
         try:
             native = json.loads(native_text)
         except (ValueError, TypeError):
             return
+    if native is not None:
         if not isinstance(native, dict) or native.get("status") not in (200, 403, 422):
             return
         sub = native.get("user") or sub
@@ -396,9 +390,8 @@ def on_gateway(line):
         f[name] = value
     sub = f.get("jwt.sub")
     key = request_key(f.get("trace.id"), f.get("span.id"))
-    # A native budget refusal happens before the post-routing audit hook. Use
-    # AGW's metadata snapshot to populate that card, without guessing correlation
-    # or inventing an allow from the audit transport's unconditional success.
+    # Use the trusted metadata snapshot if the policy event has not arrived yet,
+    # without guessing correlation or treating a transport allow as a decision.
     if f.get("routing.decision") and key:
         with lock:
             has_decision = any(c.get("request_key") == key and "decision_ts" in c for c in cards)
@@ -409,8 +402,8 @@ def on_gateway(line):
                     "method": "POST", "body": f.get("routing.body", ""),
                     "headers": {"traceparent": f"00-{f.get('trace.id')}-{f.get('span.id')}-01",
                                 "x-selected-model": json.loads(f["routing.decision"]).get("task"),
-                                "x-agw-routing-decision": f["routing.decision"]},
-                }}}}, "result": {"allowed": True},
+                                },
+                }}}}, "result": {"allowed": True, "dynamic_metadata": {"routing": json.loads(f["routing.decision"])}},
             }))
     patch = {
         "status": f.get("http.status"),
@@ -425,7 +418,9 @@ def on_gateway(line):
     # The access log carries the raw sub. For an enrolled laptop that is a Keycloak UUID,
     # and the OPA event for the same request already resolved it to the login, so this
     # only fills the gap when OPA has not been seen yet.
-    if sub and sub in KNOWN_USERS:
+    with lock:
+        has_user = any(c.get("request_key") == key and c.get("user") for c in cards)
+    if sub and not has_user:
         patch["user"] = sub
     upsert_event(key, **patch)
 
@@ -837,8 +832,8 @@ def main():
         raise SystemExit("Set KUBE_CONTEXT to the task-routing cluster before starting the dashboard.")
     # Fail before opening an empty UI if the wrong context or namespace was supplied.
     subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deployment",
-                    "routing-audit", "decision-gateway", "-o", "name"], check=True)
-    watch = [("routing-audit", on_opa), ("decision-gateway", on_gateway)]
+                    "routing-policy", "decision-gateway", "-o", "name"], check=True)
+    watch = [("routing-policy", on_opa), ("decision-gateway", on_gateway)]
     # Only present when the Kernwerk overlay is installed. Without it the page is the
     # task router's own and simply has no redactions to show.
     if subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deploy", "kernwerk-pii"],

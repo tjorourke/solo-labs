@@ -1,11 +1,10 @@
-# An immediate audit event for the live console, using OPA's existing log format.
-# This service has no routing data and makes no access-control decision. Native
-# AGW PreRouting CEL decides; the PostRouting policy refuses or forwards.
-# Separate names allow migration without replacing the old authoriser in place.
+# Rego evaluates group permissions, task preference and data rules.
+# The result reaches AGW through trusted gRPC dynamic metadata, not a header.
+# Decision logs also provide the live console's immediate, correlated event.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: routing-audit-config
+  name: routing-policy-config
   namespace: agentgateway-system
 data:
   config.yaml: |
@@ -20,20 +19,20 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: routing-audit
+  name: routing-policy
   namespace: agentgateway-system
 spec:
   replicas: 1
   selector:
-    matchLabels: {app: routing-audit}
+    matchLabels: {app: routing-policy}
   template:
     metadata:
-      labels: {app: routing-audit}
+      labels: {app: routing-policy}
     spec:
       containers:
-      - name: audit
+      - name: policy
         image: openpolicyagent/opa:1.20.2-envoy-static
-        args: [run, --server, --config-file=/config/config.yaml, --addr=0.0.0.0:8181, --diagnostic-addr=0.0.0.0:8282, /policy/routing.rego]
+        args: [run, --server, --watch, --config-file=/config/config.yaml, --addr=0.0.0.0:8181, --diagnostic-addr=0.0.0.0:8282, /policy/routing.rego, /data/routing-data.json]
         ports:
         - {name: grpc, containerPort: 9191}
         readinessProbe:
@@ -43,18 +42,21 @@ spec:
         volumeMounts:
         - {name: config, mountPath: /config}
         - {name: policy, mountPath: /policy}
+        - {name: data, mountPath: /data}
       volumes:
       - name: config
-        configMap: {name: routing-audit-config}
+        configMap: {name: routing-policy-config}
       - name: policy
-        configMap: {name: routing-audit-policy}
+        configMap: {name: routing-policy-code}
+      - name: data
+        configMap: {name: routing-policy-data}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: routing-audit
+  name: routing-policy
   namespace: agentgateway-system
 spec:
-  selector: {app: routing-audit}
+  selector: {app: routing-policy}
   ports:
   - {name: grpc, port: 9191, targetPort: 9191, appProtocol: grpc}

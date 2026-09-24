@@ -89,7 +89,7 @@ same token, and names no model and no place. Each was run against the gateway on
 | alice | private |
 | dave | approved-frontier only, so a review from dave is an error |
 
-Rule precedence in `native/decision.cel`, first match wins: a credential in the prompt blocks;
+Rule precedence in `opa/routing.rego`, first match wins: a credential in the prompt blocks;
 the company's own code in the prompt, or an internal repository named in `x-source-repo`,
 forces private; then the table's preferred pool if permitted; then private if permitted;
 then an error. There is no fall-through to the frontier.
@@ -157,34 +157,34 @@ export ANTHROPIC_API_KEY=...
 ./scripts/00-check.sh             # 4  the platform is serving
 ./scripts/01-identity.sh          #    tokens for bob, alice, dave, and a forgery; reuses Part 3's signing key
 ./scripts/02-router.sh            # 5  vLLM Semantic Router becomes a task classifier
-./scripts/03-opa.sh               # 6  immediate audit transport; no routing logic in OPA
+./scripts/03-opa.sh               # 6  the routing policy service, with group-based Rego rules
 ./scripts/04-decision-gateway.sh  # 7  the decision gateway, backends, policy and route
 ./scripts/05-classify-gateway.sh  # 8  the classify listener verifies, classifies, hands on
 ```
 
 Or `./scripts/quick.sh up`, which runs the install steps first and then these.
 
-**The entitlement table is a lab configuration.** The renderer embeds it in the CEL
-expression, whose CRD limit is 16,384 characters. It is not an organisation-wide identity
-directory. Larger deployments should use verified entitlement claims or an external
-entitlement source. The console's agent-registration flow patches the native expression
-and retains the shared ConfigMap; it no longer restarts OPA.
+**The group map is a lab configuration.** The router reads verified identity claims and
+group membership from the IdP fixture, not from a hand-edited per-user directory in the
+policy. Larger deployments should use verified entitlement claims or an external identity
+source. The console's agent-registration flow updates the published policy and keeps the
+shared routing data stable.
 
 ### Upgrading an existing demo
 
 `scripts/migrate-native-routing.py --context <context> --backup /path/to/rollback.json`
-preserves the live JWT providers and registered users, installs the audit transport,
-then switches to native decisions and enforcement. `--restore /path/to/rollback.json`
-restores the saved policies. The old authoriser remains available for rollback and Part 3.
+preserves the live JWT providers and registered identities, installs the hybrid routing
+policy service, then switches the gateway to the trusted Rego decision path and post-routing
+enforcement. `--restore /path/to/rollback.json` restores the saved policies. The old
+authoriser remains available for rollback and Part 3.
 
-### The remaining Rego
+### The routing policy
 
-`opa/routing.rego` contains one unconditional allow rule. It has no routing table,
-patterns, permissions or header mutations. Its deployment is named `routing-audit` and
-exists only to emit the console's immediate, trace-correlated event before a model finishes.
-AGW's post-routing policy enforces the result independently. Keeping this adapter preserves
-the live pending cards; native access logs alone arrive when a response completes.
-Native access-log fields also populate requests refused by a budget before the audit hook.
+`opa/routing.rego` contains the caller and task rules. The deployment is named
+`routing-policy` and runs the trusted decision service behind AGW. AGW still owns the
+gateway headers, response shaping and post-routing enforcement. Keeping this service
+separate preserves the live pending cards while the console reads trusted decision
+metadata and access logs.
 
 There is no Keycloak. The lab is about routing, and all the gateway needs from an identity
 provider is a JWKS to check signatures against, so `01-identity.sh` generates an RSA key
@@ -201,8 +201,8 @@ KUBE_CONTEXT=your-lab-context python3 scripts/30-dashboard.py
 ```
 
 Open <http://localhost:8900/>. This is the dashboard's canonical location; its scripts are
-mirrored with the lab. It reads native decisions from audit events and decision-gateway access logs, matching
-`traceparent` to the access log's trace **and span** IDs. It does not guess by user or time,
+mirrored with the lab. It reads trusted routing metadata and decision-gateway access logs,
+matching `traceparent` to the access log's trace **and span** IDs. It does not guess by user or time,
 so concurrent requests cannot swap their backend model or HTTP status.
 
 It loads the last 15 minutes on startup (`DASHBOARD_SINCE=5m` changes that window), follows
@@ -286,11 +286,11 @@ yaml/platform/11-dimensions-values.yaml    cost dimensions: user, task, pool, cl
 yaml/platform/20-device-plugin-values.yaml whole cards, affinity null
 yaml/platform/30-vllm-mistral.yaml         Mistral on vLLM, a card to itself, 131072 window
 yaml/platform/31-vllm-qwen.yaml            Qwen3-Coder on vLLM, a card to itself, 262144 window
-native/decision.cel               native decision: block, force private, prefer, fall back, refuse
-opa/routing.rego                  unconditional audit-transport allow; no policy decisions
-opa/routing-data.json             who may use which pool; task to pool and class; internal-code markers
+identity/demo-users.json          tracked IdP groups for the demo users
+opa/routing.rego                  group-based routing decisions, refusals and lane metadata
+opa/routing-data.json             roles, task-to-pool preferences, class rules and internal-code markers
 yaml/10-router-tasks.yaml         the router as a task classifier: similarity banks, keywords, domains
-yaml/20-opa.yaml                  routing-audit deployment, with no entitlement data mounted
+yaml/20-opa.yaml                  routing-policy deployment, with trusted group data mounted
 yaml/30-decision-gateway.yaml     the second Gateway, ClusterIP
 yaml/40-backends.yaml             Qwen3-Coder, Mistral, Anthropic, with the task labels aliased
 yaml/50-decide-policy.yaml.tmpl   verify JWT; native metadata and routing headers; response shaping
