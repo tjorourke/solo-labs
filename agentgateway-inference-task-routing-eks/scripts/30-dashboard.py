@@ -129,6 +129,9 @@ def upsert_event(key, **fields):
                     "request_key": key, "correlation": "exact" if key else "unmatched"}
             cards.append(card)
         card.update(fields)
+        held = pending_pii.pop((card.get("request_key") or "").split(":")[0], None)
+        if held:
+            card.update(held)
         if "decision_ts" in card:
             card["ts"] = card["decision_ts"]
         elif "completed_ts" in card:
@@ -304,6 +307,60 @@ def on_opa(line):
     )
 
 
+def on_pii(line):
+    """What the personal-data check took out, from kernwerk-pii's own log.
+
+    It runs as a guardrail webhook on the Kernwerk routes, after OPA and before the model,
+    and prints one JSON line per prompt and per answer carrying the decision gateway's
+    trace id. That id is the same one the access log and OPA's traceparent carry, so the
+    redactions land on the request they belong to rather than on whichever card looks
+    closest. A caller who does not classify data never reaches the service and so has no
+    line here at all.
+    """
+    try:
+        ev = json.loads(line)
+    except ValueError:
+        return
+    if not isinstance(ev, dict) or not ev.get("trace"):
+        return
+    if ev.get("kind") == "request":
+        apply_pii(ev["trace"], dict(original=ev.get("original", ""), masked=ev.get("masked", ""),
+                                    replaced=ev.get("replaced", 0)))
+    elif ev.get("kind") == "response":
+        apply_pii(ev["trace"], dict(answer_original=ev.get("original", ""),
+                                    answer_masked=ev.get("masked", ""),
+                                    answer_replaced=ev.get("replaced", 0)))
+
+
+# Redactions that arrived before the policy event for the same request. The webhook runs
+# after OPA but its log line can still be read first, and filing it under the bare trace
+# would leave a second, nameless card beside the real one. Hold it here instead and let
+# upsert_event merge it when the card appears.
+pending_pii = {}
+
+
+def card_key_for_trace(trace_id):
+    """The key of the card already opened for this trace, if there is one."""
+    with lock:
+        for c in reversed(cards):
+            key = c.get("request_key") or ""
+            if key.startswith(trace_id + ":"):
+                return key
+    return None
+
+
+def apply_pii(trace_id, fields):
+    key = card_key_for_trace(trace_id)
+    if key:
+        upsert_event(key, **fields)
+        return
+    with lock:
+        pending_pii.setdefault(trace_id, {}).update(fields)
+        del_keys = list(pending_pii)[:-200]
+        for k in del_keys:
+            pending_pii.pop(k, None)
+
+
 ACCESS = re.compile(r'(\w[\w.]*)=([^\s]+)')
 
 def on_gateway(line):
@@ -386,6 +443,15 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
  .pill.lane-eu { background:#2563eb; }
  .pill.lane-private { background:#15803d; }
  body:not(.page-kernwerk) .lane-filter { display:none; }
+ /* What the personal-data check took out, shown in place: the original text struck
+    through and the placeholder the model actually received beside it. */
+ .redact { background:rgba(220,38,38,.10); color:#b91c1c; border-radius:3px; padding:0 2px;
+           text-decoration:line-through; text-decoration-color:rgba(185,28,28,.55); }
+ .redact .ph { text-decoration:none; color:#15803d; background:rgba(22,163,74,.12);
+               border-radius:3px; margin-left:3px; padding:0 3px; font-size:.92em; }
+ .dlp-note { margin-top:6px; font-size:12.5px; color:#64748b; }
+ .dlp-note b { color:#0f172a; font-weight:600; }
+ .dlp-clean { color:#15803d; }
  .prompt { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:9px 11px; font:13.5px ui-monospace,Menlo,monospace; color:#334155; white-space:pre-wrap; word-break:break-word; max-height:120px; overflow:auto; }
  .meta { margin-top:8px; color:#64748b; font-size:13px; display:flex; gap:16px; flex-wrap:wrap; }
  .meta b { color:#0f172a; font-weight:600; }
@@ -497,6 +563,53 @@ function turn(c) {
     <span class="tmeta">${c.reason ? `reason <b>${esc(c.reason)}</b>` : ''}${c.latency_ms ? ` · classified in <b>${c.latency_ms} ms</b>` : ''}${c.duration ? ` · took <b>${esc(c.duration)}</b>` : ''}${c.refused_body ? ` · <b>${esc(c.refused_body)}</b>` : ''}</span>
   </div>`;
 }
+// The personal-data check keeps every character it does not replace, so the text between
+// two placeholders is found verbatim in the original and whatever sits between them is
+// exactly what it removed. Walk the pair once and mark those spans in place. If the two
+// do not line up, say nothing rather than guess: the plain prompt is shown instead.
+function redacted(original, masked) {
+  if (!original || !masked || original === masked) return null;
+  const parts = masked.split(/[{]([A-Z_]+)[}]/);  // literal, key, literal, key, ...
+  let pos = 0, out = '';
+  for (let i = 0; i < parts.length; i += 2) {
+    const lit = parts[i];
+    let at;
+    if (i === 0) {
+      if (!original.startsWith(lit)) return null;
+      at = 0;
+    } else {
+      at = lit ? original.indexOf(lit, pos) : original.length;
+      if (at < 0) return null;
+      const gone = original.slice(pos, at);
+      if (!gone) return null;
+      out += `<mark class="redact" title="replaced before the model saw it">${esc(gone)}` +
+             `<span class="ph">{${esc(parts[i - 1])}}</span></mark>`;
+    }
+    out += esc(lit);
+    pos = at + lit.length;
+  }
+  return out;
+}
+
+// The prompt as data protection needs to read it: what was typed, with everything the
+// check removed struck through and the placeholder the model got in its place.
+function promptBlock(c) {
+  const plain = c.question || c.prompt || '(response received; awaiting its policy event)';
+  if (!KERNWERK) return `<div class="prompt">${esc(plain)}</div>`;
+  const marked = redacted(c.original, c.masked);
+  const body = marked || esc(c.original || plain);
+  const back = c.answer_replaced || 0;
+  let note = '';
+  if (c.replaced) {
+    note = `<div class="dlp-note"><b>${c.replaced}</b> personal data item${c.replaced === 1 ? '' : 's'} ` +
+           `replaced before the model saw the prompt` +
+           (back ? `, and <b>${back}</b> put back out of the answer` : '') + '.</div>';
+  } else if (c.masked !== undefined) {
+    note = '<div class="dlp-note dlp-clean">Checked for personal data. Nothing to replace.</div>';
+  }
+  return `<div class="prompt">${body}</div>${note}`;
+}
+
 const opened = new Set();
 function group(g) {
   g.cards.sort((a, b) => a.ts - b.ts);
@@ -517,7 +630,7 @@ function group(g) {
       ${first.source_repo ? pill('repo ' + first.source_repo) : ''}
       <span class="when">${when(first.ts)}${n > 1 ? ' to ' + when(latest.ts).split(' ')[1] : ''}</span>
     </div>
-    <div class="prompt">${esc(first.question || first.prompt || '(response received; awaiting its policy event)')}</div>
+    ${promptBlock(first)}
     <details data-key="${encodeURIComponent(g.key)}"${(n === 1 || opened.has(g.key)) ? ' open' : ''}>
       <summary>${n > 1 ? `${n} requests with the same displayed prompt` : '1 request'}</summary>
       ${g.cards.map(turn).join('')}
@@ -649,8 +762,13 @@ def main():
     # Fail before opening an empty UI if the wrong context or namespace was supplied.
     subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deployment",
                     "opa", "decision-gateway", "-o", "name"], check=True)
-    for target, handler in (("opa", on_opa),
-                            ("decision-gateway", on_gateway)):
+    watch = [("opa", on_opa), ("decision-gateway", on_gateway)]
+    # Only present when the Kernwerk overlay is installed. Without it the page is the
+    # task router's own and simply has no redactions to show.
+    if subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deploy", "kernwerk-pii"],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        watch.append(("kernwerk-pii", on_pii))
+    for target, handler in watch:
         threading.Thread(target=follow, args=(target, handler), daemon=True).start()
     print(f"dashboard on http://localhost:{PORT}  (ctrl-c to stop)")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

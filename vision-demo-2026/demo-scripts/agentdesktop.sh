@@ -152,6 +152,10 @@ add_user tom    Tom   tom@corp.example
 add_user bob    Bob   bob@corp.example
 add_user priya  Priya priya@corp.example
 add_user leaver Alex  leaver@corp.example
+# Kernwerk's data protection lead. Enrol as him rather than bob to see the data
+# classes: the routing policy gives martink an entitlement that classifies his
+# data, and OPA reads the login out of the email the same way it does for bob.
+add_user martink Martin martink@corp.example
 
 # ── 3. PostgreSQL for controller state ────────────────────────────────────────
 step "PostgreSQL in $AD_NS"
