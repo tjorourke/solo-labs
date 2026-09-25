@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>vLLM Semantic Router configuration wizard</title>
-<meta name="description" content="Answer a few questions about the kinds of request you want to tell apart, and this writes the vLLM Semantic Router values file, then checks it for rules that can never fire.">
+<title>vLLM Semantic Router and Jev configuration wizard</title>
+<meta name="description" content="Answer a few questions about the kinds of request you want to tell apart, and this writes the configuration for vLLM Semantic Router or Jev, then checks it for rules that can never fire.">
 <link rel="stylesheet" href="./wizard.css">
 <style>
   /* The self-hosted build carries its own chrome. The published page at
@@ -48,15 +48,15 @@
 
 <header class="top">
   <div class="wrap">
-    <div class="eyebrow">vLLM Semantic Router &middot; agentgateway</div>
-    <h1>vLLM Semantic Router configuration wizard</h1>
+    <div class="eyebrow">vLLM Semantic Router &middot; Jev &middot; agentgateway</div>
+    <h1>vLLM Semantic Router and Jev configuration wizard</h1>
     <p>
       Answer a few questions about the kinds of request you want to tell apart, and this
-      writes the router's values file for you. Then it checks that file for the mistake
-      that is hardest to catch by eye: a rule that reads perfectly well and can never fire,
-      because a broader one above it always matches first. The router's own validator will
-      not tell you about that one. Everything runs in this browser, and nothing is sent
-      anywhere.
+      writes the classifier's configuration: the vLLM Semantic Router values file, or the
+      profile and manifests for a Jev ExtProc adapter. Then it checks the result for the
+      mistake that is hardest to catch by eye: a rule that reads perfectly well and can
+      never fire, because a broader one above it always matches first. Everything runs in
+      this browser, and nothing is sent anywhere.
     </p>
   </div>
 </header>
@@ -67,12 +67,13 @@
 
 <footer class="btm">
   <div class="wrap">
-    vLLM Semantic Router configuration wizard. Everything runs in this browser; nothing
+    vLLM Semantic Router and Jev configuration wizard. Everything runs in this browser; nothing
     is sent anywhere. Source and deployment files:
     <a href="https://github.com/tjorourke/solo-labs/tree/main/vsr-config-builder" target="_blank" rel="noopener">github.com/tjorourke/solo-labs</a>.
   </div>
 </footer>
 
+<script src="./jev-core.js"></script>
 <script src="./vsr-core.js"></script>
 <script src="./presets.js"></script>
 <script src="./wizard.js"></script>

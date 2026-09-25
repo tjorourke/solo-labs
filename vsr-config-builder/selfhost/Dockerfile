@@ -1,5 +1,5 @@
 # vLLM Semantic Router configuration wizard — a static site, so this is nginx and
-# five files. There is no backend and no build step: the wizard computes the config,
+# six files. There is no backend and no build step: the wizard computes the config,
 # the checks and the YAML in the browser.
 #
 # Build from the parent directory, so the wizard's files are in context:
@@ -10,6 +10,7 @@ FROM nginx:1.27-alpine
 # website's stylesheet around it, so it is deliberately not copied here.
 COPY standalone.html /usr/share/nginx/html/index.html
 COPY vsr-core.js     /usr/share/nginx/html/vsr-core.js
+COPY jev-core.js     /usr/share/nginx/html/jev-core.js
 COPY presets.js      /usr/share/nginx/html/presets.js
 COPY wizard.js       /usr/share/nginx/html/wizard.js
 COPY wizard.css      /usr/share/nginx/html/wizard.css

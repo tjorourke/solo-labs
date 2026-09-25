@@ -1,7 +1,8 @@
-# vLLM Semantic Router configuration wizard
+# vLLM Semantic Router and Jev configuration wizard
 
 Answer a few questions about the kinds of request you want to tell apart, and this
-writes the router's values file for you. Then it checks that file for the mistake that
+writes the classifier's configuration for you: the vLLM Semantic Router values file,
+or the profile, manifests and gateway policy for a Jev ExtProc adapter. Then it checks that file for the mistake that
 is hardest to catch by eye: a rule that reads perfectly well and can never fire, because
 a broader one above it always matches first.
 
@@ -9,7 +10,7 @@ Hosted copy: **https://mastertheagent.com/solo/vsr-config-builder/**
 
 It is a static page. No backend, no database, no build step, no account, and nothing is
 sent anywhere: the questions, the generated YAML and all of the checks run in your
-browser. That is why self-hosting it is five files and an nginx image.
+browser. That is why self-hosting it is six files and an nginx image.
 
 ---
 
@@ -59,7 +60,7 @@ kubectl -n vsr-tools port-forward svc/vsr-config-wizard 8080:80
 
 Open **http://localhost:8080**.
 
-There is no published image on purpose. It is nginx plus five files you can read, so
+There is no published image on purpose. It is nginx plus six files you can read, so
 build it yourself and you know exactly what is in it.
 
 The namespace is labelled `pod-security.kubernetes.io/enforce: restricted`, and the
@@ -120,6 +121,32 @@ workbench tells you whether the file was right.
 
 ---
 
+## The Jev option
+
+The first step asks which classifier the config is for. Pick **Jev** and the questions
+change: Jev is TypeSafe's hosted classifier, so there are no signals to tune. You write
+Choice questions with a description per answer, decide which label each answer (or each
+combination of answers) produces, and set how confident Jev has to be before an answer
+counts. The review step writes:
+
+| Output | What it is |
+|---|---|
+| `profile.json` | The ExtProc adapter's profile: the questions it sends to Jev, the thresholds, the fallback and the rules |
+| `jev-extproc.yaml` | The profile ConfigMap, the adapter Deployment and its Service |
+| The gateway policy | A `PreRouting` `extProc` policy, for OSS or Enterprise agentgateway |
+
+It checks for rules that can never match because a rule above asks for less, rules and
+questions that refer to names that do not exist, answers with no description, and the
+adapter's own limits. A profile with one question, where every answer is its own label,
+runs on the reference adapter in the
+[Part 5 guide](https://mastertheagent.com/solo/agentgateway-inference-jev-routing-eks/)
+as it is. Several questions combined by rules need the rules extension that guide
+describes.
+
+Link straight to it with `?engine=jev`.
+
+---
+
 ## Use the generated file
 
 ```bash
@@ -142,7 +169,8 @@ version your chart expects before pointing it at a new file.
 |---|---|
 | `standalone.html` | The page, with its own styling. This is the one the container serves. |
 | `index.html` | The same wizard, but expecting the website's stylesheet around it. Used by the hosted copy only. |
-| `vsr-core.js` | Config generation, the YAML writer, and every check. No DOM, no network. |
+| `vsr-core.js` | Router config generation, the YAML writer, and every check. No DOM, no network. |
+| `jev-core.js` | The Jev side: adapter profile, manifests, gateway policy and the rule checks. No DOM, no network. |
 | `presets.js` | Worked starting points and the catalogue of ready-made example prompts. |
 | `wizard.js` | The question flow. |
 | `wizard.css` | Styling, all of it scoped under `.vw`. |
