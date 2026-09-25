@@ -1,0 +1,48 @@
+# A second pool, pinned to a node, with its own Harness in front of it.
+# Only AgentTemplates labelled kagent.dev/harness: kagent-tier2 are admitted.
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: kagent-tier2
+  namespace: kagent
+  labels:
+    kagent.dev/worker-pool: kagent-tier2   # what the rendered workerSelector matches; the name alone is not enough
+spec:
+  replicas: 1
+  sandboxClass: gvisor
+  workerImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.2.0-beta5
+  template:
+    nodeSelector:
+      kubernetes.io/hostname: kagent-v1alpha-worker   # in a real cluster: the restricted node group's label
+---
+apiVersion: kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: kagent-tier2
+  namespace: kagent
+spec:
+  allowedAgentTemplates:
+    selector:
+      matchLabels:
+        kagent.dev/harness: kagent-tier2
+  kagent: {}
+  substrate:
+    workerPoolRef:
+      name: kagent-tier2
+    snapshotPolicy:
+      location: s3://ate-snapshots/kagent-tier2/
+  workload:
+    image: ghcr.io/kagent-dev/kagent/golang-adk@sha256:699c7a36daa0050d5954f42ad3b614690d825664cf64ffe8871dbe20dc68464e
+---
+apiVersion: kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: restricted
+  namespace: kagent
+  labels:
+    kagent.dev/harness: kagent-tier2
+spec:
+  description: An agent that may only ever run on the tier2 pool
+  modelConfig:
+    name: default-model-config
+  systemPrompt: You are a helpful assistant on the restricted tier. Be brief.

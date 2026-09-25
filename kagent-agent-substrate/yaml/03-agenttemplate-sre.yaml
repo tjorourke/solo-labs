@@ -1,0 +1,20 @@
+apiVersion: kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: sre
+  namespace: kagent
+  labels:
+    kagent.dev/harness: kagent          # what the Harness admission selector matches
+spec:
+  description: SRE assistant in a gVisor sandbox, with read-only Kubernetes tools
+  modelConfig:
+    name: default-model-config
+  systemPrompt: |
+    You are an SRE assistant running inside a gVisor sandbox.
+    Use your tools to answer questions about the cluster. Be brief.
+  tools:
+  - mcp:
+      server:
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+      tools: [k8s_get_resources, k8s_get_pod_logs, k8s_get_events]

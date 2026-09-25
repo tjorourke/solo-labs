@@ -1,0 +1,9 @@
+# Values for the substrate chart (ate-system).
+# Actors in the kagent atespace may read credentials from the kagent namespace only.
+credentialProvider:
+  namespacePolicies:
+    - atespace: kagent
+      allowedNamespaces: [kagent]
+otel:
+  traces:
+    enabled: false
