@@ -1,0 +1,70 @@
+# Single Gateway carrying both flows on separate paths and separate backends:
+# /v1/openai hits the CSI/Vault-backed provider-key backend (backend-openai.yaml,
+# policies.auth.secretRef -> the materialized Vault value); /v1/chat/completions
+# hits a second, plain mock-llm backend with no policies.auth at all, protected
+# instead by virtual-keys-policy.yaml's apiKeyAuthentication (client-facing keys,
+# hashes synced from Vault by ESO). Two backends, not one: mirrors
+# agentgateway-virtual-keys/yaml/gateway.yaml's mock-llm backend, so Flow B's
+# client-facing auth is never confused with Flow A's provider-key auth.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: vault-secrets
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - name: http
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: mock-llm
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai: {}
+      host: mock-llm.agentgateway-system.svc.cluster.local
+      port: 8000
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: openai
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: vault-secrets
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/openai
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: openai
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: vault-secrets
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/chat/completions
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: mock-llm

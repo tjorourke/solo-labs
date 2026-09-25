@@ -1,0 +1,22 @@
+# Helm values folded into the enterprise-agentgateway chart install: registers
+# the file-backed external-secrets store at the fixed CSI mount root, and
+# mounts the Vault-backed SecretProviderClass (secret-provider-class.yaml) as
+# a CSI volume on the controller. file.path and the volume mount path below
+# must match exactly.
+externalSecrets:
+  stores:
+    - name: llm-secrets
+      file:
+        path: /var/run/secrets/agentgateway-external-secrets/llm
+controller:
+  extraVolumes:
+    - name: llm-secrets
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes:
+          secretProviderClass: openai-vault
+  extraVolumeMounts:
+    - name: llm-secrets
+      mountPath: /var/run/secrets/agentgateway-external-secrets/llm
+      readOnly: true

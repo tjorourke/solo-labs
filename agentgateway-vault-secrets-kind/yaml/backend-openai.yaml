@@ -1,0 +1,24 @@
+# Points the AI backend at the local mock LLM (mock.yaml) and authenticates
+# with the value CSI/Vault materialized into openai-external-secret's
+# "Authorization" key, never a Kubernetes Secret. secretRef has no "key" here,
+# matching docs.solo.io's own worked example: for this ref kind the
+# EnterpriseAgentgatewayExternalSecret's single materializedKey is used
+# directly, so there is nothing for a per-field "key" to select.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: openai
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai:
+        model: gpt-3.5-turbo
+      host: mock-llm.agentgateway-system.svc.cluster.local
+      port: 8000
+  policies:
+    auth:
+      secretRef:
+        group: enterpriseagentgateway.solo.io
+        kind: EnterpriseAgentgatewayExternalSecret
+        name: openai-external-secret
