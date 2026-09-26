@@ -3,3 +3,4 @@ agentdemo/
 .env.mesh1
 .agentcore/
 *.stderr
+.arctl-wrap/

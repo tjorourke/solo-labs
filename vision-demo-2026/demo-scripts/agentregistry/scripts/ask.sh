@@ -59,7 +59,17 @@ body = json.dumps({"jsonrpc":"2.0","id":"1","method":"message/send","params":{"m
       "role":"user","parts":[{"kind":"text","text":prompt}],"messageId":"ask-1"}}}).encode()
 req = urllib.request.Request("http://kagent-controller.kagent.svc.cluster.local:8083/api/a2a/kagent/%s/" % agent,
       body, {"Authorization":"Bearer "+tok, "Content-Type":"application/json"})
-d = json.load(urllib.request.urlopen(req, timeout=240))
+# A just-deployed agent can answer 5xx for a few seconds while its waypoint comes
+# up (the controller sees EOF). Retry briefly rather than fail the first ask.
+import time, urllib.error
+for attempt in range(8):
+    try:
+        d = json.load(urllib.request.urlopen(req, timeout=240))
+        break
+    except urllib.error.HTTPError as e:
+        if e.code < 500 or attempt == 7:
+            raise
+        time.sleep(5)
 r = d.get("result", d)
 
 # --- tool-call trace: the A2A result.history carries the agent's tool calls as

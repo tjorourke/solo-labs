@@ -1,0 +1,27 @@
+# The Swagger Petstore (v3), run in the cluster so the demo does not depend on the
+# shared public instance at petstore3.swagger.io.
+apiVersion: v1
+kind: Namespace
+metadata: { name: rest-api }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: petstore, namespace: rest-api, labels: { app: petstore } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: petstore } }
+  template:
+    metadata: { labels: { app: petstore } }
+    spec:
+      containers:
+      - name: petstore
+        image: swaggerapi/petstore3:1.0.27
+        ports: [{ containerPort: 8080 }]
+        readinessProbe: { httpGet: { path: /api/v3/openapi.json, port: 8080 }, periodSeconds: 3 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: petstore, namespace: rest-api }
+spec:
+  selector: { app: petstore }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]

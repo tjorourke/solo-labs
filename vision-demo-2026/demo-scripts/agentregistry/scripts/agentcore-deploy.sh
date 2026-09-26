@@ -36,7 +36,26 @@ step "Pushing the agent image to ECR (linux/arm64 — AgentCore requires arm64)"
 ECR_HOST="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"; ECR_IMAGE="${ECR_HOST}/${AGENT}:0.0.1"
 aws ecr describe-repositories --repository-names "$AGENT" >/dev/null 2>&1 || aws ecr create-repository --repository-name "$AGENT" >/dev/null
 aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_HOST" >/dev/null
-arctl build "$PROJ" --push --platform linux/arm64 --image "$ECR_IMAGE"; ok "pushed $ECR_IMAGE"
+arctl build "$PROJ" --push --platform linux/arm64 --image "$ECR_IMAGE"
+# The v2026.8 registry deploys AgentCore runtimes behind its agent-proxy: the
+# proxy binds :9000 for A2A, answers AgentCore's /ping and forwards to the agent
+# on the SAME port. Two changes to the AgentCore copy only (kagent keeps 8080):
+#  1. the kagent-adk base image's entrypoint pins --port 8080, and AgentCore has no
+#     command override, so re-point it at 9000. --local keeps sessions in memory:
+#     outside kagent there is no session service (KAGENT_URL is "not_set"), and
+#     without it every A2A turn fails. Setting ENTRYPOINT clears the inherited
+#     CMD, so the agent name goes back too.
+#  2. wrap the image with the proxy layer. Without it AgentCore's /ping gets a 404
+#     from the agent and every invoke times out or returns 424.
+printf 'FROM %s\nENTRYPOINT ["kagent-adk","run","--host","0.0.0.0","--port","9000","--local"]\nCMD ["%s"]\n' "$ECR_IMAGE" "$AGENT" \
+  | docker buildx build -q --platform linux/arm64 --provenance=false --push -t "$ECR_IMAGE" - >/dev/null
+# wrap-agent-image ships with the v2026.8 CLI. Use one that matches the server,
+# installed once into a lab-local prefix, so the host arctl is left alone.
+WRAP_VERSION="${ARCTL_WRAP_VERSION:-v2026.8.0}"; WRAP_HOME="$LAB_ROOT/.arctl-wrap"
+[[ -x "$WRAP_HOME/.arctl/bin/arctl" ]] || curl -sSL https://storage.googleapis.com/agentregistry-enterprise/install.sh \
+  | HOME="$WRAP_HOME" ARCTL_VERSION="$WRAP_VERSION" sh >/dev/null
+"$WRAP_HOME/.arctl/bin/arctl" wrap-agent-image --image "$ECR_IMAGE" --tag "$ECR_IMAGE" --platform linux/arm64 --push >/dev/null
+ok "pushed $ECR_IMAGE (agent on :9000 behind the agent-proxy)"
 
 step "Pushing the agent source to git (AgentCore clones it)"
 SLUG="${AGENT_GIT_URL#https://github.com/}"; SLUG="${SLUG%.git}"; BR="${AGENT_GIT_BRANCH:-main}"
