@@ -11,6 +11,12 @@ import urllib.error
 import urllib.request
 
 
+class NoRoute(Exception):
+    def __init__(self, url):
+        super().__init__(url)
+        self.url = url
+
+
 class Session:
     def __init__(self, url):
         self.url, self.sid = url, None
@@ -34,6 +40,8 @@ class Session:
                 raw = r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             raw = e.read().decode("utf-8", "replace")
+            if e.code == 404 and "route not found" in raw:
+                raise NoRoute(url=self.url)
         for line in raw.splitlines():
             if line.startswith("data:"):
                 raw = line[5:]
@@ -51,16 +59,24 @@ def main():
         raise SystemExit(__doc__)
     url, verb = sys.argv[1], sys.argv[2]
     # a route that has only just been applied can take a few seconds to be served
-    for attempt in range(20):
+    no_route = False
+    for attempt in range(10):
         try:
             s = Session(url)
             tools = s.rpc("tools/list", {})["tools"]
             if tools:
                 break
+        except NoRoute:
+            if not no_route:
+                print(f"  waiting for a route to {url} ...", flush=True)
+            no_route = True
         except (urllib.error.URLError, TypeError, KeyError, json.JSONDecodeError):
             pass
         time.sleep(2)
     else:
+        if no_route:
+            raise SystemExit(f"  no route to {url}. The gateway has no HTTPRoute for this host yet: "
+                             "run the step that creates it first.")
         raise SystemExit(f"  no tools served at {url}")
 
     if verb == "tools":
