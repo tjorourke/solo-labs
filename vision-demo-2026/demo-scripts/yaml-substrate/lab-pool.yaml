@@ -1,0 +1,13 @@
+# The lab's own WorkerPool: two pre-warmed gVisor workers. Agents on this pool share
+# these two; the pool size is how many turns can run at once, not how many agents fit.
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: lab-pool
+  namespace: kagent
+  labels:
+    kagent.dev/worker-pool: lab-pool     # the rendered ActorTemplate selects workers by this label
+spec:
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.9
+  replicas: 2
+  sandboxClass: gvisor

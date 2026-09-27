@@ -164,7 +164,7 @@ catch-runsc() { # catch-runsc <agent> "<text>"  — fire a turn, watch the node'
   _a2a "/api/a2a-sandboxes/$KAGENT_NS/$1/" "$sid" "$2" > "${TMPDIR:-/tmp}/substrate-runsc-turn.txt" 2>&1 &
   turn=$!
   for i in $(seq 1 80); do
-    caught=$(docker exec "$node" sh -c 'ps -ef | grep "[r]unsc"' 2>/dev/null); [ -n "$caught" ] && break; sleep 0.25
+    caught=$(docker exec "$node" sh -c 'ps -ef | grep "[r]unsc"' 2>/dev/null || true); [ -n "$caught" ] && break; sleep 0.25
   done
   wait $turn 2>/dev/null
   if [ -n "$caught" ]; then
@@ -186,7 +186,7 @@ on-node() { # on-node [agent]  — actor directories on the worker node, cross-c
   node=$(kubectl --context "$CTX" -n "$KAGENT_NS" get pod -l ate.dev/worker-pool=kagent-default -o jsonpath='{.items[0].spec.nodeName}')
   live=$(kubectl --context "$CTX" -n "$KAGENT_NS" get actortemplate -o jsonpath='{range .items[*]}{.status.goldenActorID}{"\n"}{end}' 2>/dev/null)
   known=$(_status | python3 -c 'import sys,json; print("\n".join(a["actorId"] for a in json.load(sys.stdin)["data"]["actors"]))')
-  running=$(docker exec "$node" sh -c 'ps -ef | grep "[r]unsc-sandbox"' 2>/dev/null | grep -oE 'actors/[^/]+' | sort -u)
+  running=$(docker exec "$node" sh -c 'ps -ef | grep "[r]unsc-sandbox"' 2>/dev/null | grep -oE 'actors/[^/]+' | sort -u || true)
   printf '%s== actor directories on %s ==%s\n' "$CYN$BLD" "$node" "$RST"
   while read -r d; do
     [ -n "$d" ] || continue
@@ -243,7 +243,7 @@ scale-pool() { # scale-pool <replicas> [pool]  — kubectl scale, then wait unti
   before=$(registered-workers "$pool")
   kubectl --context "$CTX" -n "$KAGENT_NS" scale "workerpool/$pool" --replicas="$n"
   for i in $(seq 1 90); do   # poll the Running pod count: `kubectl wait` trips over pods that are terminating
-    running=$(kubectl --context "$CTX" -n "$KAGENT_NS" get pods -l "ate.dev/worker-pool=$pool" --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -vc Terminating)
+    running=$(kubectl --context "$CTX" -n "$KAGENT_NS" get pods -l "ate.dev/worker-pool=$pool" --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -vc Terminating || true)
     [ "${running:-0}" -eq "$n" ] && break; sleep 2
   done
   if [ "$n" -gt "${before:-0}" ]; then
@@ -258,7 +258,7 @@ scale-pool() { # scale-pool <replicas> [pool]  — kubectl scale, then wait unti
 wait-templates() { # wait-templates <agent> <count>  — until that many of the agent's ActorTemplates are Ready
   local i n t0; t0=$(_now)
   for i in $(seq 1 120); do
-    n=$(kubectl --context "$CTX" -n "$KAGENT_NS" get actortemplate -l "kagent.dev/sandbox-agent=$1" -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null | grep -c Ready)
+    n=$(kubectl --context "$CTX" -n "$KAGENT_NS" get actortemplate -l "kagent.dev/sandbox-agent=$1" -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null | grep -c Ready || true)
     [ "${n:-0}" -ge "$2" ] && { echo "  $2 templates Ready after $(_since $t0)s"; return 0; }; sleep 1
   done
   echo "  only $n template(s) Ready"; return 1

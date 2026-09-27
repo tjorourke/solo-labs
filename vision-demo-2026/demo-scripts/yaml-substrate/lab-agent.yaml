@@ -1,0 +1,17 @@
+# A new agent. The same declarative spec as any kagent Agent, plus substrate.workerPoolRef:
+# instead of a pod, kagent renders an ActorTemplate and runs each session as a gVisor actor.
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: lab-agent
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Lab agent running as gVisor actors on the lab-pool WorkerPool
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: "You are a concise assistant running inside a gVisor-sandboxed actor. Answer in one or two sentences."
+  substrate:
+    workerPoolRef:
+      name: lab-pool
