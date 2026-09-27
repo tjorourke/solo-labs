@@ -1,0 +1,20 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"20px","primaryColor":"#f5f3ff","primaryTextColor":"#1e293b","primaryBorderColor":"#8b5cf6","lineColor":"#64748b","secondaryColor":"#eff6ff","tertiaryColor":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"linear","nodeSpacing":30,"rankSpacing":38,"htmlLabels":false}}}%%
+flowchart TB
+    user["Operator<br/>Investigate incidents"]
+        agent["kagent Agent<br/>Incident response"]
+        gateway["agentgateway<br/>JWT / tool access<br/>Content / rate limits"]
+        tools["kagent MCPServer<br/>Incident tools"]
+        records[("Three incident records<br/>Status and history")]
+        egress["Istio egress waypoint<br/>Deny example.com"]
+        agent -->|"Model / MCP calls"| gateway
+        gateway -->|"Istio workload check"| tools
+        tools -->|"Reads and changes"| records
+        agent -.->|"Outside-access check"| egress
+    user -->|"A2A via gateway"| agent
+    gateway -->|"Model calls"| claude["Claude Haiku 4.5<br/>Anthropic"]
+    classDef solo fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px,color:#312e81
+    classDef data fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef external fill:#eff6ff,stroke:#60a5fa,color:#1e3a8a
+    class agent,gateway,tools,egress solo
+    class records data
+    class user,claude external

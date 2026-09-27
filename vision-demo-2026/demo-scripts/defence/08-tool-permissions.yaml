@@ -10,4 +10,4 @@ spec:
         action: Allow
         policy:
           matchExpressions:
-          - 'jwt.group == "admin" || mcp.tool.name == "read_status"'
+          - 'jwt.group == "admin" || mcp.tool.name in ["list_incidents", "get_incident"]'

@@ -1,14 +1,5 @@
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata: {name: gateway-only, namespace: dd-models}
-spec:
-  action: ALLOW
-  rules:
-  - from:
-    - source:
-        principals: [mesh1/ns/dd-gateway/sa/dd-gateway]
----
-# The same boundary protects tools from callers that bypass the MCP gateway.
+# Agent traffic must pass through agentgateway. kagent's controller also needs
+# direct access to discover the tools of the MCPServer it manages.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata: {name: gateway-only, namespace: dd-tools}
@@ -17,4 +8,6 @@ spec:
   rules:
   - from:
     - source:
-        principals: [mesh1/ns/dd-gateway/sa/dd-gateway]
+        principals:
+        - mesh1/ns/dd-gateway/sa/dd-gateway
+        - mesh1/ns/kagent/sa/kagent-controller

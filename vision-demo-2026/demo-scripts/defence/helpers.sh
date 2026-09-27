@@ -1,24 +1,24 @@
 # Only protocol handshakes, propagation waits and bounded request loops live here.
 # The console's Commands tab expands these functions beside the calling command.
 
-dd_mcp() { # <JWT> <method> [params JSON], a fresh MCP session for this identity
-  local token="$1" method="$2" params="${3:-}" headers session body
+dd_mcp() { # <JWT> <method> [params JSON] [URL], a protocol check from the kagent agent runtime
+  local token="$1" method="$2" params="${3:-}" url="${4:-$DD_URL/mcp}" headers session body
   [ -n "$params" ] || params='{}'
-  headers=$(kubectl --context kind-mesh1 -n dd-agents exec unmanaged-agent -- curl -fsS --max-time 15 -D - \
-    http://dd-gateway.dd-gateway.svc/mcp -H "Authorization: Bearer $token" \
+  headers=$(kubectl --context kind-mesh1 -n dd-agents exec deploy/defence-agent -- curl -fsS --max-time 15 -D - \
+    "$url" -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"defence-lab","version":"1"}}}') || return
   session=$(printf '%s\n' "$headers" | tr -d '\r' | sed -n 's/^[Mm][Cc][Pp]-[Ss]ession-[Ii]d: *//p')
   [ -n "$session" ] || { printf 'No MCP session returned\n'; return 1; }
-  kubectl --context kind-mesh1 -n dd-agents exec unmanaged-agent -- curl -fsS --max-time 15 \
-    http://dd-gateway.dd-gateway.svc/mcp -H "Authorization: Bearer $token" -H "Mcp-Session-Id: $session" \
+  kubectl --context kind-mesh1 -n dd-agents exec deploy/defence-agent -- curl -fsS --max-time 15 \
+    "$url" -H "Authorization: Bearer $token" -H "Mcp-Session-Id: $session" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
     -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null || return
   body=$(jq -nc --arg method "$method" --argjson params "$params" '{jsonrpc:"2.0",id:2,method:$method,params:$params}') || return
-  kubectl --context kind-mesh1 -n dd-agents exec unmanaged-agent -- curl -sS --max-time 15 \
-    http://dd-gateway.dd-gateway.svc/mcp -H "Authorization: Bearer $token" -H "Mcp-Session-Id: $session" \
+  kubectl --context kind-mesh1 -n dd-agents exec deploy/defence-agent -- curl -sS --max-time 15 \
+    "$url" -H "Authorization: Bearer $token" -H "Mcp-Session-Id: $session" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$body" \
-    | jq -Rc 'select(length > 0 and (startswith("event:") | not)) | ltrimstr("data: ") | . as $s | try fromjson catch $s'
+    | jq -Rc 'rtrimstr("\r") | select(length > 0 and (startswith("event:") | not)) | ltrimstr("data: ") | . as $s | try fromjson catch $s'
 }
 
 dd_wait_policy() { # <EnterpriseAgentgatewayPolicy>, current generation accepted and attached
@@ -55,16 +55,16 @@ dd_burst() { # <open|limited> [count]; fresh Alice/Bob subjects give a fresh per
   alice=$(python3 "$DD/identity.py" token --user "alice-$run") || return
   bob=$(python3 "$DD/identity.py" token --user "bob-$run") || return
   for i in $(seq 1 "$count"); do
-    code=$(kubectl --context kind-mesh1 -n dd-agents exec unmanaged-agent -- curl -sS --max-time 10 -o /dev/null -w '%{http_code}' \
+    code=$(kubectl --context kind-mesh1 -n dd-agents exec deploy/defence-agent -- curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
       "$DD_URL/v1/chat/completions" -H "Authorization: Bearer $alice" -H 'Content-Type: application/json' \
-      -d '{"model":"dd-echo","messages":[{"role":"user","content":"bounded rate check"}]}') || return
+      -d '{"model":"claude-haiku-4-5","max_tokens":16,"messages":[{"role":"user","content":"Reply only READY"}]}') || return
     printf 'Alice request %s: HTTP %s\n' "$i" "$code"
     case "$code" in 200) ok=$((ok+1));; 429) limited=$((limited+1));; *) return 1;; esac
     sleep 0.15
   done
-  code=$(kubectl --context kind-mesh1 -n dd-agents exec unmanaged-agent -- curl -sS --max-time 10 -o /dev/null -w '%{http_code}' \
+  code=$(kubectl --context kind-mesh1 -n dd-agents exec deploy/defence-agent -- curl -sS --max-time 30 -o /dev/null -w '%{http_code}' \
     "$DD_URL/v1/chat/completions" -H "Authorization: Bearer $bob" -H 'Content-Type: application/json' \
-    -d '{"model":"dd-echo","messages":[{"role":"user","content":"other identity"}]}') || return
+    -d '{"model":"claude-haiku-4-5","max_tokens":16,"messages":[{"role":"user","content":"Reply only READY"}]}') || return
   printf 'Bob request: HTTP %s\nAlice totals: accepted=%s limited=%s\n' "$code" "$ok" "$limited"
   [ "$code" = 200 ] || return 1
   if [ "$mode" = open ]; then [ "$ok" -eq "$count" ] && [ "$limited" -eq 0 ];
