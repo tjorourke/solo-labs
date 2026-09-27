@@ -1,3 +1,5 @@
+# On the front door's agent route: each signed caller gets three agent requests a
+# minute, and a refused request never reaches the agent or the model.
 apiVersion: ratelimit.solo.io/v1alpha1
 kind: RateLimitConfig
 metadata: {name: dd-per-person, namespace: dd-gateway}
@@ -16,7 +18,7 @@ kind: EnterpriseAgentgatewayPolicy
 metadata: {name: per-person-rate, namespace: dd-gateway}
 spec:
   targetRefs:
-  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: model}
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent}
   traffic:
     entRateLimit:
       global:

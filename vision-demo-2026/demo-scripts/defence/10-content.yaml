@@ -1,3 +1,5 @@
+# On the agent's model route at dd-waypoint, so the check runs before anything is
+# sent to the provider, whichever prompt or tool result the text came from.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata: {name: reject-personal-data, namespace: dd-gateway}

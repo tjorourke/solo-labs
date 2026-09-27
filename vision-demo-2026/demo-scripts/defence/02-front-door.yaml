@@ -1,0 +1,101 @@
+# The front door, for people. It publishes the agent's A2A endpoint, a read-only
+# view of the incident records and an operator MCP route on a load balancer.
+# Traffic arriving here has no mesh identity, so callers are identified by JWT
+# (chapter 4). Agent-to-model and agent-to-tool traffic uses dd-waypoint instead.
+# This is plain HTTP on a local kind listener. Carry bearer tokens over HTTPS
+# anywhere else.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: {name: dd-gateway, namespace: dd-gateway}
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes: {namespaces: {from: Same}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: agent, namespace: dd-gateway}
+spec:
+  parentRefs: [{name: dd-gateway}]
+  rules:
+  - matches: [{path: {type: PathPrefix, value: /a2a}}]
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path: {type: ReplacePrefixMatch, replacePrefixMatch: /}
+    backendRefs:
+    - {name: defence-agent, namespace: dd-agents, port: 8080}
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata: {name: dd-gateway-to-agent, namespace: dd-agents}
+spec:
+  from:
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, namespace: dd-gateway}
+  to:
+  - {group: "", kind: Service, name: defence-agent}
+---
+# Read-only incident state for the console. Mutations are MCP tools, not HTTP
+# write endpoints.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: incident-state, namespace: dd-gateway}
+spec:
+  parentRefs: [{name: dd-gateway}]
+  rules:
+  - matches: [{path: {type: Exact, value: /ops-state}}]
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path: {type: ReplaceFullPath, replaceFullPath: /state}
+    backendRefs:
+    - {name: defence-operations, namespace: dd-tools, port: 3000}
+---
+# The operator's route to the same tools. Only a token in the admin group may call
+# them, so the route is unusable until chapter 4 adds JWT authentication.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: {name: operator-tools, namespace: dd-gateway}
+spec:
+  entMcp:
+    toolMode: Standard
+    failureMode: FailClosed
+    targets:
+    - name: operations
+      selector:
+        namespaces: {matchLabels: {kubernetes.io/metadata.name: dd-tools}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: operator-tools, namespace: dd-gateway}
+spec:
+  parentRefs: [{name: dd-gateway}]
+  rules:
+  - matches: [{path: {type: PathPrefix, value: /mcp}}]
+    backendRefs:
+    - {name: operator-tools, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: operator-only, namespace: dd-gateway}
+spec:
+  targetRefs:
+  - {group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: operator-tools}
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions: ['jwt.group == "admin"']
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata: {name: dd-gateway-to-state, namespace: dd-tools}
+spec:
+  from:
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, namespace: dd-gateway}
+  to:
+  - {group: "", kind: Service, name: defence-operations}

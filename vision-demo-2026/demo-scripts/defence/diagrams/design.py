@@ -105,7 +105,11 @@ def build():
     d.circle(62, 161, 6, "none", MUTED, 1.8)
     d.path([(51, 184), (51, 181), (55, 174), (69, 174), (73, 181), (73, 184)], MUTED, 1.8)
     d.text(94, 177, "Investigate the payments outage", 22, INK)
-    d.badge(720, 156, 192, "A2A via gateway", "#ede9fe", "#5b21b6", 16)
+    d.text(470, 176, "front door", 15, MUTED, 700)
+    d.number(574, 170, "04", "#ede9fe", "#5b21b6")
+    d.text(594, 176, "Signed caller", 17, "#5b21b6", 700)
+    d.number(748, 170, "07", "#ede9fe", "#5b21b6")
+    d.text(768, 176, "Rate per caller", 17, "#5b21b6", 700)
     d.end()
 
     # Draw the trust-boundary background before the admitted MCP connection.
@@ -149,12 +153,14 @@ def build():
     d.path([(388, 246), (404, 252), (404, 264), (400, 273), (388, 283), (376, 273), (372, 264), (372, 252), (388, 246)], "#c4b5fd", 1.8)
     d.path([(382, 263), (387, 268), (395, 257)], "#ddd6fe", 2.2)
     d.text(418, 270, "agentgateway", 25, "#ffffff", 700)
-    d.text(374, 294, "Policy enforcement", 18, "#c4b5fd")
-    for y, number, label in [(310, "04", "Caller identity"), (353, "05", "Tool permissions"),
-                             (396, "06", "Personal data"), (439, "07", "Request rate")]:
+    d.text(418, 296, "Mesh waypoint", 18, "#c4b5fd")
+    for y, number, label in [(310, "05", "Tool permissions"), (353, "06", "Personal data")]:
         d.rect(370, y, 222, 36, "#3f3269", r=8)
         d.number(391, y+18, number, "#5d478d", "#f0eaff")
         d.text(414, y+25, label, 20, "#ffffff", 500)
+    for y, label in [(396, "Holds the provider key"), (439, "Agent holds no token")]:
+        d.rect(370, y, 222, 36, "#2e2552", r=8)
+        d.text(384, y+24, label, 17, "#ded7ef")
     d.path([(374, 491), (589, 491)], "#5a4b7c", 1)
     d.number(391, 514, "08", "#3e355f", "#d5cce9")
     d.text(414, 521, "Logs + metrics", 18, "#ded7ef")
@@ -224,7 +230,7 @@ def build():
     </defs>'''
     svg = '<svg id="defence-architecture" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 900" width="100%" role="img" aria-labelledby="defence-title defence-desc">\n'
     svg += '<title id="defence-title">Layers of defence for a kagent incident-response agent</title>\n'
-    svg += '<desc id="defence-desc">kagent runs the agent and incident MCP tools. Agentgateway enforces caller identity, tool permissions, prompt guards and rate limits. Istio refuses direct tool access and example.com egress. Before the tool policy, three unresolved incidents are closed. After the policy, the bulk close is refused and investigation remains available.</desc>\n'
+    svg += '<desc id="defence-desc">kagent runs the agent and incident MCP tools. People reach the agent through a front door gateway that requires a signed caller and limits requests per caller. The agent reaches Claude and its tools through an agentgateway waypoint that identifies it by SPIFFE identity, enforces tool permissions and the personal-data guard, and holds the provider key. Istio refuses direct tool access and example.com egress. Before the tool policy, three unresolved incidents are closed. After the policy, the bulk close is refused and investigation remains available.</desc>\n'
     svg += defs + '\n' + '\n'.join(d.svg) + '\n</svg>\n'
     (ROOT / 'architecture.svg').write_text(svg)
     (ROOT / 'architecture.excalidraw').write_text(json.dumps({

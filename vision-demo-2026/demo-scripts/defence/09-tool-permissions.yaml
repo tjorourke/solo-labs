@@ -1,0 +1,21 @@
+# The decision is made on the caller's SPIFFE identity, not on anything the agent
+# sends. The agent may investigate; changing records is left to the operator route.
+# kagent's controller gets the same two tools so its catalogue matches what the
+# agent can use. A workload with the same ServiceAccount name in another namespace
+# gets nothing, because the namespace is part of the identity.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: tool-permissions, namespace: dd-gateway}
+spec:
+  targetRefs:
+  - {group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: tools}
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - >-
+            ((source.identity.namespace == "dd-agents" && source.identity.serviceAccount == "defence-agent")
+            || (source.identity.namespace == "kagent" && source.identity.serviceAccount == "kagent-controller"))
+            && mcp.tool.name in ["list_incidents", "get_incident"]

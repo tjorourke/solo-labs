@@ -1,0 +1,15 @@
+# The JWT policy is rendered by identity.py into $DD_STATE/07-caller-identity.json,
+# because it carries the lab's public signing key. This file closes the other way in:
+# without it, any workload in the mesh could call the agent directly and skip the
+# token check. Only the front door's identity may reach the agent's A2A port.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: agent-front-door, namespace: dd-agents}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: defence-agent}
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: [mesh1/ns/dd-gateway/sa/dd-gateway]

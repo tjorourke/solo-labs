@@ -1,13 +1,22 @@
+# The agent holds no user token and no provider key. Its model and tool calls are
+# identified by its SPIFFE identity at dd-waypoint, which injects the Anthropic key.
+# The OpenAI client still insists on a key string, so it is given a placeholder.
+apiVersion: v1
+kind: Secret
+metadata: {name: dd-model-placeholder, namespace: dd-agents}
+stringData:
+  key: not-a-credential-the-gateway-injects-the-provider-key
+---
 apiVersion: kagent.dev/v1alpha2
 kind: ModelConfig
 metadata: {name: defence-model, namespace: dd-agents}
 spec:
   provider: OpenAI
   model: claude-haiku-4-5
-  apiKeySecret: dd-agent-identity
-  apiKeySecretKey: token
+  apiKeySecret: dd-model-placeholder
+  apiKeySecretKey: key
   openAI:
-    baseUrl: http://dd-gateway.dd-gateway.svc/v1
+    baseUrl: http://model.dd-gateway.svc/v1
     maxTokens: 256
     temperature: "0"
 ---
@@ -15,12 +24,11 @@ apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata: {name: defence-tools, namespace: dd-agents}
 spec:
-  description: Incident operations reached through agentgateway
+  description: Incident operations reached through dd-waypoint
   protocol: STREAMABLE_HTTP
-  url: http://dd-gateway.dd-gateway.svc/mcp
-  headersFrom:
-  - name: Authorization
-    valueFrom: {type: Secret, name: dd-agent-identity, key: authorization}
+  url: http://tools.dd-gateway.svc/mcp
+  timeout: 30s
+  terminateOnClose: true
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
