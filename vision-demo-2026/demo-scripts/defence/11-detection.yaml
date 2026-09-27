@@ -1,0 +1,12 @@
+# These are bounded demonstration identities, not a production label-cardinality plan.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: identity-metrics, namespace: dd-gateway}
+spec:
+  targetRefs:
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: dd-gateway}
+  frontend:
+    metrics:
+      attributes:
+        add:
+        - {name: caller, expression: jwt.sub}

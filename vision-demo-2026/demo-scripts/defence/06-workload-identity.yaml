@@ -1,0 +1,20 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: gateway-only, namespace: dd-models}
+spec:
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: [mesh1/ns/dd-gateway/sa/dd-gateway]
+---
+# The same boundary protects tools from callers that bypass the MCP gateway.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: gateway-only, namespace: dd-tools}
+spec:
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: [mesh1/ns/dd-gateway/sa/dd-gateway]

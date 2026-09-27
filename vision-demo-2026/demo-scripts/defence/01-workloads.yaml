@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: unmanaged-agent, namespace: dd-agents}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unmanaged-agent
+  namespace: dd-agents
+  labels: {app: unmanaged-agent}
+spec:
+  serviceAccountName: unmanaged-agent
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 1000}
+  containers:
+  - name: curl
+    image: curlimages/curl:8.12.1
+    command: [sleep, infinity]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: {drop: [ALL]}
+    resources:
+      requests: {cpu: 5m, memory: 8Mi}
+      limits: {cpu: 100m, memory: 32Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: model, namespace: dd-models}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: dd-model}}
+  template:
+    metadata: {labels: {app: dd-model}}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: model
+        image: localhost:5001/llm-gateway-mock:latest
+        imagePullPolicy: IfNotPresent
+        command: [python, -u, /lab/model.py]
+        ports: [{containerPort: 8000}]
+        readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 2}
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 100m, memory: 64Mi}
+        volumeMounts: [{name: code, mountPath: /lab, readOnly: true}]
+      volumes: [{name: code, configMap: {name: model-code}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: model, namespace: dd-models}
+spec:
+  selector: {app: dd-model}
+  ports: [{name: http, port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: tools, namespace: dd-tools}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: dd-tools}}
+  template:
+    metadata: {labels: {app: dd-tools}}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: tools
+        image: localhost:5001/calc-mcp:latest
+        imagePullPolicy: IfNotPresent
+        command: [python, -u, /lab/tools.py]
+        ports: [{containerPort: 3000}]
+        readinessProbe: {tcpSocket: {port: 3000}, periodSeconds: 2}
+        resources:
+          requests: {cpu: 5m, memory: 32Mi}
+          limits: {cpu: 100m, memory: 128Mi}
+        volumeMounts: [{name: code, mountPath: /lab, readOnly: true}]
+      volumes: [{name: code, configMap: {name: tools-code}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: tools, namespace: dd-tools}
+spec:
+  selector: {app: dd-tools}
+  ports: [{name: http, port: 3000, targetPort: 3000}]
