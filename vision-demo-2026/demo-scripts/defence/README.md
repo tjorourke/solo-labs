@@ -4,10 +4,11 @@ Open `http://localhost:8900/demo-13` or follow
 `../../demo-13-defence-in-depth.ipynb` from `vision-demo-2026`.
 Run the chapters in order.
 
-The **Diagram** tab shows the architecture in every chapter. Its source and
-editable version are in `diagrams/architecture.mmd` and
-`diagrams/architecture.excalidraw`, with SVG and PNG renders beside them.
-`diagrams/render.py` regenerates these using the local gstack offline renderer.
+The **Diagram** tab shows the architecture and the before/after tool-policy
+outcome in every chapter. `diagrams/design.py` defines the layout and generates
+both the SVG and an editable `architecture.excalidraw` scene.
+`diagrams/render.py` rebuilds those files and the PNG using the local gstack
+offline renderer.
 
 The incident-response agent is a **kagent Agent**, with a **ModelConfig** pointing
 to agentgateway and a **RemoteMCPServer** registering its tool endpoint. Incident operations are deployed
