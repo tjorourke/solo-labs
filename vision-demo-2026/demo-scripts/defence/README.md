@@ -60,7 +60,7 @@ ACCEPTED at the current generation and fails on timeout. Bounded bursts use
 fresh Alice and Bob subjects so reruns do not inherit a previous bucket. A
 minute boundary can replenish the bucket during a burst; the test requires
 successful calls, subsequent 429s and an unaffected Bob, not an exact count
-across a wall-clock boundary. Caller labels are for this small demonstration;
+across a wall-clock boundary. Caller labels are for this demonstration;
 they are not a recommendation for unbounded production metric cardinality.
 
 ## Files and reset

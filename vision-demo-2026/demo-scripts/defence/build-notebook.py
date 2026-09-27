@@ -69,15 +69,15 @@ export DD_STATE="${TMPDIR:-/tmp}/defence-lab"
 ''')
 
 chapter(1, "Setup", "Create the lab's workloads",
-        "Create four small namespaces on mesh1, an unprivileged stand-in agent, a local echo model, two harmless MCP tools and a dedicated gateway.",
+        "Create four namespaces on mesh1, an unprivileged stand-in agent, a local echo model, two harmless MCP tools and a dedicated gateway.",
         "All demonstration traffic comes from unmanaged-agent. Reset removes these workloads. The installed platform is shared.")
 action("Create the namespaces", "Enrol this lab's namespaces in ambient.", "Four dd- namespaces are created.",
        apply("00-namespaces.yaml"), [("Namespaces", r"namespace/dd-(agents|models|tools|gateway) (created|unchanged)")])
-action("Load the local simulator code", "Put the model and tool implementations in their own ConfigMaps.", "Both ConfigMaps are applied.",
+action("Load the sample model and tools", "Store the model and tool server's Python files in Kubernetes ConfigMaps. The next step mounts these files into pods and runs them.", "Both ConfigMaps are created with the Python files the pods will run.",
        f'''{K} -n dd-models create configmap model-code --from-file="$DD/model.py" --dry-run=client -o yaml | {K} apply -f -
 {K} -n dd-tools create configmap tools-code --from-file="$DD/tools.py" --dry-run=client -o yaml | {K} apply -f -''',
        [("Model code", r"configmap/model-code (created|configured|unchanged)"), ("Tool code", r"configmap/tools-code (created|configured|unchanged)")])
-action("Start the agent, model and tools", "Apply the small workloads using images already used by the console.", "The agent is Ready and both Deployments roll out.",
+action("Start the agent, model and tools", "Start the agent pod, model simulator and tool server using container images already on mesh1.", "The agent is Ready and both Deployments roll out.",
        apply("01-workloads.yaml", f'''{K} -n dd-agents wait pod/unmanaged-agent --for=condition=Ready --timeout=120s
 {K} -n dd-models rollout status deploy/model --timeout=120s
 {K} -n dd-tools rollout status deploy/tools --timeout=120s'''),
@@ -172,7 +172,7 @@ action("With the control", "Send the same prompt. Read the last received_prompt 
        [("Request preserved", "HTTP 200"), ("Upstream masked", r'"received_prompt":\s*"Contact <EMAIL_ADDRESS> for the sample\."'), ("Guardrail evidence", r'agentgateway_guardrail_checks_total\{phase="Request",action="Mask"\} [1-9]')], watch="app")
 
 chapter(7, "Request rate", "Limit requests per caller",
-        "Run a small, bounded burst. Add a global limit of three model requests per minute per signed subject, then repeat the burst and make a request as someone else.",
+        "Send six requests. Add a global limit of three model requests per minute per signed subject, then repeat the requests and make a request as someone else.",
         "Each demonstration burst uses fresh Alice and Bob subjects so rerunning the step has a fresh bucket. It sends at most twenty requests. No model spend is involved.")
 params = [{"name": "N", "label": "Requests", "default": 6, "min": 5, "max": 20}]
 action("Without the control", "Send the bounded burst with no rate policy.", "All Alice requests and Bob's request return 200.",
@@ -200,7 +200,7 @@ cell("code", f'''{K} delete namespace dd-agents dd-models dd-tools dd-gateway --
 rm -f "$DD_STATE/private.pem" "$DD_STATE/07-caller-identity.json"''')
 
 notebook = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Bash", "language": "bash", "name": "bash"}, "language_info": {"name": "bash"}}, "nbformat": 4, "nbformat_minor": 5}
-spec = {"intro": "Runs on kind-mesh1 with Enterprise agentgateway and ambient Istio. Local simulators keep this small and free of model spend. Each control has a before/after check. Egress is scoped to example.com; masking and detection are not refusal controls. Run the chapters in order, then Reset lab to remove its footprint.",
+spec = {"intro": "Runs on kind-mesh1 with Enterprise agentgateway and ambient Istio. The model simulator runs locally, so there are no model API charges. Each control has a before/after check. Egress is scoped to example.com; masking and detection are not refusal controls. Run the chapters in order, then Reset lab to remove its footprint.",
         "app": {"label": "Layers of defence, live", "url": "/defence/live", "hint": "Policies, refusal evidence and masking checks from mesh1."}, "steps": steps}
 (ROOT / "demo-13-defence-in-depth.ipynb").write_text(json.dumps(notebook, ensure_ascii=True, indent=1) + "\n")
 (ROOT / "demo-console/present/demo-13.json").write_text(json.dumps(spec, ensure_ascii=True, indent=2) + "\n")
