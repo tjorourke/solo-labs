@@ -1,0 +1,2 @@
+enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/reject-personal-data created
+reject-personal-data Accepted and Attached

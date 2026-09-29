@@ -26,7 +26,7 @@ export ISTIOCTL="${ISTIOCTL:-$HOME/.istioctl/bin/istioctl-1.30.3-solo}"
 kc(){ kubectl --context "$CTX" "$@"; }
 
 # ── secrets ───────────────────────────────────────────────────────────────────
-SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
+SECRETS_FILE="${SECRETS_FILE:-$SCRIPT_DIR/../../secrets.env}"
 [[ -f "$SECRETS_FILE" ]] && { set -a; source "$SECRETS_FILE"; set +a; }
 export KAGENT_ENT_LICENSE_KEY="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-${SOLO_ISTIO_LICENSE_KEY:-}}}"
 [[ -n "${ANTHROPIC_API_KEY:-}" ]]      || die "ANTHROPIC_API_KEY not set (SECRETS_FILE)"

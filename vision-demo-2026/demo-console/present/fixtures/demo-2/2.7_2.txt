@@ -1,0 +1,12 @@
+deployment.apps/checkout-blue patched
+deployment.apps/checkout-green patched
+Waiting for deployment "checkout-blue" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "checkout-blue" rollout to finish: 1 old replicas are pending termination...
+deployment "checkout-blue" successfully rolled out
+Waiting for deployment "checkout-green" rollout to finish: 1 old replicas are pending termination...
+deployment "checkout-green" successfully rolled out
+POD                               TIER
+checkout-blue-5c8fbf858b-2x8m7    gold
+checkout-blue-77545c5bc5-jpmrz    <none>
+checkout-green-58c74b4dcf-k2ln5   silver
+checkout-green-58d9c7cbbc-jk682   <none>

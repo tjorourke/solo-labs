@@ -1,0 +1,93 @@
+# Render with up.sh: JWT_PROVIDERS is a JSON array copied from the live gateway,
+# not a YAML scalar. Like the task router's JWT policies, this is a template.
+# Claude Desktop's way in. Desktop already talks to the lab's public model
+# gateway; pointing its base URL at /kernwerk sends its prompts to dlp-gateway
+# instead of the task router, with the same sign-in.
+#
+#   /kernwerk/v1/messages       -> kernwerk-pii:8081, which turns any attached
+#                                  PDF into text, inside the cluster
+#   /kernwerk-open/v1/messages  -> kernwerk-desktop, which converts Messages to
+#                                  chat completions for dlp-gateway
+#
+# Desktop speaks the Anthropic Messages API and dlp-gateway reads chat
+# completions, so kernwerk-desktop converts on the way in and converts the
+# answer back on the way out, the same as model-gateway-messages does for the
+# task router. count_tokens is answered there, so sizing calls reach no model.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kernwerk-desktop
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: model-gateway
+    sectionName: intake
+  rules:
+  - name: reader
+    matches:
+    - path: {type: PathPrefix, value: /kernwerk/v1/messages}
+    backendRefs:
+    - {name: kernwerk-pii, kind: Service, group: "", port: 8081}
+  - name: open
+    matches:
+    - path: {type: PathPrefix, value: /kernwerk-open/v1/messages}
+    backendRefs:
+    - {name: kernwerk-desktop, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: kernwerk-desktop
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai: {}
+      host: dlp-gateway.agentgateway-system.svc.cluster.local
+      port: 80
+      path: /v1/chat/completions
+  policies:
+    ai:
+      routes:
+        "/kernwerk-open/v1/messages": Messages
+        "/kernwerk-open/v1/messages/count_tokens": AnthropicTokenCount
+---
+# The same sign-in as the rest of the model gateway: a lab identity token or
+# one issued by the Agentdesktop controller. up.sh copies the two providers
+# from the task router's policy, since the keys are made when that lab installs.
+# The reader passes the token on, since the second hop checks it again; the
+# second hop drops it, so it never reaches a model provider.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: kernwerk-desktop-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: kernwerk-desktop
+    sectionName: reader
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      preserveToken: true
+      providers: ${JWT_PROVIDERS}
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: kernwerk-desktop-open-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: kernwerk-desktop
+    sectionName: open
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers: ${JWT_PROVIDERS}

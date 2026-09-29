@@ -1,0 +1,5 @@
+  adopt-pet({"petId": 5151})
+Adopted Nova (pet 5151). Order 5151 is placed, and the pet is now sold.
+
+  == the REST API agrees ==
+{"id":5151,"name":"Nova","photoUrls":[],"tags":[],"status":"sold"}

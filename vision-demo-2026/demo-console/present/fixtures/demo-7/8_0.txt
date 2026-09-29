@@ -1,0 +1,8 @@
+enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/mcp-hub created
+httproute.gateway.networking.k8s.io/mcp created
+tools through the gateway (anonymous, for now):
+echo
+printenv
+reverse_text
+sum
+to_uppercase

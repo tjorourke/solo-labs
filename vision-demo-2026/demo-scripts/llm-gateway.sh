@@ -18,14 +18,14 @@
 #   - demo IdP: an RS256 keypair in demo-scripts/.jwt/ for minting persona
 #     JWTs (alice/bob/carol) — stands in for a corporate IdP
 #
-#   SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/llm-gateway.sh
+#   ./demo-scripts/llm-gateway.sh        (keys from ../secrets.env, or SECRETS_FILE=...)
 #
 # Idempotent — re-run freely. Remove with:  ./demo-scripts/llm-gateway.sh teardown
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CTX="${CTX:-kind-mesh1}"
 GW_NS=agentgateway-system
-SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
+SECRETS_FILE="${SECRETS_FILE:-$SCRIPT_DIR/../secrets.env}"
 [ -f "$SECRETS_FILE" ] && set -a && . "$SECRETS_FILE" && set +a
 
 # The model servers run a small local OpenAI-compatible mock (keyword-aware

@@ -240,6 +240,11 @@ step "Agentdesktop controller (image tag: $CONTROLLER_IMAGE_TAG)"
 GW_IP="$(kc -n "$GW_NS" get svc -l gateway.networking.k8s.io/gateway-name=ai-gateway \
   -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
 [ -n "${GW_IP:-}" ] || die "could not read the ai-gateway LoadBalancer address"
+# The EKS model gateway enrolled devices send Claude Code to: AGW_HOST, else the hostname
+# the task-routing lab published (tofu prints warnings on stdout, so only a hostname counts).
+AGW_HOST="${AGW_HOST:-$(tofu -chdir="$SCRIPT_DIR/../../agentgateway-inference-task-routing-eks/tofu" \
+  output -raw gateway_host 2>/dev/null | grep -xE '[A-Za-z0-9.-]+' || true)}"
+[ -n "$AGW_HOST" ] || die "set AGW_HOST to the EKS model gateway's hostname (see SETUP.md, The EKS GPU cluster)"
 
 cat > /tmp/agentdesktop-values.yaml <<EOF
 image:
@@ -263,7 +268,7 @@ service:
   port: 443
 daemonConfig:
   llmGateway:
-    url: https://agw.awslab.masterthemesh.com
+    url: https://${AGW_HOST}
     authentication:
       type: controllerJwt
       audience: model-gateway

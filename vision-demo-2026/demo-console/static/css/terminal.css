@@ -1,0 +1,24 @@
+/* Lab terminal dock: a bar along the bottom that opens into a shell. */
+.term-dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: #0f172a;
+  border-top: 1px solid #334155; box-shadow: 0 -8px 24px rgba(15, 23, 42, .18); display: flex; flex-direction: column; }
+.term-bar { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 12px; color: #cbd5e1; font-size: 13px; }
+.term-toggle { border: 0; background: none; color: #e2e8f0; font: inherit; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
+.term-caret { display: inline-block; transition: transform .15s; color: #a78bfa; }
+.term-dock:not(.closed) .term-caret { transform: rotate(90deg); }
+.term-ctx { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #67e8f9; background: rgba(103, 232, 249, .1); border-radius: 5px; padding: 2px 7px; font-weight: 600; }
+.term-hint { color: #64748b; font-size: 12px; }
+.term-hint kbd { background: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 0 5px; color: #cbd5e1; }
+.term-actions { margin-left: auto; display: flex; gap: 6px; }
+.term-actions .btn { background: #1e293b; border-color: #334155; color: #e2e8f0; padding: 4px 10px; font-size: 12.5px; }
+.term-body { height: 300px; padding: 6px 12px 16px; box-sizing: border-box; }
+.term-inner { height: 100%; }
+.term-dock.tall .term-body { height: 62vh; }
+.term-dock.closed .term-body { display: none; }
+/* keep page content clear of the dock */
+body.has-term { padding-bottom: 38px; }
+body.has-term.term-open { padding-bottom: 350px; }
+/* The chapter pages are a full-height grid: shrink it instead of padding the body. */
+body.has-term .pr { height: calc(100vh - var(--nav-h) - 38px); }
+body.has-term.term-open .pr { height: calc(100vh - var(--nav-h) - 350px); }
+body.has-term.term-open:has(.term-dock.tall) .pr { height: calc(38vh - var(--nav-h) - 50px); }
+body.has-term:has(.pr) { padding-bottom: 0; }

@@ -1,0 +1,24 @@
+namespace/petshop created
+namespace/petshop unchanged
+serviceaccount/analytics created
+deployment.apps/analytics created
+serviceaccount/checkout created
+deployment.apps/checkout-blue created
+deployment.apps/checkout-green created
+serviceaccount/petstore created
+service/petstore created
+deployment.apps/petstore created
+serviceaccount/storefront created
+deployment.apps/storefront created
+Waiting for deployment "petstore" rollout to finish: 0 of 1 updated replicas are available...
+deployment "petstore" successfully rolled out
+deployment "storefront" successfully rolled out
+deployment "analytics" successfully rolled out
+deployment "checkout-blue" successfully rolled out
+deployment "checkout-green" successfully rolled out
+NAME                              READY   STATUS    RESTARTS   AGE
+analytics-f774ff7c-q5qnc          1/1     Running   0          3s
+checkout-blue-77545c5bc5-jpmrz    1/1     Running   0          3s
+checkout-green-58d9c7cbbc-jk682   1/1     Running   0          3s
+petstore-75dbf87995-n9mwj         1/1     Running   0          3s
+storefront-8578796db5-792x9       1/1     Running   0          3s

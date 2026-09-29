@@ -1,0 +1,30 @@
+{
+  "state": "failed",
+  "calls": [],
+  "results": [],
+  "answer": [],
+  "error": null
+}
+# dd-gateway
+agentgateway_requests_total{backend="defence-agent.dd-agents.svc.cluster.local:8080",protocol="http",method="POST",status="200",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown"} 10
+agentgateway_requests_total{backend="dd-gateway/operator-tools",protocol="mcp",method="POST",status="202",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/operator-tools",route_rule="unknown"} 1
+agentgateway_requests_total{backend="unknown",protocol="http",method="POST",status="401",reason="JwtAuth",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown"} 1
+agentgateway_requests_total{backend="dd-gateway/operator-tools",protocol="mcp",method="POST",status="200",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/operator-tools",route_rule="unknown"} 2
+# dd-waypoint
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="POST",status="400",reason="MCP",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 1
+agentgateway_requests_total{backend="dd-gateway/model",protocol="llm",method="POST",status="403",reason="Guardrail",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/model",route_rule="unknown"} 1
+agentgateway_requests_total{backend="dd-gateway/model",protocol="llm",method="POST",status="200",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/model",route_rule="unknown"} 15
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="POST",status="202",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 14
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="POST",status="200",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 33
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="DELETE",status="202",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 12
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="GET",status="200",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 12
+agentgateway_guardrail_checks_total{phase="Request",action="Reject"} 1
+{
+  "state": "completed",
+  "calls": [],
+  "results": [],
+  "answer": [
+    "READY"
+  ],
+  "error": null
+}

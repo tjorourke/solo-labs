@@ -1,0 +1,76 @@
+  ══ checkout-blue  ·  real leaf certificate from ztunnel ══
+    SPIFFE URI:    spiffe://mesh1/ns/petshop/sa/checkout
+    signed claim:  tier = gold   (issued + signed by istiod)
+
+  ══ checkout-green  ·  real leaf certificate from ztunnel ══
+    SPIFFE URI:    spiffe://mesh1/ns/petshop/sa/checkout
+    signed claim:  tier = silver   (issued + signed by istiod)
+
+
+  ══ full leaf certificate for checkout-blue (openssl x509 -text) ══
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            ca:30:a1:bc:bf:a6:91:0b:f9:d1:c7:00:ab:97:46:05
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: O=Solo Demo, CN=mesh1 Intermediate CA
+        Validity
+            Not Before: Sep 23 13:29:39 2026 GMT
+            Not After : Sep 24 13:31:39 2026 GMT
+        Subject: 
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:a1:f5:26:0d:7e:5d:e5:8b:e2:f8:39:7c:c8:94:
+                    59:89:fb:e0:b6:3a:f8:c5:88:05:22:93:8f:ec:d0:
+                    ed:63:60:8e:3f:11:50:68:ea:e8:e1:81:92:45:e7:
+                    ce:8a:dd:24:af:6d:8a:04:b0:85:90:c0:8e:03:8a:
+                    f1:22:fc:32:c5
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Key Usage: critical
+                Digital Signature, Key Encipherment
+            X509v3 Extended Key Usage: 
+                TLS Web Server Authentication, TLS Web Client Authentication
+            X509v3 Basic Constraints: critical
+                CA:FALSE
+            X509v3 Authority Key Identifier: 
+                83:A7:D9:67:6E:E5:D7:EC:A3:E2:E0:81:AD:B6:57:22:24:AB:D5:21
+            X509v3 Subject Alternative Name: critical
+                URI:spiffe://mesh1/ns/petshop/sa/checkout, othername: 1.3.6.1.4.1.65865.1.1:eyJpc3MiOiJodHRwczovL2lzdGlvZC5pc3Rpby1zeXN0ZW0uc3ZjLm1lc2gxIiwic3ViIjoic3BpZmZlOi8vbWVzaDEvbnMvcGV0c2hvcC9zYS9jaGVja291dCIsImV4cCI6MTc5MDI1NjY5OSwiaWF0IjoxNzkwMTcwMjk5LCJpc3Rpby5pbyI6eyJ0cnVzdF9kb21haW4iOiJtZXNoMSIsIndvcmtsb2FkIjp7Im5hbWUiOiJjaGVja291dCIsIm5hbWVzcGFjZSI6InBldHNob3AiLCJwb2QiOiJjaGVja291dC1ibHVlLTVjOGZiZjg1OGItMng4bTcifX0sInNvbG8uaW8iOnsic2VjdXJpdHktY2xhaW1zIjp7InRpZXIiOiJnb2xkIn19fQ
+    Signature Algorithm: sha256WithRSAEncryption
+    Signature Value:
+        95:1e:18:75:22:3d:e8:18:7c:f6:01:b0:7f:23:ea:da:6a:8b:
+        3b:61:ae:50:07:f2:fa:a1:85:6d:df:3e:a9:4b:3b:cb:e4:8a:
+        cc:b3:88:3f:af:f2:11:c0:4b:eb:cb:35:4f:6f:f7:37:ea:d6:
+        96:c5:d0:78:b0:e9:87:b3:44:ba:01:cc:6b:78:56:90:99:42:
+        d4:35:d7:97:64:63:c8:35:3e:db:dc:9f:b8:85:de:be:54:09:
+        04:c0:2b:2a:39:12:b1:6e:c0:bd:61:b7:e7:36:c8:6f:4a:2a:
+        d1:0e:73:cf:dc:57:24:51:94:d4:4d:c7:87:29:32:58:85:bb:
+        59:98:a0:97:f1:f5:a6:b5:54:7b:2a:18:71:1e:9c:5a:72:b8:
+        31:42:8d:94:64:03:23:17:8d:b6:1f:25:75:f5:f7:7b:2f:3e:
+        36:ed:8e:f3:41:31:90:cc:06:82:00:ab:98:96:aa:2c:cf:4a:
+        6f:5e:3e:85:c7:a9:e8:60:fc:ce:c2:c6:1d:7d:c7:cc:2e:35:
+        9b:4e:79:57:fe:f4:57:45:bb:c8:b8:08:1d:de:88:77:03:a3:
+        17:29:2a:91:35:bd:c8:99:d0:ce:dd:64:59:ec:18:2f:4a:9c:
+        39:b1:3a:40:c7:68:98:30:d0:ed:6d:96:ce:83:55:e2:1c:23:
+        f2:bf:3a:42:b1:64:90:db:70:84:8e:59:28:04:85:e8:44:9f:
+        f5:27:e4:d2:3a:dd:56:3a:c0:7e:e6:76:da:34:bb:ab:4d:c8:
+        50:ee:cc:33:8d:34:f5:63:0b:31:f8:7b:29:0d:98:1a:5c:c4:
+        27:3d:4f:0f:f2:4f:97:ba:34:4c:6a:23:02:71:3f:9b:e0:54:
+        fd:10:15:8a:92:26:64:e3:a2:ad:09:3d:fe:ca:b0:f9:a9:bf:
+        9f:aa:cd:0a:f3:5e:77:cf:43:e0:f6:52:25:6b:af:d1:02:40:
+        ec:e7:be:3d:25:49:1b:5e:4f:80:61:75:dc:4c:32:3a:28:eb:
+        53:f3:7a:a9:ca:f6:2b:bc:a1:bc:65:cb:b2:cc:79:e2:97:ee:
+        8c:e8:5f:8e:30:e8:18:b3:28:a8:75:a6:8b:04:f9:57:7c:7c:
+        6e:c5:04:73:23:b4:aa:88:7f:9b:98:1e:0a:e9:0b:ad:ae:5d:
+        9f:5b:11:fe:ad:a7:25:47:58:f7:b8:94:a7:22:ba:e1:80:e8:
+        44:a5:9b:93:48:be:e6:56:c9:44:83:ab:8b:ad:d5:85:79:85:
+        c2:17:27:90:64:da:ad:c0:a5:60:f1:8c:74:6f:64:f4:fe:30:
+        45:9b:f7:8c:76:f6:66:55:9a:0f:33:aa:d3:57:eb:88:10:9c:
+        33:dd:49:d1:b4:cc:02:05
+
+  Same SPIFFE URI on both (…/sa/checkout) — the signed tier claim is what tells them apart.

@@ -1,0 +1,43 @@
+# Which of Kernwerk's three kinds of data is this? The gateway reads every
+# message except the client's own system prompt before it picks a route and writes the answer into x-kernwerk-lane.
+#
+#   private  marked Klasse 3, Streng vertraulich or Kernwerk Restricted, or it
+#            carries an attachment the gateway cannot read as text
+#   eu       personal data: an email address, a German IBAN or phone number,
+#            a Kernwerk personnel number, or the words personal data
+#   public   everything else
+#
+# Gateway API routes cannot look inside a request body, so this runs in the
+# PreRouting phase and the routes (04) match the header it sets.
+#
+# The two patterns are filled in by up.sh from dlp.data_classes in the task
+# router's opa/routing-data.json, which is the same list native CEL reads when it
+# enforces a class on the decision gateway. One definition, two gateways, so a
+# prompt cannot be Class 3 on the Data protection page and Class 2 on Gateway
+# decisions. Edit the classes there, not here.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: kernwerk-lanes
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: dlp-gateway
+  traffic:
+    phase: PreRouting
+    transformation:
+      request:
+        set:
+        - name: x-kernwerk-lane
+          value: |
+            [json(request.body).messages.filter(m, m.role != "system").map(m, type(m.content) == string
+                ? m.content
+                : m.content.map(p, has(p.text) ? p.text : "[[attachment]]").join("\n")
+              ).join("\n")
+            ].map(t,
+              t.matches("${CLASS_3_PATTERN}") ? "private"
+              : t.matches("${CLASS_2_PATTERN}") ? "eu"
+              : "public"
+            )[0]

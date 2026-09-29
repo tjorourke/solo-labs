@@ -1,0 +1,8 @@
+namespace/rest-api created
+deployment.apps/petstore created
+service/petstore created
+Waiting for deployment "petstore" rollout to finish: 0 of 1 updated replicas are available...
+deployment "petstore" successfully rolled out
+
+  == plain REST: GET /api/v3/pet/1 ==
+{"id":1,"category":{"id":2,"name":"Cats"},"name":"Cat 1","photoUrls":["url1","url2"],"tags":[{"id":1,"name":"tag1"},{"id":2,"name":"tag2"}],"status":"available"}

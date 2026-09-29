@@ -1,0 +1,12 @@
+secret/team-data-platform-keys created
+enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/azure-gpt5 unchanged
+httproute.gateway.networking.k8s.io/service-models created
+enterpriseagentgatewaybudget.enterpriseagentgateway.solo.io/service-budgets created
+enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/service-models-auth created
+wrong key:   HTTP 401
+burn the key's 100-token daily budget (Block on overage):
+  request 1: HTTP 200
+  request 2: HTTP 200
+  request 3: HTTP 200
+  request 4: HTTP 200
+  request 5: HTTP 429

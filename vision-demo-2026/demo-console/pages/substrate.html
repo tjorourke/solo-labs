@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Substrate · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/desktop">Agentdesktop</a>
+    <a href="/decisions">Gateway decisions</a>
+    <a href="/economy">Token economics</a>
+    <a href="/cost">Cost</a>
+    <a href="/agents">My agents</a>
+    <a href="/approvals">Platform approval</a>
+    <a href="/substrate" class="active">Substrate</a>
+  </div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label"></span></span>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/user-story-1">← Agentics Overview</a></div>
+    <div class="eyebrow">DEMO 07 · Substrate</div>
+    <h1>Agent Substrate</h1>
+    <p>Agents do not need a pod each. They live as actors, they are snapshotted when they go quiet, and they come back on whichever worker is free.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <p class="sub" style="margin-top:0">An idle agent still holds a pod, and a thousand agents is a thousand pods doing nothing. Substrate gives a worker several actors, checkpoints each one to object storage between turns, and restores it on the next message. The calls out still go through the gateway.</p>
+    <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" role="img" aria-label="Agent Substrate: actors multiplexed onto a worker, snapshotted to S3, reaching the gateway">
+  <defs>
+    <radialGradient id="a-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+    <marker id="a-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#a78bfa"/>
+    </marker>
+  </defs>
+  <rect width="960" height="600" fill="#191a2a"/>
+
+  <rect x="24" y="20" width="912" height="46" rx="10" fill="none" stroke="#3a3b55"/>
+  <text x="480" y="49" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" letter-spacing="1.5" fill="#9ca3b8">SANDBOX</text>
+
+  <text x="440" y="104" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" letter-spacing="1.5" fill="#9ca3b8">WORKER</text>
+  <rect x="180" y="116" width="520" height="250" rx="22" fill="none" stroke="#4a4b68" stroke-width="1.5"/>
+
+  <text x="300" y="146" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" letter-spacing="1.4" fill="#9ca3b8">ACTOR</text>
+
+  <g>
+    <circle cx="300" cy="222" r="72" fill="url(#a-glow)"/>
+    <circle cx="300" cy="222" r="60" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-dasharray="6 6"/>
+    <g fill="#fff"><rect x="276" y="204" width="48" height="36" rx="10"/><circle cx="288" cy="222" r="5" fill="#191a2a"/><circle cx="312" cy="222" r="5" fill="#191a2a"/><rect x="298" y="192" width="4" height="12"/><circle cx="300" cy="190" r="4"/></g>
+    <line x1="300" y1="282" x2="300" y2="320" stroke="#a78bfa" stroke-width="1.4"/>
+  </g>
+  <g>
+    <circle cx="440" cy="222" r="72" fill="url(#a-glow)"/>
+    <circle cx="440" cy="222" r="60" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-dasharray="6 6"/>
+    <g fill="#fff"><rect x="416" y="204" width="48" height="36" rx="10"/><circle cx="428" cy="222" r="5" fill="#191a2a"/><circle cx="452" cy="222" r="5" fill="#191a2a"/><rect x="438" y="192" width="4" height="12"/><circle cx="440" cy="190" r="4"/></g>
+    <line x1="440" y1="282" x2="440" y2="320" stroke="#a78bfa" stroke-width="1.4"/>
+  </g>
+  <g>
+    <circle cx="580" cy="222" r="72" fill="url(#a-glow)"/>
+    <circle cx="580" cy="222" r="60" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-dasharray="6 6"/>
+    <g fill="#fff"><rect x="556" y="204" width="48" height="36" rx="10"/><circle cx="568" cy="222" r="5" fill="#191a2a"/><circle cx="592" cy="222" r="5" fill="#191a2a"/><rect x="578" y="192" width="4" height="12"/><circle cx="580" cy="190" r="4"/></g>
+    <line x1="580" y1="282" x2="580" y2="320" stroke="#a78bfa" stroke-width="1.4"/>
+  </g>
+
+  <g fill="#232438" stroke="#7c8099" stroke-width="1.4">
+    <rect x="278" y="320" width="44" height="52" rx="4"/>
+    <rect x="418" y="320" width="44" height="52" rx="4"/>
+    <rect x="558" y="320" width="44" height="52" rx="4"/>
+  </g>
+  <g fill="none" stroke="#7c8099" stroke-width="1.2">
+    <path d="M290 332 h14 l10 10 v18 h-24 z"/>
+    <path d="M430 332 h14 l10 10 v18 h-24 z"/>
+    <path d="M570 332 h14 l10 10 v18 h-24 z"/>
+  </g>
+
+  <path d="M300 372 V400 H580 V372 M440 372 V400 M440 400 V444" fill="none" stroke="#7c8099" stroke-width="1.2"/>
+  <text x="462" y="428" font-family="system-ui, sans-serif" font-size="13" letter-spacing="1.4" fill="#9ca3b8">SNAPSHOT</text>
+
+  <g>
+    <path d="M290 470 v72 a150 26 0 0 0 300 0 v-72" fill="#252639" stroke="#6b7088" stroke-width="1.4"/>
+    <ellipse cx="440" cy="470" rx="150" ry="26" fill="#3a3e57" stroke="#8d93ab" stroke-width="1.4"/>
+    <text x="440" y="528" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" font-weight="700" font-style="italic" fill="#fff">S3</text>
+  </g>
+
+  <rect x="694" y="198" width="12" height="48" rx="4" fill="#a78bfa"/>
+  <line x1="716" y1="222" x2="792" y2="222" stroke="#a78bfa" stroke-width="1.6" marker-start="url(#a-arr)" marker-end="url(#a-arr)"/>
+
+  <g>
+    <circle cx="848" cy="222" r="56" fill="url(#a-glow)"/>
+    <g stroke="#e9d5ff" stroke-width="3" opacity="0.75" stroke-linecap="round">
+      <line x1="848" y1="192" x2="824" y2="222"/><line x1="848" y1="192" x2="872" y2="222"/>
+      <line x1="824" y1="222" x2="872" y2="222"/><line x1="824" y1="222" x2="848" y2="252"/>
+      <line x1="872" y1="222" x2="848" y2="252"/>
+    </g>
+    <circle cx="848" cy="192" r="7" fill="#fff"/><circle cx="824" cy="222" r="7" fill="#fff"/>
+    <circle cx="872" cy="222" r="7" fill="#fff"/><circle cx="848" cy="252" r="7" fill="#fff"/>
+    <text x="848" y="300" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" letter-spacing="1.5" fill="#9ca3b8">GATEWAY</text>
+  </g>
+</svg>
+</div>
+    <div class="dia-keys">
+      <div><b>Actor</b>An agent's live state. It exists while it is answering, not all day.</div>
+      <div><b>Worker</b>A sandboxed process that hosts many actors, one at a time each.</div>
+      <div><b>Snapshot</b>The actor written to S3 when it goes quiet, and read back on the next turn.</div>
+      <div><b>Gateway</b>Every model and tool call still leaves through agentgateway.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Put a crowd on it</h2>
+      <span class="nav-status" style="color:var(--muted)"><i class="dot" id="sub-dot"></i><span id="sub-state">checking the cluster</span></span>
+    </div>
+    <p class="sub">Deploys the actors, then sends real chats at them for as long as you ask. Watch the bays fill, actors resume from snapshots, and the queue form when there are more actors than workers.</p>
+    <div class="run-bar">
+      <label class="field inline"><span>Actors</span><input type="number" id="f-agents" min="1" max="40" value="12"></label>
+      <label class="field inline"><span>Workers</span><input type="number" id="f-workers" min="1" max="8" value="3"></label>
+      <label class="field inline"><span>Minutes</span><input type="number" id="f-minutes" min="1" max="10" value="2"></label>
+      <button class="btn primary" id="go">Start the load</button>
+      <button class="btn" id="pause" disabled>Stop the chats</button>
+      <button class="btn" id="teardown">Tear it down</button>
+    </div>
+    <div class="metrics wide" id="sub-metrics">
+      <div class="metric"><div class="label">Actors ready</div><div class="value" id="m-actors">-</div></div>
+      <div class="metric"><div class="label">Workers</div><div class="value" id="m-workers">-</div></div>
+      <div class="metric"><div class="label">Chats sent</div><div class="value" id="m-chats">-</div></div>
+      <div class="metric"><div class="label">Time left</div><div class="value" id="m-left">-</div></div>
+    </div>
+    <div class="runbar-track"><div class="runbar-fill" id="runbar"></div></div>
+    <div class="log" id="sub-log"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>The board</h2>
+      <a class="btn" id="board-link" href="http://localhost:8123" target="_blank" rel="noreferrer">Open it full size</a>
+    </div>
+    <p class="sub">Substrate Scope, reading the controller's own inventory. Worker bays, the actors on them, and the queue.</p>
+    <div class="board-frame"><iframe id="board" title="Substrate Scope" src="about:blank"></iframe></div>
+  </div>
+
+  <details class="yaml">
+    <summary>Where substrate sits</summary>
+    <p class="hint">Substrate is one half of how kagent runs an agent. The harness is how you write it; the sandbox is where it runs.</p>
+    <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" role="img" aria-label="Where Agent Substrate sits: kagent on Kubernetes, with the harness on one side and the sandbox on the other">
+  <defs>
+    <radialGradient id="b-kglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="960" height="520" fill="#191a2a"/>
+
+  <rect x="40" y="24" width="880" height="70" rx="14" fill="#241f3d" stroke="#7c5cd6" stroke-width="1.4"/>
+  <g font-family="system-ui, sans-serif" font-size="15" letter-spacing="1.4" fill="#a9afc4" text-anchor="middle">
+    <text x="128" y="65">AGENTS</text>
+    <text x="304" y="65">TOOLS</text>
+    <text x="480" y="65">SKILLS</text>
+    <text x="656" y="65">PLUGINS</text>
+    <text x="832" y="65">POLICIES</text>
+  </g>
+
+  <rect x="40" y="130" width="260" height="220" rx="18" fill="#20212f" stroke="#33344a" stroke-width="1.4"/>
+  <g font-family="system-ui, sans-serif" font-size="15" letter-spacing="1.4" fill="#a9afc4" text-anchor="middle">
+    <text x="170" y="206">HARNESS</text>
+    <text x="170" y="246">DECLARATIVE</text>
+    <text x="170" y="286">PROGRAMMATIC</text>
+  </g>
+
+  <circle cx="480" cy="216" r="130" fill="url(#b-kglow)"/>
+  <g fill="#fff">
+    <path d="M436 170 h52 l20 20 v52 h-72 z"/>
+    <rect x="420" y="190" width="24" height="52"/>
+  </g>
+  <rect x="452" y="200" width="14" height="14" fill="#191a2a"/>
+  <rect x="478" y="200" width="14" height="14" fill="#191a2a"/>
+  <text x="480" y="300" text-anchor="middle" font-family="system-ui, sans-serif" font-size="46" font-weight="800" fill="#fff" letter-spacing="-1">kagent</text>
+
+  <rect x="660" y="130" width="260" height="220" rx="18" fill="#20212f" stroke="#33344a" stroke-width="1.4"/>
+  <g font-family="system-ui, sans-serif" font-size="15" letter-spacing="1.4" fill="#a9afc4" text-anchor="middle">
+    <text x="790" y="212">SANDBOX</text>
+    <text x="790" y="256">AGENT</text>
+    <text x="790" y="284">SUBSTRATE</text>
+  </g>
+
+  <rect x="40" y="386" width="880" height="80" rx="14" fill="#20212f" stroke="#33344a" stroke-width="1.4"/>
+  <text x="480" y="433" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" letter-spacing="1.4" fill="#a9afc4">KUBERNETES</text>
+</svg>
+</div>
+  </details>
+</div>
+<script src="/static/js/substrate.js"></script>
+</body>
+</html>

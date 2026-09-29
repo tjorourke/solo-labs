@@ -19,6 +19,9 @@
 #
 # instance-match-criteria=open means the nodegroup consumes it with no extra config.
 # ALWAYS set an end date: a reservation bills the full hourly rate with nothing in it.
+#
+# scripts/quick.sh renders this file before eksctl reads it, so EKS_CLUSTER, AWS_REGION,
+# GPU_AZ and LAB_OWNER replace the name, region, GPU zone and Owner tag below.
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
@@ -27,7 +30,7 @@ metadata:
   region: eu-west-2
   version: "1.34"
   tags:
-    Owner: torourke
+    Owner: lab-owner
     Project: model-routing-lab
 
 iam:

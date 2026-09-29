@@ -1,0 +1,9 @@
+deployment.apps/azure-openai scaled
+request 1: served_by=503 (primary evicted)
+request 2: served_by=claude-haiku-4-5
+request 3: served_by=claude-sonnet-4-5-20250929
+request 4: served_by=claude-haiku-4-5
+request 5: served_by=claude-haiku-4-5
+request 6: served_by=claude-haiku-4-5
+request 7: served_by=claude-haiku-4-5
+request 8: served_by=claude-haiku-4-5

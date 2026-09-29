@@ -33,7 +33,7 @@ case "$DEMO" in
 esac
 
 # licences / API keys — every demo wants these
-export SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
+export SECRETS_FILE="${SECRETS_FILE:-$LAB_ROOT/secrets.env}"
 [ -f "$SECRETS_FILE" ] && set -a && . "$SECRETS_FILE" && set +a
 _lic() { [ -n "$SOLO_ISTIO_LICENSE_KEY" ] && echo yes || echo NO; }
 

@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLUSTER1="${CLUSTER1:-kind-mesh1}"
 CLUSTER1_NAME="${CLUSTER1_NAME:-${CLUSTER1#kind-}}"
 MGMT_VERSION="${MGMT_VERSION:-0.5.6}"
-SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
+SECRETS_FILE="${SECRETS_FILE:-$SCRIPT_DIR/../secrets.env}"
 [ -f "$SECRETS_FILE" ] && set -a && . "$SECRETS_FILE" && set +a
 : "${AGENTGATEWAY_LICENSE_KEY:?set AGENTGATEWAY_LICENSE_KEY (or point SECRETS_FILE at a file that does) first}"
 

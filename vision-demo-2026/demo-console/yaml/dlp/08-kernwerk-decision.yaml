@@ -1,0 +1,161 @@
+# What a Kernwerk caller gets on the task router's decision gateway: an EU destination
+# for Class 2, and the personal-data check on every class.
+#
+# The task-routing lab ships two pools, private and approved-frontier, and AGW picks
+# between them on what kind of task it is. Kernwerk asks a second question on top: what
+# class of data is in the prompt. Native CEL answers it in native/decision.cel and writes the class
+# into x-kernwerk-lane, which it sets for a caller whose entitlement says data_classes and
+# for nobody else.
+#
+# Everything here matches on that header being present, so these rules only ever apply to
+# such a caller. They carry one more header match than the equivalent rule in the task
+# router's 60-decision-route.yaml, and Gateway API ranks a rule with more header matches
+# first, so a Kernwerk caller lands here and a colleague on the same gateway keeps using
+# that file's rules exactly as before: no redaction, no webhook, not even the hop.
+#
+# It is a route of this lab's own rather than more rules in that file so the task-routing
+# lab still installs standalone, with no Bedrock backend, no IAM role and no dependency on
+# the personal-data service being up.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kernwerk-decision
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: decision-gateway
+    sectionName: http
+  rules:
+  # Class 2. Personal data, so it may use a frontier model but must not leave the region:
+  # Claude on Bedrock, EU inference profile. Only AGW sets this pool, and only for a class
+  # that allows it, so there is no rule here for a caller who reaches it any other way.
+  - name: eu-hosted
+    matches:
+    - path: {type: PathPrefix, value: /v1/chat/completions}
+      headers:
+      - {type: Exact, name: x-model-pool, value: eu-hosted}
+      - {type: RegularExpression, name: x-kernwerk-lane, value: .+}
+    filters:
+    # This rule leaves the cluster, so the same header hygiene as the frontier rule: the
+    # employee and the repository they were working in come off. The routing labels stay,
+    # because they name a pool and a task and identify nobody.
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        remove: [x-routing-user, x-routing-reason, x-source-repo]
+    backendRefs:
+    - {name: kernwerk-eu, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+  # Class 1. Nothing restricted in the prompt, so the task table decides and a clearly
+  # generic request may use the frontier, the same as it would for anyone else.
+  - name: frontier
+    matches:
+    - path: {type: PathPrefix, value: /v1/chat/completions}
+      headers:
+      - {type: Exact, name: x-model-pool, value: approved-frontier}
+      - {type: RegularExpression, name: x-kernwerk-lane, value: .+}
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        remove: [x-routing-user, x-routing-reason, x-source-repo]
+    backendRefs:
+    - {name: anthropic, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+  # Class 3, and anything the task router keeps private: Kernwerk's own GPUs.
+  # One rule per model class, mirroring 60-decision-route.yaml exactly and adding the
+  # class header. Gateway API ranks a rule by how many header matches it has and breaks
+  # a tie by which route is older, so a rule here has to be strictly more specific than
+  # the task router's equivalent, not equally specific. A single private rule matching
+  # the pool and the class header looked more specific than it was: it tied with that
+  # file's private+general rule, lost the tie to the older route, and every Class 1
+  # general request went to a model without passing the personal-data check.
+  - name: private-coding
+    matches:
+    - path: {type: PathPrefix, value: /v1/chat/completions}
+      headers:
+      - {type: Exact, name: x-model-pool, value: private}
+      - {type: Exact, name: x-model-class, value: coding}
+      - {type: RegularExpression, name: x-kernwerk-lane, value: .+}
+    backendRefs:
+    - {name: vllm-qwen, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+  - name: private-finance
+    matches:
+    - path: {type: PathPrefix, value: /v1/chat/completions}
+      headers:
+      - {type: Exact, name: x-model-pool, value: private}
+      - {type: Exact, name: x-model-class, value: finance}
+      - {type: RegularExpression, name: x-kernwerk-lane, value: .+}
+    backendRefs:
+    - {name: vllm-mistral, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+  - name: private-telco
+    matches:
+    - path: {type: PathPrefix, value: /v1/chat/completions}
+      headers:
+      - {type: Exact, name: x-model-pool, value: private}
+      - {type: Exact, name: x-model-class, value: telco}
+      - {type: RegularExpression, name: x-kernwerk-lane, value: .+}
+    backendRefs:
+    - {name: vllm-mistral, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+  - name: private-general
+    matches:
+    - path: {type: PathPrefix, value: /v1/chat/completions}
+      headers:
+      - {type: Exact, name: x-model-pool, value: private}
+      - {type: Exact, name: x-model-class, value: general}
+      - {type: RegularExpression, name: x-kernwerk-lane, value: .+}
+    backendRefs:
+    - {name: vllm-mistral, group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend}
+---
+# The personal-data check, on every Kernwerk route above and on none of the task router's
+# own. Names, addresses, account numbers and the rest are replaced with placeholders by
+# kernwerk-pii, which runs in this cluster, so no prompt is sent to a cloud service to be
+# checked. The answer passes back through the same service on the way out.
+#
+# FailClosed: if the service cannot be reached the request fails rather than going to a
+# model unchecked. That is the right answer for a caller whose data is classified, and it
+# is why these routes are separate: the task router's own callers are not exposed to it.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: kernwerk-decision-dlp
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: kernwerk-decision
+  backend:
+    ai:
+      prompt:
+        prepend:
+        - role: system
+          content: >-
+            Kernwerk data policy: personal data below has been replaced with
+            placeholders like {NAME}. Treat each placeholder as the person or
+            detail it stands for.
+      promptGuard:
+        request:
+        # Credentials and jailbreaks are refused by native Pre/PostRouting before
+        # this webhook or any model. The direct response is an OpenAI JSON error,
+        # so the intake hop can also translate it for Claude Desktop's Messages API.
+        - webhook:
+            backendRef:
+              kind: Service
+              name: kernwerk-pii
+              port: 8080
+            failureMode: FailClosed
+            # The class, so the service records which one each prompt was, and the trace
+            # id, so the console can put the redactions on the right card. No class means
+            # a caller who does not classify data, and the service then changes nothing.
+            forwardHeaderMatches:
+            - {name: x-kernwerk-lane, type: RegularExpression, value: ".*"}
+            - {name: traceparent, type: RegularExpression, value: ".*"}
+        response:
+        - webhook:
+            backendRef:
+              kind: Service
+              name: kernwerk-pii
+              port: 8080
+            failureMode: FailClosed
+            forwardHeaderMatches:
+            - {name: x-kernwerk-lane, type: RegularExpression, value: ".*"}
+            - {name: traceparent, type: RegularExpression, value: ".*"}

@@ -11,7 +11,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-export SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
+export SECRETS_FILE="${SECRETS_FILE:-$LAB_ROOT/secrets.env}"
 
 [[ "${SKIP_MESH:-false}"      == "true" ]] || { echo "==> mesh1 + mesh2 (Parts 1-3 + Cost)";  bash "$SCRIPT_DIR/setup.sh"; }
 [[ "${SKIP_PART4:-false}"     == "true" ]] || { echo "==> AgentRegistry platform on mesh1 (Part 4)"; bash "$SCRIPT_DIR/agentregistry/setup-mesh1.sh"; }

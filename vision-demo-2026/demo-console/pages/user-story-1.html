@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentics Overview · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/desktop">Agentdesktop</a>
+    <a href="/decisions">Gateway decisions</a>
+    <a href="/economy">Token economics</a>
+    <a href="/cost">Cost</a>
+    <a href="/agents">My agents</a>
+    <a href="/approvals">Platform approval</a>
+    <a href="/substrate">Substrate</a>
+  </div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking cluster</span></span>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/">← All demos</a></div>
+    <div class="eyebrow">AGENTICS</div>
+    <h1>Agentics Overview</h1>
+    <p>Explore desktop enrolment, model routing, MCP token usage, cost controls, agent approvals and substrate.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="feature-grid">
+    <a class="feature-card" href="/desktop">
+      <div class="kicker">DEMO 01 · Enrol</div>
+      <h2>Agentdesktop</h2>
+      <p>One enrolment. Company policy lands on this laptop. The key never sits on the disk.</p>
+      <ul>
+        <li>Enrol this Mac into the fleet</li>
+        <li>Claude Desktop and Claude Code, both covered</li>
+        <li>Offboarding is one account, not a key hunt</li>
+      </ul>
+      <span class="go">Open Agentdesktop →</span>
+    </a>
+    <a class="feature-card" href="/decisions">
+      <div class="kicker">DEMO 02 and 03 · Path and routing</div>
+      <h2>Gateway decisions</h2>
+      <p>Send a prompt from Claude Desktop and from Claude Code. Both show on the company gateway. Then the question picks the model: telco, finance and code stay private.</p>
+      <ul>
+        <li>Both Claudes, one path, as the employee</li>
+        <li>5G slice, credit risk, code review, Python how-to</li>
+        <li>Who asked, the task, the pool, the model</li>
+      </ul>
+      <span class="go">Open Gateway decisions →</span>
+    </a>
+    <a class="feature-card" href="/economy">
+      <div class="kicker">DEMO 04 · Economics</div>
+      <h2>Token economics with MCP</h2>
+      <p>Same GitHub report, twice. Standard walks every tool. Code mode does the walking. The answer stays. The spend falls.</p>
+      <ul>
+        <li>Fewer tokens, fewer loops, lower spend</li>
+        <li>The agent does not change</li>
+        <li>Access stays on the gateway</li>
+      </ul>
+      <span class="go">Open Token economics →</span>
+    </a>
+    <a class="feature-card" href="/cost">
+      <div class="kicker">DEMO 05 · Cost</div>
+      <h2>Cost management</h2>
+      <p>Open the live graph. Cut spend by team and user. Put a budget on Bob.</p>
+      <ul>
+        <li>Dimensions: team, user, model</li>
+        <li>Spend and tokens on that slice</li>
+        <li>A cap in the agentgateway portal</li>
+      </ul>
+      <span class="go">Open Cost management →</span>
+    </a>
+    <a class="feature-card" href="/agents">
+      <div class="kicker">DEMO 06 · No-code</div>
+      <h2>My agents</h2>
+      <p>A prompt, a skill, the tools you tick. Deploy. It lands in the registry, then goes live. A platform admin still has to allow the tools.</p>
+      <ul>
+        <li>Wizard: identity, skills, tools, deploy</li>
+        <li>Only ticked tools can run</li>
+        <li>Approve MCP access after it is live</li>
+      </ul>
+      <span class="go">Open My agents →</span>
+    </a>
+    <a class="feature-card" href="/approvals">
+      <div class="kicker">DEMO 06 PART 2 · Platform approval</div>
+      <h2>Platform approval</h2>
+      <p>Swap hats. The agent is live and every tool it asked for is still denied. A platform admin, not the builder, decides that.</p>
+      <ul>
+        <li>Review what the identity asked for</li>
+        <li>Approve or deny the lot</li>
+        <li>Read the policy it writes on the gateway</li>
+      </ul>
+      <span class="go">Open Platform approval →</span>
+    </a>
+    <a class="feature-card" href="/substrate">
+      <div class="kicker">DEMO 07 · Substrate</div>
+      <h2>Agent Substrate</h2>
+      <p>Agents do not need a pod each. Put a crowd of actors on two workers and watch them snapshot out and resume.</p>
+      <ul>
+        <li>Actors multiplexed onto workers</li>
+        <li>Snapshot to S3, restore on the next message</li>
+        <li>A queue forms when the pool is full</li>
+      </ul>
+      <span class="go">Open Agent Substrate →</span>
+    </a>
+  </div>
+</div>
+<script>
+fetch('/api/status').then(r => r.json()).then(s => {
+  const dot = document.getElementById('dot');
+  const label = document.getElementById('status-label');
+  if (s.decisions) {
+    dot.className = 'dot live';
+    label.textContent = s.context ? ('live · ' + s.context.split('/').pop()) : 'live';
+  } else {
+    dot.className = 'dot off';
+    label.textContent = s.error || 'cluster not attached';
+  }
+}).catch(() => {
+  document.getElementById('dot').className = 'dot off';
+  document.getElementById('status-label').textContent = 'console only';
+});
+</script>
+</body>
+</html>

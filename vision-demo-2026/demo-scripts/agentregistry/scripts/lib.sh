@@ -101,27 +101,26 @@ seed_agent_env() {
   ok "stamped ANTHROPIC_API_KEY into ${proj#"$PROJECT_ROOT"/}/.env (from the cluster Secret)"
 }
 
-# require_solo_account — hard guard. This lab deploys to the Solo
-# field-engineering account ONLY. It has previously been run with a personal
-# AWS_PROFILE exported in the shell and left ECR repos, an IAM role and an
-# AgentCore workload identity behind in the wrong account. .env.aws pins the
-# profile, but an exported AWS_PROFILE or a stale session can still win, so the
-# account is asserted rather than assumed. The expected account ID is not
-# committed: set SOLO_AWS_ACCOUNT in the gitignored .env.aws (sourced above).
-# The guard refuses to run without it. Override deliberately with
-# ALLOW_AWS_ACCOUNT if you ever genuinely need another one.
+# require_solo_account — hard guard. The AgentCore beats create ECR repos, an IAM
+# role and an AgentCore workload identity, so they must land in the AWS account you
+# meant. This has previously been run with a different AWS_PROFILE exported in the
+# shell and left all three behind in the wrong account. .env.aws pins the profile,
+# but an exported AWS_PROFILE or a stale session can still win, so the account is
+# asserted rather than assumed. The expected account ID is not committed: set
+# EXPECTED_AWS_ACCOUNT in the gitignored .env.aws (copy .env.aws.example). The guard
+# refuses to run without it. Override deliberately with ALLOW_AWS_ACCOUNT.
 require_solo_account() {
   local want acct
-  want="${ALLOW_AWS_ACCOUNT:-${SOLO_AWS_ACCOUNT:-}}"
-  [ -n "$want" ] || { die "SOLO_AWS_ACCOUNT is not set. Add the Solo field-engineering account ID to $LAB_ROOT/.env.aws:
-       export SOLO_AWS_ACCOUNT=\"<account id>\"
+  want="${ALLOW_AWS_ACCOUNT:-${EXPECTED_AWS_ACCOUNT:-${SOLO_AWS_ACCOUNT:-}}}"
+  [ -n "$want" ] || { die "EXPECTED_AWS_ACCOUNT is not set. Add the ID of the AWS account the demo deploys to in $LAB_ROOT/.env.aws:
+       export EXPECTED_AWS_ACCOUNT=\"<account id>\"
        Nothing was created."; return 1; }
   acct="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)" || acct=""
   [ -n "$acct" ] || { die "no AWS session — run: source scripts/aws-login.sh"; return 1; }
   if [ "$acct" != "$want" ]; then
     die "WRONG AWS ACCOUNT: session is $acct, this lab requires $want.
        AWS_PROFILE=${AWS_PROFILE:-<unset>}
-       Fix:  export AWS_PROFILE=<profile for account $want> && aws sso login --sso-session solo
+       Fix:  export AWS_PROFILE=<profile for account $want> && aws sso login --profile \"\$AWS_PROFILE\"
        Then re-run. Nothing was created."
     return 1
   fi

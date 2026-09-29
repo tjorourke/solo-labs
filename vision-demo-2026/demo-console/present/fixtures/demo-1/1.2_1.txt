@@ -1,0 +1,12 @@
+── mesh1 ──
+NAME                      CLASS            ADDRESS
+istio-eastwest            istio-eastwest   192.168.97.149
+istio-remote-peer-mesh2   istio-remote     192.168.97.160
+── mesh2 ──
+NAME                      CLASS            ADDRESS
+istio-eastwest            istio-eastwest   192.168.97.160
+istio-remote-peer-mesh1   istio-remote     192.168.97.149
+
+Error: multicluster check found issues
+✅ Gateway Check: all eastwest gateways programmed
+⚠  Peers Check: found disconnected cluster(s)

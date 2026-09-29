@@ -1,0 +1,33 @@
+  actor asr-kagent-lab-agent-01a0e2b4...: Suspended v5
+== lab-agent actors on substrate-worker ==
+  kagent:asr-kagent-lab-agent-01a0e2aa-035c-75e4-b038-cdd523e22068   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2aa-0d16-7afa-9878-b2a18d2cc3a8   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2aa-7a45-7ebc-8a39-7d2784262a98   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2aa-ac61-770f-844c-876e13758abf   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2aa-ac65-721a-9566-dca5a2a2e75a   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-69e1-7ad7-81b8-5f36cbb0448f   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-69e1-7c02-8e63-2bd3530a271c   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-69e2-70d7-a9c1-5afa71250950   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-6fba-71b2-a736-8e327b678bae   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-6fba-748d-b1d5-543c94703753   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-6fba-74eb-b2bb-279a2f63c26d   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-a900-7229-94ad-8328dc85872b   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-a900-735a-9d88-2aed52ccedc2   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2ab-a900-7456-9d1e-95e17fdd92cc   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b0-8874-7409-96ed-48fecae2ef04   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b0-925e-711a-a2dc-b93dc732b5c5   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b2-4537-7c01-a8c9-490378bfb953   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b2-4d07-7601-880a-34633ae993c8   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b2-56af-7f2f-b70f-4aecfac11966   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b2-65c2-7441-9329-fcb32dd04a82   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b2-65c2-7925-ad8f-19a150a028f9   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b3-22f8-7d7c-9eb7-b0d5daf83dad   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b3-22fc-7abf-ae13-89e778bc756e   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b3-22fc-7b9a-91ee-623fcd54e7ee   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b3-276c-752c-bb1a-a4ad86b44bb4   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b3-276c-794a-b636-40abd90b5ccf   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b3-276d-72bd-8ab2-6669245ba60e   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b4-6572-79b8-b403-229cb093fc46   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b4-6d46-79f3-b650-dbec735651d3   snapshot on disk, no process
+  kagent:asr-kagent-lab-agent-01a0e2b4-7573-755b-98d3-9994b8577f42   snapshot on disk, no process
+  gVisor sandboxes alive on the node right now: 0

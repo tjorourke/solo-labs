@@ -1,0 +1,12 @@
+deployment.apps/reviews-v1 scaled
+deployment.apps/reviews-v2 scaled
+pod/reviews-v1-7d457568f-vg2lj condition met
+pod/reviews-v2-66c97ddb57-lr22x condition met
+pod/reviews-v3-586d476db5-9xjxz condition met
+  ══ GLOBAL hostname  ·  still serving, now from mesh2  (v3 = mesh2) ══
+    reviews-v1-7d457568f-bhrfx         ×2
+    reviews-v2-66c97ddb57-7xh9v        ×1
+    reviews-v3-586d476db5-s5nm4        ×3
+
+  ══ LOCAL hostname  ·  local-only, and local is gone ══
+    reviews.bookinfo.svc.cluster.local  →  000000   (broken: nothing local left)

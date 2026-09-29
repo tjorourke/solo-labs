@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentdesktop · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/desktop" class="active">Agentdesktop</a>
+    <a href="/decisions">Gateway decisions</a>
+    <a href="/economy">Token economics</a>
+    <a href="/cost">Cost</a>
+    <a href="/agents">My agents</a>
+    <a href="/approvals">Platform approval</a>
+    <a href="/substrate">Substrate</a>
+  </div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label"></span></span>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/user-story-1">← Agentics Overview</a></div>
+    <div class="eyebrow">DEMO 01 · Enrol</div>
+    <h1>Every laptop, one policy.</h1>
+    <p>See the fleet. Enrol this machine. Claude talks to the company gateway. The key never sits on the laptop.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="jump">
+    <a href="#fleet">The fleet</a>
+    <a href="#laptop">This laptop</a>
+    <a href="#policy">Policy</a>
+    <a href="#claude">What Claude sees</a>
+  </nav>
+
+  <section id="fleet">
+    <div class="kpis" id="kpis"></div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Linux workstations on mesh1</h2>
+        <a class="btn primary" id="open-console" href="http://127.0.0.1:18099/" target="_blank" rel="noreferrer">Open fleet console</a>
+      </div>
+      <p class="sub">London, Berlin, Madrid and Dublin are already enrolled. This is the same console a platform team uses.</p>
+      <div class="table-wrap">
+        <table class="plain" id="devices">
+          <thead>
+            <tr><th>Host</th><th>OS</th><th>User tool</th><th>Revision</th><th>Seen</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <iframe class="fleet-frame" id="fleet-frame" title="Agentdesktop fleet" src="http://127.0.0.1:18099/"></iframe>
+    </div>
+  </section>
+
+  <section id="laptop">
+    <div class="panel">
+      <h2>Enrol this Mac</h2>
+      <p class="sub">Three steps, then Claude Code and Claude Desktop both talk to the EKS model gateway and the key never sits on the laptop. Step 1 asks for your password once, because Claude Desktop reads its policy from the machine's managed preferences and only a daemon running as the machine can write them. After that everything is policy.</p>
+      <div class="budget-grid" id="laptop-cards"></div>
+      <ol class="flow" id="flow">
+        <li data-step="install">
+          <div><h3>1. Install the daemon</h3>
+            <p>Registers Agentdesktop as a system service and adds you to the group allowed to talk to it. One macOS password prompt.</p></div>
+          <button class="btn primary" id="daemon-install">Install</button>
+        </li>
+        <li data-step="signin">
+          <div><h3>2. Sign in</h3>
+            <p>Opens the company identity provider. Sign in as <code>bob</code> / <code>password</code>. The device enrols against that identity, and the gateway token is minted from it.</p></div>
+          <button class="btn primary" id="signin">Sign in</button>
+        </li>
+        <li data-step="policy">
+          <div><h3>3. Publish a policy</h3>
+            <p>Pick <strong>Claude Code and Claude Desktop</strong> below. Restart Claude Code and reopen Desktop to see it land.</p></div>
+          <a class="btn" href="#policy">Go to policies</a>
+        </li>
+      </ol>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <button class="btn" id="daemon-remove">Remove the daemon (both clients native)</button>
+      </div>
+      <details style="margin-top:14px">
+        <summary class="sub">Claude Code only, without a password</summary>
+        <p class="sub">A daemon running as you can manage Claude Code on its own. It cannot manage Claude Desktop, and it refuses a policy that carries Claude Desktop whole, so both clients end up unmanaged. Use this only with the Claude Code-only policy.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn" id="enrol">Enrol: Claude Code only</button>
+          <button class="btn" id="unenrol">Unenrol (Claude native again)</button>
+        </div>
+      </details>
+      <div class="log" id="log" style="margin-top:12px;height:140px"></div>
+    </div>
+  </section>
+
+  <section id="policy">
+    <div class="panel">
+      <h2>Example policies</h2>
+      <p class="sub">These write the fleet config on mesh1. Every enrolled laptop, including this one, picks the revision up. Then look in Claude Code: the notice and the sandbox change.</p>
+      <div class="budget-grid" id="policies"></div>
+    </div>
+  </section>
+
+  <section id="claude">
+    <div class="panel">
+      <h2>What Claude sees on this machine</h2>
+      <p class="sub">Restart Claude Code after enrol or a policy change. Ask it to list ~/.ssh if you want to see the sandbox refuse.</p>
+      <pre class="yaml-pre" id="claude-json"></pre>
+    </div>
+  </section>
+</div>
+<script src="/static/js/desktop.js"></script>
+</body>
+</html>

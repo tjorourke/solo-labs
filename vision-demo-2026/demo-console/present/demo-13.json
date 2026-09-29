@@ -1,0 +1,627 @@
+{
+  "intro": "Runs a kagent incident-response agent with tools that read and change disposable incident records. Watch an over-permissioned agent close unresolved incidents, then restrict it to investigation. Claude calls go through agentgateway and are billable. Direct boundary checks are labelled separately. Egress covers example.com only. Follow the chapters in order and reset when finished.",
+  "app": {
+    "label": "Agent and defence layers, live",
+    "url": "/defence/live",
+    "hint": "kagent status, the last agent turn and policy evidence from mesh1."
+  },
+  "steps": {
+    "1": {
+      "short": "Deploy with kagent",
+      "title": "Create an incident-response agent in kagent",
+      "say": "Build an incident-response agent in kagent and connect it to three open incidents. First, show that it can close every incident without fixing the faults. Then add policies that let it investigate but prevent those changes.",
+      "point": "kagent creates and manages the runtime. People reach it through a front door gateway; its model and tool calls go through a mesh waypoint that knows which workload is calling. The Anthropic key stays at the gateway and the agent holds no token.",
+      "blocks": [
+        {
+          "title": "Create the namespaces",
+          "instruction": "Enrol the lab's agent, tool and gateway namespaces in ambient.",
+          "expect": "Three dd- namespaces are created.",
+          "checks": [
+            {
+              "label": "Namespaces",
+              "match": "namespace/dd-(agents|tools|gateway) (created|unchanged)"
+            }
+          ]
+        },
+        {
+          "title": "Set up identities",
+          "instruction": "Create the lab signing key for people's tokens: Alice, and Carol the operator. The agent gets no token; the mesh identifies it by its ServiceAccount. Copy the installed Anthropic credential into the gateway namespace without printing it.",
+          "expect": "The signing key is ready and the provider credential is only in dd-gateway.",
+          "checks": [
+            {
+              "label": "Signing key",
+              "match": "Lab signing key ready"
+            },
+            {
+              "label": "Gateway credential",
+              "match": "secret/dd-anthropic (created|configured|unchanged)"
+            }
+          ]
+        },
+        {
+          "title": "Run the incident tool server",
+          "instruction": "Build the server for reading and changing the lab's incident records, then let kagent deploy it.",
+          "expect": "The image's record-mutation tests pass and defence-operations reports Ready.",
+          "checks": [
+            {
+              "label": "MCPServer ready",
+              "match": "mcpserver.kagent.dev/defence-operations condition met"
+            }
+          ]
+        },
+        {
+          "title": "Open the front door",
+          "instruction": "Create the gateway people use: the agent's A2A route, a read-only view of the records, and an operator MCP route that only an admin token may use.",
+          "expect": "dd-gateway rolls out. The agent route starts serving once the Agent exists.",
+          "checks": [
+            {
+              "label": "Front door ready",
+              "match": "deployment \"dd-gateway\" successfully rolled out"
+            }
+          ]
+        },
+        {
+          "title": "Route the agent's model and tool calls",
+          "instruction": "Create dd-waypoint with a model Service and a tool Service behind it. The model backend holds the Anthropic key. The tool backend fails closed.",
+          "expect": "dd-waypoint rolls out.",
+          "checks": [
+            {
+              "label": "Waypoint ready",
+              "match": "deployment \"dd-waypoint\" successfully rolled out"
+            }
+          ]
+        },
+        {
+          "title": "Create the kagent Agent",
+          "instruction": "The ModelConfig points at the model Service with a placeholder key. The RemoteMCPServer points at the tool Service with no credentials. The Agent references both.",
+          "expect": "kagent accepts the Agent and its runtime becomes Ready.",
+          "checks": [
+            {
+              "label": "Agent ready",
+              "match": "agent.kagent.dev/defence-agent condition met"
+            }
+          ]
+        },
+        {
+          "title": "Ask the agent to investigate",
+          "instruction": "Send an A2A message through the front door asking for the current incidents. Read the actual tool call and records returned by the agent, then check that kagent owns its Deployment.",
+          "expect": "The agent reads three open incidents affecting payments, customer-api and settlement. Its Deployment is owned by Agent/defence-agent and runs as the defence-agent ServiceAccount.",
+          "checks": [
+            {
+              "label": "Agent completed the turn",
+              "match": "\"state\":\\s*\"completed\""
+            },
+            {
+              "label": "Agent read the incidents",
+              "match": "\"name\":\\s*\"list_incidents\""
+            },
+            {
+              "label": "Three incidents open",
+              "match": "\"open_incidents\":\\s*3"
+            },
+            {
+              "label": "kagent owns the runtime",
+              "match": "\"owner\":\\s*\"Agent\""
+            },
+            {
+              "label": "Agent ServiceAccount",
+              "match": "\"serviceAccount\":\\s*\"defence-agent\""
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Declare the outside destination",
+          "instruction": "Put example.com behind an Istio waypoint visible only to dd-agents. This is a direct egress check from the kagent runtime, not an agent turn.",
+          "expect": "The waypoint is Ready and HTTPS to example.com returns 200.",
+          "checks": [
+            {
+              "label": "Waypoint ready",
+              "match": "deployment \"dd-egress\" successfully rolled out"
+            },
+            {
+              "label": "Outside reachable",
+              "match": "Outside HTTP 200"
+            }
+          ]
+        },
+        {
+          "title": "Select the installed rate limiter",
+          "instruction": "The default Service on this rig also selects the waypoint limiter, which has a separate counter. Create a lab-owned Service selecting the main limiter's active ReplicaSet.",
+          "expect": "dd-rate-limiter selects the main limiter without changing its Deployment.",
+          "checks": [
+            {
+              "label": "Dedicated selector",
+              "match": "service/dd-rate-limiter (created|configured|unchanged)"
+            },
+            {
+              "label": "ReplicaSet selector",
+              "match": "pod-template-hash:"
+            }
+          ]
+        }
+      ]
+    },
+    "2": {
+      "short": "Outside destination",
+      "title": "Control the agent's outside access",
+      "say": "Check whether the kagent runtime can reach example.com. Add a deny policy to its egress waypoint, then repeat the request.",
+      "point": "This checks a workload boundary directly. The request is not generated by the model. Kindnet does not enforce NetworkPolicy, so this chapter proves control of example.com only.",
+      "blocks": [
+        {
+          "title": "Without the control",
+          "instruction": "Fetch example.com from the kagent agent's managed runtime.",
+          "expect": "The HTTPS request returns 200.",
+          "checks": [
+            {
+              "label": "Outside reachable",
+              "match": "Outside HTTP 200"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Add the control",
+          "instruction": "Deny traffic handled by this lab's egress waypoint, and wait until the waypoint has taken the policy.",
+          "expect": "The AuthorizationPolicy is bound to dd-egress.",
+          "checks": [
+            {
+              "label": "Egress deny applied",
+              "match": "authorizationpolicy.security.istio.io/outside-deny (created|configured|unchanged)"
+            },
+            {
+              "label": "Waypoint accepted",
+              "match": "authorizationpolicy.security.istio.io/outside-deny condition met"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "With the control",
+          "instruction": "Repeat the direct egress check and read the waypoint's RBAC counter. Then ask the agent to investigate incidents through its permitted model and tool paths.",
+          "expect": "Outside access is refused and recorded. The agent still completes its tool call.",
+          "checks": [
+            {
+              "label": "Outside refused",
+              "match": "Outside request refused"
+            },
+            {
+              "label": "RBAC evidence",
+              "match": "tcp\\.rbac\\.denied: [1-9]\\d*"
+            },
+            {
+              "label": "Agent completed the turn",
+              "match": "\"state\":\\s*\"completed\""
+            },
+            {
+              "label": "Three incidents open",
+              "match": "\"open_incidents\":\\s*3"
+            }
+          ],
+          "watch": "app"
+        }
+      ]
+    },
+    "3": {
+      "short": "Workload identity",
+      "title": "Stop the agent bypassing its tool gateway",
+      "say": "The incident tools are managed by kagent. Without a workload policy, the agent runtime can also call them directly and skip every tool policy. Admit only the gateways to the tool server.",
+      "point": "Istio checks SPIFFE identity at the tool server's ztunnel. dd-waypoint and dd-gateway are admitted. kagent's controller is admitted because it discovers the tools of the MCPServer it manages. The agent's own identity is refused on the direct path.",
+      "blocks": [
+        {
+          "title": "Without the control",
+          "instruction": "Make a direct MCP call from the kagent runtime to the tool server's Service, bypassing dd-waypoint.",
+          "expect": "The incident records are returned directly.",
+          "checks": [
+            {
+              "label": "Three incidents open",
+              "match": "\"open_incidents\":\\s*3"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Add the control",
+          "instruction": "Select the tool server's pods and admit dd-waypoint, dd-gateway and kagent's controller. Do not admit the agent's ServiceAccount. Wait until ztunnel has the policy.",
+          "expect": "gateway-only is accepted by ztunnel.",
+          "checks": [
+            {
+              "label": "Workload policy",
+              "match": "authorizationpolicy.security.istio.io/gateway-only (created|configured|unchanged)"
+            },
+            {
+              "label": "ztunnel accepted",
+              "match": "authorizationpolicy.security.istio.io/gateway-only condition met"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "With the control",
+          "instruction": "Repeat the direct MCP call and read the ztunnel refusal. Then ask the agent to investigate through dd-waypoint.",
+          "expect": "Direct access is refused under the defence-agent SPIFFE identity. The agent's normal tool call still reads the incidents.",
+          "checks": [
+            {
+              "label": "Direct call refused",
+              "match": "Direct tool request refused"
+            },
+            {
+              "label": "Agent identity recorded",
+              "match": "spiffe://mesh1/ns/dd-agents/sa/defence-agent"
+            },
+            {
+              "label": "Policy evidence",
+              "match": "allow policies exist, but none allowed"
+            },
+            {
+              "label": "Agent completed the turn",
+              "match": "\"state\":\\s*\"completed\""
+            },
+            {
+              "label": "Three incidents open",
+              "match": "\"open_incidents\":\\s*3"
+            }
+          ],
+          "watch": "app"
+        }
+      ]
+    },
+    "4": {
+      "short": "Caller identity",
+      "title": "Require a signed caller at the front door",
+      "say": "The front door accepts an agent request with no token, and any workload in the mesh can call the agent directly. Require a signed token at the front door and admit only the front door to the agent.",
+      "point": "Two controls work together. Strict JWT authentication on dd-gateway identifies the person. An Istio policy on the agent's pods stops anything else in the mesh skipping that check.",
+      "blocks": [
+        {
+          "title": "Without the control",
+          "instruction": "Send an agent request through the front door with no token. Then fetch the agent card directly from the tool server's pod, as another mesh workload would.",
+          "expect": "The anonymous request is served and the direct call reaches the agent.",
+          "checks": [
+            {
+              "label": "Anonymous request served",
+              "match": "Anonymous agent request: HTTP 200"
+            },
+            {
+              "label": "Direct call reaches agent",
+              "match": "Direct agent call HTTP 200"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Add the control",
+          "instruction": "Read and apply the public JWT policy, which requires the lab issuer and audience. Then admit only dd-gateway's identity to the agent's pods.",
+          "expect": "caller-identity is Accepted and Attached, and agent-front-door is accepted by ztunnel.",
+          "checks": [
+            {
+              "label": "Strict mode",
+              "match": "\"mode\": \"Strict\""
+            },
+            {
+              "label": "Caller policy attached",
+              "match": "caller-identity Accepted and Attached"
+            },
+            {
+              "label": "Front door only",
+              "match": "authorizationpolicy.security.istio.io/agent-front-door condition met"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "With the control",
+          "instruction": "Repeat the anonymous request and the direct call. Then ask the agent to investigate as Alice, and read the front door's 401 log.",
+          "expect": "The anonymous request gets 401 and the direct call is refused. Alice's turn completes.",
+          "checks": [
+            {
+              "label": "Anonymous refused",
+              "match": "Anonymous agent request: HTTP 401"
+            },
+            {
+              "label": "Direct call refused",
+              "match": "Direct agent call refused"
+            },
+            {
+              "label": "Agent completed the turn",
+              "match": "\"state\":\\s*\"completed\""
+            },
+            {
+              "label": "Three incidents open",
+              "match": "\"open_incidents\":\\s*3"
+            },
+            {
+              "label": "Authentication evidence",
+              "match": "authentication failure: no bearer token found"
+            }
+          ],
+          "watch": "app"
+        }
+      ]
+    },
+    "5": {
+      "short": "Tool permissions",
+      "title": "Stop an agent closing unresolved incidents",
+      "say": "Ask the agent to close every incident. Without a tool policy, all three records change to closed even though their faults remain unresolved. Restore the sample records, restrict the agent's identity to investigation tools, then repeat the request.",
+      "point": "A prompt is not the permission boundary. dd-waypoint decides on the agent's SPIFFE identity, which the agent cannot change by what it sends. It filters tools/list and refuses tools/call. Changing records is left to the operator route.",
+      "blocks": [
+        {
+          "title": "Without the control",
+          "instruction": "Ask the agent to close every open incident. Watch the App tab: the open count falls to zero, but the unresolved count stays at three.",
+          "expect": "The real tool closes all three records. No underlying fault has been resolved.",
+          "checks": [
+            {
+              "label": "Agent completed the turn",
+              "match": "\"state\":\\s*\"completed\""
+            },
+            {
+              "label": "Agent called bulk close",
+              "match": "\"name\":\\s*\"close_all_incidents\""
+            },
+            {
+              "label": "Three records changed",
+              "match": "\"changed\":\\s*3"
+            },
+            {
+              "label": "All closed",
+              "match": "\"closed_incidents\":\\s*3"
+            },
+            {
+              "label": "Faults unresolved",
+              "match": "\"unresolved_incidents\":\\s*3"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Add the control",
+          "instruction": "Permit only list_incidents and get_incident to the defence-agent identity. As Carol the operator, restore the disposable records through the front door so the after check starts from the same state.",
+          "expect": "The policy is attached and the operator restores three open incidents.",
+          "checks": [
+            {
+              "label": "Tool policy attached",
+              "match": "tool-permissions Accepted and Attached"
+            },
+            {
+              "label": "Records restored",
+              "match": "\"reset\":\\s*true"
+            },
+            {
+              "label": "Three incidents open",
+              "match": "\"open_incidents\":\\s*3"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "With the control",
+          "instruction": "Repeat the same request to the agent. From the agent's runtime, check that write tools have disappeared and explicitly attempt bulk close. Then ask the agent to read the records.",
+          "expect": "Bulk close is unavailable to the agent and dd-waypoint refuses an explicit call, recording the agent's identity. Investigation still works, and all three incidents remain open.",
+          "checks": [
+            {
+              "label": "Bulk close refused",
+              "match": "Unknown tool: close_all_incidents"
+            },
+            {
+              "label": "Agent read the incidents",
+              "match": "\"name\":\\s*\"list_incidents\""
+            },
+            {
+              "label": "Three incidents open",
+              "match": "\"open_incidents\":\\s*3"
+            },
+            {
+              "label": "Agent identity recorded",
+              "match": "src.identity=spiffe://mesh1/ns/dd-agents/sa/defence-agent"
+            },
+            {
+              "label": "Write tools hidden",
+              "match": "\"name\":\"(close_all_incidents|delete_incident_history|reset_demo_records)\"",
+              "absent": true,
+              "from": "Agent tools",
+              "to": "Agent call"
+            }
+          ],
+          "watch": "app"
+        }
+      ]
+    },
+    "6": {
+      "short": "Personal data",
+      "title": "Refuse personal data before the model call",
+      "say": "Ask the agent to repeat a specimen email address. Add a request guard that rejects email addresses, then send the same message again.",
+      "point": "The guard sits on the agent's model route at dd-waypoint, so it checks everything the agent sends to the provider. This uses a real model. The proof is a failed agent turn plus the waypoint's 403 and Reject counter.",
+      "blocks": [
+        {
+          "title": "Without the control",
+          "instruction": "Ask the agent to repeat the specimen email.",
+          "expect": "The agent completes and includes alice@example.test in its reply.",
+          "checks": [
+            {
+              "label": "Agent completed the turn",
+              "match": "\"state\":\\s*\"completed\""
+            },
+            {
+              "label": "Sample email returned",
+              "match": "alice@example.test"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Add the control",
+          "instruction": "Reject recognised email addresses on the model route before the provider call.",
+          "expect": "reject-personal-data is Accepted and Attached.",
+          "checks": [
+            {
+              "label": "Guard attached",
+              "match": "reject-personal-data Accepted and Attached"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "With the control",
+          "instruction": "Send the same message through the agent. Read the guardrail evidence, then send a message without personal data.",
+          "expect": "The email turn fails with a 403 from dd-waypoint and a Reject counter. The clean turn completes.",
+          "checks": [
+            {
+              "label": "Agent turn refused",
+              "match": "\"state\":\\s*\"failed\""
+            },
+            {
+              "label": "Waypoint refusal",
+              "match": "status=\"403\",reason=\"Guardrail\""
+            },
+            {
+              "label": "Guardrail evidence",
+              "match": "agentgateway_guardrail_checks_total\\{phase=\"Request\",action=\"Reject\"\\} [1-9]"
+            },
+            {
+              "label": "Agent completed the turn",
+              "match": "\"state\":\\s*\"completed\""
+            }
+          ],
+          "watch": "app"
+        }
+      ]
+    },
+    "7": {
+      "short": "Request rate",
+      "title": "Limit agent requests per caller",
+      "say": "Send a bounded run of short agent requests through the front door as Alice, then one as Bob. Add a limit of three requests per minute per signed subject, then repeat the run.",
+      "point": "The limit sits on the front door's agent route and is keyed on the validated JWT subject. A refused request never reaches the agent or the model. Each accepted request is a real, short agent turn.",
+      "blocks": [
+        {
+          "title": "Without the control",
+          "instruction": "Send the bounded run with fresh Alice and Bob subjects.",
+          "expect": "All requests return 200.",
+          "checks": [
+            {
+              "label": "All accepted",
+              "match": "Alice totals: accepted=\\d+ limited=0"
+            },
+            {
+              "label": "Bob accepted",
+              "match": "Bob request: HTTP 200"
+            }
+          ],
+          "params": [
+            {
+              "name": "N",
+              "label": "Requests",
+              "default": 6,
+              "min": 5,
+              "max": 20
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Add the control",
+          "instruction": "Apply the per-subject descriptor and wait for the limiter to load the current generation.",
+          "expect": "The policy is attached and the limiter reports ACCEPTED.",
+          "checks": [
+            {
+              "label": "Rate policy attached",
+              "match": "per-person-rate Accepted and Attached"
+            },
+            {
+              "label": "Limiter loaded",
+              "match": "dd-per-person ACCEPTED at current generation"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "With the control",
+          "instruction": "Repeat the bounded run and read the 429 metric. A request as Bob checks that the allowance is per identity.",
+          "expect": "Alice reaches 429 while Bob still gets 200.",
+          "checks": [
+            {
+              "label": "Alice limited",
+              "match": "Alice request \\d+: HTTP 429"
+            },
+            {
+              "label": "Bob unaffected",
+              "match": "Bob request: HTTP 200"
+            },
+            {
+              "label": "Rate metric",
+              "match": "agentgateway_requests_total\\{[^\\n]*status=\"429\",reason=\"DirectResponse\"[^\\n]*\\} [1-9]"
+            }
+          ],
+          "params": [
+            {
+              "name": "N",
+              "label": "Requests",
+              "default": 6,
+              "min": 5,
+              "max": 20
+            }
+          ],
+          "watch": "app"
+        }
+      ]
+    },
+    "8": {
+      "short": "Detection",
+      "title": "Read the recorded outcomes by caller",
+      "say": "The platform already records refusals. Add caller identity to the front door's metrics and generate another bounded rate check.",
+      "point": "The live board shows the kagent Agent and its last A2A task alongside policy state, gateway counters and workload refusal evidence. Detection observes; it does not add another refusal control.",
+      "blocks": [
+        {
+          "title": "Before adding caller labels",
+          "instruction": "Read the front door's and the waypoint's own metrics.",
+          "expect": "401, 403 and 429 outcomes are already recorded.",
+          "checks": [
+            {
+              "label": "401 recorded",
+              "match": "status=\"401\""
+            },
+            {
+              "label": "403 recorded",
+              "match": "status=\"403\""
+            },
+            {
+              "label": "429 recorded",
+              "match": "status=\"429\""
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "Add caller labels",
+          "instruction": "Attach a metric attribute based on the validated JWT subject.",
+          "expect": "identity-metrics is Accepted and Attached.",
+          "checks": [
+            {
+              "label": "Metrics policy attached",
+              "match": "identity-metrics Accepted and Attached"
+            }
+          ],
+          "watch": "app"
+        },
+        {
+          "title": "With caller labels",
+          "instruction": "Generate new rate refusals and read the identity-labelled metrics.",
+          "expect": "The 429 samples name the Alice subject. Bob remains allowed.",
+          "checks": [
+            {
+              "label": "Refusal enforced",
+              "match": "HTTP 429"
+            },
+            {
+              "label": "Bob works",
+              "match": "Bob request: HTTP 200"
+            },
+            {
+              "label": "Caller-labelled sample",
+              "match": "caller=\"alice-"
+            }
+          ],
+          "watch": "app"
+        }
+      ]
+    }
+  }
+}

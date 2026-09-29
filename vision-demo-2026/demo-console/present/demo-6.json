@@ -1,0 +1,110 @@
+{
+  "intro": "Runs on its own kind-inference cluster: agentgateway with the Gateway API Inference Extension, an InferencePool of two model-server replicas and the Endpoint Picker. No GPU: the replicas are llm-d simulators that publish real vLLM gauges with values we pin. The App tab shows those gauges live and where the gateway sent each request. Reset puts pool-a back to cold and pool-b to hot.",
+  "app": {"label": "Inference pool, live", "url": "/inference/live", "hint": "Live KV cache, queue depth and routing for each replica."},
+  "steps": {
+    "1": {
+      "short": "The model pool",
+      "title": "The model pool",
+      "say": "Two model-server replicas behind one InferencePool. The route points at the pool, not a Service, so the gateway asks the Endpoint Picker where each request goes.",
+      "point": "pool-a starts cold (KV cache 10%, empty queue) and pool-b hot (90%, 8 waiting). Open the App tab to watch both.",
+      "blocks": [
+        {
+          "title": "The replicas, the route and their signals",
+          "instruction": "List the two replicas, show that the HTTPRoute's backend is the InferencePool, and print the gauges each replica is pinned to.",
+          "expect": "pool-a is cold and pool-b is hot, and the route's backend kind is InferencePool.",
+          "checks": [
+            {"label": "Route backend is the InferencePool", "match": "\"kind\":\"InferencePool\",\"name\":\"vllm-sim\""},
+            {"label": "pool-a starts cold", "match": "pool-a:.*kv-cache-usage: 0\\.10\\s+waiting-requests: 0"},
+            {"label": "pool-b starts hot", "match": "pool-b:.*kv-cache-usage: 0\\.90\\s+waiting-requests: 8"}
+          ]
+        }
+      ]
+    },
+    "2": {
+      "short": "The Endpoint Picker",
+      "title": "The Endpoint Picker (EPP)",
+      "say": "Read the picker's scoring config straight off the cluster: three scorers with weights, and the pool's pointer to the picker.",
+      "point": "Prefix-cache affinity counts most (×3); KV-cache use and queue depth break ties (×2 each).",
+      "blocks": [
+        {
+          "title": "How the picker scores",
+          "instruction": "Print the EndpointPickerConfig and the InferencePool's endpointPickerRef.",
+          "expect": "Queue and KV-cache scorers at weight 2, prefix-cache at weight 3, and the pool wired to vllm-sim-epp.",
+          "checks": [
+            {"label": "Queue scorer ×2", "match": "pluginRef: queue-scorer\\s+weight: 2"},
+            {"label": "KV-cache scorer ×2", "match": "pluginRef: kv-cache-utilization-scorer\\s+weight: 2"},
+            {"label": "Prefix-cache scorer ×3", "match": "pluginRef: prefix-cache-scorer\\s+weight: 3"},
+            {"label": "Pool wired to the picker", "match": "endpointPickerRef: vllm-sim-epp:\\d+", "value": "endpointPickerRef: (\\S+)"}
+          ]
+        }
+      ]
+    },
+    "3": {
+      "short": "KV-cache routing",
+      "title": "KV-cache-aware routing",
+      "say": "Send eight requests while pool-b's cache is nearly full, then swap the gauges and send eight more.",
+      "point": "Nothing about the route changes. The picker re-scores on the new gauges and the traffic follows. Watch the App tab while the second step runs.",
+      "blocks": [
+        {
+          "title": "Traffic avoids the full cache",
+          "instruction": "Print the signals, then send eight requests and count which replica served them from the gateway's access log.",
+          "expect": "All eight go to pool-a, the replica with free cache.",
+          "checks": [
+            {"label": "All eight on pool-a", "match": "8 requests -> pool-a served 8, pool-b served 0"}
+          ]
+        },
+        {
+          "title": "Flip it on cue",
+          "instruction": "Saturate pool-a (95% cache, 9 waiting) and free pool-b, give the picker a moment to re-scrape, then send eight more.",
+          "expect": "The traffic moves: all eight go to pool-b.",
+          "checks": [
+            {"label": "pool-a now hot", "match": "pool-a: kv-cache=0\\.95\\s+queue=9"},
+            {"label": "Traffic moved to pool-b", "match": "8 requests -> pool-a served 0, pool-b served 8"}
+          ]
+        }
+      ]
+    },
+    "4": {
+      "short": "Queue-aware routing",
+      "title": "Queue-aware routing",
+      "say": "Give both replicas the same cache, but back pool-a's queue up to 30 waiting.",
+      "point": "The queue scorer steers around the head-of-line-blocked replica. This is what keeps tail latency down.",
+      "blocks": [
+        {
+          "title": "Traffic avoids the long queue",
+          "instruction": "Pin both replicas at 50% cache, give pool-a 30 queued requests, then send eight.",
+          "expect": "All eight go to pool-b, the replica that can start work now.",
+          "checks": [
+            {"label": "Same cache, pool-a queued", "match": "pool-a: kv-cache=0\\.50\\s+queue=30"},
+            {"label": "All eight on pool-b", "match": "8 requests -> pool-a served 0, pool-b served 8"}
+          ]
+        }
+      ]
+    },
+    "5": {
+      "short": "Prefix-cache affinity",
+      "title": "Prefix-cache affinity",
+      "say": "The highest-weighted scorer: keep requests that share a prompt prefix on the replica that already holds it.",
+      "point": "Reusing a cached prefix skips prefill, the biggest latency win in serving. KV and queue then break ties and steer around saturation."
+    },
+    "6": {
+      "short": "Serving priority",
+      "title": "Serving priority with InferenceObjective",
+      "say": "Two priority tiers on the pool. Each request names its tier in a header.",
+      "point": "Priority only bites when the pool is saturated: interactive work is dispatched before batch. On an idle pool both come straight back.",
+      "blocks": [
+        {
+          "title": "Tiers on the pool, one per request",
+          "instruction": "List the InferenceObjectives, then send one request as interactive and one as batch.",
+          "expect": "interactive is priority 10 and batch priority 0, and both requests return 200 on the idle pool.",
+          "checks": [
+            {"label": "interactive at priority 10", "match": "interactive\\s+vllm-sim\\s+10"},
+            {"label": "batch at priority 0", "match": "batch\\s+vllm-sim\\s+0"},
+            {"label": "interactive served", "match": "objective: interactive -> HTTP 200"},
+            {"label": "batch served", "match": "objective: batch -> HTTP 200"}
+          ]
+        }
+      ]
+    }
+  }
+}

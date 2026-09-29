@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data classification · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links"></div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking cluster</span></span>
+</nav>
+
+<header class="hero kw-hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/">← All demos</a></div>
+    <div class="eyebrow">DATA CLASSIFICATION · KERNWERK AG</div>
+    <h1>Some of this data cannot leave the region, and developers cannot be trusted to know which</h1>
+    <div class="kw-brief">
+      <section class="kw-company">
+        <h2>The company</h2>
+        <p><strong>Kernwerk AG</strong>, a German industrial manufacturer.</p>
+        <ul class="kw-facts">
+          <li><b>31,000</b> employees across the EU</li>
+          <li>A <b>US subsidiary</b></li>
+          <li>A strong <b>works council</b></li>
+          <li>A strong <b>data protection</b> function</li>
+        </ul>
+      </section>
+      <blockquote class="kw-quote">
+        <p>“We have three classes of data. One class can go anywhere. One class must stay in the EU. One class must never touch a model we do not host ourselves.”</p>
+        <p>“Today that distinction lives in a policy document and in the heads of about four people. Developers are shipping agent features weekly and I have no way to enforce any of it.”</p>
+        <cite>Head of Data Protection, Kernwerk AG</cite>
+      </blockquote>
+    </div>
+    <div class="kw-classes">
+      <div class="kw-class anywhere"><span>Class 1 · Can go anywhere</span><b>External models, such as Claude</b></div>
+      <div class="kw-class eu"><span>Class 2 · Must stay in the EU</span><b>Models hosted in EU regions only</b></div>
+      <div class="kw-class private"><span>Class 3 · Never leaves Kernwerk</span><b>Kernwerk's own models, in Kernwerk's private datacenter</b></div>
+    </div>
+    <p class="kw-enforced">The gateway reads every prompt and sends it to the only place it is allowed to go, for every developer and every agent.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="feature-grid">
+    <a class="feature-card" href="/kernwerk/desktop">
+      <div class="kicker">DEMO 01 · Enrol</div>
+      <h2>Agentdesktop</h2>
+      <p>One enrolment and this laptop follows the company policy. Claude Desktop and Claude Code both go through the gateway, so no agent feature can go round it.</p>
+      <ul>
+        <li>Enrol this Mac into the fleet</li>
+        <li>Claude Desktop and Claude Code, both covered</li>
+        <li>No model key on the laptop</li>
+      </ul>
+      <span class="go">Open Agentdesktop →</span>
+    </a>
+    <a class="feature-card" href="/kernwerk/gateway-decisions">
+      <div class="kicker">DEMO 02 · Routing</div>
+      <h2>Gateway decisions</h2>
+      <p>Ask from Claude Code. The gateway reads the question and sends it where it is allowed to go. Sensitive work stays on models Kernwerk runs itself. General questions may go outside.</p>
+      <ul>
+        <li>The developer does not choose, the policy does</li>
+        <li>Who asked, what kind of question, which model</li>
+        <li>Every decision on the record</li>
+      </ul>
+      <span class="go">Open Gateway decisions →</span>
+    </a>
+    <a class="feature-card" href="/kernwerk/prompts">
+      <div class="kicker">DEMO 02 · Demo prompts</div>
+      <h2>Demo prompts</h2>
+      <p>A prepared set of prompts to paste into Claude, in the order that builds the argument. The first prompts contain nothing sensitive and are routed on the task alone. The later ones ask for similar work, but the data they contain changes where the answer is allowed to come from.</p>
+      <ul>
+        <li>Copy a prompt and see where the gateway sends it</li>
+        <li>The part of each prompt that decides its class is marked</li>
+        <li>A second tab records what actually happened for each one</li>
+      </ul>
+      <span class="go">Open Demo prompts →</span>
+    </a>
+    <a class="feature-card" href="/kernwerk/dlp">
+      <div class="kicker">DEMO 03 · Data protection</div>
+      <h2>DLP and guardrails</h2>
+      <p>Ask Claude Desktop for a public post, a works council summary and a restricted finance review, with or without the PDF. Each goes to the only place its class allows, and personal data is replaced first.</p>
+      <ul>
+        <li>Class 1, 2 and 3, each routed live</li>
+        <li>Class 3 answered inside Kernwerk's own datacenter</li>
+        <li>Secrets and prompt attacks stopped at the gateway</li>
+        <li>Every decision and its class on the record</li>
+      </ul>
+      <span class="go">Open Data protection →</span>
+    </a>
+  </div>
+</div>
+<script>
+fetch('/api/status').then(r => r.json()).then(s => {
+  const dot = document.getElementById('dot');
+  const label = document.getElementById('status-label');
+  if (s.decisions) {
+    dot.className = 'dot live';
+    label.textContent = s.context ? ('live · ' + s.context.split('/').pop()) : 'live';
+  } else {
+    dot.className = 'dot off';
+    label.textContent = s.error || 'cluster not attached';
+  }
+}).catch(() => {
+  document.getElementById('dot').className = 'dot off';
+  document.getElementById('status-label').textContent = 'console only';
+});
+</script>
+</body>
+</html>

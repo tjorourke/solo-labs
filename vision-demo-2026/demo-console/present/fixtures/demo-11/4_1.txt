@@ -1,0 +1,4 @@
+  == the new endpoint serves exactly the two composed tools ==
+  2 tools at http://pet-workflow.192.168.97.148.sslip.io/
+  - onboard-pet                Register a new pet, read it back from the store, and report how many p
+  - adopt-pet                  Adopt a pet: look it up, place an order for it, and mark it sold.

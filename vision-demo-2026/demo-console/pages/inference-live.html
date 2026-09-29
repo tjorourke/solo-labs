@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inference pool · Solo.io</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <style>
+    body { background: #fff; margin: 0; }
+    .pool { padding: 18px 20px 24px; }
+    .pool-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .pool-head h2 { margin: 0; font-size: 18px; }
+    .pool-head .src { font-size: 12px; color: var(--muted); }
+    .reps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+    .rep { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; position: relative; transition: box-shadow .3s, border-color .3s; }
+    .rep.picked { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.16); }
+    .rep-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .rep-name { font-size: 17px; font-weight: 800; }
+    .rep-pod { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); }
+    .badge { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
+    .badge.cold { background: #e0f2fe; color: #075985; }
+    .badge.hot { background: #fee2e2; color: #991b1b; }
+    .badge.warm { background: #fef3c7; color: #92400e; }
+    .gauge { margin: 10px 0 0; }
+    .gauge-row { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 4px; }
+    .gauge-row code { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .bar { height: 12px; background: #f1f5f9; border-radius: 999px; overflow: hidden; }
+    .bar i { display: block; height: 100%; border-radius: 999px; transition: width .6s ease, background .6s; }
+    .served { margin-top: 14px; display: flex; gap: 18px; font-size: 12.5px; color: var(--muted); }
+    .served b { display: block; font-size: 24px; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .picked-tag { position: absolute; top: -10px; right: 14px; background: #16a34a; color: #fff; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 2px 9px; display: none; }
+    .rep.picked .picked-tag { display: block; }
+    .weights { margin-top: 16px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; color: #334155; }
+    .weights span { display: inline-block; margin-right: 14px; }
+    .weights b { color: var(--violet); }
+    .err { color: var(--red); font-size: 13px; }
+  </style>
+</head>
+<body>
+<div class="pool">
+  <div class="pool-head">
+    <h2>What the Endpoint Picker sees, and where the gateway sent traffic</h2>
+    <span class="src" id="src">connecting…</span>
+  </div>
+  <div class="reps" id="reps"></div>
+  <div class="weights" id="weights"></div>
+  <p class="err" id="err"></p>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const QUEUE_MAX = 40;
+const colour = f => f >= 0.8 ? '#dc2626' : f >= 0.5 ? '#d97706' : '#16a34a';
+
+function temp(r) {
+  if ((r.kv ?? 0) >= 0.8 || (r.waiting ?? 0) >= 8) return ['hot', 'hot'];
+  if ((r.kv ?? 0) >= 0.5 || (r.waiting ?? 0) >= 3) return ['warm', 'warm'];
+  return ['cold', 'cold'];
+}
+
+function card(r, s) {
+  const kv = r.kv ?? 0, q = r.waiting ?? 0, c = s.counts[r.replica] || { minute: 0, ten: 0 };
+  const [cls, label] = temp(r);
+  return `<div class="rep ${s.last === r.replica ? 'picked' : ''}">
+    <span class="picked-tag">last request</span>
+    <div class="rep-top"><div><div class="rep-name">${esc(r.replica)}</div><div class="rep-pod">${esc(r.pod)} · ${esc(r.ip)}</div></div>
+      <span class="badge ${cls}">${label}</span></div>
+    <div class="gauge"><div class="gauge-row"><span>KV cache in use</span><span>${Math.round(kv * 100)}% <code>kv_cache_usage_perc</code></span></div>
+      <div class="bar"><i style="width:${Math.min(100, kv * 100)}%;background:${colour(kv)}"></i></div></div>
+    <div class="gauge"><div class="gauge-row"><span>Queue depth</span><span>${q} waiting <code>num_requests_waiting</code></span></div>
+      <div class="bar"><i style="width:${Math.min(100, q / QUEUE_MAX * 100)}%;background:${colour(q / QUEUE_MAX * 2.5)}"></i></div></div>
+    <div class="gauge"><div class="gauge-row"><span>Running</span><span>${r.running ?? 0} <code>num_requests_running</code></span></div></div>
+    <div class="served"><span><b>${c.minute}</b>served, last minute</span><span><b>${c.ten}</b>last 10 minutes</span></div>
+  </div>`;
+}
+
+async function poll() {
+  try {
+    const s = await fetch('/api/inference/state').then(r => r.json());
+    $('err').textContent = s.error || '';
+    $('reps').innerHTML = s.replicas.map(r => card(r, s)).join('');
+    const w = s.weights || {};
+    $('weights').innerHTML = 'Picker weights, read from its config: ' + Object.entries(w)
+      .map(([k, v]) => `<span>${esc(k.replace('-scorer', '').replace('-utilization', ''))} <b>×${v}</b></span>`).join('');
+    $('src').textContent = 'live · kind-inference · ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    $('err').textContent = 'Cannot reach the console: ' + e;
+  }
+  setTimeout(poll, 2000);
+}
+poll();
+</script>
+</body>
+</html>

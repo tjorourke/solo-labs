@@ -1,0 +1,6 @@
+authorizationpolicy.security.istio.io/allow-storefront created
+  ══ who can reach petstore?  (only the storefront identity is allowed) ══
+    storefront       200  ✓ ALLOW
+    analytics        000000  ✗ DENY
+    checkout-blue    000000  ✗ DENY
+    checkout-green   000000  ✗ DENY

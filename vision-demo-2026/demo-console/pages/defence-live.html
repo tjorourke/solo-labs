@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layers of defence, live · Solo.io</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <style>
+    body { background:#fff; margin:0; }
+    main { padding:16px 20px 24px; }
+    header { display:flex; justify-content:space-between; gap:12px; align-items:baseline; flex-wrap:wrap; }
+    h2 { font-size:18px; margin:0; } .muted { color:var(--muted); font-size:12px; }
+    .note { font-size:12px; line-height:1.5; margin:10px 0 16px; color:#475569; }
+    .row { display:grid; grid-template-columns:1fr 168px 40px; gap:12px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); }
+    .row b { font-size:13px; } .detail,.source { display:block; font-size:11px; color:var(--muted); margin-top:3px; }
+    .pill { border-radius:8px; font-size:11px; font-weight:700; padding:5px 8px; text-align:center; background:#f1f5f9; color:#475569; }
+    .enforced { background:#dcfce7; color:#166534; } .pending { background:#fef3c7; color:#92400e; }
+    .count { font:700 22px ui-monospace,Menlo,monospace; text-align:right; }
+    .flash { animation:flash 1.2s; } @keyframes flash { from { background:#fef9c3; } to { background:transparent; } }
+    h3 { font-size:12px; margin:18px 0 8px; } pre { font-size:11px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:10px; }
+    #error { color:#b91c1c; font-size:12px; } .stale { opacity:.45; }
+    .agent { border:1px solid var(--line); background:#f5f3ff; border-radius:8px; padding:10px 12px; margin:10px 0; font-size:12px; }
+    .agent b { color:#5b21b6; } .agent p { margin:4px 0 0; overflow-wrap:anywhere; }
+    .incidents { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:12px; }
+    .incidents.warning { border-color:#fca5a5; background:#fef2f2; }
+    .incident-counts { display:flex; flex-wrap:wrap; gap:16px; margin:6px 0; }
+    .incident-counts b { font-size:20px; margin-right:4px; }
+    .incident-record { display:flex; gap:8px; padding:4px 0; border-top:1px solid var(--line); }
+    .incident-record span:last-child { margin-left:auto; }
+    @media(max-width:540px) { main { padding:12px; } .row { grid-template-columns:1fr 108px 36px; gap:6px; } .count { font-size:18px; } }
+  </style>
+</head>
+<body><main>
+  <header><h2>Layers of defence</h2><span id="stamp" class="muted">Connecting to mesh1…</span></header>
+  <div class="agent" id="agent">Reading kagent status…</div>
+  <div class="incidents" id="incidents">Reading incident records…</div>
+  <p class="note">Live cluster state. <b>Applied</b> = configured; <b>Enforced</b> = evidence observed in this run. Egress covers <b>example.com only</b>.</p>
+  <div id="error" role="status"></div>
+  <section id="layers" aria-label="Defence layers"></section>
+  <p class="muted">Counters belong to the current gateway or waypoint pod. Log counts accumulate entries this console observes since setup; reset or a console restart clears them. This is not an audit archive.</p>
+  <h3>Requests by gateway, status and reason</h3><pre id="metrics">No requests yet.</pre>
+  <h3>Recent evidence</h3><pre id="evidence">Run a chapter to see the platform record its result.</pre>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let previous = {};
+function render(s) {
+  $('agent').innerHTML = s.agent
+    ? `<b>kagent Agent: ${esc(s.agent.name)}</b> · ${s.agent.ready ? 'Ready' : 'Starting'}<p>${esc(s.agent.type)} · Claude Haiku 4.5 · model and tools through dd-waypoint · no token held</p>`
+      + (s.task ? `<p>Last A2A turn: <b>${esc(s.task.state)}</b>${s.task.calls.length ? ' · tools: ' + s.task.calls.map(c => esc(c.name) + '(' + esc(JSON.stringify(c.args)) + ')').join(', ') : ''}</p><p>${esc(s.task.answer || 'No answer returned.')}</p>` : '')
+    : 'No kagent Agent deployed yet. Run setup.';
+  const data = s.incidents;
+  $('incidents').classList.toggle('warning', !!data && data.closed_incidents > 0 && data.unresolved_incidents > 0);
+  $('incidents').innerHTML = data
+    ? `<b>Disposable incident records</b><div class="incident-counts"><span><b>${esc(data.open_incidents)}</b>open</span><span><b>${esc(data.closed_incidents)}</b>closed</span><span><b>${esc(data.unresolved_incidents)}</b>unresolved</span></div>`
+      + data.incidents.map(i => `<div class="incident-record"><span>${esc(i.id)}</span><span>${esc(i.service)}</span><span>${esc(i.status)}</span></div>`).join('')
+      + `<p class="muted">${esc(data.last_action)} · ${esc(data.history_entries)} history entries</p>`
+    : (s.reset ? 'No incident server deployed.' : 'Incident state not available yet.');
+  $('layers').classList.remove('stale');
+  $('layers').innerHTML = s.layers.map(l => {
+    const changed = previous[l.id] && (previous[l.id].status !== l.status || previous[l.id].count !== l.count);
+    const cls = ['Enforced','Observing'].includes(l.status) ? 'enforced' : /^(Applied|Pending|Waiting)/.test(l.status) ? 'pending' : '';
+    return `<div class="row ${changed ? 'flash' : ''}" data-layer="${esc(l.id)}" title="${esc(l.detail)}"><div><b>${esc(l.name)}</b><span class="source">${esc(l.source)}</span></div><span class="pill ${cls}">${esc(l.status)}</span><span class="count">${l.count === null ? '?' : esc(l.count)}</span></div>`;
+  }).join('');
+  previous = Object.fromEntries(s.layers.map(l => [l.id,l]));
+  $('metrics').textContent = s.requests.map(r => `${(r.labels.gateway || '').replace('dd-gateway/', '').padEnd(11)}  ${r.labels.status}  ${r.labels.reason}  ${r.count}  ${r.labels.caller ? 'caller=' + r.labels.caller : ''}`).join('\n') || 'No requests yet.';
+  $('evidence').textContent = s.evidence.join('\n\n') || (s.reset ? 'Lab reset. Its namespaces and workloads have been removed.' : 'No refusals observed yet.');
+  $('stamp').textContent = (s.reset ? 'Reset' : 'Live') + ' · kind-mesh1 · ' + new Date().toLocaleTimeString();
+  $('error').textContent = s.errors.join('\n');
+}
+async function poll() {
+  try {
+    const response = await fetch('/api/defence/live', {signal:AbortSignal.timeout(20000)});
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const s = await response.json();
+    if (!s.ok) throw new Error(s.error || 'Cluster state unavailable');
+    render(s);
+  } catch(e) { $('error').textContent = 'State unavailable: ' + e.message; $('stamp').textContent = 'Disconnected'; $('layers').classList.add('stale'); }
+  setTimeout(poll,1500);
+}
+poll();
+</script></body></html>

@@ -1,0 +1,238 @@
+{
+  "intro": "Runs on mesh1 on the ar-ingress Gateway. The Petstore runs in the cluster, so nothing depends on the public instance. The last chapter makes one live Anthropic call with Claude Haiku. Reset removes the Petstore, both MCP backends and their routes.",
+  "steps": {
+    "1": {
+      "short": "Run the REST API",
+      "title": "Run the Petstore REST API",
+      "say": "Deploy the Swagger Petstore in its own namespace and call it as plain REST.",
+      "point": "An ordinary REST API. Nothing on it knows about MCP.",
+      "blocks": [
+        {
+          "title": "Deploy and call the Petstore",
+          "instruction": "Apply the Petstore Deployment and Service, wait for the rollout, then read pet 1 over REST.",
+          "expect": "The Petstore is rolled out and GET /api/v3/pet/1 returns a pet as JSON.",
+          "checks": [
+            {
+              "label": "Petstore rolled out",
+              "match": "deployment \"petstore\" successfully rolled out"
+            },
+            {
+              "label": "REST call returns pet 1",
+              "match": "\\{\"id\":1,.*\"name\":\"([^\"]+)\"",
+              "value": "\"name\":\"([^\"]+)\""
+            }
+          ]
+        }
+      ]
+    },
+    "2": {
+      "short": "OpenAPI to MCP",
+      "title": "Turn the OpenAPI spec into MCP tools",
+      "say": "Load the API's OpenAPI spec into a ConfigMap and serve it through agentgateway with protocol: OpenAPI.",
+      "point": "Every operation in the spec is now an MCP tool, with an input schema derived from its parameters. No code, no MCP server.",
+      "blocks": [
+        {
+          "title": "Load the spec",
+          "instruction": "Fetch the spec the Petstore publishes at /api/v3/openapi.json and store it in the rest-petstore-openapi ConfigMap.",
+          "expect": "The ConfigMap is created or updated.",
+          "checks": [
+            {
+              "label": "Spec ConfigMap",
+              "match": "configmap/rest-petstore-openapi (created|configured|unchanged)"
+            }
+          ]
+        },
+        {
+          "title": "Serve it as MCP",
+          "instruction": "Create an EnterpriseAgentgatewayBackend with protocol: OpenAPI that points at the spec, and a route on ar-ingress.",
+          "expect": "The rest-petstore backend and route are applied.",
+          "checks": [
+            {
+              "label": "OpenAPI backend",
+              "match": "enterpriseagentgatewaybackend\\S*/rest-petstore (created|configured|unchanged)"
+            },
+            {
+              "label": "Route on ar-ingress",
+              "match": "httproute\\S*/rest-petstore (created|configured|unchanged)"
+            }
+          ]
+        },
+        {
+          "title": "List the tools",
+          "instruction": "Initialise an MCP session on the new endpoint and list its tools.",
+          "expect": "One tool per REST operation, including addPet, getPetById and findPetsByStatus.",
+          "checks": [
+            {
+              "label": "Tools served",
+              "match": "(\\d+) tools at",
+              "value": "(\\d+) tools at"
+            },
+            {
+              "label": "addPet",
+              "match": "- addPet\\b"
+            },
+            {
+              "label": "getPetById",
+              "match": "- getPetById\\b"
+            },
+            {
+              "label": "findPetsByStatus",
+              "match": "- findPetsByStatus\\b"
+            }
+          ]
+        }
+      ]
+    },
+    "3": {
+      "short": "Call the tools",
+      "title": "Call the REST operations as MCP tools",
+      "say": "Create a pet with addPet, then read it back with getPetById, both over MCP.",
+      "point": "The gateway turns each MCP call into the matching REST request: body for addPet, path parameter for getPetById.",
+      "blocks": [
+        {
+          "title": "addPet, then getPetById",
+          "instruction": "Call addPet with pet 777 as the body, then getPetById with 777 as the path parameter.",
+          "expect": "Both calls return pet 777, Demo Dog.",
+          "checks": [
+            {
+              "label": "addPet created pet 777",
+              "match": "\"id\": 777",
+              "from": "addPet(",
+              "to": "getPetById"
+            },
+            {
+              "label": "getPetById read it back",
+              "match": "\"name\": \"Demo Dog\"",
+              "from": "getPetById("
+            }
+          ]
+        }
+      ]
+    },
+    "4": {
+      "short": "Compose a workflow",
+      "title": "Compose a workflow into new MCP tools",
+      "say": "Compose two new MCP tools from calls the Petstore already has, and serve them on their own MCP endpoint.",
+      "point": "onboard-pet reuses the addPet and findPetsByStatus tools from chapter 2 and adds an HTTP read. adopt-pet is three HTTP calls. The client sees two tools and none of the steps.",
+      "blocks": [
+        {
+          "title": "Compose the workflow tools",
+          "instruction": "Apply pet-workflow. Each target is a new tool: an input schema, ordered MCP and HTTP steps that pass results along as output.<step>, and a CEL output. The same apply adds petstore-upstream, which the HTTP steps call, and the route that makes pet-workflow its own MCP endpoint.",
+          "expect": "pet-workflow, petstore-upstream and the pet-workflow route are applied.",
+          "checks": [
+            {
+              "label": "Workflow tools",
+              "match": "enterpriseagentgatewaybackend\\S*/pet-workflow (created|configured|unchanged)"
+            },
+            {
+              "label": "Upstream for HTTP steps",
+              "match": "enterpriseagentgatewaybackend\\S*/petstore-upstream (created|configured|unchanged)"
+            },
+            {
+              "label": "New MCP endpoint",
+              "match": "httproute\\S*/pet-workflow (created|configured|unchanged)"
+            }
+          ]
+        },
+        {
+          "title": "List the new endpoint's tools",
+          "instruction": "Initialise an MCP session on pet-workflow.<address>.sslip.io and list its tools.",
+          "expect": "The new endpoint serves exactly two tools: onboard-pet and adopt-pet.",
+          "checks": [
+            {
+              "label": "Two tools",
+              "match": "2 tools at"
+            },
+            {
+              "label": "onboard-pet",
+              "match": "- onboard-pet\\b"
+            },
+            {
+              "label": "adopt-pet",
+              "match": "- adopt-pet\\b"
+            }
+          ]
+        }
+      ]
+    },
+    "5": {
+      "short": "Run the workflows",
+      "title": "Run the workflow tools",
+      "say": "Call onboard-pet and adopt-pet once each, then check the result against the REST API.",
+      "point": "Each call is one MCP request. The gateway runs three upstream calls behind each and shapes the answer with CEL.",
+      "blocks": [
+        {
+          "title": "onboard-pet",
+          "instruction": "Register pet 5151, Nova, in one call.",
+          "expect": "The tool returns Nova as registered and available, plus the count of available pets.",
+          "checks": [
+            {
+              "label": "Registered Nova",
+              "match": "\"registered\": \"Nova\""
+            },
+            {
+              "label": "Read back as available",
+              "match": "\"status\": \"available\""
+            },
+            {
+              "label": "Available pets counted",
+              "match": "\"availableNow\": (\\d+)",
+              "value": "\"availableNow\": (\\d+)"
+            }
+          ]
+        },
+        {
+          "title": "adopt-pet",
+          "instruction": "Adopt pet 5151 in one call, then read it from the REST API directly.",
+          "expect": "An order is placed for Nova and the pet reads back as sold.",
+          "checks": [
+            {
+              "label": "Order placed",
+              "match": "Adopted Nova \\(pet 5151\\)\\. Order 5151 is placed"
+            },
+            {
+              "label": "REST API shows sold",
+              "match": "\"id\":5151,.*\"status\":\"sold\""
+            }
+          ]
+        }
+      ]
+    },
+    "6": {
+      "short": "Hand it to Claude",
+      "title": "Hand the new endpoint to Claude",
+      "say": "Give Claude the task in plain English and the tools pet-workflow serves. Claude picks the tools; agentgateway runs them.",
+      "point": "Claude sees two tools, calls both in the right order and never touches a Petstore operation or threads an ID between calls.",
+      "blocks": [
+        {
+          "title": "Ask Claude",
+          "instruction": "Run a small agent loop: Claude Haiku gets the task and the endpoint's two tools through the Anthropic API. Each tool Claude asks for is called through agentgateway and the result goes back to Claude, until it answers.",
+          "expect": "Claude asks for onboard-pet, then adopt-pet, and answers with order 6161.",
+          "checks": [
+            {
+              "label": "Claude given the two tools",
+              "match": "Claude \\(\\S+\\) is given the tools this endpoint serves: onboard-pet, adopt-pet"
+            },
+            {
+              "label": "Claude calls onboard-pet",
+              "match": "Claude asks for onboard-pet\\(\\{"
+            },
+            {
+              "label": "Claude calls adopt-pet",
+              "match": "Claude asks for adopt-pet\\(\\{"
+            },
+            {
+              "label": "Claude's answer",
+              "match": "Claude's answer:"
+            },
+            {
+              "label": "Cost",
+              "match": "(\\d+) tool calls, (\\d+) Claude tokens",
+              "value": "(\\d+ tool calls, \\d+ Claude tokens)"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

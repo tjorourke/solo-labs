@@ -1,0 +1,7 @@
+NAME          INFERENCE POOL   PRIORITY   AGE
+batch         vllm-sim         0          3m39s
+interactive   vllm-sim         10         3m39s
+
+each request names its tier in a header, the EPP maps it to the priority above:
+  x-gateway-inference-objective: interactive -> HTTP 200
+  x-gateway-inference-objective: batch -> HTTP 200

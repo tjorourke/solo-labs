@@ -1,0 +1,7 @@
+  onboard-pet({"id": 5151, "name": "Nova"})
+{
+  "status": "available",
+  "registered": "Nova",
+  "id": 5151,
+  "availableNow": 9
+}

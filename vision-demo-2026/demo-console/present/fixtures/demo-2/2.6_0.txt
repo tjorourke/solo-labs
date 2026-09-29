@@ -1,0 +1,9 @@
+namespace/warehouse created
+serviceaccount/warehouse-svc created
+deployment.apps/warehouse-svc created
+Waiting for deployment "warehouse-svc" rollout to finish: 0 of 1 updated replicas are available...
+deployment "warehouse-svc" successfully rolled out
+NAME                             READY   STATUS    RESTARTS   AGE
+warehouse-svc-5787569657-sb65w   1/1     Running   0          1s
+no ALLOW admits it yet, so it is denied for now:
+13:30:13 warehouse-svc -> GET petstore.petshop/pets : 000000

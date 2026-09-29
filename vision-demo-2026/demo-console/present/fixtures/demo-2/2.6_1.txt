@@ -1,0 +1,3 @@
+authorizationpolicy.security.istio.io/l4-allow-petshop-namespace created
+petshop:   13:30:28 storefront -> GET petstore/pets : 200
+warehouse: 13:30:30 warehouse-svc -> GET petstore.petshop/pets : 200

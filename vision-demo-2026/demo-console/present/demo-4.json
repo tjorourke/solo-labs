@@ -1,0 +1,259 @@
+{
+  "intro": "Runs on mesh1: AgentRegistry, kagent, Keycloak and Kyverno. Reset scales the platform up if it is parked. The agent uses Claude Haiku, so asks make live Anthropic calls. The AgentCore chapters (3b and 9) deploy to AWS and need a live SSO session for the profile in demo-scripts/agentregistry/.env.aws.",
+  "steps": {
+    "1": {
+      "short": "Browse the catalogue",
+      "title": "Browse the approved catalogue",
+      "say": "List the MCP tool servers, skills and runtimes the platform team has already approved.",
+      "point": "A developer can only build from what is in this list.",
+      "blocks": [
+        {
+          "title": "Approved tools, skills and runtimes",
+          "instruction": "List the approved MCP servers, skills and connected runtimes with arctl.",
+          "expect": "my-mcp and everything-server, the dice-game skill and the kind-kagent runtime.",
+          "checks": [
+            {"label": "my-mcp approved", "match": "my-mcp", "to": "approved skills"},
+            {"label": "everything-server approved", "match": "everything-server", "to": "approved skills"},
+            {"label": "dice-game skill", "match": "dice-game", "from": "approved skills", "to": "connected runtimes"},
+            {"label": "kagent runtime", "match": "kind-kagent", "from": "connected runtimes"}
+          ]
+        }
+      ]
+    },
+    "2": {
+      "short": "Scaffold the agent",
+      "title": "Scaffold an ADK agent wired to one approved tool",
+      "say": "Scaffold a Python ADK agent with arctl, wired to the approved my-mcp server, then give it the approved dice-game skill.",
+      "point": "The tool is wired by reference with a flag. The skill is guidance, so it is baked into the agent's prompt by value.",
+      "blocks": [
+        {
+          "title": "arctl init",
+          "instruction": "Scaffold agentdemo: ADK, Python, Claude Haiku, and the approved my-mcp tool server.",
+          "expect": "A complete agent project appears in agents/agentdemo.",
+          "checks": [
+            {"label": "Project scaffolded", "match": "agentdemo"},
+            {"label": "No error", "match": "(?i)\\berror\\b", "absent": true}
+          ]
+        },
+        {
+          "title": "Pull the approved skill",
+          "instruction": "Show the approved dice-game skill record, then pull its source from the registry.",
+          "expect": "The skill record prints and agents/dice-game appears with its SKILL.md.",
+          "checks": [
+            {"label": "Skill record", "match": "dice-game"},
+            {"label": "No error", "match": "(?i)\\berror\\b", "absent": true}
+          ]
+        },
+        {
+          "title": "Bake the skill into the prompt",
+          "instruction": "Strip the skill's front matter and write its body into the agent's prompts.json.",
+          "expect": "prompts.json now carries the dice-game guidance.",
+          "checks": [
+            {"label": "Skill in prompts.json", "match": "prompts.json now carries the skill"},
+            {"label": "Guidance present", "match": "(?i)roll_die|dice"}
+          ]
+        }
+      ]
+    },
+    "3": {
+      "short": "Build and publish",
+      "title": "Build the agent and publish it to the catalogue",
+      "say": "Build the agent image, push it to the cluster registry and publish the Agent record.",
+      "point": "From here the registry owns the agent. The folder on the laptop is only source. To chat with it locally first, run arctl run in a terminal (see Background).",
+      "notes": "`arctl run` is Docker Compose on the laptop: the image you just built plus a local OTel collector, with a chat attached to the agent's A2A endpoint. It is interactive, so it runs in a terminal:\n\n```bash\ncd vision-demo-2026/demo-scripts/agentregistry\nsource scripts/connect.sh\narctl run \"$PROJECT_ROOT/agentdemo\"\n```\n\nAsk it: `Roll a 20-sided die and tell me whether the result is prime.`",
+      "blocks": [
+        {
+          "title": "arctl build",
+          "instruction": "Build the agent container from the scaffold.",
+          "expect": "The image builds.",
+          "checks": [
+            {"label": "Built", "match": "✓ built"}
+          ]
+        },
+        {
+          "title": "Push and publish",
+          "instruction": "Push the image to the cluster registry and apply agent.yaml to publish the Agent record.",
+          "expect": "The image is pushed and the agentdemo record is published.",
+          "checks": [
+            {"label": "Published", "match": "agentdemo", "from": "publish the Agent to the catalog"}
+          ]
+        },
+        {
+          "title": "The catalogue lists it",
+          "instruction": "List the agents in the catalogue.",
+          "expect": "agentdemo is listed.",
+          "checks": [
+            {"label": "agentdemo listed", "match": "agentdemo"}
+          ]
+        }
+      ]
+    },
+    "3b": {
+      "short": "Start the AgentCore push",
+      "title": "Push the same agent to AWS Bedrock AgentCore",
+      "say": "Sign in to AWS, give the registry the credentials, then deploy the same agent to AgentCore in the background.",
+      "point": "One agent record, a second runtime, no rewrite. It provisions while you carry on and is invoked in chapter 9.",
+      "blocks": [
+        {
+          "title": "Sign in and start the deploy",
+          "instruction": "Sign in to AWS in the foreground, then start the AgentCore build, push and deploy in the background.",
+          "expect": "The registry has AWS credentials and the background deploy has started.",
+          "checks": [
+            {"label": "AWS ready", "match": "✓ AWS \\*+\\S+ / \\S+ ready"},
+            {"label": "Background deploy started", "match": "started \\(PID \\d+\\)"}
+          ]
+        }
+      ]
+    },
+    "4": {
+      "short": "Deploy to kagent",
+      "title": "Deploy onto kagent and ask it a question",
+      "say": "Deploy the approved tool server and the agent to kagent with arctl, then ask the agent what it can do and give it a task.",
+      "point": "The agent deploys keyless: Kyverno injects the model key from a Secret at admission. The trace shows each tool call.",
+      "blocks": [
+        {
+          "title": "Deploy tool server and agent",
+          "instruction": "Deploy my-mcp, wait for it to be Ready, then deploy agentdemo and wait for its rollout.",
+          "expect": "my-mcp is Ready and the agentdemo Deployment is rolled out.",
+          "checks": [
+            {"label": "my-mcp Ready", "match": "mcpserver\\S*/my-mcp condition met"},
+            {"label": "agentdemo rolled out", "match": "deployment \"agentdemo\" successfully rolled out"}
+          ]
+        },
+        {
+          "title": "Which tools can it call?",
+          "instruction": "Ask the agent to list its tools, through kagent's OIDC-protected A2A endpoint.",
+          "expect": "The local dice tools plus word_count from the approved my-mcp server.",
+          "checks": [
+            {"label": "roll_die", "match": "roll_die"},
+            {"label": "word_count from my-mcp", "match": "word_count"}
+          ]
+        },
+        {
+          "title": "Run a task and watch the trace",
+          "instruction": "Ask it to roll a 13-sided die, add 48291 and say whether the result is prime.",
+          "expect": "The trace shows roll_die then check_prime. With no calculator yet, the agent adds in its head.",
+          "checks": [
+            {"label": "roll_die called", "match": "\\d+\\. roll_die\\("},
+            {"label": "check_prime called", "match": "\\d+\\. check_prime\\("}
+          ]
+        }
+      ]
+    },
+    "5": {
+      "short": "Add a second tool",
+      "title": "Add a second approved tool",
+      "say": "Declare the approved everything-server on the agent, deploy it and redeploy the agent. No rebuild.",
+      "point": "The same task changes shape: the addition now goes through the approved sum tool.",
+      "blocks": [
+        {
+          "title": "Declare everything-server",
+          "instruction": "Add everything-server under spec.mcpServers in agent.yaml. The AgentRegistry UI edit does the same.",
+          "expect": "agent.yaml lists everything-server alongside my-mcp.",
+          "checks": [
+            {"label": "everything-server declared", "match": "name: everything-server"},
+            {"label": "my-mcp kept", "match": "name: my-mcp"}
+          ]
+        },
+        {
+          "title": "Apply and redeploy",
+          "instruction": "Re-publish the agent, deploy everything-server and redeploy agentdemo.",
+          "expect": "everything-server is Ready and agentdemo is rolled out again.",
+          "checks": [
+            {"label": "everything-server Ready", "match": "mcpserver\\S*/everything-server condition met"},
+            {"label": "agentdemo rolled out", "match": "deployment \"agentdemo\" successfully rolled out"}
+          ]
+        },
+        {
+          "title": "The tools now",
+          "instruction": "Ask the agent to list its tools again.",
+          "expect": "The everything-server tools appear, including sum and printenv.",
+          "checks": [
+            {"label": "sum", "match": "sum"},
+            {"label": "printenv", "match": "printenv"}
+          ]
+        },
+        {
+          "title": "The same task, through the new tool",
+          "instruction": "Run the identical dice task.",
+          "expect": "The trace now includes the approved sum tool between roll_die and check_prime.",
+          "checks": [
+            {"label": "roll_die called", "match": "\\d+\\. roll_die\\("},
+            {"label": "sum called", "match": "\\d+\\. \\S*sum\\("},
+            {"label": "check_prime called", "match": "\\d+\\. check_prime\\("}
+          ]
+        }
+      ]
+    },
+    "6": {
+      "short": "AccessPolicy",
+      "title": "Govern the tools with an AccessPolicy",
+      "say": "Restrict agentdemo to one tool on everything-server, enforced at the agentgateway waypoint on the agent's identity.",
+      "point": "Denied tools are filtered from the agent's list, so it cannot see them, let alone call them. Revert at the end so the lab can run again.",
+      "blocks": [
+        {
+          "title": "The waypoint is already there",
+          "instruction": "Show the waypoint label the registry stamped on everything-server, and the waypoint kmcp provisioned.",
+          "expect": "The label is true and the mcpserver-everything-server-waypoint Gateway and Deployment exist.",
+          "checks": [
+            {"label": "Waypoint label", "match": "everything-server\\s.*\\btrue\\b"},
+            {"label": "Waypoint Gateway", "match": "mcpserver-everything-server-waypoint\\s+\\S+\\s"}
+          ]
+        },
+        {
+          "title": "Apply the AccessPolicy",
+          "instruction": "Apply allow-sum-only: agentdemo may call only sum on everything-server. The kagent UI wizard writes the same CR.",
+          "expect": "The AccessPolicy is created and translated into an EnterpriseAgentgatewayPolicy on the waypoint.",
+          "checks": [
+            {"label": "AccessPolicy", "match": "accesspolicy\\S*/allow-sum-only (created|configured|unchanged)"},
+            {"label": "Translated to the waypoint", "match": "accesspolicy-allow-sum-only-waypoint"}
+          ]
+        },
+        {
+          "title": "The tools now",
+          "instruction": "Ask the agent to list its tools.",
+          "expect": "Only sum remains from everything-server. printenv, echo and the rest are gone.",
+          "checks": [
+            {"label": "sum still visible", "match": "sum"},
+            {"label": "printenv filtered", "match": "printenv", "absent": true, "warn": true}
+          ]
+        },
+        {
+          "title": "What the policy compiled into",
+          "instruction": "Show the AccessPolicy and the CEL rule the kmcp translator generated.",
+          "expect": "A rule keyed on the agent's service account and the tool name sum.",
+          "checks": [
+            {"label": "Policy found", "match": "the policy is a declarative CR: allow-sum-only"},
+            {"label": "CEL on identity and tool", "match": "serviceAccount == \"agentdemo\".*mcp\\.tool\\.name == \"sum\""}
+          ]
+        },
+        {
+          "title": "Revert the policy",
+          "instruction": "Delete the AccessPolicy and ask again, so the lab can be run again.",
+          "expect": "The policy is deleted and the full tool list comes back.",
+          "checks": [
+            {"label": "Policy deleted", "match": "accesspolicy\\S* \"allow-sum-only\" deleted"},
+            {"label": "printenv back", "match": "printenv", "warn": true}
+          ]
+        }
+      ]
+    },
+    "9": {
+      "short": "Invoke on AgentCore",
+      "title": "Invoke the same agent on AWS Bedrock AgentCore",
+      "say": "Ask the AgentCore copy of the agent the same dice question. This one runs in AWS.",
+      "point": "The same agent record deployed to a second runtime, no rewrite, with the same governance.",
+      "blocks": [
+        {
+          "title": "Ask it in AWS",
+          "instruction": "List the runtimes, wait for the AgentCore runtime to be READY, then invoke it.",
+          "expect": "aws-agentcore is listed beside kind-kagent and the agent answers from AWS.",
+          "checks": [
+            {"label": "aws-agentcore runtime", "match": "aws-agentcore"},
+            {"label": "Answered", "match": "(?i)prime"}
+          ]
+        }
+      ]
+    }
+  }
+}

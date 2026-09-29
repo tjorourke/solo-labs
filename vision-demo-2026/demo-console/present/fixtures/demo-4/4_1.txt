@@ -1,0 +1,4 @@
+  == ask the agent which tools it has ==
+Asking 'agentdemo' as admin-user (OIDC) ...
+
+roll_die, check_prime, my_mcp_word_count

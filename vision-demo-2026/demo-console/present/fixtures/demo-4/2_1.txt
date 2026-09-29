@@ -1,0 +1,26 @@
+apiVersion: ar.dev/v1alpha1
+kind: Skill
+metadata:
+  createdAt: "2026-09-21T14:18:46.487698Z"
+  name: dice-game
+  tag: latest
+  uid: 39478214-ac5f-4e2b-832e-d711e8e9b6d4
+  updatedAt: "2026-09-21T14:18:47.672944Z"
+spec:
+  description: How to run a fair dice game and explain prime results clearly.
+  source:
+    repository:
+      branch: main
+      subfolder: vision-demo-2026/demo-scripts/agentregistry/skill/dice-game
+      url: https://github.com/tjorourke/solo-labs.git
+  title: Dice game
+status:
+  conditions:
+  - lastTransitionTime: "2026-09-21T14:18:47.673473909Z"
+    reason: Resolved
+    status: "True"
+    type: Ready
+
+Cloning https://github.com/tjorourke/solo-labs.git (branch main) into ~/code/solo/solo-demos/vision-demo-2026/agents/dice-game
+(subfolder hint: vision-demo-2026/demo-scripts/agentregistry/skill/dice-game)
+Pulled dice-game

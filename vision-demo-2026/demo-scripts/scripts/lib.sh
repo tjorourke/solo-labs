@@ -76,6 +76,12 @@ solo_istio_images() {
 
 # ── secrets loader ────────────────────────────────────────────────────────────
 load_secrets() {
+  # Default: secrets.env at the suite root (gitignored, copied from secrets.env.example).
+  local default_secrets
+  default_secrets="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/secrets.env"
+  if [[ -z "${SECRETS_FILE:-}" && -f "$default_secrets" ]]; then
+    SECRETS_FILE="$default_secrets"
+  fi
   if [[ -n "${SECRETS_FILE:-}" ]]; then
     [[ -f "$SECRETS_FILE" ]] || die "SECRETS_FILE='$SECRETS_FILE' does not exist"
     set -a; source "$SECRETS_FILE"; set +a
@@ -84,9 +90,9 @@ load_secrets() {
 require_secrets() {
   load_secrets
   [[ -n "${SOLO_ISTIO_LICENSE_KEY:-}" ]] || \
-    die "SOLO_ISTIO_LICENSE_KEY not set — export it or point SECRETS_FILE at a file that does"
+    die "SOLO_ISTIO_LICENSE_KEY not set — add it to secrets.env (see secrets.env.example) or point SECRETS_FILE at a file that does"
   [[ -n "${AGENTGATEWAY_LICENSE_KEY:-}" ]] || \
-    die "AGENTGATEWAY_LICENSE_KEY not set — export it or point SECRETS_FILE at a file that does"
+    die "AGENTGATEWAY_LICENSE_KEY not set — add it to secrets.env (see secrets.env.example) or point SECRETS_FILE at a file that does"
 }
 
 check_docker() { docker info >/dev/null 2>&1 || die "docker daemon not reachable — start Docker Desktop / OrbStack"; }

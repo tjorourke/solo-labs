@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo prompts · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/kernwerk-prompts.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links"></div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking the gateway</span></span>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/dlp-routing">← Data classification</a></div>
+    <div class="eyebrow">DEMO 02 · Demo prompts</div>
+    <h1>Demo prompts and where each one is allowed to run</h1>
+    <p>Copy a prompt into Claude and watch where the gateway sends it.
+       Enrolled as martink, not bob.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="tabs kp-tabs">
+    <button class="mcp-tab active" data-tab="prompts">Prompts</button>
+    <button class="mcp-tab" data-tab="decisions">What happened <span class="kp-count" id="seen">0</span></button>
+  </div>
+
+  <section id="tab-prompts">
+    <figure class="kp-arch">
+      <img src="/static/img/kernwerk-routing-arch.svg" alt="Claude Desktop calls the model gateway. The semantic router identifies the task; native AGW CEL determines its data class, and the class outranks the task. The answer comes from Anthropic, Bedrock in the EU, or vLLM on Kernwerk's own GPUs.">
+    </figure>
+
+    <div id="groups"></div>
+  </section>
+
+  <section id="tab-decisions" hidden>
+    <div class="panel">
+      <div class="panel-head tight">
+        <h2>What happened</h2>
+        <p class="sub">The last half hour.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="plain kp-seen">
+          <thead><tr><th>Prompt</th><th>Class</th><th>Expected</th><th>Answered by</th><th>Replaced</th><th></th></tr></thead>
+          <tbody id="seen-rows"><tr><td colspan="6" class="dlp-empty">Nothing asked yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="/static/js/kernwerk-prompt-cards.js"></script>
+<script src="/static/js/kernwerk-prompts.js"></script>
+</body>
+</html>

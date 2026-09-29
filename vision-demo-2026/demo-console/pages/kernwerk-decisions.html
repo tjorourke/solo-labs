@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data decisions · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/dlp-routing" class="up">← Data classification</a>
+    <a href="/kernwerk/desktop">Agentdesktop</a>
+    <a href="/kernwerk/gateway-decisions">Gateway decisions</a>
+    <a href="/kernwerk/dlp">Data protection</a>
+    <a href="/kernwerk/decisions" class="active">Data decisions</a>
+  </div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking the gateway</span></span>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/dlp-routing">← Data classification</a></div>
+    <div class="eyebrow">DEMO 03 · Data decisions</div>
+    <h1>Every prompt from Claude Desktop, its class, and where it was allowed to go</h1>
+    <p>The gateway decides for each prompt, before any model sees it. This is the record Data Protection can read back: the class, the destination, and every piece of personal data the DLP service replaced.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="kpis kw-kpis" id="kpis"></div>
+  <div class="panel">
+    <div class="panel-head tight">
+      <h2>Decisions</h2>
+      <p class="sub">The last 30 minutes, newest first. Select a row to see what the model received.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="plain kw-decisions">
+        <thead><tr><th>Time</th><th>Class</th><th>Where it went</th><th>What was asked</th><th>Personal data replaced</th><th>Result</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="dlp-empty">Waiting for Claude Desktop…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script src="/static/js/dlp-common.js"></script>
+<script src="/static/js/kernwerk-decisions.js"></script>
+</body>
+</html>

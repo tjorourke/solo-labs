@@ -1,0 +1,16 @@
+enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/mcp-jwt created
+agentgatewaypolicy.agentgateway.dev/mcp-tool-authz created
+-- tools visible to bob (finance): --
+echo
+reverse_text
+sum
+to_uppercase
+
+-- tools visible to alice (engineering): --
+echo
+printenv
+reverse_text
+sum
+to_uppercase
+
+-- anonymous initialize: HTTP 401

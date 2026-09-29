@@ -13,7 +13,11 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 SUB="${1:-bob}"
-HOST="${HOST:-agw.awslab.masterthemesh.com}"
+# The published gateway hostname: HOST, then AGW_HOST, then what 40-public-endpoints.sh
+# recorded in tofu/. There is no built-in default, so nothing is sent to a host you did not name.
+# tofu prints "No outputs found" on stdout when there is no state, so only a hostname counts.
+HOST="${HOST:-${AGW_HOST:-$(tofu -chdir="$HERE/tofu" output -raw gateway_host 2>/dev/null | grep -xE '[A-Za-z0-9.-]+' || true)}}"
+[ -n "$HOST" ] || { echo "no gateway hostname: set AGW_HOST=agw.<your zone>, or publish one with scripts/platform/40-public-endpoints.sh" >&2; exit 1; }
 BASE="https://$HOST"
 
 [ -f "$HERE/identity/tokens.env" ] || { echo "no identity/tokens.env; run ./scripts/01-identity.sh first" >&2; exit 1; }

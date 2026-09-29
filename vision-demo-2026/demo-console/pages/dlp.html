@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data protection · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/kernwerk-prompts.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/dlp-routing" class="up">← Data classification</a>
+    <a href="/kernwerk/desktop">Agentdesktop</a>
+    <a href="/kernwerk/gateway-decisions">Gateway decisions</a>
+    <a href="/kernwerk/dlp" class="active">Data protection</a>
+    <a href="/kernwerk/decisions">Data decisions</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/dlp-routing">← Data classification</a></div>
+    <div class="eyebrow">DEMO 03 · Data protection</div>
+    <h1>Each class of data goes only where it is allowed</h1>
+    <p>Kernwerk's policy is applied to every prompt from Claude Desktop, before any model sees it. No employee has to know the rules.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <figure class="kp-arch">
+    <img src="/static/img/kernwerk-dlp-arch.svg" alt="Claude Desktop calls the model gateway. Native AGW CEL determines the data class and pool. The gateway enforces refusals before the personal-data service or model, then redacts allowed requests and routes them to the permitted model.">
+  </figure>
+
+  <div id="groups"></div>
+
+</div>
+<script src="/static/js/kernwerk-prompt-cards.js"></script>
+<script>kpRender('groups', 'dlp');</script>
+</body>
+</html>

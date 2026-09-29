@@ -1,0 +1,82 @@
+# GitHub MCP for in-mesh agents. Same shape as demo-8: a waypoint in kagent
+# so source.identity is the calling agent's ServiceAccount. The ingress
+# mcp-demo Gateway stays for the laptop / Token economics.
+#
+# Default is deny. Approve an agent from My agents; that writes
+# github-per-agent with this SA and the tools it was given.
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-mcp
+  namespace: kagent
+  labels:
+    istio.io/use-waypoint: github-mcp-waypoint
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: github-mcp-waypoint
+  namespace: kagent
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: github-mcp
+  namespace: kagent
+spec:
+  policies:
+    transformation:
+      request:
+        set:
+        - name: X-MCP-Toolsets
+          value: '"all"'
+  entMcp:
+    toolMode: Standard
+    sessionRouting: Stateful
+    failureMode: FailClosed
+    targets:
+    - name: github
+      static:
+        host: api.githubcopilot.com
+        port: 443
+        path: /mcp/
+        protocol: StreamableHTTP
+        policies:
+          tls:
+            sni: api.githubcopilot.com
+          auth:
+            secretRef:
+              name: github-mcp-pat
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: github-mcp
+  namespace: kagent
+spec:
+  parentRefs:
+  - group: ""
+    kind: Service
+    name: github-mcp
+    port: 80
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: github-mcp
+    timeouts:
+      request: 180s

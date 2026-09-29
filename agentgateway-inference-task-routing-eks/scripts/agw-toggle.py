@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -88,10 +89,24 @@ def json_bytes(value):
 
 
 class Toggle:
+    def _published_host(self):
+        # What scripts/platform/40-public-endpoints.sh recorded. No built-in default, so
+        # nothing is sent to a gateway you did not name.
+        try:
+            host = subprocess.run(["tofu", f"-chdir={self.lab / 'tofu'}", "output", "-raw", "gateway_host"],
+                                  text=True, capture_output=True, timeout=30).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            host = ""
+        # tofu prints "No outputs found" on stdout when there is no state.
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", host):
+            raise SystemExit("no gateway hostname: set AGW_HOST=agw.<your zone>, or publish one with "
+                             "scripts/platform/40-public-endpoints.sh")
+        return host
+
     def __init__(self):
         home = Path.home()
         self.lab = Path(os.environ.get("LAB_DIR", Path(__file__).resolve().parents[1]))
-        self.base = "https://" + os.environ.get("AGW_HOST", "agw.awslab.masterthemesh.com")
+        self.base = "https://" + (os.environ.get("AGW_HOST") or self._published_host())
         self.token = Path(os.environ.get("AGW_TOKEN_FILE", home / ".config/agw/token")).expanduser()
         self.subject = os.environ.get("AGW_SUBJECT", "bob")
         self.model = os.environ.get("AGW_DESKTOP_MODEL", "claude-sonnet-5")

@@ -1,0 +1,4 @@
+authorizationpolicy.security.istio.io/l4-allow-petshop-namespace configured
+warehouse: 13:30:44 warehouse-svc -> GET petstore.petshop/pets : 000000
+spiffe://mesh1/ns/warehouse/sa/warehouse-svc -> petstore.petshop.svc.cluster.local 
+  error: connection closed due to policy rejection: allow policies exist, but none allowed

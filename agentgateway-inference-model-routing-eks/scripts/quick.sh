@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Harness entry point: up | test | teardown.
+# Harness entry point: up | test | teardown (and render, to print the cluster definition).
 #
 # This lab is standalone. `up` builds an EKS cluster, installs OSS agentgateway, serves
 # two models on two GPUs, wires the routing, installs kagent and the semantic router,
@@ -13,6 +13,17 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER="${EKS_CLUSTER:-model-routing}"
 REGION="${AWS_REGION:-eu-west-2}"
+GPU_AZ="${GPU_AZ:-${REGION}a}"
+LAB_OWNER="${LAB_OWNER:-${USER:-lab-owner}}"
+
+# eks/cluster.yaml with this run's name, region, GPU zone and Owner tag.
+render_cluster_config() {
+  sed -e "s/^  name: model-routing\$/  name: $CLUSTER/" \
+      -e "s/^  region: eu-west-2\$/  region: $REGION/" \
+      -e "s/^      - eu-west-2a\$/      - $GPU_AZ/" \
+      -e "s/^    Owner: lab-owner\$/    Owner: $LAB_OWNER/" \
+      "$HERE/eks/cluster.yaml"
+}
 
 banner() { echo; echo "############ $*"; }
 
@@ -22,7 +33,7 @@ case "${1:-}" in
     if aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
       echo "cluster $CLUSTER already exists, skipping"
     else
-      eksctl create cluster -f "$HERE/eks/cluster.yaml"
+      render_cluster_config | eksctl create cluster -f -
     fi
     export EKS_CLUSTER="$CLUSTER"
 
@@ -46,6 +57,11 @@ case "${1:-}" in
 
   test)
     exec "$HERE/scripts/test-classifiers.sh"
+    ;;
+
+  render)
+    # Print the cluster definition `up` would create, for review or for eksctl -f -.
+    render_cluster_config
     ;;
 
   teardown)
@@ -77,7 +93,7 @@ case "${1:-}" in
     ;;
 
   *)
-    echo "usage: $0 {up|test|teardown}" >&2
+    echo "usage: $0 {up|test|render|teardown}" >&2
     exit 1
     ;;
 esac

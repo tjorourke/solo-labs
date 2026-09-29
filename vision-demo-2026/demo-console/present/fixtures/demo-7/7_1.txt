@@ -1,0 +1,27 @@
+== tokens by business unit ==
+  risk                                                    166.000000
+  unknown                                                 144.000000
+  markets                                                 78.000000
+  retail-banking                                          285.000000
+
+== tokens by team ==
+  fraud-detection                                         166.000000
+  unknown                                                 144.000000
+  payments                                                285.000000
+  quant-research                                          78.000000
+
+== realised USD by user and model ==
+  bob@corp.example · gpt-5-nano                          0.000061
+  alice@corp.example · gpt-5-nano                        0.000032
+  alice@corp.example · claude-opus-5                     0.002080
+  unknown · gpt-5-nano                                   0.000053
+  carol@corp.example · claude-haiku-4-5                  0.000125
+  alice@corp.example · claude-sonnet-4-5                 0.000831
+  carol@corp.example · claude-sonnet-4-5                 0.000567
+  alice@corp.example · claude-haiku-4-5                  0.000125
+
+== every model priced against the catalog (Exact = priced) ==
+     2 status="Exact"	gen_ai_request_model="claude-haiku-4-5"
+     1 status="Exact"	gen_ai_request_model="claude-opus-5"
+     2 status="Exact"	gen_ai_request_model="claude-sonnet-4-5"
+     3 status="Exact"	gen_ai_request_model="gpt-5-nano"

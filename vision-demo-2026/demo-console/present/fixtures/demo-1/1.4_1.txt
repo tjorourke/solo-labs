@@ -1,0 +1,11 @@
+service/reviews labeled
+service/reviews labeled
+  == global hostname istiod published (ServiceEntry) ==
+NAMESPACE      NAME                                                  HOSTS                                                         LOCATION        RESOLUTION
+istio-system   autogen.bookinfo.reviews                              [reviews.bookinfo.mesh.internal]                              MESH_INTERNAL   STATIC
+istio-system   autogen.solo-cost.solo-enterprise-telemetry-gateway   [solo-enterprise-telemetry-gateway.solo-cost.mesh.internal]   MESH_INTERNAL   STATIC
+istio-system   autogen.solo-cost.solo-enterprise-ui                  [solo-enterprise-ui.solo-cost.mesh.internal]                  MESH_INTERNAL   STATIC
+
+✅ Shared Services Check: 3 globally shared service(s)
+✅ Service Conflicts Check: no conflicting service aliases or hostnames found
+✅ Peer Segments Check: no rejected peer segments found

@@ -1,0 +1,5 @@
+enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/petshop-jwt created
+enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/petshop-authz created
+NAME            ACCEPTED   ATTACHED   AGE
+petshop-jwt     True       True       10s
+petshop-authz   True       True       10s

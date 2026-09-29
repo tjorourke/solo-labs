@@ -1,0 +1,127 @@
+{
+  "skills": [
+    {
+      "id": "github-briefing",
+      "title": "GitHub ticket briefing",
+      "domain": "Telco",
+      "description": "Open PRs and issues on network-slice-manager. Classify ready, needs work, or do not merge."
+    },
+    {
+      "id": "incident-triage",
+      "title": "Incident triage",
+      "domain": "Telco",
+      "description": "Field briefing: symptom, domain, next two checks. No invented telemetry."
+    },
+    {
+      "id": "slice-planner",
+      "title": "Network slice planner",
+      "domain": "Telco",
+      "description": "Explain a 5G slice as a committed service, with SLA and congestion behaviour."
+    },
+    {
+      "id": "ticket-classifier",
+      "title": "Ticket classifier",
+      "domain": "Telco",
+      "description": "Class a ticket as network, billing, device or unknown, and name the owning team."
+    },
+    {
+      "id": "change-advisory",
+      "title": "Change advisory",
+      "domain": "IT",
+      "description": "One-page change window: what changes, the risk, the back-out, who is on call."
+    },
+    {
+      "id": "k8s-sre",
+      "title": "Kubernetes SRE",
+      "domain": "IT",
+      "description": "Read-only namespace triage: unhealthy pods, evidence, next check."
+    }
+  ],
+  "mcp": [
+    {
+      "id": "github",
+      "name": "GitHub",
+      "domain": "IT",
+      "description": "GitHub MCP behind agentgateway. The PAT stays on the gateway.",
+      "url": "http://github-mcp.kagent.svc.cluster.local/",
+      "publicUrl": "http://192.168.97.147/",
+      "tools": [
+        {"id": "get_me", "description": "Who the token is acting as."},
+        {"id": "search_repositories", "description": "Search repositories by name or topic."},
+        {"id": "get_file_contents", "description": "Read a file from a repository."},
+        {"id": "list_issues", "description": "List issues in a repository."},
+        {"id": "get_issue", "description": "Read one issue, including labels and state."},
+        {"id": "search_issues", "description": "Search issues and pull requests."},
+        {"id": "list_pull_requests", "description": "List pull requests in a repository."},
+        {"id": "pull_request_read", "description": "Read a pull request, files, reviews or status."},
+        {"id": "get_pull_request", "description": "Read one pull request."},
+        {"id": "get_pull_request_files", "description": "List files changed on a pull request."},
+        {"id": "get_pull_request_reviews", "description": "List reviews on a pull request."},
+        {"id": "get_pull_request_comments", "description": "List review comments on a pull request."},
+        {"id": "get_pull_request_status", "description": "Checks and commit status on a pull request."},
+        {"id": "list_commits", "description": "List commits on a branch or pull request."},
+        {"id": "get_commit", "description": "Read one commit."},
+        {"id": "list_branches", "description": "List branches in a repository."},
+        {"id": "search_code", "description": "Search file contents in a repository."},
+        {"id": "get_repository", "description": "Read repository metadata."},
+        {"id": "list_releases", "description": "List published releases."},
+        {"id": "get_latest_release", "description": "Read the latest release."},
+        {"id": "list_workflow_runs", "description": "List GitHub Actions workflow runs."},
+        {"id": "list_code_scanning_alerts", "description": "List code scanning alerts."},
+        {"id": "list_dependabot_alerts", "description": "List Dependabot alerts."}
+      ]
+    },
+    {
+      "id": "everything",
+      "name": "Everything (demo tools)",
+      "domain": "IT",
+      "description": "Small in-cluster MCP: echo, reverse, sum. Useful to prove tool allow-lists.",
+      "url": "http://server-everything.mcp-servers.svc.cluster.local:3000/mcp",
+      "publicUrl": "",
+      "tools": [
+        {"id": "echo", "description": "Return the message unchanged."},
+        {"id": "printenv", "description": "Print environment variables the server can see."},
+        {"id": "reverse_text", "description": "Reverse a string."},
+        {"id": "sum", "description": "Add a list of numbers."},
+        {"id": "to_uppercase", "description": "Upper-case a string."}
+      ]
+    },
+    {
+      "id": "k8s",
+      "name": "Kubernetes SRE",
+      "domain": "IT",
+      "description": "Read-only kagent-tools on the cluster. Pods, events, logs, Istio. No apply or delete.",
+      "url": "http://kagent-tools.kagent.svc.cluster.local:8084/mcp",
+      "publicUrl": "",
+      "tools": [
+        {"id": "k8s_get_resources", "description": "List Kubernetes resources."},
+        {"id": "k8s_describe_resource", "description": "Describe one resource."},
+        {"id": "k8s_get_pod_logs", "description": "Read pod logs."},
+        {"id": "k8s_get_events", "description": "Events in a namespace."},
+        {"id": "k8s_get_resource_yaml", "description": "YAML for one resource."},
+        {"id": "k8s_get_available_api_resources", "description": "API resources this cluster has."},
+        {"id": "k8s_get_cluster_configuration", "description": "Cluster configuration."},
+        {"id": "istio_proxy_status", "description": "Envoy proxy sync status."},
+        {"id": "istio_list_waypoints", "description": "Waypoints in the mesh."},
+        {"id": "istio_ztunnel_config", "description": "ztunnel config for a namespace."},
+        {"id": "istio_analyze_cluster_configuration", "description": "Istio config issues."}
+      ]
+    },
+    {
+      "id": "telco",
+      "name": "Telco inventory",
+      "domain": "Telco",
+      "description": "EMEA RAN sites, 5G slices and open alarms. Fake inventory for the briefing.",
+      "url": "http://telco-inventory.mcp-servers.svc.cluster.local:3000/",
+      "publicUrl": "",
+      "tools": [
+        {"id": "list_sites", "description": "List RAN sites in the EMEA inventory."},
+        {"id": "get_site", "description": "Read one site, for example site-berlin."},
+        {"id": "list_slices", "description": "List 5G slices and their SLA."},
+        {"id": "get_slice", "description": "Read one slice: SLA, isolation, congestion."},
+        {"id": "list_alarms", "description": "Open alarms on sites and slices."},
+        {"id": "congestion_now", "description": "Which slices are congested right now."}
+      ]
+    }
+  ]
+}

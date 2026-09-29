@@ -1,0 +1,3 @@
+accesspolicy.policy.kagent-enterprise.solo.io/allow-sum-only created
+NAME                                   ACCEPTED   ATTACHED   AGE
+accesspolicy-allow-sum-only-waypoint   True       True       0s

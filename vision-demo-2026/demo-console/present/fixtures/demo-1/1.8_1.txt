@@ -1,0 +1,8 @@
+httproute.gateway.networking.k8s.io/reviews-mesh-split created
+--- 8 mesh calls to reviews (via the waypoint): all v2 ---
+   8 reviews-v2
+
+Logs from waypoint:
+2026-09-23T13:00:40.555295Z	info	request gateway=bookinfo/bookinfo-waypoint listener=waypoint route=bookinfo/reviews-mesh-split endpoint=10.244.1.146:9080 src.addr=10.244.1.142:42290 src.identity=spiffe://mesh1/ns/bookinfo/sa/default http.method=GET http.host=reviews http.path=/reviews/0 http.version=HTTP/1.1 http.status=200 protocol=http duration=7ms
+2026-09-23T13:00:40.625046Z	info	request gateway=bookinfo/bookinfo-waypoint listener=waypoint route=bookinfo/_waypoint-default endpoint=10.244.1.137:9080 src.addr=10.244.1.146:42020 src.identity=spiffe://mesh1/ns/bookinfo/sa/bookinfo-reviews http.method=GET http.host=ratings http.path=/ratings/0 http.version=HTTP/1.1 http.status=200 protocol=http duration=0ms
+2026-09-23T13:00:40.626736Z	info	request gateway=bookinfo/bookinfo-waypoint listener=waypoint route=bookinfo/reviews-mesh-split endpoint=10.244.1.146:9080 src.addr=10.244.1.142:42290 src.identity=spiffe://mesh1/ns/bookinfo/sa/default http.method=GET http.host=reviews http.path=/reviews/0 http.version=HTTP/1.1 http.status=200 protocol=http duration=6ms

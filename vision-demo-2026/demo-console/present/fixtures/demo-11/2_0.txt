@@ -1,0 +1,2 @@
+  == load the Petstore's own OpenAPI spec into a ConfigMap ==
+configmap/rest-petstore-openapi created

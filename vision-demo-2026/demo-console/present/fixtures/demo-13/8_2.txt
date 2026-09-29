@@ -1,0 +1,27 @@
+Alice request 1: HTTP 200
+Alice request 2: HTTP 200
+Alice request 3: HTTP 200
+Alice request 4: HTTP 429
+Alice request 5: HTTP 429
+Alice request 6: HTTP 429
+Bob request: HTTP 200
+Alice totals: accepted=3 limited=3
+# dd-gateway
+agentgateway_requests_total{backend="dd-gateway/operator-tools",protocol="mcp",method="POST",status="202",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/operator-tools",route_rule="unknown"} 1
+agentgateway_requests_total{backend="unknown",protocol="http",method="POST",status="429",reason="DirectResponse",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown",caller="alice-7bbfb0d7ad"} 3
+agentgateway_requests_total{backend="unknown",protocol="http",method="POST",status="401",reason="JwtAuth",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown"} 1
+agentgateway_requests_total{backend="defence-agent.dd-agents.svc.cluster.local:8080",protocol="http",method="POST",status="200",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown",caller="bob-7bbfb0d7ad"} 1
+agentgateway_requests_total{backend="defence-agent.dd-agents.svc.cluster.local:8080",protocol="http",method="POST",status="200",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown"} 22
+agentgateway_requests_total{backend="dd-gateway/operator-tools",protocol="mcp",method="POST",status="200",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/operator-tools",route_rule="unknown"} 2
+agentgateway_requests_total{backend="defence-agent.dd-agents.svc.cluster.local:8080",protocol="http",method="POST",status="200",reason="Upstream",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown",caller="alice-7bbfb0d7ad"} 3
+agentgateway_requests_total{backend="unknown",protocol="http",method="POST",status="429",reason="DirectResponse",bind="80/dd-gateway/dd-gateway",gateway="dd-gateway/dd-gateway",listener="http",route="dd-gateway/agent",route_rule="unknown"} 3
+# dd-waypoint
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="POST",status="400",reason="MCP",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 1
+agentgateway_requests_total{backend="dd-gateway/model",protocol="llm",method="POST",status="403",reason="Guardrail",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/model",route_rule="unknown"} 1
+agentgateway_requests_total{backend="dd-gateway/model",protocol="llm",method="POST",status="200",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/model",route_rule="unknown"} 31
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="POST",status="202",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 32
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="POST",status="200",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 69
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="DELETE",status="202",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 30
+agentgateway_requests_total{backend="dd-gateway/tools",protocol="mcp",method="GET",status="200",reason="Upstream",bind="waypoint/dd-gateway/dd-waypoint",gateway="dd-gateway/dd-waypoint",listener="waypoint",route="dd-gateway/tools",route_rule="unknown"} 30
+agentgateway_guardrail_checks_total{phase="Request",action="Allow"} 16
+agentgateway_guardrail_checks_total{phase="Request",action="Reject"} 1

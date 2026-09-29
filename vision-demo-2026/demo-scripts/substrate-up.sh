@@ -24,7 +24,7 @@ echo "→ target cluster: $CTX   (override with SUBSTRATE_CTX=<context>)"
 KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
 KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
 KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.6}"
-SECRETS_FILE="${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}"
+SECRETS_FILE="${SECRETS_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/secrets.env}"
 [ -f "$SECRETS_FILE" ] && set -a && . "$SECRETS_FILE" && set +a
 LIC="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-${SOLO_ISTIO_LICENSE_KEY:-}}}"
 : "${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (SECRETS_FILE) first}"

@@ -1,0 +1,293 @@
+{
+  "intro": "Requires the AI gateway environment on mesh1. Azure and Bedrock are local model simulators; Anthropic is a live provider and needs a valid key. Model calls to Anthropic incur usage charges. Reset removes this lab's routes and policies and restores the local primary provider.",
+  "steps": {
+    "1": {
+      "short": "Corporate model names",
+      "title": "Route corporate model names",
+      "say": "Map application-facing model names to provider backends and test each mapping.",
+      "point": "The response identifies the serving model. Azure and Bedrock are simulated locally; Anthropic is live.",
+      "blocks": [
+        {
+          "title": "One backend per provider",
+          "instruction": "Apply the Azure, Bedrock and Anthropic backend definitions. The Anthropic backend uses a Secret and model aliases.",
+          "expect": "All three backends are applied.",
+          "show": "kind: EnterpriseAgentgatewayBackend\n  azure-gpt5        gpt-5-nano\n  bedrock-haiku     claude-haiku-4-5\n  anthropic-claude  premium-reasoning\n                    -> claude-sonnet-4-5",
+          "checks": [
+            {"label": "Azure backend", "match": "enterpriseagentgatewaybackend\\S*/azure-gpt5 (created|configured|unchanged)"},
+            {"label": "Bedrock backend", "match": "enterpriseagentgatewaybackend\\S*/bedrock-haiku (created|configured|unchanged)"},
+            {"label": "Anthropic backend", "match": "enterpriseagentgatewaybackend\\S*/anthropic-claude (created|configured|unchanged)"}
+          ]
+        },
+        {
+          "title": "Route on the model in the body",
+          "instruction": "Extract the requested model into x-model-name before routing. Match that header in the HTTPRoute.",
+          "expect": "extract-model and the models route are applied.",
+          "show": "phase: PreRouting\n  set x-model-name: json(request.body).model\nkind: HTTPRoute   # match x-model-name -> backend",
+          "checks": [
+            {"label": "Body-to-header policy", "match": "agentgatewaypolicy\\S*/extract-model (created|configured|unchanged)"},
+            {"label": "models route", "match": "httproute\\S*/models (created|configured|unchanged)"}
+          ]
+        },
+        {
+          "title": "Ask for each name",
+          "instruction": "Send one request for each corporate name and one unknown name.",
+          "expect": "Named models reach their configured backends. The unknown name uses the Azure simulator default.",
+          "show": "for M in corporate-fast corporate-secure premium-reasoning \\\n         corporate-premium anything-else; do\n  curl $GATEWAY/models/v1/chat/completions -d '{\"model\":\"'$M'\"...}'",
+          "checks": [
+            {"label": "corporate-fast: Azure", "match": "corporate-fast ==\\s*\\{\"served_by\":\"gpt-5-nano\""},
+            {"label": "corporate-secure: Bedrock", "match": "corporate-secure ==\\s*\\{\"served_by\":\"claude-haiku"},
+            {"label": "premium-reasoning: Anthropic", "match": "premium-reasoning ==\\s*\\{\"served_by\":\"claude-sonnet", "value": "premium-reasoning ==\\s*\\{\"served_by\":\"([^\"]+)\""},
+            {"label": "Unknown name: the default", "match": "anything-else ==\\s*\\{\"served_by\":\"gpt-5-nano\""}
+          ]
+        }
+      ]
+    },
+    "2": {
+      "short": "Failover between providers",
+      "title": "Test provider failover",
+      "say": "Configure a primary provider and a fallback group. Stop the primary and inspect the results.",
+      "point": "A failed request triggers eviction. Subsequent requests can use the fallback group until the primary is eligible again.",
+      "blocks": [
+        {
+          "title": "Priority groups and a health policy",
+          "parts": [
+            {"title": "Configure provider priorities", "instruction": "Apply the resilient backend, its route and a health policy that evicts a provider for 60 seconds after a 5xx or 429.", "expect": "The backend, route and health policy are applied.", "checks": [0]},
+            {"start": "curl -sS -m 30", "title": "Check the healthy primary", "instruction": "Send a request before stopping the primary provider.", "expect": "The Azure simulator answers as gpt-5-nano.", "checks": [1]}
+          ],
+          "show": "ai.groups:\n  - primary            (Azure)\n  - fallback-bedrock, fallback-anthropic\nhealth: response.code >= 500 -> evict 60s",
+          "checks": [
+            {"label": "Backend, route and health policy", "match": "resilient-health (created|configured|unchanged)"},
+            {"label": "Primary serves while healthy", "match": "\\{\"served_by\":\"gpt-5-nano\"\\}"}
+          ]
+        },
+        {
+          "title": "Take Azure down",
+          "parts": [
+            {"title": "Stop the primary provider", "instruction": "Scale the local Azure simulator to zero.", "expect": "azure-openai is scaled down.", "checks": [0]},
+            {"start": "for i in 1 2 3 4 5 6 7 8;", "title": "Test fallback requests", "instruction": "Send eight requests to the same resilient endpoint.", "expect": "After the primary fails, the fallback group serves requests.", "checks": [1, 2], "strict": false}
+          ],
+          "show": "kubectl -n ai-models scale deploy/azure-openai --replicas=0\n8 x POST /resilient/v1/chat/completions",
+          "checks": [
+            {"label": "Azure scaled to zero", "match": "deployment.apps/azure-openai scaled"},
+            {"label": "Fallback group serves", "match": "request [2-8]: served_by=claude-", "value": "request 8: served_by=(\\S+)"},
+            {"label": "Nothing after the eviction fails", "match": "request [3-8]: served_by=503", "absent": true, "warn": true}
+          ]
+        },
+        {
+          "title": "Inspect requests by model",
+          "instruction": "Read the gateway's request counters for the resilient route.",
+          "expect": "The metrics include models from the fallback group. A small sample may not use both providers.",
+          "strict": false,
+          "show": "curl localhost:15020/metrics \\\n  | sum token_usage_count by gen_ai_response_model",
+          "checks": [
+            {"label": "Bedrock took traffic", "match": "claude-haiku-4-5\\s+\\d+ requests", "value": "claude-haiku-4-5\\s+(\\d+ requests)"},
+            {"label": "Anthropic took traffic", "match": "claude-sonnet\\S*\\s+\\d+ requests", "value": "claude-sonnet\\S*\\s+(\\d+ requests)", "warn": true}
+          ]
+        },
+        {
+          "title": "Bring Azure back",
+          "instruction": "Restore the primary simulator and restart the gateway to clear its eviction state.",
+          "expect": "Both deployments finish rolling out.",
+          "show": "kubectl -n ai-models scale deploy/azure-openai --replicas=1\nkubectl -n $NS rollout restart deploy/ai-gateway",
+          "checks": [
+            {"label": "Azure back", "match": "deployment \"azure-openai\" successfully rolled out"},
+            {"label": "Gateway restarted, evictions cleared", "match": "deployment \"ai-gateway\" successfully rolled out"}
+          ]
+        }
+      ]
+    },
+    "3": {
+      "short": "Identity on every request",
+      "title": "Require user identity",
+      "say": "Require a signed token on the models route and add identity claims to model metrics.",
+      "point": "Anonymous requests return 401. Alice's valid token allows the request and supplies metric attributes.",
+      "blocks": [
+        {
+          "title": "JWT and identity on metrics",
+          "instruction": "Configure the demo issuer's public keys and metric attributes for user, team and business unit.",
+          "expect": "models-jwt and identity-metrics are applied.",
+          "show": "jwtAuthentication: { mode: Strict }   # issuer idp.demo.example\nmetrics.attributes:\n  user: jwt.sub   team: jwt.team   business_unit: jwt.businessUnit",
+          "checks": [
+            {"label": "models-jwt applied", "match": "models-jwt (created|configured|unchanged)"},
+            {"label": "identity-metrics applied", "match": "identity-metrics (created|configured|unchanged)"}
+          ]
+        },
+        {
+          "title": "With and without a token",
+          "instruction": "Send an anonymous request, then repeat it with alice's token.",
+          "expect": "The anonymous request returns 401 and alice returns 200.",
+          "show": "try_model \"\"       anything-else\ntry_model \"$ALICE\" anything-else",
+          "checks": [
+            {"label": "No token: 401", "match": "no token:\\s+HTTP 401"},
+            {"label": "alice: 200", "match": "alice \\(valid corporate JWT\\):\\s+HTTP 200"}
+          ]
+        }
+      ]
+    },
+    "4": {
+      "short": "Model access by group",
+      "title": "Restrict premium models by group",
+      "say": "Premium models are for engineering. One CEL rule reads the model from the body and the groups from the JWT.",
+      "point": "bob from finance gets 403 on premium and 200 on a standard model. alice from engineering gets premium.",
+      "blocks": [
+        {
+          "title": "Premium for engineering only",
+          "parts": [
+            {"title": "Apply the model access rule", "instruction": "Allow premium model names only when the token includes the engineering group.", "expect": "models-access is applied."},
+            {"start": "echo -n \"bob (finance)", "title": "Compare engineering and finance", "instruction": "Request premium models as bob and alice, then request a standard model as bob.", "expect": "Bob is denied premium access but can use standard models. Alice can use premium models.", "checks": [0, 1, 2]}
+          ],
+          "show": "authorization:\n  '!json(request.body).model.contains(\"premium\")\n   || jwt.groups.exists(g, g == \"engineering\")'",
+          "checks": [
+            {"label": "bob, premium: 403", "match": "bob \\(finance\\) asks for premium-reasoning:\\s+HTTP 403"},
+            {"label": "alice, premium: 200", "match": "alice \\(engineering\\) asks for premium-reasoning:\\s+HTTP 200"},
+            {"label": "bob, standard: 200", "match": "bob asks for a standard model:\\s+HTTP 200"}
+          ]
+        }
+      ]
+    },
+    "5": {
+      "short": "Token limits per user",
+      "title": "Limit token usage per user",
+      "say": "Use the JWT subject as the key for a per-user token allowance.",
+      "point": "Bob's requests exhaust his allowance. Alice has a separate allowance and can still make a request.",
+      "blocks": [
+        {
+          "title": "60 tokens a minute per user",
+          "parts": [
+            {"title": "Set the token allowance", "instruction": "Configure 60 tokens per minute per user and attach the limit to the models route.", "expect": "The rate limit configuration and policy are applied."},
+            {"start": "echo \"bob burns", "title": "Test independent user limits", "instruction": "Send requests as bob, a few seconds apart, until he is limited. Then send one as alice.", "expect": "Bob receives 429 after exhausting his allowance. Alice receives 200.", "checks": [0, 1]}
+          ],
+          "show": "kind: RateLimitConfig\n  key: user = jwt.sub   type: TOKEN\n  requestsPerUnit: 60   unit: MINUTE",
+          "checks": [
+            {"label": "bob hits 429", "match": "bob request ([2-9]|10): HTTP 429"},
+            {"label": "alice has her own bucket", "match": "alice has her own bucket:\\s+HTTP 200"}
+          ]
+        },
+        {
+          "title": "Restore the larger allowance",
+          "instruction": "Set the allowance to 500,000 tokens per day for the remaining chapters.",
+          "expect": "The per-user-tokens configuration is updated.",
+          "show": "requestsPerUnit: 500000   unit: DAY",
+          "checks": [
+            {"label": "Limit raised", "match": "ratelimitconfig\\S*/per-user-tokens (configured|unchanged)"}
+          ]
+        }
+      ]
+    },
+    "6": {
+      "short": "Virtual keys and budgets",
+      "title": "Give a service a key and budget",
+      "say": "Create a virtual key for a CI job, attach a daily budget and test enforcement.",
+      "point": "An invalid key returns 401. The valid key is allowed until the budget is exhausted, then receives 429.",
+      "blocks": [
+        {
+          "title": "Mint a key, set a budget",
+          "parts": [
+            {"title": "Create the virtual key and route", "instruction": "Create a fresh virtual key in a labelled Secret and a route to the local model simulator.", "expect": "The Secret, backend and service-models route are applied."},
+            {"start": "# Configure the key budget", "title": "Set the key's budget", "instruction": "Read the key ID from the Secret. Attach a 100-token daily budget and strict key authentication.", "expect": "The budget and authentication policy are applied."},
+            {"start": "# Test the key", "title": "Test authentication and the budget", "instruction": "Try an invalid key, then use the virtual key until its allowance is spent.", "expect": "The invalid key returns 401. The valid key starts at 200, then receives 429.", "checks": [0, 1, 2]}
+          ],
+          "show": "kind: Secret   # virtual-key-set: llm-consumers\nkind: EnterpriseAgentgatewayBudget\n  virtualKey: $VKID\n  limit: 100 Tokens / Day\n  onBudgetExceeded: Block",
+          "checks": [
+            {"label": "Wrong key: 401", "match": "wrong key:\\s+HTTP 401"},
+            {"label": "The key works", "match": "request 1: HTTP 200"},
+            {"label": "Blocked once the budget is spent", "match": "request [2-5]: HTTP 429"}
+          ]
+        },
+        {
+          "title": "Inspect budget enforcement",
+          "instruction": "Read the budget status, generated rate limit configuration and gateway denial log.",
+          "expect": "The budget is accepted and enforced. The gateway logs over_limit_block.",
+          "strict": false,
+          "show": "kubectl get enterpriseagentgatewaybudgets\nkubectl get ratelimitconfigs\nkubectl logs deploy/ai-gateway | grep budget",
+          "checks": [
+            {"label": "Budget accepted and enforced", "match": "service-budgets\\s+True\\s+True"},
+            {"label": "Compiled to rate limit config", "match": "ratelimitconfig\\S*/agw-budget-service-budgets"},
+            {"label": "Proxy logs the block", "match": "outcome=\"over_limit_block\"", "value": "budget_id=\\S+/(\\S+)"}
+          ]
+        }
+      ]
+    },
+    "7": {
+      "short": "Cost and chargeback",
+      "title": "Attribute model usage and cost",
+      "say": "Generate requests from three users and inspect usage grouped by their identity claims.",
+      "point": "The metrics show token counts and catalogue-based costs. Costs for simulated providers are illustrative, not provider invoices.",
+      "blocks": [
+        {
+          "title": "Traffic from three users",
+          "instruction": "Send seven model requests using alice, bob and carol's tokens.",
+          "expect": "All seven requests complete successfully.",
+          "show": "alice: premium-reasoning, corporate-fast, corporate-secure, corporate-premium\nbob:   anything-else\ncarol: corporate-secure, premium-reasoning",
+          "checks": [
+            {"label": "All seven sent", "match": "sent: corporate-premium"}
+          ]
+        },
+        {
+          "title": "Sum the proxy's metrics",
+          "instruction": "Group the gateway counters by business unit, team, user and model.",
+          "expect": "The counters include the three users' claims and the model catalogue lookup status.",
+          "strict": false,
+          "show": "sum token_usage by business_unit\nsum token_usage by team\nsum cost_usd    by user, model",
+          "checks": [
+            {"label": "Tokens by business unit", "match": "retail-banking\\s+\\d", "value": "retail-banking\\s+(\\d+)"},
+            {"label": "Tokens by team", "match": "quant-research\\s+\\d"},
+            {"label": "Dollars per user and model", "match": "alice@corp.example · claude-\\S+\\s+0\\.\\d+", "value": "alice@corp.example · claude-opus-5\\s+(0\\.\\d+)"},
+            {"label": "No unpriced model", "match": "status=\"(?!Exact)", "absent": true}
+          ]
+        }
+      ]
+    },
+    "8": {
+      "short": "MCP through the gateway",
+      "title": "Control MCP tool access",
+      "say": "Expose an MCP server and use JWT groups to restrict one of its tools.",
+      "point": "bob never sees printenv, and calling it anyway is refused. alice sees and calls it.",
+      "blocks": [
+        {
+          "title": "Put the MCP server behind the gateway",
+          "parts": [
+            {"title": "Expose the MCP backend", "instruction": "Apply the MCP backend and its /mcp route.", "expect": "mcp-hub and the mcp HTTPRoute are applied."},
+            {"start": "echo \"tools through", "title": "List the available tools", "instruction": "List tools through the gateway before adding authentication.", "expect": "The list includes echo, sum and printenv.", "checks": [0, 1]}
+          ],
+          "show": "kind: EnterpriseAgentgatewayBackend\n  entMcp.targets: everything  (StreamableHTTP)\nkind: HTTPRoute   /mcp",
+          "checks": [
+            {"label": "Tools listed through the gateway", "match": "\\nprintenv\\n", "value": "\\n(echo)\\n"},
+            {"label": "sum is there", "match": "\\nsum\\n"}
+          ]
+        },
+        {
+          "title": "JWT and per-tool authorisation",
+          "parts": [
+            {"title": "Apply authentication and tool permissions", "instruction": "Require the demo JWT and restrict printenv to the engineering group.", "expect": "The JWT and tool authorisation policies are applied."},
+            {"start": "echo \"-- tools visible", "title": "Compare tool discovery", "instruction": "List tools as bob and alice, then attempt anonymous initialisation.", "expect": "Only alice sees printenv. Anonymous initialisation returns 401.", "checks": [0, 1, 2]}
+          ],
+          "show": "jwtAuthentication: { mode: Strict }\nmcp.authorization:\n  'mcp.tool.name != \"printenv\"\n   || jwt.groups.exists(g, g == \"engineering\")'",
+          "checks": [
+            {"label": "bob does not see printenv", "match": "printenv", "from": "visible to bob", "to": "visible to alice", "absent": true},
+            {"label": "alice does", "match": "printenv", "from": "visible to alice", "to": "anonymous"},
+            {"label": "Anonymous: 401", "match": "anonymous initialize: HTTP 401"}
+          ]
+        },
+        {
+          "title": "Call the tools",
+          "instruction": "Call sum as bob, then attempt printenv as bob and alice.",
+          "expect": "Bob can call sum but not printenv. Alice can call printenv.",
+          "show": "mcp_call \"$BOB\"   sum      '{\"a\":2,\"b\":3}'\nmcp_call \"$BOB\"   printenv '{}'\nmcp_call \"$ALICE\" printenv '{}'",
+          "checks": [
+            {"label": "bob's sum works", "match": "bob calls sum:\\s+\\{\"result\":\"5\"\\}"},
+            {"label": "bob's printenv refused", "match": "bob calls printenv:\\s+\\{\"denied\""},
+            {"label": "alice's printenv runs", "match": "alice calls printenv:\\s+\\{\"result\""}
+          ]
+        }
+      ]
+    },
+    "where-this-goes-next": {
+      "short": "Review and reset",
+      "title": "Review the results and reset",
+      "say": "Inspect the traffic in Solo UI, Tracing or Cost Management, then reset the lab.",
+      "point": "Open Solo UI, Tracing or Cost to see the same traffic from the platform side.",
+      "blocks": []
+    }
+  }
+}

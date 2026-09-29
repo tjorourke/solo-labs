@@ -1,0 +1,18 @@
+Pulled: us-docker.pkg.dev/soloio-img/istio-helm/ztunnel:1.30.3-solo
+Digest: sha256:1fa984672572aca774ac9dbd03a4a4f9c4935b1c0160237a1fe536a7eda9da5f
+Release "ztunnel" has been upgraded. Happy Helming!
+NAME: ztunnel
+LAST DEPLOYED: Wed Sep 23 14:31:00 2026
+NAMESPACE: istio-system
+STATUS: deployed
+REVISION: 2
+DESCRIPTION: Upgrade complete
+TEST SUITE: None
+NOTES:
+ztunnel successfully installed!
+
+To learn more about the release, try:
+  $ helm status ztunnel -n istio-system
+  $ helm get all ztunnel -n istio-system
+daemon set "ztunnel" successfully rolled out
+ENABLE_WORKLOAD_CLAIMS=true

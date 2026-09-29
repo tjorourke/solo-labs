@@ -19,7 +19,7 @@ cd "$_p8_suite" || return 1
 
 # ANTHROPIC_API_KEY and the GitHub PAT. Quiet when the file is not there: the cluster
 # holds its own copies, and the only cell that needs the key locally is the token count.
-set -a; . "${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}" 2>/dev/null; set +a
+set -a; . "${SECRETS_FILE:-$_p8_suite/secrets.env}" 2>/dev/null; set +a
 
 # Platform facts (LB address, the sslip hostnames, the Keycloak clients) and the helper
 # functions. This is lib.sh and deliberately not demo-4's connect.sh, which also frees

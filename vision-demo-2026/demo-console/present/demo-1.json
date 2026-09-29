@@ -1,0 +1,249 @@
+{
+  "intro": "Requires Solo ambient on mesh1 and mesh2 with a shared root CA, plus the agentgateway controller. The lab creates Bookinfo and the cluster peering. Reset removes those resources.",
+  "app": {"label": "Bookinfo productpage", "hint": "Complete the ingress chapter to load Bookinfo here."},
+  "steps": {
+    "1.1": {
+      "short": "Deploy and enrol",
+      "title": "Deploy Bookinfo",
+      "say": "Prepare the namespaces, deploy Bookinfo, then start a client for the failover tests.",
+      "point": "Both namespaces use ambient. mesh1 runs reviews v1 and v2; mesh2 also runs v3.",
+      "notes": "The ambient label enrols the namespace. The network label identifies the network used to reach its workloads. Each cluster has its own network in this lab. Reviews v1 has no stars, v2 has black stars and v3 has red stars. Only mesh2 runs v3, so a v3 response proves a request crossed clusters.",
+      "blocks": [
+        {
+          "title": "Label the namespace, deploy the app",
+          "parts": [
+            {"title": "Enrol the namespaces", "instruction": "Create bookinfo on both clusters and apply the ambient and network labels.", "expect": "Both rows show ambient, with network mesh1 or mesh2.", "checks": [0, 1]},
+            {"start": "# 2) deploy Bookinfo", "title": "Deploy the application", "instruction": "Apply Bookinfo on both clusters. Remove reviews-v3 from mesh1 so it only runs on mesh2.", "expect": "The application resources are created or unchanged on both clusters.", "prepare": "BOOK=https://raw.githubusercontent.com/istio/istio/release-1.24/samples/bookinfo/platform/kube"},
+            {"start": "# 3) a client pod", "title": "Start the test client", "instruction": "Deploy a curl client on mesh1. It will call the global reviews hostname throughout the lab.", "expect": "demo-client is created. Its calls will fail until the global hostname is published in chapter 4.", "checks": [{"label": "Client deployment applied", "match": "deployment.apps/demo-client (created|configured|unchanged)"}]},
+            {"start": "# 4) wait", "title": "Check readiness", "instruction": "Wait for the deployments on both clusters. This can take several minutes on a first run.", "expect": "All deployments finish rolling out. reviews-v3 appears only in the mesh2 list.", "checks": [2, 3, {"label": "Deployments ready on both clusters", "match": "bookinfo ready on both clusters"}]}
+          ],
+          "show": "kubectl label namespace bookinfo \\\n  istio.io/dataplane-mode=ambient \\\n  topology.istio.io/network=mesh1   # mesh2 on the other cluster\n\nkubectl -n bookinfo apply -f bookinfo.yaml -f bookinfo-versions.yaml",
+          "checks": [
+            {"label": "mesh1 namespace in the ambient mesh", "match": "bookinfo\\s+Active\\s+\\S+\\s+ambient\\s+mesh1"},
+            {"label": "mesh2 namespace in the ambient mesh", "match": "bookinfo\\s+Active\\s+\\S+\\s+ambient\\s+mesh2"},
+            {"label": "mesh1 runs reviews v1 and v2 only", "match": "reviews-v3", "absent": true, "from": "mesh1 deployments:", "to": "mesh2 deployments:"},
+            {"label": "mesh2 also runs reviews-v3", "match": "reviews-v3", "from": "mesh2 deployments:"}
+          ]
+        }
+      ]
+    },
+    "1.2": {
+      "short": "Join the clusters",
+      "title": "Connect the clusters",
+      "say": "Create the east-west gateways, link the clusters and check the connection.",
+      "point": "Each cluster now has its own east-west gateway plus a remote peer gateway pointing at the other cluster's address.",
+      "blocks": [
+        {
+          "title": "Expose and link",
+          "parts": [
+            {"title": "Create the east-west gateways", "instruction": "Expose each cluster through an east-west gateway and wait for its address.", "expect": "Both gateways report Programmed.", "checks": [0]},
+            {"start": "# link them bidirectionally", "title": "Link the clusters", "instruction": "Create a remote peer Gateway in each cluster, pointing at the other cluster.", "expect": "mesh1 has a peer for mesh2, and mesh2 has a peer for mesh1.", "checks": [1, 2]}
+          ],
+          "show": "istioctl multicluster expose -n istio-eastwest      # on each cluster\nistioctl multicluster link   -n istio-eastwest --contexts=mesh1,mesh2",
+          "checks": [
+            {"label": "East-west gateway programmed on both clusters", "match": "(istio-eastwest condition met[\\s\\S]*){2}"},
+            {"label": "mesh1 linked to mesh2", "match": "istio-remote-peer-mesh2 applied"},
+            {"label": "mesh2 linked to mesh1", "match": "istio-remote-peer-mesh1 applied"}
+          ]
+        },
+        {
+          "title": "Check the peering",
+          "instruction": "List the local and remote gateways, then run the multicluster checks.",
+          "expect": "Gateway and peer checks pass. The two remote gateways show the other cluster's address.",
+          "show": "kubectl -n istio-eastwest get gateways\nistioctl multicluster check",
+          "checks": [
+            {"label": "mesh1 sees mesh2 at", "match": "istio-remote-peer-mesh2\\s+istio-remote\\s+\\S+", "value": "istio-remote-peer-mesh2\\s+istio-remote\\s+(\\S+)"},
+            {"label": "mesh2 sees mesh1 at", "match": "istio-remote-peer-mesh1\\s+istio-remote\\s+\\S+", "value": "istio-remote-peer-mesh1\\s+istio-remote\\s+(\\S+)"},
+            {"label": "East-west gateways", "match": "✅ Gateway Check", "value": "Gateway Check: (.*)"},
+            {"label": "Peers connected", "match": "✅ Peers Check", "value": "Peers Check: (.*)", "warn": true}
+          ]
+        }
+      ]
+    },
+    "1.3": {
+      "short": "Ingress",
+      "title": "Expose Bookinfo through an ingress",
+      "say": "Create an HTTP listener on mesh1 and route it to productpage.",
+      "point": "The App tab loads productpage. Later, use the reviews panel to check which cluster answered.",
+      "blocks": [
+        {
+          "title": "Gateway and route",
+          "parts": [
+            {"title": "Create the ingress and route", "instruction": "Apply the Gateway and HTTPRoute, then wait for the gateway pod to become ready.", "expect": "bookinfo-gateway is Programmed and its pod is Ready.", "checks": [0]},
+            {"start": "GW=$(kubectl", "title": "Open the application", "instruction": "Read the gateway address and request productpage. The address is saved in the App tab.", "expect": "productpage returns HTTP 200.", "checks": [1, 2]}
+          ],
+          "show": "kind: Gateway          # gatewayClassName: enterprise-agentgateway\nkind: HTTPRoute        # productpage:9080",
+          "checks": [
+            {"label": "Ingress programmed", "match": "bookinfo-gateway condition met"},
+            {"label": "productpage answers", "match": "HTTP 200", "value": "HTTP (\\d+)"},
+            {"label": "App address", "match": "open →\\s+http\\S+", "value": "open →\\s+(http\\S+)", "save": "app"}
+          ]
+        }
+      ]
+    },
+    "1.4": {
+      "short": "Publish a global service",
+      "title": "Publish the global reviews hostname",
+      "say": "Compare the client's requests before and after publishing reviews across the mesh.",
+      "point": "The client changes from connection failures to HTTP 200. Local endpoints are preferred while they remain available.",
+      "blocks": [
+        {
+          "title": "Before: the client's calls",
+          "instruction": "Read the client's recent requests before the global hostname exists.",
+          "expect": "The log shows 000, curl's code for a request with no HTTP response.",
+          "show": "kubectl -n bookinfo logs -l app=demo-client --tail=6",
+          "checks": [
+            {"label": "Global name not published yet, calls fail", "match": "mesh\\.internal -> 000", "value": "mesh\\.internal -> (\\d{3})"}
+          ]
+        },
+        {
+          "title": "Label the service global",
+          "parts": [
+            {"title": "Publish reviews", "instruction": "Label the reviews Service as global on both clusters.", "expect": "Both Services are labelled. Allow a few seconds for istiod to update the mesh."},
+            {"start": "# the label makes istiod", "title": "Inspect the generated ServiceEntry", "instruction": "Read the ServiceEntry generated by istiod and check shared service discovery.", "expect": "The ServiceEntry contains reviews.bookinfo.mesh.internal and the shared services check passes.", "checks": [0, 1]}
+          ],
+          "show": "kubectl -n bookinfo label svc reviews solo.io/service-scope=global   # both clusters",
+          "checks": [
+            {"label": "istiod published the global hostname", "match": "autogen\\.bookinfo\\.reviews\\s+\\[reviews\\.bookinfo\\.mesh\\.internal\\]", "value": "\\[(reviews\\.bookinfo\\.mesh\\.internal)\\]"},
+            {"label": "Shared across the clusters", "match": "✅ Shared Services Check", "value": "Shared Services Check: (.*)"}
+          ]
+        },
+        {
+          "title": "After: the same client",
+          "instruction": "Read the same client's log after the global service has propagated.",
+          "expect": "Recent requests return HTTP 200.",
+          "show": "kubectl -n bookinfo logs -l app=demo-client --tail=6",
+          "checks": [
+            {"label": "Calls to the global name now land", "match": "mesh\\.internal -> 200", "value": "mesh\\.internal -> (\\d{3})"}
+          ]
+        }
+      ]
+    },
+    "1.5": {
+      "short": "Test failover",
+      "title": "Stop local reviews and test failover",
+      "say": "Scale reviews to zero on mesh1, then compare the global and local hostnames.",
+      "point": "The global name keeps answering from mesh2 (v3 only exists there). The local name breaks, because nothing local is left.",
+      "blocks": [
+        {
+          "title": "Scale mesh1's reviews to zero",
+          "parts": [
+            {"title": "Stop the local reviews pods", "instruction": "Scale reviews-v1 and reviews-v2 to zero on mesh1. Wait for their pods to disappear.", "expect": "No reviews pods remain on mesh1."},
+            {"start": "echo \"${CYN}${BLD}  ══ GLOBAL", "title": "Compare the two hostnames", "instruction": "Call reviews through the global name and then the ordinary Kubernetes Service name.", "expect": "The global name returns reviews from mesh2. The local name has no endpoints and fails.", "checks": [0, 1, 2], "strict": false}
+          ],
+          "show": "kubectl -n bookinfo scale deploy reviews-v1 reviews-v2 --replicas=0",
+          "checks": [
+            {"label": "Global name still answers", "match": "reviews-v\\d", "from": "GLOBAL hostname", "to": "LOCAL hostname"},
+            {"label": "Served from mesh2 (v3 answering)", "match": "reviews-v3", "value": "reviews-v3-\\S+\\s+(×\\d+)", "from": "GLOBAL hostname", "to": "LOCAL hostname"},
+            {"label": "Local name breaks, as expected", "match": "svc\\.cluster\\.local\\s+→\\s+000", "value": "svc\\.cluster\\.local\\s+→\\s+(\\d{3})"}
+          ]
+        }
+      ]
+    },
+    "1.6": {
+      "short": "Take over the local name",
+      "title": "Enable failover for the local hostname",
+      "say": "Enable service takeover, test the local name, then restore mesh1's replicas.",
+      "point": "Service takeover lets existing callers use remote endpoints. Once local replicas are ready, traffic returns to mesh1.",
+      "blocks": [
+        {
+          "title": "Take over the local hostname",
+          "parts": [
+            {"title": "Enable service takeover", "instruction": "Add the takeover label to mesh1's reviews Service.", "expect": "The Service is labelled and istiod updates the local Service's endpoint set."},
+            {"start": "echo \"${CYN}${BLD}  ══ LOCAL", "title": "Test the local hostname", "instruction": "Call the local name again. Refresh the App tab to check the reviews panel.", "expect": "The local name returns reviews from mesh2.", "checks": [0, 1, 2]}
+          ],
+          "show": "kubectl -n bookinfo label svc reviews solo.io/service-takeover=true",
+          "checks": [
+            {"label": "Local name answers again", "match": "reviews-v\\d", "from": "taken over"},
+            {"label": "Served cross-cluster by mesh2", "match": "reviews-v3", "value": "reviews-v3-\\S+\\s+(×\\d+)", "from": "taken over"},
+            {"label": "Refresh the app", "match": "refresh →\\s+http\\S+", "value": "refresh →\\s+(http\\S+)", "save": "app"}
+          ]
+        },
+        {
+          "title": "Restore mesh1",
+          "parts": [
+            {"title": "Restore the local replicas", "instruction": "Scale reviews-v1 and reviews-v2 back to one replica and wait for readiness.", "expect": "Both deployments are ready.", "checks": [0]},
+            {"start": "echo \"${CYN}${BLD}  ══ Local endpoints", "title": "Check local routing", "instruction": "Call reviews eight times and inspect the serving pods.", "expect": "Responses come from mesh1's v1 and v2 pods. No v3 response appears.", "checks": [1, {"label": "Reviews responses received", "match": "reviews-v[12]-"}]}
+          ],
+          "show": "kubectl -n bookinfo scale deploy reviews-v1 reviews-v2 --replicas=1",
+          "checks": [
+            {"label": "mesh1 reviews back", "match": "condition met"},
+            {"label": "Traffic back on mesh1 (no v3)", "match": "reviews-v3", "absent": true, "from": "Local endpoints back"}
+          ]
+        }
+      ]
+    },
+    "1.7": {
+      "short": "Ingress L7",
+      "title": "Apply routing and rate limits at ingress",
+      "say": "Configure an 80/20 split for reviews, then limit requests to productpage.",
+      "point": "A small sample will vary from the configured weights. HTTP 429 indicates a request was rate-limited.",
+      "blocks": [
+        {
+          "title": "Canary 80/20",
+          "parts": [
+            {"title": "Apply the canary route", "instruction": "Give reviews-v1 weight 80 and reviews-v2 weight 20 on the ingress route.", "expect": "The reviews-canary HTTPRoute is applied.", "checks": [0]},
+            {"start": "GW=$(kubectl", "title": "Measure the split", "instruction": "Send 20 requests through the ingress and count responses by version.", "expect": "The sample normally favours v1. It need not be exactly 16 responses to 4.", "checks": [1, 2]}
+          ],
+          "show": "kind: HTTPRoute    # /reviews → reviews-v1 weight 80, reviews-v2 weight 20",
+          "checks": [
+            {"label": "Canary route applied", "match": "reviews-canary (created|configured|unchanged)"},
+            {"label": "Weighted route returned reviews", "match": "reviews-v[12]\\s+\\d+ / 20"},
+            {"label": "No unexpected version", "match": "reviews-v[3-9]", "absent": true}
+          ]
+        },
+        {
+          "title": "Rate limit 2 a second",
+          "parts": [
+            {"title": "Set the request limit", "instruction": "Attach a local limit of two requests per second to the productpage route.", "expect": "The ingress-ratelimit policy is applied.", "checks": [0]},
+            {"start": "GW=$(kubectl", "title": "Test the limit", "instruction": "Send eight requests in quick succession.", "expect": "The output contains successful responses and HTTP 429 responses.", "checks": [1]}
+          ],
+          "show": "kind: AgentgatewayPolicy    # productpage: 2 requests per second",
+          "checks": [
+            {"label": "Rate limit applied", "match": "ingress-ratelimit (created|configured|unchanged)"},
+            {"label": "Limited after two requests", "match": "200 200 429", "value": "limit 2/sec ══\\s*\\n\\s*([0-9 ]+)"}
+          ]
+        }
+      ]
+    },
+    "1.8": {
+      "short": "Waypoint L7",
+      "title": "Route internal traffic through a waypoint",
+      "say": "Add a waypoint to bookinfo, then route internal reviews requests to v2.",
+      "point": "Every internal call to reviews is pinned to v2, and the waypoint logs each one with the caller's SPIFFE identity.",
+      "blocks": [
+        {
+          "title": "Add the waypoint",
+          "instruction": "Create the waypoint Gateway, enrol the namespace and wait for the proxy deployment.",
+          "expect": "bookinfo-waypoint is running and the namespace uses it.",
+          "show": "kind: Gateway    # gatewayClassName: enterprise-agentgateway-waypoint\nkubectl label namespace bookinfo istio.io/use-waypoint=bookinfo-waypoint",
+          "checks": [
+            {"label": "Waypoint rolled out", "match": "successfully rolled out"},
+            {"label": "Waypoint pod running", "match": "bookinfo-waypoint-\\S+\\s+1/1\\s+Running"}
+          ]
+        },
+        {
+          "title": "Pin reviews to v2 at the waypoint",
+          "parts": [
+            {"title": "Route reviews to v2", "instruction": "Attach an HTTPRoute to the reviews Service with all weight assigned to reviews-v2.", "expect": "The reviews-mesh-split route is applied."},
+            {"start": "echo \"${CYN}${BLD}--- 8 mesh", "title": "Check the responses and access log", "instruction": "Send eight requests from demo-client, then read the waypoint's recent log.", "expect": "All eight responses are v2. The waypoint logs the reviews-mesh-split route.", "checks": [0, 1, 2]}
+          ],
+          "show": "kind: HTTPRoute    # parentRef: Service reviews → reviews-v2 weight 100",
+          "checks": [
+            {"label": "All 8 mesh calls went to v2", "match": "\\b8 reviews-v2"},
+            {"label": "No v1 or v3", "match": "reviews-v[13]", "absent": true, "from": "8 mesh calls", "to": "Logs from waypoint"},
+            {"label": "Waypoint logged the route", "match": "route=bookinfo/reviews-mesh-split"}
+          ]
+        }
+      ]
+    },
+    "1.9": {
+      "short": "Cost management",
+      "title": "Review model cost management",
+      "say": "Open Cost Management to inspect the model traffic installed with this demo environment.",
+      "notes": "The cost view uses separate model traffic and seeded data; Bookinfo requests do not incur model charges. In Dimensions, compare spend by cost centre, environment, project and application. The Model access lab covers identity-based cost attribution in more detail.",
+      "point": "Open Cost Management and go to the Dimensions tab: spend by cost centre, environment, project and application.",
+      "blocks": []
+    }
+  }
+}

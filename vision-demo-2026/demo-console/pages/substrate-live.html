@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Substrate, live · Solo.io</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <style>
+    body { background: #fff; margin: 0; }
+    .live { padding: 16px 20px 24px; }
+    .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .head h2 { margin: 0; font-size: 17px; }
+    .src { font-size: 12px; color: var(--muted); }
+    .sec { font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+    .bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .bay { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 64px; transition: all .25s; }
+    .bay b { display: block; font-size: 12px; color: #334155; }
+    .bay small { font: 10.5px ui-monospace, Menlo, monospace; color: var(--muted); }
+    .bay .what { margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .bay.busy { border-color: #16a34a; background: #f0fdf4; box-shadow: 0 0 0 3px rgba(22,163,74,.14); }
+    .bay.busy .what { color: #166534; font-weight: 700; }
+    .tpls { display: flex; gap: 10px; flex-wrap: wrap; }
+    .tpl { border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #334155; }
+    .tpl code { font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+    td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; }
+    td code { font-size: 11px; }
+    .pill { display: inline-block; min-width: 86px; text-align: center; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 800; }
+    .Suspended { background: #f1f5f9; color: #475569; }
+    .Resuming { background: #fef3c7; color: #92400e; }
+    .Running { background: #dcfce7; color: #166534; }
+    .Suspending { background: #dbeafe; color: #1e40af; }
+    .proc-yes { color: #166534; font-weight: 700; }
+    .proc-no { color: var(--muted); }
+    tr.flash td { animation: flash 1.2s ease; }
+    @keyframes flash { from { background: #fef9c3; } to { background: transparent; } }
+    .feed { font: 12px ui-monospace, Menlo, monospace; max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #f8fafc; }
+    .feed div { padding: 1px 0; }
+    .feed .t { color: var(--muted); }
+    .err { color: var(--red); font-size: 13px; }
+    tr.mine td { background: #f5f3ff; }
+    .you { font-size: 10.5px; font-weight: 800; color: var(--violet); background: #ede9fe; border-radius: 999px; padding: 1px 7px; }
+  </style>
+</head>
+<body>
+<div class="live">
+  <div class="head"><h2 id="title">lab-pool</h2><span class="src" id="src">connecting…</span></div>
+  <div class="sec">Workers: pre-warmed gVisor sandboxes, one running actor each</div>
+  <div class="bays" id="bays"></div>
+  <div class="sec">ActorTemplates on this pool, each with its golden snapshot</div>
+  <div class="tpls" id="tpls"></div>
+  <div class="sec">Actors: one per conversation. Suspended means a snapshot on disk and no process</div>
+  <table><thead><tr><th>agent</th><th>actor</th><th>state</th><th>snapshot version</th><th>last snapshot</th><th>gVisor process</th></tr></thead><tbody id="actors"></tbody></table>
+  <div class="sec">What changed, as it happened</div>
+  <div class="feed" id="feed"><div class="t">waiting for the first change…</div></div>
+  <p class="err" id="err"></p>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// session ids start with a timestamp, so the tail is the part that tells them apart
+const short = id => '…' + id.slice(-8);
+const MAX_ROWS = 14;
+const ago = iso => { if (!iso) return ''; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 90 ? s + 's ago' : Math.round(s / 60) + 'm ago'; };
+let prev = {}, feed = [];
+
+function render(s) {
+  $('title').textContent = `WorkerPool ${s.pool}: ${s.replicas} workers, ${s.sandboxes} gVisor sandbox${s.sandboxes === 1 ? '' : 'es'} alive now`;
+  const busy = s.actors.filter(a => a.status === 'Running' || a.status === 'Resuming' || a.status === 'Suspending');
+  $('bays').innerHTML = s.workers.map((w, i) => {
+    const a = busy[i];
+    return `<div class="bay ${a ? 'busy' : ''}"><b>worker ${i + 1}</b><small>${esc(w.pod.slice(-11))}</small>
+      <div class="what">${a ? esc(a.status) + ': ' + esc(short(a.id)) : 'warm, waiting'}</div></div>`;
+  }).join('');
+  $('tpls').innerHTML = s.templates.map(t => `<span class="tpl"><b>${esc(t.agent)}</b> · <code>${esc(t.name)}</code> · ${esc(t.phase)} · golden <code>${esc(t.golden.slice(0, 8))}</code></span>`).join('') || '<span class="tpl">none yet</span>';
+  const now = new Date().toLocaleTimeString();
+  const shown = s.actors.slice(0, MAX_ROWS);
+  s.actors.forEach(a => {
+    const p = prev[a.id];
+    if (p && (p.status !== a.status || p.version !== a.version))
+      feed.unshift(`<span class="t">${now}</span> ${esc(a.agent)} ${esc(short(a.id))}${a.mine ? ' (your conversation)' : ''}: ${esc(p.status)} v${p.version} → <b>${esc(a.status)} v${a.version}</b>`);
+    else if (!p && Object.keys(prev).length)
+      feed.unshift(`<span class="t">${now}</span> new actor for ${esc(a.agent)}: ${esc(short(a.id))} (${esc(a.status)} v${a.version})`);
+  });
+  $('actors').innerHTML = shown.map(a => {
+    const p = prev[a.id], changed = p && (p.status !== a.status || p.version !== a.version);
+    return `<tr class="${changed ? 'flash' : ''}${a.mine ? ' mine' : ''}"><td>${esc(a.agent)}</td><td><code>${esc(short(a.id))}</code>${a.mine ? ' <span class="you">your conversation</span>' : ''}</td>
+      <td><span class="pill ${esc(a.status)}">${esc(a.status)}</span></td><td>v${a.version}</td><td>${ago(a.snapshotAt)}</td>
+      <td class="${a.process ? 'proc-yes' : 'proc-no'}">${a.process ? 'alive' : 'none, snapshot only'}</td></tr>`;
+  }).join('') + (s.actors.length > MAX_ROWS ? `<tr><td colspan="6" class="proc-no">and ${s.actors.length - MAX_ROWS} more suspended actors, one per earlier conversation</td></tr>` : '')
+    || '<tr><td colspan="6">no actors yet: a conversation creates one</td></tr>';
+  prev = Object.fromEntries(s.actors.map(a => [a.id, a]));
+  feed = feed.slice(0, 60);
+  if (feed.length) $('feed').innerHTML = feed.map(f => `<div>${f}</div>`).join('');
+}
+
+async function poll() {
+  try {
+    const s = await fetch('/api/substrate/live').then(r => r.json());
+    $('err').textContent = s.error || '';
+    if (s.ok) render(s);
+    $('src').textContent = 'live · kind-substrate · ' + new Date().toLocaleTimeString();
+  } catch (e) { $('err').textContent = 'Cannot reach the console: ' + e; }
+  setTimeout(poll, 700);
+}
+poll();
+</script>
+</body>
+</html>

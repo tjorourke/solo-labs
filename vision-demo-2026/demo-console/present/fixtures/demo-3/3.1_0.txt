@@ -1,0 +1,18 @@
+namespace/petshop created
+namespace/petshop unchanged
+serviceaccount/analytics created
+deployment.apps/analytics created
+serviceaccount/checkout created
+deployment.apps/checkout-blue created
+deployment.apps/checkout-green created
+serviceaccount/petstore created
+service/petstore created
+deployment.apps/petstore created
+serviceaccount/storefront created
+deployment.apps/storefront created
+gateway.gateway.networking.k8s.io/petshop-waypoint created
+namespace/petshop labeled
+deployment "petshop-waypoint" successfully rolled out
+petshop app: deployment "checkout-green" successfully rolled out
+2026-09-23T13:33:26.485069Z	info	request gateway=petshop/petshop-waypoint listener=waypoint route=petshop/_waypoint-default endpoint=10.244.1.161:8080 src.addr=10.244.1.159:49140 src.identity=spiffe://mesh1/ns/petshop/sa/checkout http.method=GET http.host=petstore http.path=/pets http.version=HTTP/1.1 http.status=200 protocol=http duration=43ms
+2026-09-23T13:33:26.485069Z	info	request gateway=petshop/petshop-waypoint listener=waypoint route=petshop/_waypoint-default endpoint=10.244.1.161:8080 src.addr=10.244.1.162:46054 src.identity=spiffe://mesh1/ns/petshop/sa/storefront http.method=GET http.host=petstore http.path=/pets http.version=HTTP/1.1 http.status=200 protocol=http duration=43ms

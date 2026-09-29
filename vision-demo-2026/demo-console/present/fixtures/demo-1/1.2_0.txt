@@ -1,0 +1,6 @@
+Gateway istio-eastwest/istio-eastwest applied
+Gateway istio-eastwest/istio-eastwest applied
+gateway.gateway.networking.k8s.io/istio-eastwest condition met
+gateway.gateway.networking.k8s.io/istio-eastwest condition met
+Gateway istio-eastwest/istio-remote-peer-mesh1 applied to cluster "kind-mesh2" pointing to cluster "mesh1" (network "mesh1")
+Gateway istio-eastwest/istio-remote-peer-mesh2 applied to cluster "kind-mesh1" pointing to cluster "mesh2" (network "mesh2")

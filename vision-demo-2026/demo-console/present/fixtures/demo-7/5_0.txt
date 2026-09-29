@@ -1,0 +1,8 @@
+ratelimitconfig.ratelimit.solo.io/per-user-tokens created
+enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/models-ratelimit created
+bob burns through his 60-token/minute budget:
+  bob request 1: HTTP 200
+  bob request 2: HTTP 200
+  bob request 3: HTTP 200
+  bob request 4: HTTP 429
+alice has her own bucket:  HTTP 200

@@ -1,0 +1,2 @@
+Anonymous agent request: HTTP 200
+Direct agent call HTTP 200

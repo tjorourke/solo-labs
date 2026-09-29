@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Token economics · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/desktop">Agentdesktop</a>
+    <a href="/decisions">Gateway decisions</a>
+    <a href="/economy" class="active">Token economics</a>
+    <a href="/cost">Cost</a>
+    <a href="/agents">My agents</a>
+    <a href="/approvals">Platform approval</a>
+    <a href="/substrate">Substrate</a>
+  </div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label"></span></span>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="crumb"><a href="/user-story-1">← Agentics Overview</a></div>
+    <div class="eyebrow">DEMO 04 · Economics</div>
+    <h1>Token economics with MCP</h1>
+    <p>Same question, twice. You keep the answer. You cut the spend. Budgets and graphs stay in the agentgateway UI.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="econ-tabs" role="tablist" aria-label="Examples">
+    <button type="button" role="tab" data-econ-tab="github" aria-selected="true">GitHub release report</button>
+    <button type="button" role="tab" data-econ-tab="quadratic" aria-selected="false">Quadratic with a calculator</button>
+  </div>
+  <div class="panel" data-econ-pane="github">
+    <p class="sub" style="margin-top:0">Every extra step the model takes is money. Code mode has the platform do that work, so each request is cheaper and quicker, without changing the agent or the result. Access stays under platform control.</p>
+    <div class="studio">
+      <div>
+        <textarea class="prompt-box" id="mcp-prompt" rows="2">Give me the release report for tjorourke/network-slice-manager, all open pull requests.</textarea>
+        <div class="toggle">
+          <button type="button" id="mode-standard">
+            <strong>Standard MCP</strong>
+            <span>Every tool, one step at a time</span>
+          </button>
+          <button type="button" id="mode-code">
+            <strong>Code mode</strong>
+            <span>The platform does the walking. Same report, fewer tokens.</span>
+          </button>
+        </div>
+        <div class="tool-cloud" id="tool-cloud"></div>
+        <button class="btn primary" id="run">Run against GitHub</button>
+        <div class="log" id="log"></div>
+      </div>
+      <div>
+        <div class="metrics">
+          <div class="metric"><div class="label">Tools in context</div><div class="value" id="m-tools">-</div></div>
+          <div class="metric"><div class="label">Model loops</div><div class="value" id="m-loops">-</div></div>
+          <div class="metric"><div class="label">Tokens</div><div class="value" id="m-tokens">-</div></div>
+          <div class="metric"><div class="label">Time</div><div class="value" id="m-time">-</div></div>
+          <div class="metric" style="grid-column: span 2"><div class="label">Spend</div><div class="value" id="m-usd">-</div></div>
+        </div>
+        <p class="footnote" style="margin-top:14px">Live GitHub MCP through agentgateway on mesh1. Time and loops are the real calls. Tokens and dollars are billed at Claude Sonnet rates from the payload (or from the model, when the Anthropic key on the cluster is valid).</p>
+      </div>
+    </div>
+    <div class="report" id="answer"></div>
+    <div class="compare" id="compare">
+      <h3>Same report. Different bill.</h3>
+      <div class="grid">
+        <div class="cell"><div class="label">Cheaper</div><div class="value" id="cmp-usd"></div></div>
+        <div class="cell"><div class="label">Fewer loops</div><div class="value" id="cmp-loops"></div></div>
+        <div class="cell"><div class="label">Fewer tokens</div><div class="value" id="cmp-tokens"></div></div>
+      </div>
+      <p class="cmp-note" id="cmp-note"></p>
+    </div>
+    <details class="yaml">
+      <summary>Gateway configuration</summary>
+      <p class="hint">GitHub hosted MCP, fronted by agentgateway. The highlighted field is the one you flip.</p>
+      <pre id="yaml-view"></pre>
+    </details>
+  </div>
+
+  <div class="panel" data-econ-pane="quadratic" hidden>
+    <p class="sub" style="margin-top:0">A small calculator MCP server with six tools: add, sub, mul, div, sqrt and pow. The question needs about a dozen operations. In Standard mode the model calls them one at a time, and every call is another turn that re-sends the conversation. In Code mode the gateway serves one run_code tool and the model writes a single program that makes every call.</p>
+    <div class="studio">
+      <div>
+        <div class="prompt-box q-question">Solve x² − 5x + 6 = 0. Give both roots.</div>
+        <div class="toggle">
+          <button type="button" id="q-mode-standard">
+            <strong>Standard MCP</strong>
+            <span>Six tools, one call per operation</span>
+          </button>
+          <button type="button" id="q-mode-code">
+            <strong>Code mode</strong>
+            <span>One run_code tool. The model writes the program.</span>
+          </button>
+        </div>
+        <div class="tool-cloud" id="q-tool-cloud"></div>
+        <button class="btn primary" id="q-run">Run with Claude</button>
+        <div class="log" id="q-log"></div>
+      </div>
+      <div>
+        <div class="metrics">
+          <div class="metric"><div class="label">Tools in context</div><div class="value" id="q-m-tools">-</div></div>
+          <div class="metric"><div class="label">Tool calls</div><div class="value" id="q-m-loops">-</div></div>
+          <div class="metric"><div class="label">Tokens</div><div class="value" id="q-m-tokens">-</div></div>
+          <div class="metric"><div class="label">Time</div><div class="value" id="q-m-time">-</div></div>
+          <div class="metric" style="grid-column: span 2"><div class="label">Spend</div><div class="value" id="q-m-usd">-</div></div>
+        </div>
+        <p class="footnote" style="margin-top:14px">Live: the calculator MCP server behind agentgateway on mesh1, and Claude through the Anthropic API. Tool calls, tokens and time come from the run itself. Spend uses Claude Sonnet list prices.</p>
+      </div>
+    </div>
+    <div class="report q-answer" id="q-answer"></div>
+    <div class="compare" id="q-compare">
+      <h3>Same roots. Different bill.</h3>
+      <div class="grid">
+        <div class="cell"><div class="label">Cheaper</div><div class="value" id="q-cmp-usd"></div></div>
+        <div class="cell"><div class="label">Fewer calls</div><div class="value" id="q-cmp-loops"></div></div>
+        <div class="cell"><div class="label">Fewer tokens</div><div class="value" id="q-cmp-tokens"></div></div>
+      </div>
+      <p class="cmp-note" id="q-cmp-note"></p>
+    </div>
+    <details class="yaml">
+      <summary>Gateway configuration</summary>
+      <p class="hint">The calculator MCP server, fronted by agentgateway. The highlighted field is the one you flip.</p>
+      <pre id="q-yaml-view"></pre>
+    </details>
+  </div>
+</div>
+<script src="/static/js/economy.js"></script>
+<script src="/static/js/economy-quadratic.js"></script>
+</body>
+</html>

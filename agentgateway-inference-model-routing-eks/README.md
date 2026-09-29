@@ -128,6 +128,11 @@ That runs six steps, each also runnable on its own:
 | `scripts/05-semantic-router.sh` | vSR and the policy that hands it the decision | ~5 min |
 | `scripts/06-opa.sh` (optional) | OPA as the decider: entitlement in Rego, called over `traffic.extAuth` at PreRouting | ~1 min |
 
+`quick.sh` builds the cluster from `eks/cluster.yaml` with four values replaced from the
+environment: `EKS_CLUSTER` (default `model-routing`), `AWS_REGION` (`eu-west-2`), `GPU_AZ`
+(the region's `a` zone) and `LAB_OWNER` (the Owner tag, default `$USER`).
+`./scripts/quick.sh render` prints the result without creating anything.
+
 **The experimental Gateway API channel is required.** ExtProc rides on it and the
 standard channel does not carry it. `01-gateway.sh` applies
 `experimental-install.yaml` and sets `KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES=true`

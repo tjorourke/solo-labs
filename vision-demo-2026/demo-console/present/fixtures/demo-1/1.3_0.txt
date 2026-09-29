@@ -1,0 +1,6 @@
+gateway.gateway.networking.k8s.io/bookinfo-gateway created
+httproute.gateway.networking.k8s.io/productpage created
+gateway.gateway.networking.k8s.io/bookinfo-gateway condition met
+pod/bookinfo-gateway-5bcc445fcf-v6cts condition met
+open →  http://192.168.97.150:8080/productpage
+HTTP 200

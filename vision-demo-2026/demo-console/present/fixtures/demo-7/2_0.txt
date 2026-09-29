@@ -1,0 +1,4 @@
+enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/resilient-models created
+httproute.gateway.networking.k8s.io/resilient created
+enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/resilient-health created
+{"served_by":"gpt-5-nano"}

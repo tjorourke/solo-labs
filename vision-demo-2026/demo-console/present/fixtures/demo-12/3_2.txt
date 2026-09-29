@@ -1,0 +1,15 @@
+{
+  "conditions": [
+    {
+      "lastTransitionTime": "2026-09-27T11:59:13Z",
+      "message": "Actor template is ready for use",
+      "reason": "Ready",
+      "status": "True",
+      "type": "Ready"
+    }
+  ],
+  "goldenActorID": "44c7473e-dfd4-461c-ae03-733e0791d4ce",
+  "goldenSnapshot": "gs://ate-snapshots/kagent/lab-agent/44c7473e-dfd4-461c-ae03-733e0791d4ce/2026-09-27T11:59:13Z-52SDRSDROHSTMU7WKPHK33AESK",
+  "phase": "Ready",
+  "takeGoldenSnapshotAt": "2026-09-27T11:59:13Z"
+}

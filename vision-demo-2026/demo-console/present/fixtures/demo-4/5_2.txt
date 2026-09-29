@@ -1,0 +1,4 @@
+  == tools now (the everything-server tools appear) ==
+Asking 'agentdemo' as admin-user (OIDC) ...
+
+roll_die, check_prime, everything_server_echo, everything_server_printenv, everything_server_reverse_text, everything_server_sum, everything_server_to_uppercase, my_mcp_word_count

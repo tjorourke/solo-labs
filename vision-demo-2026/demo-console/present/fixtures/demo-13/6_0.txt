@@ -1,0 +1,9 @@
+{
+  "state": "completed",
+  "calls": [],
+  "results": [],
+  "answer": [
+    "alice@example.test"
+  ],
+  "error": null
+}

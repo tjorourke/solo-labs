@@ -1,0 +1,4 @@
+deployment "keycloak" successfully rolled out
+iss:   http://keycloak.keycloak.svc.cluster.local:8080/realms/petshop
+user:  bob
+roles: ['admin', 'user']

@@ -41,8 +41,12 @@ The parts run **independently**: pick one per customer, or run all seven. This l
 `demo-console/` is the laptop site for a non-technical audience. Cards: live **Gateway decisions**, **Token economics with MCP**, **Agentdesktop**, and **My agents** (code-free prompt + skills + MCP tools, deployed to kagent). Spend, budgets and graphs stay in the agentgateway UI. Stop `scripts/30-dashboard.py` first if it still owns 8900, then:
 
 ```bash
-cd demo-console && ./run.sh    # http://localhost:8900
+cd demo-console && cp console.env.example console.env && ./run.sh    # http://localhost:8900
 ```
+
+The model-routing cards (Gateway decisions, Cost, My agents, Agentdesktop) read from an
+EKS cluster with two GPUs, not from kind: `./demo-scripts/eks.sh` builds one in your own
+AWS account. See [SETUP.md](SETUP.md#the-eks-gpu-cluster).
 
 ## Stack (validated live)
 
@@ -73,9 +77,16 @@ Trust domains are per-cluster (`mesh1` / `mesh2`), the documented 1.30.x multicl
 
 ## Run it
 
+**New to the suite? Start with [SETUP.md](SETUP.md):** laptop requirements, tools, keys,
+the order to bring the clusters up, the console, and the EKS GPU cluster behind the
+model-routing pages (build your own, or use one someone has shared with you).
+
+Keys come from `secrets.env` at the suite root (copy `secrets.env.example`), or from the
+file `SECRETS_FILE` names.
+
 ```bash
 # licences: SOLO_ISTIO_LICENSE_KEY + AGENTGATEWAY_LICENSE_KEY
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup.sh   # ~15-20 min first run
+./demo-scripts/setup.sh   # ~15-20 min first run
 
 ./demo-scripts/consoles.sh    # Gloo UI (service graph spans both clusters)
 # open a demo notebook (Bash kernel) → run its Connect cell → Parts 1-3
@@ -109,14 +120,14 @@ both source, and its manifests are in `demo-scripts/yaml-substrate/`.
 **Part 4 only** needs an extra platform on `mesh1` (kagent-enterprise, in-cluster AgentRegistry, Keycloak, and the kagent Enterprise UI + telemetry on the shared `management` release in `solo-cost`): heavy, so it is a separate one-time standup after `./demo-scripts/setup.sh`:
 
 ```bash
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/agentregistry/setup-mesh1.sh   # ~8 min
+./demo-scripts/agentregistry/setup-mesh1.sh   # ~8 min
 # open demo-4-agentics-vision.ipynb → run its Connect cell
 ```
 
 **Part 7 only** needs a light standup on `mesh1` (two local model servers, the MCP everything-server, the `ai-gateway` Gateway + cost catalogue, and a demo IdP keypair). It reads `ANTHROPIC_API_KEY` from the secrets file for the one live provider:
 
 ```bash
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/llm-gateway.sh   # ~1 min
+./demo-scripts/llm-gateway.sh   # ~1 min
 # open demo-7-llm-gateway.ipynb → run its Connect cell
 ```
 
@@ -125,7 +136,7 @@ SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/llm-gateway.sh  
 `setup-all-labs.sh` stands up every cluster needed for the suite in one go:
 
 ```bash
-SECRETS_FILE=~/code/solo/secrets/secrets-envs.sh ./demo-scripts/setup-all-labs.sh
+./demo-scripts/setup-all-labs.sh
 # skip parts you don't need: SKIP_MESH / SKIP_PART4 / SKIP_SUBSTRATE / SKIP_INFERENCE = true
 ```
 

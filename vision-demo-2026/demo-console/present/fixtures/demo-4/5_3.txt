@@ -1,0 +1,10 @@
+Asking 'agentdemo' as admin-user (OIDC) ...
+
+Trace (tools the agent called):
+  1. roll_die(sides=13) -> 7
+  2. everything_server_sum(a=7, b=48291) -> 48298
+  3. check_prime(nums=[48298]) -> No prime numbers found.
+
+- **Roll:** 13-sided die → 7
+- **Math:** 7 + 48291 = 48298
+- **Prime:** 48298 is not prime (divisible by 2).

@@ -1,0 +1,11 @@
+POD                               SERVICEACCOUNT
+analytics-f774ff7c-q5qnc          analytics
+checkout-blue-77545c5bc5-jpmrz    checkout
+checkout-green-58d9c7cbbc-jk682   checkout
+petstore-75dbf87995-n9mwj         petstore
+storefront-8578796db5-792x9       storefront
+CERTIFICATE NAME                                         TYPE             STATUS        VALID CERT     SERIAL NUMBER                                NOT AFTER                NOT BEFORE
+spiffe://mesh1/ns/petshop/sa/analytics                   Leaf             Available     true           7dd32ff4ce508d60f1c56e14f3f12c64             2026-09-24T13:29:46Z     2026-09-23T13:27:46Z
+spiffe://mesh1/ns/petshop/sa/checkout                    Leaf             Available     true           4cc635808f1ab4affc6a4addd0245a90             2026-09-24T13:29:46Z     2026-09-23T13:27:46Z
+spiffe://mesh1/ns/petshop/sa/petstore                    Leaf             Available     true           3a6fee364c7043ed54a4519f8ad1068              2026-09-24T13:29:46Z     2026-09-23T13:27:46Z
+spiffe://mesh1/ns/petshop/sa/storefront                  Leaf             Available     true           23970850feb17b6eb3cad0423087003b             2026-09-24T13:29:47Z     2026-09-23T13:27:47Z
