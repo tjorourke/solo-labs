@@ -8,15 +8,21 @@ let mode = 'approve';
 const el = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function mcpGroups(a) {
+// Only servers without the auto-approve label come to this screen. The rest were granted
+// at deploy and are listed under "Allowed automatically".
+const isAuto = id => !!((catalog.mcp || []).find(x => x.id === id) || {}).autoApprove;
+
+function allGroups(a) {
   return (a.mcp || []).filter(m => (m.tools || []).length).map(m => {
     const server = (catalog.mcp || []).find(x => x.id === m.id);
     return { id: m.id, name: server ? server.name : m.id, tools: m.tools };
   });
 }
 
+const mcpGroups = a => allGroups(a).filter(g => !isAuto(g.id));
+const autoGroups = a => allGroups(a).filter(g => isAuto(g.id));
 const toolCount = a => mcpGroups(a).reduce((n, g) => n + g.tools.length, 0);
-const approved = a => !!(a && (a.mcp_approved || a.github_approved));
+const approved = a => !!(a && (a.admin_approved || a.mcp_approved || a.github_approved));
 
 function card(a, isApproved) {
   const n = toolCount(a);
@@ -40,7 +46,26 @@ function card(a, isApproved) {
     </div>`;
 }
 
+function autoCard(a) {
+  const groups = autoGroups(a);
+  return `
+    <div class="agent-card auto-card">
+      <div class="kicker ok">Granted automatically</div>
+      <h3>${esc(a.name)}${a.version ? ' · ' + esc(a.version) : ''}</h3>
+      <p class="sub">${groups.map(g => `${esc(g.name)} (${g.tools.length})`).join(', ')}</p>
+      <p class="sub">Labelled <code>${esc(catalog.autoApproveLabel || '')}=true</code> in AgentRegistry. The grant for
+        <code>kagent/${esc(a.name)}</code> was written at deploy, with only the tools it picked.</p>
+      <details class="yaml" style="margin-top:10px">
+        <summary>The policy in force</summary>
+        <pre>${esc(a.auto_policy_yaml || 'No gateway policy for these servers.')}</pre>
+      </details>
+    </div>`;
+}
+
 function paint() {
+  const autos = agents.filter(a => a.applied && autoGroups(a).length);
+  el('auto').innerHTML = autos.map(autoCard).join('');
+  el('auto-empty').style.display = autos.length ? 'none' : 'block';
   const waiting = agents.filter(a => a.applied && mcpGroups(a).length && !approved(a));
   const done = agents.filter(a => mcpGroups(a).length && approved(a));
   el('pending').innerHTML = waiting.map(a => card(a, false)).join('');

@@ -1,0 +1,15 @@
+# The platform team's AgentRegistry record for Site daylight. The label is the
+# whole approval decision: with it, My agents grants an agent access at deploy
+# time. Without it, or with any other value, a platform admin approves first.
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: site-daylight
+  labels:
+    mcp.governance/auto-approve: "true"
+spec:
+  title: Site daylight
+  description: Sunrise, sunset, safe work windows and moon phase for EMEA sites. Read-only arithmetic, no data.
+  remote:
+    type: streamable-http
+    url: http://daylight-mcp.kagent.svc.cluster.local/

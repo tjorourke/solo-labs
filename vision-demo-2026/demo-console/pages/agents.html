@@ -7,6 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/agents.css">
 </head>
 <body>
 <nav class="console-nav">
@@ -37,11 +38,11 @@
 </nav>
 
 <header class="hero">
-  <div class="wrap">
+  <div class="wrap ag-wide">
     <div class="crumb"><a href="/user-story-1">← Agentics Overview</a></div>
     <div class="eyebrow">DEMO 06 · No-code</div>
     <h1>My agents</h1>
-    <p>Walk through the wizard, then deploy. After it is live, a platform admin must approve the MCP tools this identity requested.</p>
+    <p>Walk through the wizard, then deploy. Tools marked Ready to use work straight away; the rest wait for a platform admin.</p>
     <div class="btns" style="margin-top:14px">
       <a class="btn primary" id="btn-kagent" href="#" target="_blank" rel="noreferrer">Open kagent</a>
       <a class="btn" id="btn-registry" href="#" target="_blank" rel="noreferrer">Open AgentRegistry</a>
@@ -49,103 +50,176 @@
   </div>
 </header>
 
-<div class="wrap">
+<div class="wrap ag ag-wide">
   <p class="sub" id="platform-note"></p>
 
   <div id="home-view">
-    <div class="panel-head">
-      <h2>Your agents</h2>
-      <button class="btn primary" id="new-agent" type="button">New agent</button>
+    <div id="list-view" class="loading">
+      <div class="ag-strip">
+        <div class="ag-count"><b id="count-total"><span class="ag-spinner sm"></span></b><span id="count-label">Loading your agents…</span></div>
+        <p class="ag-strip-sub" id="count-sub">Reading AgentRegistry and kagent.</p>
+        <button class="btn primary ag-new" id="new-agent" type="button">＋ New agent</button>
+      </div>
+      <div class="ag-grid" id="list">
+        <div class="ag-card skeleton"><i></i><i></i><i></i></div>
+        <div class="ag-card skeleton"><i></i><i></i><i></i></div>
+        <div class="ag-card skeleton"><i></i><i></i><i></i></div>
+      </div>
     </div>
-    <div class="panel agent-open" id="detail" style="display:none">
-      <div class="detail-head">
-        <h2 id="detail-name"></h2>
-        <div class="card-actions">
+
+    <div class="ag-detail" id="detail" style="display:none">
+      <button type="button" class="ag-back" id="detail-close">← All agents</button>
+      <div class="ag-detail-head">
+        <div class="ag-avatar lg" id="detail-avatar"></div>
+        <div class="ag-detail-title">
+          <span class="ag-state" id="detail-state"></span>
+          <h2 id="detail-name"></h2>
+          <p id="detail-desc"></p>
+        </div>
+        <div class="ag-detail-actions">
+          <a class="btn primary" id="open-chat" href="#" target="_blank" rel="noreferrer" style="display:none">Prompt in kagent ↗</a>
           <button type="button" class="btn" id="detail-edit">Edit</button>
-          <button type="button" class="btn" id="detail-del">Delete</button>
-          <button type="button" class="btn" id="detail-close">Close</button>
+          <button type="button" class="btn ag-danger" id="detail-del">Delete</button>
         </div>
       </div>
-      <ol class="life" id="life"></ol>
-      <div class="approve-card" id="approve-card" style="display:none">
-        <div class="kicker">Security · waiting on a platform admin</div>
-        <h3>MCP tools need approval</h3>
-        <p class="sub">The agent is deployed. Tools stay closed until a platform admin allows this identity, and that is not your call from here.</p>
-        <a class="btn primary" href="/approvals">Open Platform approval</a>
-        <p class="footnote" id="approve-msg"></p>
+
+      <div class="ag-celebrate" id="celebrate" style="display:none"></div>
+      <div class="ag-detail-grid">
+        <div class="ag-col">
+          <section class="ag-box">
+            <div class="ag-kicker">Rollout</div>
+            <ol class="ag-steps" id="life"></ol>
+            <p class="ag-status-line" id="detail-status"></p>
+          </section>
+          <div class="ag-approve auto" id="auto-card" style="display:none">
+            <div class="ag-kicker green">Access · granted automatically</div>
+            <h3>Ready to use, nothing to approve</h3>
+            <p id="auto-detail"></p>
+            <p class="ag-foot">Still enforced by agentgateway: the grant names this agent's identity and only the tools it picked. Everyone else stays denied.</p>
+          </div>
+          <div class="ag-approve" id="approve-card" style="display:none">
+            <div class="ag-kicker amber">Security · waiting on a platform admin</div>
+            <h3>MCP tools need approval</h3>
+            <p>The agent is deployed. Tools stay closed until a platform admin allows this identity, and that is not your call from here.</p>
+            <a class="btn primary" href="/approvals">Open Platform approval</a>
+            <p class="ag-foot" id="approve-msg"></p>
+          </div>
+          <div class="ag-approve ok" id="approved-card" style="display:none">
+            <div class="ag-kicker green">Security · approved</div>
+            <h3>MCP tools allowed for this identity</h3>
+            <p id="approved-detail"></p>
+            <a class="btn" href="/approvals">Manage on Platform approval</a>
+            <p class="ag-foot" id="revoke-msg"></p>
+          </div>
+        </div>
+        <div class="ag-col">
+          <section class="ag-box">
+            <div class="ag-kicker">What it runs</div>
+            <div id="detail-runs"></div>
+          </section>
+          <details class="ag-code">
+            <summary>Manifests <span>AgentRegistry YAML, applied with arctl</span></summary>
+            <pre id="yaml-view"></pre>
+          </details>
+          <details class="ag-code" id="policy-details" style="display:none">
+            <summary>Approved policy <span>MCP allow for this ServiceAccount</span></summary>
+            <pre id="policy-view"></pre>
+          </details>
+          <details class="ag-code">
+            <summary>Runtime log <span>agent pod</span></summary>
+            <pre class="log" id="life-log"></pre>
+          </details>
+        </div>
       </div>
-      <div class="approve-card ok" id="approved-card" style="display:none">
-        <div class="kicker">Security · approved</div>
-        <h3>MCP tools allowed for this identity</h3>
-        <p class="sub" id="approved-detail"></p>
-        <a class="btn" href="/approvals">Manage on Platform approval</a>
-        <p class="footnote" id="revoke-msg"></p>
-      </div>
-      <a class="btn primary" id="open-chat" href="#" target="_blank" rel="noreferrer" style="display:none">Prompt in kagent</a>
-      <p class="sub" id="detail-status"></p>
-      <details class="yaml" style="margin-top:12px">
-        <summary>Runtime log</summary>
-        <div class="log" id="life-log"></div>
-      </details>
-      <details class="yaml" style="margin-top:12px">
-        <summary>Manifests</summary>
-        <p class="hint">AgentRegistry YAML: Prompt, skills, MCP, Agent and a Deployment onto the kagent runtime. Applied with arctl, never kubectl.</p>
-        <pre id="yaml-view"></pre>
-      </details>
-      <details class="yaml" id="policy-details" style="margin-top:12px;display:none">
-        <summary>Approved policy</summary>
-        <p class="hint">MCP allow for this agent's ServiceAccount. This is what a platform admin approved. Expand it when a customer asks to see the policy.</p>
-        <pre id="policy-view"></pre>
-      </details>
     </div>
-    <div class="agent-cards" id="list"></div>
   </div>
 
-  <div id="wizard-view" class="panel" style="display:none">
-    <h2 id="form-title">New agent</h2>
-    <ol class="wiz-nav" id="wiz-nav">
-      <li data-goto="1" class="on">1 · Identity</li>
-      <li data-goto="2">2 · Skills</li>
-      <li data-goto="3">3 · Tools</li>
-      <li data-goto="4">4 · Deploy</li>
-    </ol>
-    <section class="wiz-step on" data-step="1">
-      <p class="sub">Name it, then write the prompt. That is the agent.</p>
-      <label class="field"><span>Name</span>
-        <input id="name" placeholder="network-copilot"></label>
-      <label class="field"><span>What it is for</span>
-        <input id="description" placeholder="Briefs incidents and open slice work"></label>
-      <div class="pull-row">
-        <label class="field grow"><span>Pull a prompt from AgentRegistry</span>
-          <select id="prompt-pick"><option value="">Loading…</option></select></label>
-        <button class="btn" id="prompt-load" type="button">Pull</button>
+  <div id="wizard-view" class="ag-wiz" style="display:none">
+    <div class="ag-wiz-main">
+      <div class="ag-wiz-top">
+        <button type="button" class="ag-back" id="wiz-cancel">← Cancel</button>
+        <span class="ag-wiz-mode" id="form-title">New agent</span>
       </div>
-      <p class="hint">Pull a Prompt from AgentRegistry, then edit it. Typing your own is still fine.</p>
-      <label class="field"><span>Prompt</span>
-        <textarea id="prompt" rows="8" placeholder="You help network engineers in EMEA. Be brief. Use only the tools you have been given."></textarea></label>
-    </section>
-    <section class="wiz-step" data-step="2">
-      <div class="panel-head tight">
-        <p class="sub">Pick one skill, or none. The prompt is enough on its own.</p>
-        <button class="btn" id="new-skill" type="button">＋ Skill</button>
+      <ol class="ag-progress" id="wiz-nav">
+        <li data-goto="1" class="on"><i></i><span>Start</span></li>
+        <li data-goto="2"><i></i><span>Describe it</span></li>
+        <li data-goto="3"><i></i><span>Skill</span></li>
+        <li data-goto="4"><i></i><span>What it can use</span></li>
+        <li data-goto="5"><i></i><span>Deploy</span></li>
+      </ol>
+      <div class="ag-stepno" id="wiz-stepno">Step 1 of 5</div>
+
+      <section class="wiz-step on" data-step="1">
+        <h2 class="ag-step-title">What should your agent do?</h2>
+        <p class="ag-step-sub">Pick a starting point. Everything it fills in can be changed on the next steps.</p>
+        <div class="ag-templates" id="templates"></div>
+      </section>
+
+      <section class="wiz-step" data-step="2">
+        <h2 class="ag-step-title">Describe it in your own words</h2>
+        <p class="ag-step-sub">Give it a name and tell it how to behave. The instructions are the agent: no code.</p>
+        <div class="ag-row2">
+          <label class="ag-field"><span>Name</span>
+            <input id="name" placeholder="network-copilot" autocomplete="off">
+            <small class="ag-hint" id="name-hint">Lowercase letters, numbers and dashes. Type it any way and it is tidied for you.</small></label>
+          <label class="ag-field"><span>What it is for</span>
+            <input id="description" placeholder="Briefs incidents and open slice work"></label>
+        </div>
+        <div class="ag-pull">
+          <label class="ag-field grow"><span>Or start from a saved prompt in AgentRegistry</span>
+            <select id="prompt-pick"><option value="">Loading…</option></select></label>
+          <button class="btn" id="prompt-load" type="button">Pull</button>
+        </div>
+        <label class="ag-field"><span>Instructions</span>
+          <textarea id="prompt" class="ag-prompt" rows="16" placeholder="You help network engineers in EMEA. Be brief. Use only the tools you have been given."></textarea></label>
+      </section>
+
+      <section class="wiz-step" data-step="3">
+        <h2 class="ag-step-title">Give it a skill</h2>
+        <p class="ag-step-sub">One skill, or none. The prompt is enough on its own.</p>
+        <div id="skills"></div>
+      </section>
+
+      <section class="wiz-step" data-step="4">
+        <h2 class="ag-step-title">What can it use?</h2>
+        <p class="ag-step-sub">Pick a system, then tick what the agent may do there. Systems marked Ready to use work the moment it deploys; the others wait for a platform admin.</p>
+        <div id="mcp"></div>
+      </section>
+
+      <section class="wiz-step" data-step="5">
+        <h2 class="ag-step-title">Ready to deploy</h2>
+        <p class="ag-step-sub" id="review-sub"></p>
+        <div class="ag-plain" id="review-plain"></div>
+        <div id="review"></div>
+        <details class="ag-code ag-yaml-wrap" id="yaml-details">
+          <summary>Show the YAML <span>for engineers: exactly what AgentRegistry applies</span></summary>
+          <div class="ag-yaml-head"><span>AgentRegistry YAML</span><button type="button" class="ag-copy" id="yaml-copy">Copy</button></div>
+          <pre class="ag-yaml" id="review-yaml">Rendering…</pre>
+        </details>
+      </section>
+
+      <div class="ag-wiz-actions">
+        <button class="btn" id="wiz-back" type="button">Back</button>
+        <span class="ag-spacer"></span>
+        <p class="ag-form-msg" id="form-msg"></p>
+        <button class="btn primary" id="wiz-next" type="button">Next</button>
+        <button class="btn primary ag-deploy" id="deploy" type="button">Deploy to kagent</button>
       </div>
-      <div id="skills"></div>
-    </section>
-    <section class="wiz-step" data-step="3">
-      <p class="sub">Servers on the left. Tools on the right. Ticks stay when you switch server.</p>
-      <div id="mcp"></div>
-    </section>
-    <section class="wiz-step" data-step="4">
-      <p class="sub">Check this, then deploy. MCP tools still need a platform admin after it is live.</p>
-      <dl class="approve-meta" id="review"></dl>
-    </section>
-    <div class="wiz-actions">
-      <button class="btn" id="wiz-back" type="button">Back</button>
-      <button class="btn primary" id="wiz-next" type="button">Next</button>
-      <button class="btn primary" id="deploy" type="button">Create and deploy</button>
-      <button class="btn" id="wiz-cancel" type="button">Cancel</button>
     </div>
-    <p class="footnote" id="form-msg"></p>
+
+    <aside class="ag-wiz-side">
+      <div class="ag-kicker">Preview</div>
+      <div id="preview-card"></div>
+      <p class="ag-side-note">Saved here, published to AgentRegistry, then deployed onto kagent. A ✓ means that system is ready to use; the others need a platform admin first.</p>
+    </aside>
+  </div>
+</div>
+<div class="ag-overlay" id="deploy-overlay" style="display:none" role="dialog" aria-modal="true">
+  <div class="ag-overlay-card">
+    <div class="ag-spinner"></div>
+    <h2 id="deploy-title">Deploying your agent</h2>
+    <p id="deploy-sub">Publishing it to AgentRegistry, then starting it on kagent.</p>
+    <div class="ag-elapsed" id="deploy-elapsed">0s</div>
   </div>
 </div>
 <div class="modal-back" id="skill-modal" style="display:none" role="dialog" aria-modal="true">

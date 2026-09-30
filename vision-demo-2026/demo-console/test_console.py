@@ -52,8 +52,10 @@ class MyAgentsTests(unittest.TestCase):
         self.assertNotIn("inline:", y)
         self.assertIn("kind-kagent", y)
         self.assertIn("list_pull_requests", y)
-        self.assertIn("remote:", y)
-        self.assertIn("github-mcp.kagent.svc.cluster.local", y)
+        # The agent references the MCPServer; the platform publishes it. Re-publishing it
+        # from here would wipe its labels, and with them its approval tier.
+        self.assertIn("mcpServers:\n  - kind: MCPServer\n    name: github", y)
+        self.assertNotIn("\nkind: MCPServer", y)
         self.assertIn("tag: v1", y)
         self.assertNotIn("kagent.dev", y)
         self.assertNotIn("merge_pull_request", y)
@@ -70,6 +72,66 @@ class MyAgentsTests(unittest.TestCase):
         self.assertIn('"list_issues"', y)
         self.assertIn('"github_list_issues"', y)
         self.assertIn("EnterpriseAgentgatewayPolicy", y)
+
+    def test_no_label_means_an_admin_approves(self):
+        import agents_lab
+        labels = {"github": {}, "site-daylight": {agents_lab.AUTO_APPROVE_LABEL: "true"},
+                  "telco-inventory": {agents_lab.AUTO_APPROVE_LABEL: "yes"}}
+        self.assertFalse(agents_lab.mcp_auto_approve("github", labels))
+        self.assertTrue(agents_lab.mcp_auto_approve("daylight", labels))
+        # Only the literal "true" counts. Anything else is treated as no label.
+        self.assertFalse(agents_lab.mcp_auto_approve("telco", labels))
+        self.assertFalse(agents_lab.mcp_auto_approve("k8s", labels))
+
+    def test_auto_approved_server_is_granted_without_an_admin(self):
+        from unittest import mock
+        import agents_lab
+        labels = {"site-daylight": {agents_lab.AUTO_APPROVE_LABEL: "true"}}
+        store = {"agents": [
+            {"name": "climber", "mcp": [{"id": "daylight", "tools": ["work_window"]}]},
+            {"name": "mixed", "mcp": [{"id": "daylight", "tools": ["daylight"]},
+                                      {"id": "github", "tools": ["list_issues"]}]},
+        ]}
+        with mock.patch.object(agents_lab, "load_store", return_value=store), \
+             mock.patch.object(agents_lab, "registry_mcp_labels", return_value=labels):
+            day = dict(agents_lab._grants("daylight", labels))
+            self.assertIn("climber", day)
+            self.assertIn("mixed", day)
+            self.assertIn("site_daylight_work_window", day["climber"])
+            # GitHub has no label: nobody is on it until an admin approves.
+            self.assertEqual(agents_lab._grants("github", labels), [])
+            self.assertTrue(agents_lab.mcp_is_approved(store["agents"][0]))
+            self.assertFalse(agents_lab.mcp_is_approved(store["agents"][1]))
+            self.assertEqual(agents_lab.mcp_tiers(store["agents"][1]),
+                             {"auto": ["daylight"], "restricted": ["github"]})
+            y = agents_lab._policy_yaml(agents_lab._grants("daylight", labels), sid="daylight")
+            self.assertIn("name: daylight-per-agent", y)
+            self.assertIn("name: daylight-mcp", y)
+            self.assertIn('source.identity.serviceAccount == "climber"', y)
+
+    def test_github_policy_pins_the_namespace(self):
+        from agents_lab import _policy_yaml
+        y = _policy_yaml([("a", ["list_issues"]), ("b", ["search_code"])])
+        self.assertEqual(y.count('source.identity.namespace == "kagent"'), 2)
+        self.assertIn('source.identity.serviceAccount == "b"', y)
+
+    def test_probe_reads_an_empty_result_as_allowed(self):
+        import json
+        from unittest import mock
+        import agents_lab
+
+        def run(body, http=200):
+            out = mock.Mock(stdout=json.dumps({"http": http, "body": body}) + "\n", stderr="")
+            with mock.patch.object(agents_lab.subprocess, "run", return_value=out):
+                return agents_lab._probe_github("tom2-agent")
+
+        ok = run('event: message\ndata: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\\"issues\\":[],\\"pageInfo\\":{\\"hasNextPage\\":false}}"}]}}\n\n')
+        self.assertTrue(ok["allowed"])
+        no = run('{"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"Unknown tool: list_issues"}}', 400)
+        self.assertFalse(no["allowed"])
+        self.assertIn("Unknown tool", no["detail"])
+        err = run('data: {"jsonrpc":"2.0","id":2,"result":{"isError":true,"content":[{"type":"text","text":"repo not found"}]}}')
+        self.assertFalse(err["allowed"])
 
     def test_edit_bumps_the_registry_tag(self):
         from agents_lab import render_yaml

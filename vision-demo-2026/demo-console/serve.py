@@ -242,6 +242,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/agents":
             import agents_lab
             return self._json(agents_lab.create_agent(self._body()))
+        if self.path == "/api/agents/preview":
+            import agents_lab
+            spec = self._body()
+            if not (spec.get("name") or "").strip():
+                return self._json({"yaml": ""})
+            return self._json({"yaml": agents_lab.render_yaml(spec)})
         if self.path == "/api/agents/skills":
             import agents_lab
             return self._json(agents_lab.create_skill(self._body()))

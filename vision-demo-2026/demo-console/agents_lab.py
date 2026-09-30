@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +41,17 @@ TOKEN_DAYS = 30
 AR_RUNTIME = "kind-kagent"
 GITHUB_WAYPOINT = ROOT / "yaml" / "github-waypoint.yaml"
 GITHUB_POLICY = "github-per-agent"
+DAYLIGHT_YAML = ROOT / "yaml" / "daylight-mcp.yaml"
+DAYLIGHT_REGISTRY = ROOT / "yaml" / "daylight-mcp-registry.yaml"
+# The approval decision lives on the AgentRegistry MCPServer. No label, or any value but
+# "true", means a platform admin approves. "true" means My agents writes the grant itself.
+AUTO_APPROVE_LABEL = "mcp.governance/auto-approve"
+# MCP servers that sit behind agentgateway with a default-deny policy per server. The
+# others are reached direct, so for them approval is recorded here but not enforced.
+GATEWAY_MCP = {
+    "github": {"backend": "github-mcp", "policy": GITHUB_POLICY},
+    "daylight": {"backend": "daylight-mcp", "policy": "daylight-per-agent"},
+}
 GITHUB_MCP_URL = "http://github-mcp.kagent.svc.cluster.local/"
 SKILL_PACKAGES = ROOT.parents[0] / "demo-scripts" / "agentregistry" / "skill"
 SKILL_GIT = "https://github.com/tjorourke/solo-labs.git"
@@ -107,7 +119,8 @@ def catalog():
             if not s.get("description"):
                 s["description"] = loc["description"]
     skills.sort(key=lambda s: (0 if s["id"] == "github-briefing" else 1, s.get("title") or s["id"]))
-    return {"skills": skills, "mcp": CATALOG["mcp"], "platform": platform()}
+    return {"skills": skills, "mcp": mcp_catalog(), "platform": platform(),
+            "autoApproveLabel": AUTO_APPROVE_LABEL}
 
 
 def _skill_ready(row: dict) -> bool:
@@ -343,10 +356,104 @@ def create_skill(spec: dict) -> dict:
 
 
 def ensure_mcps():
-    """Keep the Telco inventory MCP running. Kubernetes SRE is kagent-tools."""
-    yaml_path = ROOT / "yaml" / "telco-inventory.yaml"
-    if yaml_path.is_file():
-        kc("apply", "-f", str(yaml_path), check=False)
+    """Keep the Telco inventory and Site daylight MCPs running. Kubernetes SRE is kagent-tools."""
+    for yaml_path in (ROOT / "yaml" / "telco-inventory.yaml", DAYLIGHT_YAML):
+        if yaml_path.is_file():
+            kc("apply", "-f", str(yaml_path), check=False)
+    got = kc("-n", NS, "get", "enterpriseagentgatewaypolicy", GATEWAY_MCP["daylight"]["policy"], check=False)
+    if got.returncode != 0:
+        _apply_policy("daylight")
+
+
+_MCP_LABELS = {"at": 0.0, "labels": {}}
+
+
+def ensure_registry_mcps(existing: dict | None = None):
+    """The platform owns MCPServer records; agents only reference them.
+
+    Re-applying an MCPServer without its labels wipes them, so an agent's stack must not
+    publish one. This creates any catalogue server the registry lacks, and publishes Site
+    daylight from its manifest when the record or its label is missing.
+    """
+    if existing is None:
+        existing = _registry_mcp_rows()
+    for server in CATALOG["mcp"]:
+        rname = registry_mcp_name(server["id"])
+        if rname in existing:
+            continue
+        if server["id"] == "daylight" and DAYLIGHT_REGISTRY.is_file():
+            _arctl("apply", "-f", str(DAYLIGHT_REGISTRY), timeout=30)
+            continue
+        if not server.get("url"):
+            continue
+        doc = (
+            "apiVersion: ar.dev/v1alpha1\n"
+            "kind: MCPServer\n"
+            "metadata:\n"
+            f"  name: {rname}\n"
+            "spec:\n"
+            f"  title: {ystr(server['name'])}\n"
+            f"  description: {ystr(server['description'])}\n"
+            "  remote:\n"
+            "    type: streamable-http\n"
+            f"    url: {server['url']}\n"
+        )
+        tmp = DATA / f"tmp-mcp-{rname}.yaml"
+        tmp.write_text(doc)
+        _arctl("apply", "-f", str(tmp), timeout=30)
+        tmp.unlink(missing_ok=True)
+
+
+def _registry_mcp_rows() -> dict:
+    p = _arctl("get", "mcps", "-o", "json", timeout=20)
+    if p.returncode != 0:
+        ok, _ = _arctl_login()
+        if not ok:
+            return {}
+        p = _arctl("get", "mcps", "-o", "json", timeout=20)
+    try:
+        rows = json.loads(p.stdout or "[]")
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(rows, dict):
+        rows = rows.get("items") or [rows]
+    out = {}
+    for r in rows or []:
+        meta = r.get("metadata") or {}
+        if meta.get("name"):
+            out[meta["name"]] = meta.get("labels") or {}
+    return out
+
+
+def registry_mcp_labels(force: bool = False) -> dict:
+    """Labels on every AgentRegistry MCPServer, by registry name. Cached for 20 seconds."""
+    if not force and time.time() - _MCP_LABELS["at"] < 20:
+        return _MCP_LABELS["labels"]
+    rows = _registry_mcp_rows()
+    missing = [m for m in CATALOG["mcp"] if registry_mcp_name(m["id"]) not in rows]
+    if missing or rows.get(registry_mcp_name("daylight"), {}).get(AUTO_APPROVE_LABEL) != "true":
+        ensure_registry_mcps(rows)
+        rows = _registry_mcp_rows() or rows
+    _MCP_LABELS.update(at=time.time(), labels=rows)
+    return rows
+
+
+def mcp_auto_approve(catalog_id: str, labels: dict | None = None) -> bool:
+    labels = registry_mcp_labels() if labels is None else labels
+    return (labels.get(registry_mcp_name(catalog_id)) or {}).get(AUTO_APPROVE_LABEL) == "true"
+
+
+def mcp_catalog() -> list:
+    labels = registry_mcp_labels()
+    out = []
+    for m in CATALOG["mcp"]:
+        out.append({
+            **m,
+            "registryName": registry_mcp_name(m["id"]),
+            "autoApprove": mcp_auto_approve(m["id"], labels),
+            "enforced": m["id"] in GATEWAY_MCP,
+        })
+    return out
 
 
 def platform():
@@ -407,6 +514,8 @@ def registry_mcp_name(catalog_id: str) -> str:
         return "k8s-sre"
     if catalog_id == "telco":
         return "telco-inventory"
+    if catalog_id == "daylight":
+        return "site-daylight"
     return catalog_id
 
 
@@ -493,23 +602,11 @@ def render_yaml(spec: dict) -> str:
         if not tools:
             continue
         allowed.extend(tools)
+        # A reference only. The platform publishes the MCPServer (ensure_registry_mcps);
+        # re-publishing it here would wipe its labels, and with them its approval tier.
         rname = registry_mcp_name(server["id"])
         if rname not in mcp_refs:
             mcp_refs.append(rname)
-        if server.get("url"):
-            mcp_docs.append(
-                "---\n"
-                "apiVersion: ar.dev/v1alpha1\n"
-                "kind: MCPServer\n"
-                "metadata:\n"
-                f"  name: {rname}\n"
-                "spec:\n"
-                f"  title: {ystr(server['name'])}\n"
-                f"  description: {ystr(server['description'])}\n"
-                "  remote:\n"
-                "    type: streamable-http\n"
-                f"    url: {server['url']}\n"
-            )
 
     skill_docs = []
     for sid in skill_ids:
@@ -605,8 +702,14 @@ def indent(text: str, n: int) -> str:
 
 def _with_policy(rec: dict) -> dict:
     out = dict(rec)
-    out["policy_yaml"] = approved_policy_yaml(out["name"]) if mcp_is_approved(out) else ""
+    out["policy_yaml"] = approved_policy_yaml(out["name"])
     out["policy_preview"] = pending_policy_yaml(out["name"])
+    out["auto_policy_yaml"] = auto_policy_yaml(out["name"])
+    tiers = mcp_tiers(out)
+    out["mcp_auto"] = tiers["auto"]
+    out["mcp_restricted"] = tiers["restricted"]
+    out["needs_approval"] = bool(tiers["restricted"])
+    out["admin_approved"] = bool(out.get("mcp_approved") or out.get("github_approved"))
     return out
 
 
@@ -715,7 +818,20 @@ def create_agent(spec: dict):
     rec["platform"] = platform()
     store["agents"][0] = rec
     save_store(store)
-    return {"ok": True, "agent": rec}
+    # Auto-approved servers get their grant now, with no one in the loop. Written after the
+    # record is saved, because the policy is rebuilt from the store.
+    tiers = mcp_tiers(rec)
+    rec["auto_granted"] = []
+    for sid in tiers["auto"]:
+        if sid in GATEWAY_MCP:
+            done = _apply_policy(sid)
+            if done.returncode == 0:
+                rec["auto_granted"].append(sid)
+    if rec["auto_granted"]:
+        store = load_store()
+        store["agents"] = [rec if a["name"] == name else a for a in store["agents"]]
+        save_store(store)
+    return {"ok": True, "agent": _with_policy(rec)}
 
 
 def delete_agent(name: str):
@@ -728,8 +844,7 @@ def delete_agent(name: str):
     _arctl("delete", "agent", name, "--all-tags")
     _arctl("delete", "prompt", f"{name}-prompt", "--all-tags")
     _drop_direct_kagent(name, force=True)
-    store = load_store()
-    _apply_github_policy(_github_grants())
+    _apply_all_policies()
     return {"ok": True}
 
 
@@ -846,39 +961,51 @@ def ensure_github_waypoint():
         _apply_github_policy([])
 
 
-def _tool_aliases(tools):
+def _tool_aliases(tools, prefix="github"):
     """Gateway may see list_issues; the agent also exposes github_list_issues."""
     out = []
     seen = set()
+    pre = prefix + "_"
     for t in tools:
         if not t:
             continue
         base = t.split(".", 1)[-1]
-        if base.startswith("github_"):
-            base = base[len("github_"):]
-        for alias in (t, base, "github_" + base):
+        if base.startswith(pre):
+            base = base[len(pre):]
+        for alias in (t, base, pre + base):
             if alias and alias not in seen:
                 seen.add(alias)
                 out.append(alias)
     return out
 
 
-def _github_grants():
+def _tools_on(rec: dict, sid: str) -> list:
+    for mcp in rec.get("mcp") or []:
+        if mcp.get("id") == sid:
+            return [t for t in (mcp.get("tools") or []) if t]
+    return []
+
+
+def _grants(sid: str, labels: dict | None = None) -> list:
+    """Who may call server sid: everyone who asked when it is auto-approved, otherwise only
+    the identities a platform admin approved."""
+    auto = mcp_auto_approve(sid, labels)
+    prefix = registry_mcp_name(sid).replace("-", "_") if sid != "github" else "github"
     grants = []
     for agent in load_store()["agents"]:
-        if not (agent.get("mcp_approved") or agent.get("github_approved")):
+        if not (auto or agent.get("mcp_approved") or agent.get("github_approved")):
             continue
-        tools = []
-        for mcp in agent.get("mcp") or []:
-            if mcp.get("id") == "github":
-                tools = [t for t in (mcp.get("tools") or []) if t]
-        tools = _tool_aliases(tools)
+        tools = _tool_aliases(_tools_on(agent, sid), prefix)
         if tools:
             grants.append((agent["name"], tools))
     return grants
 
 
-def _policy_yaml(grants, name=None):
+def _github_grants():
+    return _grants("github")
+
+
+def _policy_yaml(grants, name=None, sid="github"):
     """MCP allow policy. If name is set, only that agent's identity is in the YAML."""
     if name:
         grants = [(sa, tools) for sa, tools in grants if sa == name]
@@ -889,7 +1016,8 @@ def _policy_yaml(grants, name=None):
         for sa, tools in grants:
             listed = ",\n                 ".join(json.dumps(t) for t in tools)
             clauses.append(
-                f'(source.identity.serviceAccount == {json.dumps(sa)}\n'
+                f'(source.identity.namespace == {json.dumps(NS)}\n'
+                f'               && source.identity.serviceAccount == {json.dumps(sa)}\n'
                 f'               && mcp.tool.name in [\n'
                 f'                 {listed}\n'
                 f'               ])'
@@ -903,13 +1031,13 @@ def _policy_yaml(grants, name=None):
         "apiVersion: enterpriseagentgateway.solo.io/v1alpha1\n"
         "kind: EnterpriseAgentgatewayPolicy\n"
         "metadata:\n"
-        f"  name: {GITHUB_POLICY}\n"
+        f"  name: {GATEWAY_MCP[sid]['policy']}\n"
         f"  namespace: {NS}\n"
         "spec:\n"
         "  targetRefs:\n"
         "  - group: enterpriseagentgateway.solo.io\n"
         "    kind: EnterpriseAgentgatewayBackend\n"
-        "    name: github-mcp\n"
+        f"    name: {GATEWAY_MCP[sid]['backend']}\n"
         "  backend:\n"
         "    mcp:\n"
         "      authorization:\n"
@@ -921,12 +1049,28 @@ def _policy_yaml(grants, name=None):
     )
 
 
+def _apply_policy(sid: str, labels: dict | None = None):
+    yml = _policy_yaml(_grants(sid, labels), sid=sid)
+    return subprocess.run(
+        ["kubectl", "--context", MESH, "apply", "-f", "-"],
+        input=yml, text=True, capture_output=True,
+    )
+
+
 def _apply_github_policy(grants):
     yml = _policy_yaml(grants)
     subprocess.run(
         ["kubectl", "--context", MESH, "apply", "-f", "-"],
         input=yml, text=True, capture_output=True,
     )
+
+
+def _apply_all_policies():
+    labels = registry_mcp_labels(force=True)
+    for sid in GATEWAY_MCP:
+        if sid == "github":
+            ensure_github_waypoint()
+        _apply_policy(sid, labels)
 
 
 def pending_policy_yaml(name: str) -> str:
@@ -939,21 +1083,49 @@ def pending_policy_yaml(name: str) -> str:
     rec = get_agent(name)
     if not rec:
         return ""
-    tools = []
-    for mcp in rec.get("mcp") or []:
-        if mcp.get("id") == "github":
-            tools = [t for t in (mcp.get("tools") or []) if t]
-    tools = _tool_aliases(tools)
-    if not tools:
-        return ""
-    return _policy_yaml([(slug(name), tools)], name=slug(name))
+    docs = []
+    for sid in GATEWAY_MCP:
+        if mcp_auto_approve(sid):
+            continue
+        prefix = registry_mcp_name(sid).replace("-", "_") if sid != "github" else "github"
+        tools = _tool_aliases(_tools_on(rec, sid), prefix)
+        if tools:
+            docs.append(_policy_yaml([(slug(name), tools)], name=slug(name), sid=sid))
+    return "---\n".join(docs)
 
 
 def approved_policy_yaml(name: str) -> str:
     rec = get_agent(name)
-    if not rec or not mcp_is_approved(rec):
+    if not rec or not (rec.get("mcp_approved") or rec.get("github_approved")):
         return ""
-    return _policy_yaml(_github_grants(), name=slug(name))
+    docs = []
+    for sid in GATEWAY_MCP:
+        if mcp_auto_approve(sid) or not _tools_on(rec, sid):
+            continue
+        docs.append(_policy_yaml(_grants(sid), name=slug(name), sid=sid))
+    return "---\n".join(docs)
+
+
+def auto_policy_yaml(name: str) -> str:
+    """The grants written for this identity without anyone approving them."""
+    rec = get_agent(name)
+    if not rec:
+        return ""
+    docs = []
+    for sid in GATEWAY_MCP:
+        if mcp_auto_approve(sid) and _tools_on(rec, sid):
+            docs.append(_policy_yaml(_grants(sid), name=slug(name), sid=sid))
+    return "---\n".join(docs)
+
+
+def mcp_tiers(rec: dict) -> dict:
+    """Split what an agent asked for into servers it gets straight away and servers that
+    wait for a platform admin."""
+    labels = registry_mcp_labels()
+    auto, restricted = [], []
+    for m in requested_mcp(rec):
+        (auto if mcp_auto_approve(m["id"], labels) else restricted).append(m["id"])
+    return {"auto": auto, "restricted": restricted}
 
 
 def requested_mcp(rec: dict) -> list:
@@ -966,11 +1138,24 @@ def requested_mcp(rec: dict) -> list:
 
 
 def mcp_is_approved(rec: dict) -> bool:
-    return bool(rec.get("mcp_approved") or rec.get("github_approved"))
+    """True when nothing is left for an admin: approved, or only auto-approved servers asked for."""
+    if rec.get("mcp_approved") or rec.get("github_approved"):
+        return True
+    return not mcp_tiers(rec)["restricted"]
+
+
+# Approve and revoke both rewrite the whole policy from the store, so two at
+# once would drop one of the grants.
+_GRANT_LOCK = threading.Lock()
 
 
 def approve_github(name: str):
     """Admin grant: this identity may call the MCP tools it requested."""
+    with _GRANT_LOCK:
+        return _approve_github(name)
+
+
+def _approve_github(name: str):
     name = slug(name)
     rec = get_agent(name)
     if not rec:
@@ -979,14 +1164,12 @@ def approve_github(name: str):
     if not asked:
         return {"ok": False, "error": "this agent has no MCP tools selected"}
     gh_tools = next((m["tools"] for m in asked if m["id"] == "github"), [])
-    if gh_tools:
-        ensure_github_waypoint()
     rec["mcp_approved"] = True
     rec["github_approved"] = True
     store = load_store()
     store["agents"] = [rec if a["name"] == name else a for a in store["agents"]]
     save_store(store)
-    _apply_github_policy(_github_grants())
+    _apply_all_policies()
     probe = {"ok": True, "allowed": True, "detail": "approved"}
     if gh_tools:
         time.sleep(2)
@@ -1000,6 +1183,11 @@ def approve_github(name: str):
 
 def revoke_github(name: str):
     """Admin revoke: drop this identity from the waypoint allow list."""
+    with _GRANT_LOCK:
+        return _revoke_github(name)
+
+
+def _revoke_github(name: str):
     name = slug(name)
     rec = get_agent(name)
     if not rec:
@@ -1009,8 +1197,7 @@ def revoke_github(name: str):
     store = load_store()
     store["agents"] = [rec if a["name"] == name else a for a in store["agents"]]
     save_store(store)
-    ensure_github_waypoint()
-    _apply_github_policy(_github_grants())
+    _apply_all_policies()
     time.sleep(2)
     probe = _probe_github(name)
     rec["github_probe"] = probe
@@ -1022,10 +1209,17 @@ def revoke_github(name: str):
 
 def _probe_github(name: str) -> dict:
     """Call list_issues from the agent pod so the demo can show allow vs deny."""
+    return _probe_mcp(name, "github", "list_issues",
+                      {"owner": "tjorourke", "repo": "network-slice-manager", "state": "open"})
+
+
+def _probe_mcp(name: str, sid: str, tool: str, args: dict) -> dict:
+    """Call one tool from the agent pod, as the agent's own identity, through the gateway."""
+    server = next((m for m in CATALOG["mcp"] if m["id"] == sid), {})
+    target = server.get("url") or ""
     script = (
         "import os,json,urllib.request\n"
-        "cfg=json.loads(os.environ.get('MCP_SERVERS_CONFIG') or '[]')\n"
-        "url=(cfg[0].get('url') if cfg else '') or ''\n"
+        f"url={json.dumps(target)}\n"
         "def post(p,sid=None):\n"
         "  d=json.dumps(p).encode()\n"
         "  h={'content-type':'application/json','accept':'application/json, text/event-stream'}\n"
@@ -1039,7 +1233,7 @@ def _probe_github(name: str) -> dict:
         "    return getattr(e,'code',None),{},b\n"
         "st,h,b=post({'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'probe','version':'0'}}})\n"
         "sid=h.get('mcp-session-id')\n"
-        "st2,h2,b2=post({'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'list_issues','arguments':{'owner':'tjorourke','repo':'network-slice-manager','state':'open'}}},sid)\n"
+        f"st2,h2,b2=post({{'jsonrpc':'2.0','id':2,'method':'tools/call','params':{{'name':{json.dumps(tool)},'arguments':{json.dumps(args)}}}}},sid)\n"
         "txt=(b2 or b).decode('utf-8','replace')[:500]\n"
         "print(json.dumps({'http':st2 or st,'body':txt}))\n"
     )
@@ -1054,11 +1248,26 @@ def _probe_github(name: str) -> dict:
     except json.JSONDecodeError:
         return {"ok": False, "detail": (p.stderr or p.stdout or "probe failed")[-300:]}
     body = out.get("body") or ""
-    denied = "denied" in body.lower() or "not authorized" in body.lower() or "false" in body[:80].lower()
-    if '"error"' in body or (out.get("http") and int(out.get("http") or 0) >= 400):
-        denied = True
-    if "list_issues" in body and "error" not in body.lower() and not denied:
-        return {"ok": True, "allowed": True, "detail": "list_issues succeeded"}
+    # Streamable HTTP answers as JSON or as SSE; the JSON-RPC message is the
+    # last data: line. A result is an allowed call even when it is empty.
+    msg = body
+    for line in body.splitlines():
+        if line.startswith("data:"):
+            msg = line[5:].strip()
+    try:
+        rpc = json.loads(msg)
+    except json.JSONDecodeError:
+        rpc = None
+    http = int(out.get("http") or 0)
+    if isinstance(rpc, dict) and "result" in rpc and http < 400:
+        res = rpc.get("result") or {}
+        if not res.get("isError"):
+            return {"ok": True, "allowed": True, "detail": f"{tool} succeeded",
+                    "text": " ".join(c.get("text", "") for c in res.get("content") or [] if isinstance(c, dict))[:400]}
+        text = " ".join(c.get("text", "") for c in res.get("content") or [] if isinstance(c, dict))
+        return {"ok": True, "allowed": False, "detail": text[:280] or "tool returned an error"}
+    if isinstance(rpc, dict) and "error" in rpc:
+        return {"ok": True, "allowed": False, "detail": str((rpc.get("error") or {}).get("message") or rpc["error"])[:280]}
     return {"ok": True, "allowed": False, "detail": body[:280] or f"http {out.get('http')}"}
 
 
@@ -1076,7 +1285,8 @@ def deploy_registry(yaml_text: str, name: str) -> dict:
     if not img_ok:
         return {"ok": False, "error": img_detail}
     _ensure_github_standard()
-    if "kind: MCPServer" in yaml_text and "name: github" in yaml_text:
+    ensure_registry_mcps()
+    if "name: github\n" in yaml_text:
         ensure_github_waypoint()
     stack = DATA / "tmp-stack.yaml"
     DATA.mkdir(parents=True, exist_ok=True)
@@ -1122,15 +1332,22 @@ def agent_status(name: str) -> dict:
     })
     uses_mcp = bool(requested_mcp(rec))
     if uses_mcp:
-        granted = mcp_is_approved(rec)
+        tiers = mcp_tiers(rec)
+        names = {m["id"]: m["name"] for m in CATALOG["mcp"]}
+        auto_names = ", ".join(names.get(i, i) for i in tiers["auto"])
+        admin = bool(rec.get("mcp_approved") or rec.get("github_approved"))
+        granted = admin or not tiers["restricted"]
+        parts = []
+        if tiers["auto"]:
+            parts.append(f"{auto_names}: allowed automatically, its AgentRegistry record is labelled {AUTO_APPROVE_LABEL}=true.")
+        if tiers["restricted"]:
+            rnames = ", ".join(names.get(i, i) for i in tiers["restricted"])
+            parts.append(f"{rnames}: approved by a platform admin." if admin
+                         else f"{rnames}: default deny until a platform admin approves.")
         steps.append({
             "id": "mcp", "label": "MCP access",
             "state": "done" if granted else "wait",
-            "detail": (
-                "Admin approved the MCP tools this identity requested."
-                if granted else
-                "Default deny. A platform admin must approve the MCP tools before this agent can call them."
-            ),
+            "detail": " ".join(parts),
         })
     accepted = ready = False
     kmsg = ""

@@ -627,6 +627,8 @@ table.plain td.prompt { white-space: normal; min-width: 240px; color: #334155; }
 .approve-list .agent-card code { font-size: 12.5px; }
 .approve-list .yaml { background: #fff; }
 .approve-list .yaml pre { max-height: 300px; }
+.approve-list .auto-card { border-color: #86efac; background: var(--green-bg); }
+.approve-list .auto-card .kicker { color: var(--green); }
 
 #mcp-modal .yaml pre { max-height: 220px; }
 
@@ -822,6 +824,7 @@ mark.pii { background: #fee2e2; color: #991b1b; border-radius: 4px; padding: 0 3
 .kw-class { padding: 12px 14px; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-top: 3px solid; }
 .kw-class span { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; margin-bottom: 4px; }
 .kw-class b { color: #f8fafc; font-size: 14px; font-weight: 600; }
+.kw-class small { display: block; margin-top: 6px; color: #cbd5e1; font-size: 12.5px; }
 .kw-class.anywhere { border-top-color: #60a5fa; } .kw-class.anywhere span { color: #93c5fd; }
 .kw-class.eu { border-top-color: #fbbf24; } .kw-class.eu span { color: #fcd34d; }
 .kw-class.private { border-top-color: #34d399; } .kw-class.private span { color: #6ee7b7; }

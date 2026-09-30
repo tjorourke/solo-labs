@@ -50,23 +50,19 @@
         {"id": "search_repositories", "description": "Search repositories by name or topic."},
         {"id": "get_file_contents", "description": "Read a file from a repository."},
         {"id": "list_issues", "description": "List issues in a repository."},
-        {"id": "get_issue", "description": "Read one issue, including labels and state."},
+        {"id": "issue_read", "description": "Read one issue, its comments, labels or sub-issues."},
         {"id": "search_issues", "description": "Search issues and pull requests."},
         {"id": "list_pull_requests", "description": "List pull requests in a repository."},
         {"id": "pull_request_read", "description": "Read a pull request, files, reviews or status."},
-        {"id": "get_pull_request", "description": "Read one pull request."},
-        {"id": "get_pull_request_files", "description": "List files changed on a pull request."},
-        {"id": "get_pull_request_reviews", "description": "List reviews on a pull request."},
-        {"id": "get_pull_request_comments", "description": "List review comments on a pull request."},
-        {"id": "get_pull_request_status", "description": "Checks and commit status on a pull request."},
+        {"id": "search_pull_requests", "description": "Search pull requests across repositories."},
         {"id": "list_commits", "description": "List commits on a branch or pull request."},
         {"id": "get_commit", "description": "Read one commit."},
         {"id": "list_branches", "description": "List branches in a repository."},
         {"id": "search_code", "description": "Search file contents in a repository."},
-        {"id": "get_repository", "description": "Read repository metadata."},
+        {"id": "get_repository_tree", "description": "List the files and folders in a repository."},
         {"id": "list_releases", "description": "List published releases."},
         {"id": "get_latest_release", "description": "Read the latest release."},
-        {"id": "list_workflow_runs", "description": "List GitHub Actions workflow runs."},
+        {"id": "actions_list", "description": "List GitHub Actions workflows and runs."},
         {"id": "list_code_scanning_alerts", "description": "List code scanning alerts."},
         {"id": "list_dependabot_alerts", "description": "List Dependabot alerts."}
       ]
@@ -121,6 +117,21 @@
         {"id": "get_slice", "description": "Read one slice: SLA, isolation, congestion."},
         {"id": "list_alarms", "description": "Open alarms on sites and slices."},
         {"id": "congestion_now", "description": "Which slices are congested right now."}
+      ]
+    },
+    {
+      "id": "daylight",
+      "name": "Site daylight",
+      "domain": "Field ops",
+      "description": "Sunrise, sunset, safe work windows and moon phase for EMEA sites. Read-only arithmetic, no data.",
+      "url": "http://daylight-mcp.kagent.svc.cluster.local/",
+      "publicUrl": "",
+      "tools": [
+        {"id": "list_places", "description": "EMEA sites it knows, with time zones."},
+        {"id": "daylight", "description": "Sunrise, sunset, civil twilight and day length at a site."},
+        {"id": "work_window", "description": "Safe daylight window for outdoor site work, such as a tower climb."},
+        {"id": "moon_phase", "description": "Moon phase and how much of it is lit."},
+        {"id": "local_time", "description": "Current local time and UTC offset at a site."}
       ]
     }
   ]

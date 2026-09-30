@@ -41,7 +41,7 @@
     <div class="crumb"><a href="/user-story-1">← Agentics Overview</a></div>
     <div class="eyebrow">DEMO 06 PART 2 · Platform approval</div>
     <h1>Platform approval</h1>
-    <p>Swap hats. The agent is built, published and running, and it still cannot call a single tool. Approving that is someone else's job, and this is their screen.</p>
+    <p>Swap hats. The agent is built, published and running, and it still cannot call a tool that needs sign-off. Approving that is someone else's job, and this is their screen.</p>
   </div>
 </header>
 
@@ -54,6 +54,13 @@
     <p class="sub">Every identity below asked for MCP tools when it was deployed. Until you allow it, the gateway denies the lot, and the agent gets an empty tool list rather than an error it can talk its way around.</p>
     <div class="approve-list" id="pending"></div>
     <p class="sub" id="pending-empty" style="display:none">Nothing waiting. Deploy an agent with MCP tools on <a href="/agents">My agents</a> and it lands here.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Allowed automatically</h2>
+    <p class="sub">Some MCP servers are safe enough that nobody should have to sign off: this is decided once, by labelling the server's AgentRegistry record. An agent that picks one gets its grant at deploy. It is still a gateway policy keyed to the agent's identity and the tools it picked, and deleting the agent takes it straight back out.</p>
+    <div class="approve-list" id="auto"></div>
+    <p class="sub" id="auto-empty" style="display:none">No agent uses an auto-approved server yet. Try the Tower climb planner on <a href="/agents">My agents</a>.</p>
   </div>
 
   <div class="panel">
@@ -73,7 +80,7 @@
     <div class="modal-tools" id="mcp-modal-tools"></div>
     <details class="yaml" id="mcp-modal-policy" style="margin-top:12px">
       <summary>The policy this writes</summary>
-      <p class="hint">One EnterpriseAgentgatewayPolicy on the GitHub MCP backend. The allow expression names this ServiceAccount and the tools it may call. Everything not listed stays denied.</p>
+      <p class="hint">One EnterpriseAgentgatewayPolicy per MCP backend that needs approval. The allow expression names this ServiceAccount and the tools it may call. Everything not listed stays denied.</p>
       <pre id="mcp-modal-yaml"></pre>
     </details>
     <p class="footnote" id="mcp-modal-msg"></p>
