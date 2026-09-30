@@ -95,7 +95,7 @@
             <div class="ag-kicker green">Access · granted automatically</div>
             <h3>Ready to use, nothing to approve</h3>
             <p id="auto-detail"></p>
-            <p class="ag-foot">Still enforced by agentgateway: the grant names this agent's identity and only the tools it picked. Everyone else stays denied.</p>
+            <p class="ag-foot">Still enforced by agentgateway. The agent presents its own signed MCP token, the gateway checks it matches the agent's mesh identity, and only the tools it picked are allowed. Any other agent is turned away before it can open a session.</p>
           </div>
           <div class="ag-approve" id="approve-card" style="display:none">
             <div class="ag-kicker amber">Security · waiting on a platform admin</div>

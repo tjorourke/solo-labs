@@ -1,6 +1,8 @@
 # The platform team's AgentRegistry record for Site daylight. The label is the
 # whole approval decision: with it, My agents grants an agent access at deploy
 # time. Without it, or with any other value, a platform admin approves first.
+# The header carries each agent's own MCP token (MCP_TOKEN in its Deployment env);
+# the gateway rejects the call without one.
 apiVersion: ar.dev/v1alpha1
 kind: MCPServer
 metadata:
@@ -13,3 +15,6 @@ spec:
   remote:
     type: streamable-http
     url: http://daylight-mcp.kagent.svc.cluster.local/
+    headers:
+    - name: Authorization
+      value: "Bearer ${MCP_TOKEN}"

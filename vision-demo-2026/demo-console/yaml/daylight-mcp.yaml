@@ -5,11 +5,6 @@
 # It still sits behind agentgateway with default deny. "Auto-approve" means
 # My agents writes the per-agent allow at deploy time instead of waiting for a
 # platform admin. It never means unpoliced.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: mcp-servers
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

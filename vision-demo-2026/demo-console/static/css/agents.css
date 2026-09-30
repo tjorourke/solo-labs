@@ -48,6 +48,8 @@
 .ag-glyph.telco { background: #0e7490; }
 .ag-glyph.everything { background: #a855f7; }
 .ag-glyph.daylight { background: #f59e0b; }
+.ag-glyph.quiz { background: #2563eb; }
+.ag-glyph.excuses { background: #db2777; }
 
 /* ---------- grid of cards ---------- */
 .ag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }

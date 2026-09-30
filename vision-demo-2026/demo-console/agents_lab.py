@@ -51,6 +51,24 @@ AUTO_APPROVE_LABEL = "mcp.governance/auto-approve"
 GATEWAY_MCP = {
     "github": {"backend": "github-mcp", "policy": GITHUB_POLICY},
     "daylight": {"backend": "daylight-mcp", "policy": "daylight-per-agent"},
+    "quiz": {"backend": "quiz-mcp", "policy": "quiz-per-agent"},
+    "excuses": {"backend": "excuses-mcp", "policy": "excuses-per-agent"},
+}
+# Every MCP route behind the gateway demands a token from this key, and only the agents a
+# server is granted to get past the route. The key is made per install and never committed;
+# the public half is inlined into the route policies.
+MCP_KEY = DATA / "mcp-signing-key.pem"
+MCP_ISSUER = "https://my-agents.lab"
+MCP_AUDIENCE = "mcp-gateway"
+MCP_TOKEN_HEADER = {"name": "Authorization", "value": "Bearer ${MCP_TOKEN}"}
+FUN_YAML = ROOT / "yaml" / "fun-mcp.yaml"
+FUN_REGISTRY = ROOT / "yaml" / "fun-mcp-registry.yaml"
+# Servers the platform publishes from a manifest, with their labels: the cluster side,
+# and the AgentRegistry record that carries the approval label.
+MANAGED_MCP = {
+    "daylight": (DAYLIGHT_YAML, DAYLIGHT_REGISTRY),
+    "quiz": (FUN_YAML, FUN_REGISTRY),
+    "excuses": (FUN_YAML, FUN_REGISTRY),
 }
 GITHUB_MCP_URL = "http://github-mcp.kagent.svc.cluster.local/"
 SKILL_PACKAGES = ROOT.parents[0] / "demo-scripts" / "agentregistry" / "skill"
@@ -357,15 +375,21 @@ def create_skill(spec: dict) -> dict:
 
 def ensure_mcps():
     """Keep the Telco inventory and Site daylight MCPs running. Kubernetes SRE is kagent-tools."""
-    for yaml_path in (ROOT / "yaml" / "telco-inventory.yaml", DAYLIGHT_YAML):
+    paths = [ROOT / "yaml" / "telco-inventory.yaml"]
+    paths += list(dict.fromkeys(cluster for cluster, _ in MANAGED_MCP.values()))
+    for yaml_path in paths:
         if yaml_path.is_file():
             kc("apply", "-f", str(yaml_path), check=False)
-    got = kc("-n", NS, "get", "enterpriseagentgatewaypolicy", GATEWAY_MCP["daylight"]["policy"], check=False)
-    if got.returncode != 0:
-        _apply_policy("daylight")
+    # Default deny from the first moment: a managed server with no policy would be open.
+    for sid in MANAGED_MCP:
+        got = kc("-n", NS, "get", "enterpriseagentgatewaypolicy", GATEWAY_MCP[sid]["policy"], check=False)
+        if got.returncode != 0:
+            _apply_policy(sid)
 
 
 _MCP_LABELS = {"at": 0.0, "labels": {}}
+# Registry names whose record sends the agent's MCP token. Filled by _registry_mcp_rows.
+_MCP_HAS_TOKEN = set()
 
 
 def ensure_registry_mcps(existing: dict | None = None):
@@ -377,12 +401,20 @@ def ensure_registry_mcps(existing: dict | None = None):
     """
     if existing is None:
         existing = _registry_mcp_rows()
+    published = set()
     for server in CATALOG["mcp"]:
         rname = registry_mcp_name(server["id"])
-        if rname in existing:
+        managed = MANAGED_MCP.get(server["id"])
+        gated = server["id"] in GATEWAY_MCP
+        if managed:
+            stale = (existing.get(rname, {}).get(AUTO_APPROVE_LABEL) != "true"
+                     or rname not in _MCP_HAS_TOKEN)
+            if stale and managed[1] not in published:
+                _arctl("apply", "-f", str(managed[1]), timeout=30)
+                published.add(managed[1])
             continue
-        if server["id"] == "daylight" and DAYLIGHT_REGISTRY.is_file():
-            _arctl("apply", "-f", str(DAYLIGHT_REGISTRY), timeout=30)
+        # A gateway route demands the agent's MCP token, so its record must send one.
+        if rname in existing and (not gated or rname in _MCP_HAS_TOKEN):
             continue
         if not server.get("url"):
             continue
@@ -398,10 +430,87 @@ def ensure_registry_mcps(existing: dict | None = None):
             "    type: streamable-http\n"
             f"    url: {server['url']}\n"
         )
+        if gated:
+            doc += ("    headers:\n"
+                    f"    - name: {MCP_TOKEN_HEADER['name']}\n"
+                    f"      value: {json.dumps(MCP_TOKEN_HEADER['value'])}\n")
         tmp = DATA / f"tmp-mcp-{rname}.yaml"
         tmp.write_text(doc)
         _arctl("apply", "-f", str(tmp), timeout=30)
         tmp.unlink(missing_ok=True)
+
+
+def setup_platform() -> list:
+    """Everything My agents needs on mesh1, from git: MCP servers, gateway backends,
+    default-deny policies and the AgentRegistry records with their approval labels.
+    Idempotent. Images are built by demo-scripts/my-agents-setup.sh before this runs."""
+    out = []
+    ensure_mcps()
+    out.append("MCP servers and gateway backends applied: telco, Site daylight, IT pub quiz, Excuse generator")
+    if _copy_github_pat():
+        ensure_github_waypoint()
+        out.append("GitHub MCP waypoint applied, PAT copied into kagent")
+    else:
+        out.append("GitHub MCP skipped: no github-mcp-pat secret in agentgateway-system (run llm-gateway.sh)")
+    for sid in GATEWAY_MCP:
+        if sid == "github" and kc("-n", NS, "get", "enterpriseagentgatewaybackend", "github-mcp", check=False).returncode != 0:
+            continue
+        _apply_policy(sid)
+    out.append("Gateway policies rebuilt from the agent store (default deny where nobody is granted)")
+    ok, detail = _arctl_login()
+    if not ok:
+        out.append(f"AgentRegistry records skipped: {detail}")
+        return out
+    ensure_registry_mcps()
+    out.append("AgentRegistry MCPServer records published")
+    return out
+
+
+def platform_rows() -> list:
+    """One row per catalogue server: registry record, approval tier, gateway policy."""
+    labels = registry_mcp_labels(force=True)
+    rows = []
+    for m in CATALOG["mcp"]:
+        rname = registry_mcp_name(m["id"])
+        policy = "not behind the gateway"
+        if m["id"] in GATEWAY_MCP:
+            got = kc("-n", NS, "get", "enterpriseagentgatewaypolicy", GATEWAY_MCP[m["id"]]["policy"],
+                     "-o", "jsonpath={.spec.backend.mcp.authorization.policy.matchExpressions[0]}", check=False)
+            if got.returncode != 0:
+                policy = "MISSING"
+            else:
+                sas = re.findall(r'serviceAccount == "([^"]+)"', got.stdout or "")
+                policy = ("allows " + ", ".join(sas)) if sas else "deny all"
+        rows.append({
+            "server": m["name"], "registry": rname if rname in labels else "MISSING",
+            "tier": "auto-approve" if mcp_auto_approve(m["id"], labels) else "admin approves",
+            "policy": policy,
+        })
+    return rows
+
+
+def teardown_platform(force: bool = False) -> list:
+    """Remove what setup_platform added for the managed servers.
+
+    Refuses while an agent still uses one: its AgentRegistry Deployment references the
+    MCPServer record, and deleting the record under it breaks that agent."""
+    users = sorted({a["name"] for a in load_store()["agents"]
+                    for m in a.get("mcp") or [] if m.get("id") in MANAGED_MCP and m.get("tools")})
+    if users and not force:
+        return [f"Not removed: {', '.join(users)} still use these servers. "
+                "Delete those agents on My agents first, or run with --force."]
+    out = []
+    for sid in MANAGED_MCP:
+        kc("-n", NS, "delete", "enterpriseagentgatewaypolicy", GATEWAY_MCP[sid]["policy"], "--ignore-not-found", check=False)
+    for cluster in dict.fromkeys(c for c, _ in MANAGED_MCP.values()):
+        kc("delete", "-f", str(cluster), "--ignore-not-found", check=False)
+    out.append("Managed MCP servers, backends and their policies deleted")
+    if _arctl_login()[0]:
+        for sid in MANAGED_MCP:
+            _arctl("delete", "mcp", registry_mcp_name(sid), timeout=30)
+        out.append("Their AgentRegistry records deleted")
+    _MCP_LABELS["at"] = 0.0
+    return out
 
 
 def _registry_mcp_rows() -> dict:
@@ -418,10 +527,14 @@ def _registry_mcp_rows() -> dict:
     if isinstance(rows, dict):
         rows = rows.get("items") or [rows]
     out = {}
+    _MCP_HAS_TOKEN.clear()
     for r in rows or []:
         meta = r.get("metadata") or {}
         if meta.get("name"):
             out[meta["name"]] = meta.get("labels") or {}
+            headers = ((r.get("spec") or {}).get("remote") or {}).get("headers") or []
+            if any(h.get("name") == "Authorization" and "${MCP_TOKEN}" in str(h.get("value")) for h in headers):
+                _MCP_HAS_TOKEN.add(meta["name"])
     return out
 
 
@@ -431,7 +544,10 @@ def registry_mcp_labels(force: bool = False) -> dict:
         return _MCP_LABELS["labels"]
     rows = _registry_mcp_rows()
     missing = [m for m in CATALOG["mcp"] if registry_mcp_name(m["id"]) not in rows]
-    if missing or rows.get(registry_mcp_name("daylight"), {}).get(AUTO_APPROVE_LABEL) != "true":
+    unlabelled = [sid for sid in MANAGED_MCP
+                  if rows.get(registry_mcp_name(sid), {}).get(AUTO_APPROVE_LABEL) != "true"]
+    tokenless = [sid for sid in GATEWAY_MCP if registry_mcp_name(sid) not in _MCP_HAS_TOKEN]
+    if missing or unlabelled or tokenless:
         ensure_registry_mcps(rows)
         rows = _registry_mcp_rows() or rows
     _MCP_LABELS.update(at=time.time(), labels=rows)
@@ -516,38 +632,79 @@ def registry_mcp_name(catalog_id: str) -> str:
         return "telco-inventory"
     if catalog_id == "daylight":
         return "site-daylight"
+    if catalog_id == "quiz":
+        return "it-pub-quiz"
+    if catalog_id == "excuses":
+        return "excuse-generator"
     return catalog_id
+
+
+def _b64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _sign_jwt(key: Path, kid: str, claims: dict) -> str:
+    def seg(obj):
+        return _b64url(json.dumps(obj, separators=(",", ":")).encode())
+
+    signing_input = (seg({"alg": "RS256", "typ": "JWT", "kid": kid}) + "." + seg(claims)).encode()
+    sig = subprocess.run(
+        ["openssl", "dgst", "-sha256", "-sign", str(key)],
+        input=signing_input, capture_output=True,
+    )
+    if sig.returncode != 0:
+        return ""
+    return signing_input.decode() + "." + _b64url(sig.stdout)
 
 
 def mint_agent_token(name: str) -> str:
     """A JWT whose subject is the agent's own name, signed with the lab key."""
     if not SIGNING_KEY.is_file():
         return ""
-
-    def seg(obj):
-        raw = json.dumps(obj, separators=(",", ":")).encode()
-        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
     now = int(time.time())
-    signing_input = (
-        seg({"alg": "RS256", "typ": "JWT", "kid": "lab-key"})
-        + "."
-        + seg({
-            "iss": "https://identity.lab",
-            "aud": "model-gateway",
-            "sub": name,
-            "groups": ["model-private"],
-            "iat": now,
-            "exp": now + TOKEN_DAYS * 86400,
-        })
-    ).encode()
-    sig = subprocess.run(
-        ["openssl", "dgst", "-sha256", "-sign", str(SIGNING_KEY)],
-        input=signing_input, capture_output=True,
-    )
-    if sig.returncode != 0:
+    return _sign_jwt(SIGNING_KEY, "lab-key", {
+        "iss": "https://identity.lab",
+        "aud": "model-gateway",
+        "sub": name,
+        "groups": ["model-private"],
+        "iat": now,
+        "exp": now + TOKEN_DAYS * 86400,
+    })
+
+
+def ensure_mcp_key() -> bool:
+    if MCP_KEY.is_file():
+        return True
+    MCP_KEY.parent.mkdir(parents=True, exist_ok=True)
+    made = subprocess.run(["openssl", "genrsa", "-out", str(MCP_KEY), "2048"], capture_output=True)
+    if made.returncode != 0:
+        return False
+    MCP_KEY.chmod(0o600)
+    return True
+
+
+def mcp_jwks() -> str:
+    """The public half of the MCP key as the inline JWKS the route policies trust."""
+    if not ensure_mcp_key():
         return ""
-    return signing_input.decode() + "." + base64.urlsafe_b64encode(sig.stdout).rstrip(b"=").decode()
+    mod = subprocess.run(["openssl", "rsa", "-in", str(MCP_KEY), "-noout", "-modulus"],
+                         capture_output=True, text=True)
+    hexn = (mod.stdout or "").strip().split("=", 1)[-1]
+    if mod.returncode != 0 or not hexn:
+        return ""
+    return json.dumps({"keys": [{"kty": "RSA", "kid": "mcp-key", "use": "sig", "alg": "RS256",
+                                 "n": _b64url(bytes.fromhex(hexn)), "e": "AQAB"}]})
+
+
+def mint_mcp_token(name: str) -> str:
+    """The agent's credential for MCP routes: subject is its ServiceAccount name."""
+    if not ensure_mcp_key():
+        return ""
+    now = int(time.time())
+    return _sign_jwt(MCP_KEY, "mcp-key", {
+        "iss": MCP_ISSUER, "aud": MCP_AUDIENCE, "sub": name,
+        "iat": now, "exp": now + TOKEN_DAYS * 86400,
+    })
 
 
 def register_agent_identity(name: str, pools: list | None = None) -> dict:
@@ -683,6 +840,8 @@ def render_yaml(spec: dict) -> str:
     )
     if allowed:
         deploy_doc += f"    ALLOWED_TOOLS: {ystr(json.dumps(allowed))}\n"
+        # The MCPServer records send "Authorization: Bearer ${MCP_TOKEN}"; this fills it.
+        deploy_doc += f"    MCP_TOKEN: {ystr(spec.get('mcp_token') or '<minted at deploy>')}\n"
     # AgentRegistry Deployment env is literal strings only, with no secretRef, so the
     # agent's token sits in the registry record and the pod env. It is a lab identity,
     # private-pool only and expiring, which is proportionate for that.
@@ -784,8 +943,9 @@ def create_agent(spec: dict):
         routing = register_agent_identity(name, spec.get("pools"))
         if not routing["ok"]:
             return {"ok": False, "error": routing["detail"]}
+    mcp_token = mint_mcp_token(name) if any(sel.get("tools") for sel in mcp_sel) else ""
     yaml_text = render_yaml({**spec, "name": name, "version": version, "token": token,
-                             "skills": skills})
+                             "mcp_token": mcp_token, "skills": skills})
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     rec = {
         "name": name,
@@ -1018,6 +1178,7 @@ def _policy_yaml(grants, name=None, sid="github"):
             clauses.append(
                 f'(source.identity.namespace == {json.dumps(NS)}\n'
                 f'               && source.identity.serviceAccount == {json.dumps(sa)}\n'
+                f'               && jwt.sub == {json.dumps(sa)}\n'
                 f'               && mcp.tool.name in [\n'
                 f'                 {listed}\n'
                 f'               ])'
@@ -1049,8 +1210,57 @@ def _policy_yaml(grants, name=None, sid="github"):
     )
 
 
+def _route_policy_yaml(names, sid: str, only: str | None = None) -> str:
+    """Front door for one MCP route: a valid MCP token or 401, and a subject on this
+    server's grant list, matching the caller's mesh identity, or 403. No MCP session
+    starts for anyone else, so an ungranted agent never even sees an empty tool list."""
+    if only:
+        names = [n for n in names if n == only]
+    if names:
+        listed = ", ".join(json.dumps(n) for n in names)
+        expr = (f"source.identity.namespace == {json.dumps(NS)}"
+                f" && jwt.sub in [{listed}]"
+                " && source.identity.serviceAccount == jwt.sub")
+    else:
+        expr = "false"
+    backend = GATEWAY_MCP[sid]["backend"]
+    return (
+        "apiVersion: enterpriseagentgateway.solo.io/v1alpha1\n"
+        "kind: EnterpriseAgentgatewayPolicy\n"
+        "metadata:\n"
+        f"  name: {backend}-authn\n"
+        f"  namespace: {NS}\n"
+        "spec:\n"
+        "  targetRefs:\n"
+        "  - group: gateway.networking.k8s.io\n"
+        "    kind: HTTPRoute\n"
+        f"    name: {backend}\n"
+        "  traffic:\n"
+        "    jwtAuthentication:\n"
+        "      mode: Strict\n"
+        "      providers:\n"
+        f"      - issuer: {MCP_ISSUER}\n"
+        "        audiences:\n"
+        f"        - {MCP_AUDIENCE}\n"
+        "        jwks:\n"
+        f"          inline: {json.dumps(mcp_jwks() if not only else '<the console MCP key, public half>')}\n"
+        "    authorization:\n"
+        "      action: Allow\n"
+        "      policy:\n"
+        "        matchExpressions:\n"
+        f"        - {json.dumps(expr)}\n"
+    )
+
+
 def _apply_policy(sid: str, labels: dict | None = None):
-    yml = _policy_yaml(_grants(sid, labels), sid=sid)
+    grants = _grants(sid, labels)
+    route = subprocess.run(
+        ["kubectl", "--context", MESH, "apply", "-f", "-"],
+        input=_route_policy_yaml([sa for sa, _ in grants], sid), text=True, capture_output=True,
+    )
+    if route.returncode != 0:
+        return route
+    yml = _policy_yaml(grants, sid=sid)
     return subprocess.run(
         ["kubectl", "--context", MESH, "apply", "-f", "-"],
         input=yml, text=True, capture_output=True,
@@ -1223,6 +1433,7 @@ def _probe_mcp(name: str, sid: str, tool: str, args: dict) -> dict:
         "def post(p,sid=None):\n"
         "  d=json.dumps(p).encode()\n"
         "  h={'content-type':'application/json','accept':'application/json, text/event-stream'}\n"
+        "  if os.environ.get('MCP_TOKEN'): h['authorization']='Bearer '+os.environ['MCP_TOKEN']\n"
         "  if sid: h['mcp-session-id']=sid\n"
         "  req=urllib.request.Request(url,data=d,headers=h,method='POST')\n"
         "  try:\n"

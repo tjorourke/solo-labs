@@ -1,0 +1,181 @@
+# Two light-hearted MCP servers from one image: an IT pub quiz host and an excuse
+# generator. Neither reads data or changes anything, so their AgentRegistry records
+# carry mcp.governance/auto-approve=true (see fun-mcp-registry.yaml).
+#
+# Both still sit behind agentgateway with default deny, on the same waypoint as
+# GitHub. "Auto-approve" means My agents writes the per-agent allow at deploy.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: it-pub-quiz
+  namespace: mcp-servers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: it-pub-quiz
+  template:
+    metadata:
+      labels:
+        app: it-pub-quiz
+    spec:
+      containers:
+      - name: mcp
+        image: localhost:5001/fun-mcp:2
+        command: ["python3", "/app/quiz_mcp.py"]
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: it-pub-quiz
+  namespace: mcp-servers
+spec:
+  selector:
+    app: it-pub-quiz
+  ports:
+  - port: 3000
+    targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quiz-mcp
+  namespace: kagent
+  labels:
+    istio.io/use-waypoint: github-mcp-waypoint
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: quiz-mcp
+  namespace: kagent
+spec:
+  entMcp:
+    toolMode: Standard
+    sessionRouting: Stateful
+    failureMode: FailClosed
+    targets:
+    - name: quiz
+      static:
+        host: it-pub-quiz.mcp-servers.svc.cluster.local
+        port: 3000
+        path: /
+        protocol: StreamableHTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: quiz-mcp
+  namespace: kagent
+spec:
+  parentRefs:
+  - group: ""
+    kind: Service
+    name: quiz-mcp
+    port: 80
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: quiz-mcp
+    timeouts:
+      request: 60s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excuse-generator
+  namespace: mcp-servers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: excuse-generator
+  template:
+    metadata:
+      labels:
+        app: excuse-generator
+    spec:
+      containers:
+      - name: mcp
+        image: localhost:5001/fun-mcp:2
+        command: ["python3", "/app/excuses_mcp.py"]
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: excuse-generator
+  namespace: mcp-servers
+spec:
+  selector:
+    app: excuse-generator
+  ports:
+  - port: 3000
+    targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: excuses-mcp
+  namespace: kagent
+  labels:
+    istio.io/use-waypoint: github-mcp-waypoint
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: excuses-mcp
+  namespace: kagent
+spec:
+  entMcp:
+    toolMode: Standard
+    sessionRouting: Stateful
+    failureMode: FailClosed
+    targets:
+    - name: excuses
+      static:
+        host: excuse-generator.mcp-servers.svc.cluster.local
+        port: 3000
+        path: /
+        protocol: StreamableHTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: excuses-mcp
+  namespace: kagent
+spec:
+  parentRefs:
+  - group: ""
+    kind: Service
+    name: excuses-mcp
+    port: 80
+  rules:
+  - backendRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: excuses-mcp
+    timeouts:
+      request: 60s

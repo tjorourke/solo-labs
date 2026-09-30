@@ -3,3 +3,5 @@ data/tmp-skills/
 data/tmp-stack.yaml
 __pycache__/
 data/lab-runs/
+data/mcp-signing-key.pem
+data/tmp-mcp-*.yaml

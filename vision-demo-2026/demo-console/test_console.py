@@ -109,6 +109,48 @@ class MyAgentsTests(unittest.TestCase):
             self.assertIn("name: daylight-mcp", y)
             self.assertIn('source.identity.serviceAccount == "climber"', y)
 
+    def test_mcp_routes_demand_a_token_and_a_grant(self):
+        import agents_lab
+        y = agents_lab._route_policy_yaml(["quiz-host"], "quiz")
+        self.assertIn("kind: HTTPRoute\n    name: quiz-mcp", y)
+        self.assertIn("mode: Strict", y)
+        self.assertIn(f"issuer: {agents_lab.MCP_ISSUER}", y)
+        # The token's subject must be granted AND be the caller's own mesh identity.
+        self.assertIn('jwt.sub in [\\"quiz-host\\"]', y)
+        self.assertIn("source.identity.serviceAccount == jwt.sub", y)
+        self.assertIn('- "false"', agents_lab._route_policy_yaml([], "quiz"))
+
+    def test_mcp_token_is_signed_by_the_key_the_routes_trust(self):
+        import base64, json, tempfile
+        from pathlib import Path
+        from unittest import mock
+        import agents_lab
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(agents_lab, "MCP_KEY", Path(tmp) / "k.pem"):
+            tok = agents_lab.mint_mcp_token("quiz-host")
+            head, body, sig = tok.split(".")
+            pad = lambda s: s + "=" * (-len(s) % 4)
+            claims = json.loads(base64.urlsafe_b64decode(pad(body)))
+            self.assertEqual(claims["sub"], "quiz-host")
+            self.assertEqual(claims["aud"], agents_lab.MCP_AUDIENCE)
+            self.assertEqual(json.loads(base64.urlsafe_b64decode(pad(head)))["kid"], "mcp-key")
+            jwks = json.loads(agents_lab.mcp_jwks())["keys"][0]
+            self.assertEqual(jwks["kid"], "mcp-key")
+            # Verify the signature with the public half the policy inlines.
+            n = int.from_bytes(base64.urlsafe_b64decode(pad(jwks["n"])), "big")
+            s_int = int.from_bytes(base64.urlsafe_b64decode(pad(sig)), "big")
+            em = pow(s_int, 65537, n).to_bytes((n.bit_length() + 7) // 8, "big")
+            import hashlib
+            self.assertTrue(em.endswith(hashlib.sha256(f"{head}.{body}".encode()).digest()))
+
+    def test_agent_with_tools_gets_its_mcp_token(self):
+        from agents_lab import render_yaml
+        y = render_yaml({"name": "quiz-host", "prompt": "Host.", "skills": [],
+                         "mcp": [{"id": "quiz", "tools": ["start_quiz"]}], "mcp_token": "tok-123"})
+        self.assertIn('MCP_TOKEN: "tok-123"', y)
+        bare = render_yaml({"name": "chatty", "prompt": "Chat.", "skills": [], "mcp": []})
+        self.assertNotIn("MCP_TOKEN", bare)
+
     def test_github_policy_pins_the_namespace(self):
         from agents_lab import _policy_yaml
         y = _policy_yaml([("a", ["list_issues"]), ("b", ["search_code"])])

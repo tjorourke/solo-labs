@@ -133,6 +133,35 @@
         {"id": "moon_phase", "description": "Moon phase and how much of it is lit."},
         {"id": "local_time", "description": "Current local time and UTC offset at a site."}
       ]
+    },
+    {
+      "id": "quiz",
+      "name": "IT pub quiz",
+      "domain": "Fun",
+      "description": "100 questions on Kubernetes, development and general IT. Ten random ones a round.",
+      "url": "http://quiz-mcp.kagent.svc.cluster.local/",
+      "publicUrl": "",
+      "tools": [
+        {"id": "start_quiz", "description": "Start a round of 10 random questions."},
+        {"id": "check_answer", "description": "Check an answer and keep score."},
+        {"id": "fifty_fifty", "description": "Take away two wrong answers."},
+        {"id": "quiz_score", "description": "Final score and verdict."},
+        {"id": "list_topics", "description": "Topics and how many questions each has."}
+      ]
+    },
+    {
+      "id": "excuses",
+      "name": "Excuse generator",
+      "domain": "Fun",
+      "description": "Excuses for late work, from believable to cosmic, each with a believability score.",
+      "url": "http://excuses-mcp.kagent.svc.cluster.local/",
+      "publicUrl": "",
+      "tools": [
+        {"id": "excuse", "description": "A ready-to-send excuse with a believability score."},
+        {"id": "excuse_battle", "description": "One believable excuse against one outrageous one."},
+        {"id": "rate_excuse", "description": "Score how believable your own excuse is."},
+        {"id": "excuse_styles", "description": "The styles of excuse available."}
+      ]
     }
   ]
 }

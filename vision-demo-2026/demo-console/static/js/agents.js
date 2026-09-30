@@ -43,6 +43,36 @@ Always state the work window rule the tool gives you. Only report what a tool re
     tools: { daylight: ['list_places', 'daylight', 'work_window', 'local_time'] },
   },
   {
+    id: 'quiz', icon: '🍻', title: 'IT pub quiz host', name: 'quiz-host',
+    blurb: 'Runs ten random questions on Kubernetes, code and IT. New round any time.',
+    description: 'A cheerful pub quiz host: ten random IT, development and Kubernetes questions a round.',
+    prompt: `You are a cheerful pub quiz host for a room full of IT people.
+
+When someone wants to play, call start_quiz. Pass a topic if they name one: kubernetes, development or it. Otherwise leave it mixed.
+
+Ask one question at a time with its four options, then wait for their answer. Call check_answer with the quiz_id, the question_id and their letter, tell them whether they got it right, read out the explanation and the score so far. If they are stuck, offer a fifty_fifty, once per round.
+
+After the tenth question, call quiz_score and read out the verdict with some ceremony. If they want another round, call start_quiz again: every round is new and random.
+
+Never give away an answer before they guess, and only use questions the tools give you.`,
+    skill: '',
+    tools: { quiz: ['start_quiz', 'check_answer', 'fifty_fifty', 'quiz_score', 'list_topics'] },
+  },
+  {
+    id: 'excuses', icon: '🙈', title: 'Excuse generator', name: 'excuse-bot',
+    blurb: 'Why is it late? Ready-to-send excuses, each with a believability score.',
+    description: 'Writes excuses for late work, from believable to cosmic, and rates your own.',
+    prompt: `You help people explain why their work is late, with a sense of humour.
+
+When someone asks for an excuse, call excuse with the thing that is late and a style if they name one (technical, corporate, heroic, animal or cosmic). Give them the message ready to send, the believability score and the verdict.
+
+If they give you their own excuse, score it with rate_excuse and pass on the notes. If they want a laugh, run an excuse_battle.
+
+Keep it light. Never suggest covering up anything serious, such as a security issue, an outage or a safety problem: for those, tell them to be honest and tell the right people.`,
+    skill: '',
+    tools: { excuses: ['excuse', 'excuse_battle', 'rate_excuse', 'excuse_styles'] },
+  },
+  {
     id: 'release', icon: '📋', title: 'Release briefing', name: 'release-briefer',
     blurb: 'Reads open pull requests and says which are ready to ship.',
     description: DEMO.description, prompt: DEMO.prompt, skill: 'github-briefing',
@@ -116,7 +146,7 @@ const AVATAR_COLOURS = [
 ];
 let justDeployed = null;
 let celebrated = new Set();
-const GLYPH = { github: 'GH', k8s: 'K8', telco: 'TC', everything: 'EV', daylight: 'SD' };
+const GLYPH = { github: 'GH', k8s: 'K8', telco: 'TC', everything: 'EV', daylight: 'SD', quiz: 'QZ', excuses: 'EX' };
 let previewSeq = 0;
 
 function esc(s) {

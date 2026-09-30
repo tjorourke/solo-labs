@@ -103,6 +103,7 @@ there, so re-running one after a failure is safe.
 | 1 | `./demo-scripts/setup.sh` | `mesh1` + `mesh2`: Solo Istio ambient, agentgateway, Gloo UI, Keycloak. Parts 1-3 | 15-20 min |
 | 2 | `./demo-scripts/agentregistry/setup-mesh1.sh` | kagent, AgentRegistry and the Enterprise UI on `mesh1`. Parts 4 and 8 | ~8 min |
 | 3 | `./demo-scripts/llm-gateway.sh` | the AI gateway, local model servers and the MCP server on `mesh1`. Part 7 | ~1 min |
+| 3b | `./demo-scripts/my-agents-setup.sh` | the MCP servers My agents offers (telco, Site daylight, IT pub quiz, Excuse generator), their gateway policies and their AgentRegistry records. Run after step 3 so the GitHub server gets its token. `status` shows each server's approval tier | ~1 min |
 | 4 | `./demo-scripts/substrate-cluster.sh` | the `substrate` cluster with kagent 0.5.6 and gVisor. Parts 5 and 12 | |
 | 5 | `(cd ../agentgateway-inference-routing-kind && ./scripts/quick.sh up)` | the `inference` cluster. Part 6 | |
 

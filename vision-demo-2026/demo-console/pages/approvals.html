@@ -58,7 +58,7 @@
 
   <div class="panel">
     <h2>Allowed automatically</h2>
-    <p class="sub">Some MCP servers are safe enough that nobody should have to sign off: this is decided once, by labelling the server's AgentRegistry record. An agent that picks one gets its grant at deploy. It is still a gateway policy keyed to the agent's identity and the tools it picked, and deleting the agent takes it straight back out.</p>
+    <p class="sub">Some MCP servers are safe enough that nobody should have to sign off: this is decided once, by labelling the server's AgentRegistry record. An agent that picks one gets its grant at deploy. It is still enforced at the gateway: the agent must present its own signed MCP token, matching its mesh identity, and only the tools it picked are allowed. Every other agent gets a 403 before a session opens. Deleting the agent takes the grant straight back out.</p>
     <div class="approve-list" id="auto"></div>
     <p class="sub" id="auto-empty" style="display:none">No agent uses an auto-approved server yet. Try the Tower climb planner on <a href="/agents">My agents</a>.</p>
   </div>

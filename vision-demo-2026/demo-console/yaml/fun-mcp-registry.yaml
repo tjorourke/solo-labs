@@ -1,0 +1,33 @@
+# The platform team's AgentRegistry records for the two fun MCP servers. The label is the
+# whole approval decision: with it, My agents grants an agent access at deploy time.
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: it-pub-quiz
+  labels:
+    mcp.governance/auto-approve: "true"
+spec:
+  title: IT pub quiz
+  description: 100 questions on Kubernetes, development and general IT. Ten random ones a round.
+  remote:
+    type: streamable-http
+    url: http://quiz-mcp.kagent.svc.cluster.local/
+    headers:
+    - name: Authorization
+      value: "Bearer ${MCP_TOKEN}"
+---
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: excuse-generator
+  labels:
+    mcp.governance/auto-approve: "true"
+spec:
+  title: Excuse generator
+  description: Excuses for late work, from believable to cosmic, each with a believability score.
+  remote:
+    type: streamable-http
+    url: http://excuses-mcp.kagent.svc.cluster.local/
+    headers:
+    - name: Authorization
+      value: "Bearer ${MCP_TOKEN}"
