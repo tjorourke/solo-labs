@@ -46,6 +46,15 @@ BASELINE="$CLAUDE_SETTINGS.pre-agentdesktop"
 # real default for this machine, whatever the live file happens to say now.
 AGW_BASELINE="$CLAUDE_SETTINGS.pre-agw"
 STATE_DIR="$HOME/.local/state/agentdesktop"
+# macOS clears /tmp, so the device CA copy agentdesktop.sh left there can vanish between
+# setup and the demo. The CA itself lives in the cluster; read it back from there.
+ensure_ca() {
+  [ -s "$CA" ] && return 0
+  kubectl --context "${CTX:-kind-mesh1}" -n agentdesktop get secret agentdesktop-controller-tls \
+    -o jsonpath='{.data.device-ca\.pem}' 2>/dev/null | openssl base64 -d -A > "$CA" 2>/dev/null
+  [ -s "$CA" ] || { rm -f "$CA"; echo "no device CA at $CA, and none in the cluster. Re-run agentdesktop.sh"; exit 1; }
+  echo "Device CA restored from the cluster to $CA"
+}
 # System mode. Agentdesktop can only manage Claude Desktop from here: Desktop reads its
 # policy through CFPreferencesCopyAppValue against /Library/Managed Preferences, and a
 # daemon running as the logged-in user cannot write that. `--user` refuses
@@ -200,7 +209,7 @@ EOF
 preview)
   need_hosts && { "$0" hosts; exit 1; }
   need_bin; guard_other_demo; snapshot_baseline
-  [ -f "$CA" ] || { echo "no device CA at $CA. Re-run agentdesktop.sh"; exit 1; }
+  ensure_ca
   echo "→ enrols to collect the policy, then prints the diff and writes nothing"
   if [ "${AD_SAFE:-0}" = "1" ]; then
     "$AD_BIN" daemon --user --config "$CFG" --claude-code-settings /tmp/agentdesktop-claude-settings.json --dry-run
@@ -228,7 +237,7 @@ install-daemon)
   # from a terminal.
   need_hosts && { "$0" hosts; exit 1; }
   need_bin; guard_other_demo_desktop
-  [ -f "$CA" ] || { echo "no device CA at $CA. Re-run agentdesktop.sh"; exit 1; }
+  ensure_ca
   PRIV="$(mktemp -t ad-install)"
   trap 'rm -f "$PRIV"' EXIT
   cat > "$PRIV" <<SH
@@ -369,7 +378,7 @@ up-system)
   # which is the only path that reaches Desktop at all.
   need_hosts && { "$0" hosts; exit 1; }
   need_bin; guard_other_demo; guard_other_demo_desktop
-  [ -f "$CA" ] || { echo "no device CA at $CA. Re-run agentdesktop.sh"; exit 1; }
+  ensure_ca
   echo "→ system mode: Claude Code and Claude Desktop"
   echo "  Claude Code   $SYS_CODE_SETTINGS"
   echo "  Claude Desktop $SYS_DESKTOP_PLIST"
