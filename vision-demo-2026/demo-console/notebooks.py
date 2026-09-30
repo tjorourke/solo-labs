@@ -1080,7 +1080,8 @@ def nav_menus(active: str) -> str:
     return "".join(out)
 
 
-def shell(title: str, body: str, active: str = "", extra_head: str = "", scripts: str = "") -> str:
+def shell(title: str, body: str, active: str = "", extra_head: str = "", scripts: str = "",
+          body_class: str = "") -> str:
     def link(href: str, label: str) -> str:
         cls = ' class="active"' if href == active else ""
         return f'<a href="{href}"{cls}>{label}</a>'
@@ -1096,7 +1097,7 @@ def shell(title: str, body: str, active: str = "", extra_head: str = "", scripts
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/css/app.css">
 {extra_head}</head>
-<body>
+<body{f' class="{body_class}"' if body_class else ''}>
 <nav class="console-nav">
   <a class="brand" href="/">{BRAND_SVG}
     Solo.io
@@ -1289,60 +1290,98 @@ STORIES = [
 ]
 
 
-def home_page() -> str:
-    cards = []
-    for s in STORIES:
-        bullets = "".join(f"<li>{html.escape(b)}</li>" for b in s["bullets"])
-        cards.append(f"""    <a class="feature-card" href="{s['href']}" data-domain="{s['domain']}">
-      <div class="kicker">{html.escape(s['kicker'])}</div>
-      <h2>{html.escape(s['title'])}</h2>
-      <p>{html.escape(s['blurb'])}</p>
-      <ul>{bullets}</ul>
-      <span class="go">{html.escape(s['go'])} →</span>
-    </a>""")
+def _lab_product(kicker: str) -> str:
+    first = kicker.split("·")[0].strip().lower()
+    for name in ("agentregistry", "agentgateway", "kagent", "istio"):
+        if name in first:
+            return name
+    return "agentgateway"
 
+
+def _first_sentence(text: str) -> str:
+    m = re.match(r"(.+?[.!?])(\s|$)", text.strip())
+    return m.group(1) if m else text.strip()
+
+
+def home_page() -> str:
+    labs = []
     for demo_id, meta in DEMOS.items():
-        demo = load(demo_id)
-        steps = [s for s in demo.steps if s.num]
-        import present
-        guide = (present.spec(demo_id) or {}).get("steps", {})
-        bullets = "".join(f"<li>{html.escape(guide.get(s.id, {}).get('title', s.title))}</li>" for s in steps[:3])
-        if len(steps) > 3:
-            bullets += f"<li>and {len(steps) - 3} more</li>"
-        cards.append(f"""    <a class="feature-card" href="/{demo_id}" data-domain="{meta['domain']}">
-      <div class="kicker">{html.escape(meta['kicker'])}</div>
-      <h2>{html.escape(meta['title'])}</h2>
-      <p>{html.escape(meta['blurb'])}</p>
-      <ul>{bullets}</ul>
-      <span class="go">Open {html.escape(meta['short'])} →</span>
-    </a>""")
+        steps = [s for s in load(demo_id).steps if s.num]
+        product = _lab_product(meta["kicker"])
+        glyph = {"agentregistry": "AR", "agentgateway": "AG", "kagent": "KA", "istio": "IS"}[product]
+        labs.append(f"""      <a class="st-lab" href="/{demo_id}" data-domain="{meta['domain']}" data-lab="{demo_id}">
+        <div class="st-lab-top"><span class="st-glyph {product}">{glyph}</span>
+          <div><small>{html.escape(meta['kicker'])}</small></div></div>
+        <h3>{html.escape(meta['title'])}</h3>
+        <p>{html.escape(_first_sentence(meta['blurb']))}</p>
+        <div class="st-lab-foot"><span class="steps">{len(steps)} steps</span><span class="st-pill" data-ready>checking…</span></div>
+      </a>""")
 
     body = f"""
-<header class="hero">
-  <div class="wrap">
-    <h1>Solo.io Agentics &amp; Connectivity Live Demos</h1>
-    <p>Choose a lab and follow the steps. Commands run on the local lab clusters, with results beside the instructions.</p>
+<header class="st-hero">
+  <div class="st-wrap">
+    <div class="st-eyebrow">Solo.io · live demos</div>
+    <h1>Agents, gateways and mesh, <em>running live</em> on this laptop.</h1>
+    <p class="lead">Every page runs real commands against real clusters. Follow a story from start to finish, or open a single lab.</p>
+    <div class="st-live" id="live">
+      <div class="st-stat"><span>Clusters</span><div class="st-dots" id="live-clusters"><i class="st-skel"></i></div><small>Checked just now</small></div>
+      <div class="st-stat"><b id="live-agents"><i class="st-skel"></i></b><span>Agents deployed on kagent</span></div>
+      <div class="st-stat"><b id="live-mcp"><i class="st-skel"></i></b><span id="live-mcp-sub">MCP servers in AgentRegistry</span></div>
+      <div class="st-stat"><b>{len(DEMOS) + len(STORIES)}</b><span>Stories and labs</span></div>
+    </div>
   </div>
 </header>
 
-<div class="wrap">
-  <div class="catalogue-bar">
-    <div class="seg" role="group" aria-label="Filter by area" id="cat-filter">
-      <button type="button" data-filter="all" aria-pressed="true">All <b></b></button>
-      <button type="button" data-filter="connectivity" aria-pressed="false">Connectivity <b></b></button>
-      <button type="button" data-filter="agentic" aria-pressed="false">Agentic <b></b></button>
-    </div>
-    <div class="seg" role="group" aria-label="View" id="cat-view">
-      <button type="button" data-view="cards" aria-pressed="true">Cards</button>
-      <button type="button" data-view="list" aria-pressed="false">List</button>
+<section class="st-section">
+  <div class="st-wrap">
+    <div class="st-head"><div><div class="st-eyebrow">Follow a story</div><h2>Start here</h2></div></div>
+    <div class="st-stories">
+      <a class="st-story" href="/user-story-1">
+        <div class="st-eyebrow">Agentics overview · 7 steps</div>
+        <h3>From an enrolled laptop to agents that sleep between turns</h3>
+        <p>Enrol a Mac, watch the gateway pick a model per question, cut token spend, build an agent with no code and let a platform admin decide what it may touch.</p>
+        <div class="st-track">
+          <span><b>01</b>Enrol</span><span><b>02</b>Path</span><span><b>03</b>Routing</span><span><b>04</b>Tokens</span>
+          <span><b>05</b>Cost</span><span><b>06</b>Agents</span><span><b>07</b>Substrate</span>
+        </div>
+        <span class="st-go">Open the overview <i>→</i></span>
+      </a>
+      <a class="st-story" href="/kernwerk">
+        <div class="st-eyebrow">Data classification · 3 steps</div>
+        <h3>Data that must not leave</h3>
+        <p>Three classes of data and a gateway that routes each question live, with personal data replaced before anything reaches an outside model.</p>
+        <div class="st-flow">
+          <div><span class="src">Class 1 · public post</span><span class="arrow">→</span><span class="dst out">Can go anywhere</span></div>
+          <div><span class="src">Class 2 · works council</span><span class="arrow">→</span><span class="dst out">Must stay in the EU</span></div>
+          <div><span class="src">Class 3 · finance review</span><span class="arrow">→</span><span class="dst keep">Never leaves Kernwerk</span></div>
+          <div><span class="src">Personal data in any prompt</span><span class="arrow">→</span><span class="dst strip">Replaced first</span></div>
+        </div>
+        <span class="st-go">Open data classification <i>→</i></span>
+      </a>
     </div>
   </div>
-  <div class="feature-grid" id="catalogue">
-{chr(10).join(cards)}
+</section>
+
+<section class="st-section">
+  <div class="st-wrap">
+    <div class="st-head">
+      <div><div class="st-eyebrow">Or open a lab</div><h2>Single labs</h2></div>
+      <div class="st-chips" id="cat-filter" role="group" aria-label="Filter by area">
+        <button type="button" data-filter="all" aria-pressed="true">All <b></b></button>
+        <button type="button" data-filter="agentic" aria-pressed="false">Agentic <b></b></button>
+        <button type="button" data-filter="connectivity" aria-pressed="false">Connectivity <b></b></button>
+      </div>
+    </div>
+    <div class="st-labs" id="catalogue">
+{chr(10).join(labs)}
+    </div>
   </div>
-</div>
+</section>
+<div style="height:70px"></div>
 """
-    return shell("Solo.io Agentics & Connectivity Live Demos", body, scripts='<script src="/static/js/home.js"></script>')
+    return shell("Solo.io Agentics & Connectivity Live Demos", body,
+                 extra_head='  <link rel="stylesheet" href="/static/css/stage.css">\n',
+                 scripts='<script src="/static/js/home.js"></script>', body_class="stage")
 
 
 # ── consoles ─────────────────────────────────────────────────────────────────

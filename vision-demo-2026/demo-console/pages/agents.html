@@ -77,7 +77,8 @@
           <p id="detail-desc"></p>
         </div>
         <div class="ag-detail-actions">
-          <a class="btn primary" id="open-chat" href="#" target="_blank" rel="noreferrer" style="display:none">Prompt in kagent ↗</a>
+          <button type="button" class="btn primary" id="detail-chat">Chat</button>
+          <a class="btn" id="open-chat" href="#" target="_blank" rel="noreferrer" style="display:none">Open in kagent ↗</a>
           <button type="button" class="btn" id="detail-edit">Edit</button>
           <button type="button" class="btn ag-danger" id="detail-del">Delete</button>
         </div>
@@ -132,6 +133,29 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <div id="chat-view" class="ag-chat" style="display:none">
+    <div class="ag-chat-main">
+      <div class="ag-chat-head">
+        <button type="button" class="ag-back" id="chat-back">← All agents</button>
+        <div class="ag-avatar" id="chat-avatar"></div>
+        <div class="ag-chat-title"><strong id="chat-name"></strong><span id="chat-sub"></span></div>
+        <button type="button" class="btn" id="chat-new">＋ New chat</button>
+      </div>
+      <div class="ag-chat-log" id="chat-log"></div>
+      <div class="ag-answers" id="chat-answers"></div>
+      <form class="ag-chat-input" id="chat-form">
+        <div class="ag-composer">
+          <input id="chat-text" autocomplete="off" placeholder="Type an answer, or ask anything">
+          <button type="submit" id="chat-send" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <span class="ag-hint-key">Enter to send</span>
+      </form>
+    </div>
+    <aside class="ag-chat-side" id="chat-side"></aside>
   </div>
 
   <div id="wizard-view" class="ag-wiz" style="display:none">
@@ -244,5 +268,6 @@
   </div>
 </div>
 <script src="/static/js/agents.js"></script>
+<script src="/static/js/chat.js"></script>
 </body>
 </html>

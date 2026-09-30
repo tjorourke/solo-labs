@@ -270,6 +270,7 @@ function cardHtml(a, opts = {}) {
     ${chipsHtml(a)}
     <div class="ag-card-foot">
       <span class="ag-status ${state}">${STATE_LABEL[state]}</span>${menu}
+      ${!opts.preview && a.applied ? `<button type="button" class="btn primary ag-chat-btn" data-chat="${esc(a.name)}">Chat</button>` : ''}
     </div>
   </div>`;
 }
@@ -674,6 +675,8 @@ function paintPreview() {
 function showHome() {
   document.getElementById('home-view').style.display = '';
   document.getElementById('wizard-view').style.display = 'none';
+  const chatView = document.getElementById('chat-view');
+  if (chatView) chatView.style.display = 'none';
   editing = false;
 }
 
@@ -1085,7 +1088,7 @@ function paintCelebrate(a, st, needsMcp) {
   if (live) {
     html = `<div class="ag-cele-icon">🎉</div><div><h3>${esc(a.name)} is live</h3>
       <p>Deployed on kagent and ready to talk to.${autoNames.length ? ` ${esc(autoNames.join(', '))} ${autoNames.length === 1 ? 'was' : 'were'} granted automatically, so there was nothing to approve.` : ''}</p></div>
-      ${st.urls && st.urls.prompt ? `<a class="btn primary" href="${esc(st.urls.prompt)}" target="_blank" rel="noreferrer">Chat with it ↗</a>` : ''}`;
+      <button type="button" class="btn primary" data-chat="${esc(a.name)}">Chat with it</button>`;
   } else if (waiting) {
     html = `<div class="ag-cele-icon">🛡️</div><div><h3>${esc(a.name)} is deployed. One step left.</h3>
       <p>${autoNames.length ? `${esc(autoNames.join(', '))} already work${autoNames.length === 1 ? 's' : ''}. ` : ''}A platform admin approves ${esc(tiers(a).restricted.map(serverName).join(', '))}. Until then those tools stay closed.</p></div>

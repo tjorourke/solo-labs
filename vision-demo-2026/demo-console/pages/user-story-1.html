@@ -7,8 +7,9 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/stage.css">
 </head>
-<body>
+<body class="stage">
 <nav class="console-nav">
   <a class="brand" href="/">
     <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
@@ -36,111 +37,187 @@
   <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking cluster</span></span>
 </nav>
 
-<header class="hero">
-  <div class="wrap">
-    <div class="crumb"><a href="/">← All demos</a></div>
-    <div class="eyebrow">AGENTICS</div>
-    <h1>Agentics Overview</h1>
-    <p>Explore desktop enrolment, model routing, MCP token usage, cost controls, agent approvals and substrate.</p>
+<header class="st-hero">
+  <div class="st-wrap">
+    <a class="st-crumb" href="/">← All demos</a>
+    <div class="st-eyebrow">Agentics overview</div>
+    <h1>From an enrolled laptop to agents that <em>sleep between turns</em>.</h1>
+    <p class="lead">Seven steps on live clusters. Each one opens its own page with the commands, the results and the consoles to watch.</p>
+    <nav class="st-jump" aria-label="Steps">
+      <a href="#s1"><b>01</b>Agentdesktop</a>
+      <a href="#s2"><b>02</b>Gateway decisions</a>
+      <a href="#s4"><b>04</b>Token economics</a>
+      <a href="#s5"><b>05</b>Cost</a>
+      <a href="#s6"><b>06</b>My agents</a>
+      <a href="#s6b"><b>06</b>Platform approval</a>
+      <a href="#s7"><b>07</b>Substrate</a>
+    </nav>
   </div>
 </header>
 
-<div class="wrap">
-  <div class="feature-grid">
-    <a class="feature-card" href="/desktop">
-      <div class="kicker">DEMO 01 · Enrol</div>
-      <h2>Agentdesktop</h2>
-      <p>One enrolment. Company policy lands on this laptop. The key never sits on the disk.</p>
-      <ul>
-        <li>Enrol this Mac into the fleet</li>
-        <li>Claude Desktop and Claude Code, both covered</li>
-        <li>Offboarding is one account, not a key hunt</li>
-      </ul>
-      <span class="go">Open Agentdesktop →</span>
+<div class="st-wrap">
+  <div class="st-journey">
+    <a class="st-step" id="s1" href="/desktop">
+      <div class="st-num">01</div>
+      <div>
+        <div class="st-eyebrow">Enrol</div>
+        <h3>Agentdesktop</h3>
+        <p>One enrolment and company policy lands on this laptop. The key never sits on the disk, and offboarding is one account rather than a hunt for keys.</p>
+        <div class="st-tags"><span>Claude Desktop</span><span>Claude Code</span><span>Fleet policy</span></div>
+        <span class="st-go">Open Agentdesktop <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="row"><div class="box dark">This Mac<small>enrolled</small></div><span class="to">→</span><div class="box">Company policy<small>pushed, not typed</small></div></div>
+        <div class="row"><div class="box ok">Claude Desktop<small>covered</small></div><div class="box ok">Claude Code<small>covered</small></div></div>
+        <div class="cap">No API key on the disk</div>
+      </div>
     </a>
-    <a class="feature-card" href="/decisions">
-      <div class="kicker">DEMO 02 and 03 · Path and routing</div>
-      <h2>Gateway decisions</h2>
-      <p>Send a prompt from Claude Desktop and from Claude Code. Both show on the company gateway. Then the question picks the model: telco, finance and code stay private.</p>
-      <ul>
-        <li>Both Claudes, one path, as the employee</li>
-        <li>5G slice, credit risk, code review, Python how-to</li>
-        <li>Who asked, the task, the pool, the model</li>
-      </ul>
-      <span class="go">Open Gateway decisions →</span>
+
+    <a class="st-step" id="s2" href="/decisions">
+      <div class="st-num">02</div>
+      <div>
+        <div class="st-eyebrow">Path and routing · steps 02 and 03</div>
+        <h3>Gateway decisions</h3>
+        <p>Send a prompt from Claude Desktop and from Claude Code, and both land on the company gateway. Then the question picks the model: telco, finance and code stay private.</p>
+        <div class="st-tags"><span>Who asked</span><span>The task</span><span>The pool</span><span>The model</span><span id="dec-live">Checking the gateway…</span></div>
+        <span class="st-go">Open Gateway decisions <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="row"><div class="box">5G slice question</div><span class="to">→</span><div class="box ok">Private pool</div></div>
+        <div class="row"><div class="box">Credit risk question</div><span class="to">→</span><div class="box ok">Private pool</div></div>
+        <div class="row"><div class="box">Code review</div><span class="to">→</span><div class="box ok">Private pool</div></div>
+        <div class="row"><div class="box">Everything else</div><span class="to">→</span><div class="box dark">Approved frontier</div></div>
+      </div>
     </a>
-    <a class="feature-card" href="/economy">
-      <div class="kicker">DEMO 04 · Economics</div>
-      <h2>Token economics with MCP</h2>
-      <p>Same GitHub report, twice. Standard walks every tool. Code mode does the walking. The answer stays. The spend falls.</p>
-      <ul>
-        <li>Fewer tokens, fewer loops, lower spend</li>
-        <li>The agent does not change</li>
-        <li>Access stays on the gateway</li>
-      </ul>
-      <span class="go">Open Token economics →</span>
+
+    <a class="st-step" id="s4" href="/economy">
+      <div class="st-num">04</div>
+      <div>
+        <div class="st-eyebrow">Economics</div>
+        <h3>Token economics with MCP</h3>
+        <p>The same GitHub report, twice. Standard mode walks every tool; Code mode does the walking on the gateway. The answer stays the same and the spend falls.</p>
+        <div class="st-tags"><span>Fewer tokens</span><span>Fewer loops</span><span>Same agent</span></div>
+        <span class="st-go">Open Token economics <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="st-bars">
+          <div>Standard<i class="long"></i></div>
+          <div>Code mode<i class="short"></i></div>
+        </div>
+        <div class="cap">Same report. The page measures the real difference.</div>
+      </div>
     </a>
-    <a class="feature-card" href="/cost">
-      <div class="kicker">DEMO 05 · Cost</div>
-      <h2>Cost management</h2>
-      <p>Open the live graph. Cut spend by team and user. Put a budget on Bob.</p>
-      <ul>
-        <li>Dimensions: team, user, model</li>
-        <li>Spend and tokens on that slice</li>
-        <li>A cap in the agentgateway portal</li>
-      </ul>
-      <span class="go">Open Cost management →</span>
+
+    <a class="st-step" id="s5" href="/cost">
+      <div class="st-num">05</div>
+      <div>
+        <div class="st-eyebrow">Cost</div>
+        <h3>Cost management</h3>
+        <p>Open the live graph, cut spend by team and user, then put a budget on Bob and watch the gateway hold him to it.</p>
+        <div class="st-tags"><span>By team</span><span>By user</span><span>By model</span><span>Budgets</span></div>
+        <span class="st-go">Open Cost management <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="st-cols"><i style="height:45%"></i><i style="height:70%"></i><i class="hot" style="height:92%"></i><i style="height:38%"></i><i class="cap" style="height:60%"></i><i style="height:52%"></i></div>
+        <div class="cap">Spend per team, with a cap on one user</div>
+      </div>
     </a>
-    <a class="feature-card" href="/agents">
-      <div class="kicker">DEMO 06 · No-code</div>
-      <h2>My agents</h2>
-      <p>A prompt, a skill, the tools you tick. Deploy. It lands in the registry, then goes live. A platform admin still has to allow the tools.</p>
-      <ul>
-        <li>Wizard: identity, skills, tools, deploy</li>
-        <li>Only ticked tools can run</li>
-        <li>Approve MCP access after it is live</li>
-      </ul>
-      <span class="go">Open My agents →</span>
+
+    <a class="st-step" id="s6" href="/agents">
+      <div class="st-num">06</div>
+      <div>
+        <div class="st-eyebrow">No-code</div>
+        <h3>My agents</h3>
+        <p>Pick a template, write the instructions in plain words, tick the tools. It lands in AgentRegistry, then goes live on kagent. Safe tools work straight away; the rest wait for a platform admin.</p>
+        <div class="st-tags"><span>Templates</span><span>Skills</span><span>MCP tools</span><span>One-click deploy</span></div>
+        <span class="st-go">Open My agents <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="st-avatars" id="agents-live"><i class="st-skel" style="width:120px"></i><i class="st-skel" style="width:90px"></i></div>
+        <div class="cap" id="agents-cap">Reading kagent…</div>
+      </div>
     </a>
-    <a class="feature-card" href="/approvals">
-      <div class="kicker">DEMO 06 PART 2 · Platform approval</div>
-      <h2>Platform approval</h2>
-      <p>Swap hats. The agent is live and every tool it asked for is still denied. A platform admin, not the builder, decides that.</p>
-      <ul>
-        <li>Review what the identity asked for</li>
-        <li>Approve or deny the lot</li>
-        <li>Read the policy it writes on the gateway</li>
-      </ul>
-      <span class="go">Open Platform approval →</span>
+
+    <a class="st-step" id="s6b" href="/approvals">
+      <div class="st-num">06</div>
+      <div>
+        <div class="st-eyebrow">Platform approval</div>
+        <h3>Platform approval</h3>
+        <p>Swap hats. The agent is live and the tools that need sign-off are still denied at the gateway. A platform admin, not the builder, decides.</p>
+        <div class="st-tags"><span>Review the request</span><span>Approve or deny</span><span>The policy it writes</span></div>
+        <span class="st-go">Open Platform approval <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="st-big" id="approvals-live">
+          <div class="warn"><b>–</b><span>Waiting on an admin</span></div>
+          <div class="ok"><b>–</b><span>Granted automatically</span></div>
+        </div>
+        <div class="cap">Live from the gateway grants</div>
+      </div>
     </a>
-    <a class="feature-card" href="/substrate">
-      <div class="kicker">DEMO 07 · Substrate</div>
-      <h2>Agent Substrate</h2>
-      <p>Agents do not need a pod each. Put a crowd of actors on two workers and watch them snapshot out and resume.</p>
-      <ul>
-        <li>Actors multiplexed onto workers</li>
-        <li>Snapshot to S3, restore on the next message</li>
-        <li>A queue forms when the pool is full</li>
-      </ul>
-      <span class="go">Open Agent Substrate →</span>
+
+    <a class="st-step" id="s7" href="/substrate">
+      <div class="st-num">07</div>
+      <div>
+        <div class="st-eyebrow">Substrate</div>
+        <h3>Agent Substrate</h3>
+        <p>Agents do not need a pod each. Put a crowd of actors on two workers and watch them snapshot out, then resume on the next message.</p>
+        <div class="st-tags"><span>Actors on workers</span><span>Snapshot to S3</span><span>A queue when full</span></div>
+        <span class="st-go">Open Agent Substrate <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="st-workers">
+          <div><small>Worker 1</small><div class="st-actors"><i></i><i></i><i class="zz"></i><i></i><i class="zz"></i><i class="zz"></i><i></i></div></div>
+          <div><small>Worker 2</small><div class="st-actors"><i class="zz"></i><i></i><i class="zz"></i><i class="zz"></i><i></i><i class="zz"></i></div></div>
+        </div>
+        <div class="cap">Solid: working. Dashed: snapshotted, costing nothing.</div>
+      </div>
     </a>
   </div>
 </div>
 <script>
-fetch('/api/status').then(r => r.json()).then(s => {
-  const dot = document.getElementById('dot');
-  const label = document.getElementById('status-label');
-  if (s.decisions) {
-    dot.className = 'dot live';
-    label.textContent = s.context ? ('live · ' + s.context.split('/').pop()) : 'live';
-  } else {
-    dot.className = 'dot off';
-    label.textContent = s.error || 'cluster not attached';
-  }
-}).catch(() => {
-  document.getElementById('dot').className = 'dot off';
-  document.getElementById('status-label').textContent = 'console only';
-});
+(() => {
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const COLOURS = [['#ede9fe', '#5b21b6'], ['#dbeafe', '#1d4ed8'], ['#dcfce7', '#15803d'], ['#fef3c7', '#b45309'],
+                   ['#fce7f3', '#be185d'], ['#cffafe', '#0e7490'], ['#ffe4e6', '#be123c'], ['#e0e7ff', '#4338ca']];
+  const avatar = n => { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLOURS[h % COLOURS.length]; };
+  const initials = n => { const p = n.split(/[-_]/).filter(Boolean); return (p.length > 1 ? p[0][0] + p[1][0] : n.slice(0, 2)).toUpperCase(); };
+
+  fetch('/api/status').then(r => r.json()).then(s => {
+    const dot = document.getElementById('dot');
+    const label = document.getElementById('status-label');
+    const tag = document.getElementById('dec-live');
+    if (s.decisions) {
+      dot.className = 'dot live';
+      label.textContent = s.context ? ('live · ' + s.context.split('/').pop()) : 'live';
+      tag.textContent = '● Gateway attached';
+    } else {
+      dot.className = 'dot off';
+      label.textContent = s.error || 'cluster not attached';
+      tag.textContent = 'Gateway not attached';
+    }
+  }).catch(() => {
+    document.getElementById('dot').className = 'dot off';
+    document.getElementById('status-label').textContent = 'console only';
+    document.getElementById('dec-live').textContent = 'Gateway not attached';
+  });
+
+  fetch('/api/agents').then(r => r.json()).then(d => {
+    const agents = (d.agents || []).filter(a => a.applied);
+    const box = document.getElementById('agents-live');
+    box.innerHTML = agents.slice(0, 8).map(a => {
+      const [bg, fg] = avatar(a.name);
+      return `<span class="st-av"><b style="background:${bg};color:${fg}">${esc(initials(a.name))}</b>${esc(a.name)}</span>`;
+    }).join('') || '<span class="st-av">No agents yet. Build the first one.</span>';
+    const waiting = agents.filter(a => a.needs_approval && !a.admin_approved).length;
+    const auto = agents.filter(a => (a.mcp_auto || []).length).length;
+    document.getElementById('agents-cap').textContent =
+      `${agents.length} running on kagent right now` + (agents.length > 8 ? `, showing 8` : '');
+    const big = document.getElementById('approvals-live').querySelectorAll('b');
+    big[0].textContent = waiting;
+    big[1].textContent = auto;
+  }).catch(() => { document.getElementById('agents-cap').textContent = 'kagent not reachable'; });
+})();
 </script>
 </body>
 </html>

@@ -1,0 +1,6 @@
+{
+  "model": {"type": "openai", "model": "set-by-MODEL_NAME"},
+  "description": "My agents runtime. The agent itself is built in agent.py from the deploy env.",
+  "instruction": "Unused: agent.py reads SYSTEM_MESSAGE.",
+  "stream": true
+}

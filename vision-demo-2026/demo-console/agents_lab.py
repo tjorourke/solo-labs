@@ -22,7 +22,7 @@ CATALOG = json.loads((DATA / "agent-catalog.json").read_text())
 STORE = DATA / "my-agents.json"
 SKILLS_DIR = DATA / "skills"
 RUNTIME_DIR = ROOT / "agent-runtime"
-IMAGE = "localhost:5001/my-agents:3"
+IMAGE = "localhost:5001/my-agents:4"
 
 # Every agent this wizard deploys gets its own identity on the model gateway, so the
 # decisions view names the agent rather than whoever's token it borrowed. The JWT is
@@ -511,6 +511,159 @@ def teardown_platform(force: bool = False) -> list:
         out.append("Their AgentRegistry records deleted")
     _MCP_LABELS["at"] = 0.0
     return out
+
+
+A2A_LOCAL_PORT = int(os.environ.get("KAGENT_A2A_PORT", "18083"))
+_A2A_LOCK = threading.Lock()
+
+
+def _a2a_base() -> str:
+    """kagent's A2A endpoint is not on the ingress, so hold a port-forward to the controller."""
+    import socket
+
+    def up():
+        with socket.socket() as sock:
+            sock.settimeout(0.4)
+            return sock.connect_ex(("127.0.0.1", A2A_LOCAL_PORT)) == 0
+
+    with _A2A_LOCK:
+        if not up():
+            subprocess.Popen(
+                ["kubectl", "--context", MESH, "-n", NS, "port-forward", "svc/kagent-controller",
+                 f"{A2A_LOCAL_PORT}:8083"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+            for _ in range(30):
+                if up():
+                    break
+                time.sleep(0.3)
+        return f"http://127.0.0.1:{A2A_LOCAL_PORT}"
+
+
+def _tool_result(resp):
+    """An MCP tool result as the agent saw it, decoded when the text is JSON."""
+    if not isinstance(resp, dict):
+        return resp
+    texts = [c.get("text", "") for c in resp.get("content") or [] if isinstance(c, dict)]
+    if not texts:
+        return resp.get("result", resp)
+    try:
+        return json.loads(texts[0])
+    except (json.JSONDecodeError, TypeError):
+        return " ".join(texts)
+
+
+def chat(name: str, text: str, context_id: str | None = None) -> dict:
+    """One turn with a deployed agent over A2A. Returns its answer and every tool call it made."""
+    import urllib.request
+    import uuid as _uuid
+    name = slug(name)
+    text = (text or "").strip()
+    if not text:
+        return {"ok": False, "error": "Type a message first."}
+    if not get_agent(name):
+        return {"ok": False, "error": "Unknown agent."}
+    msg = {"role": "user", "messageId": _uuid.uuid4().hex, "kind": "message",
+           "parts": [{"kind": "text", "text": text[:4000]}]}
+    if context_id:
+        msg["contextId"] = context_id
+    body = json.dumps({"jsonrpc": "2.0", "id": _uuid.uuid4().hex, "method": "message/send",
+                       "params": {"message": msg}}).encode()
+    req = urllib.request.Request(f"{_a2a_base()}/api/a2a/{NS}/{name}/", data=body,
+                                 headers={"content-type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            out = json.loads(r.read())
+    except Exception as e:  # noqa: BLE001 - surface any transport failure to the chat
+        return {"ok": False, "error": f"Could not reach {name} through kagent: {e}"}
+    if "error" in out:
+        return {"ok": False, "error": str((out["error"] or {}).get("message") or out["error"])}
+    res = out.get("result") or {}
+    calls, order = {}, []
+    for m in res.get("history") or []:
+        for part in m.get("parts") or []:
+            data = part.get("data") if part.get("kind") == "data" else None
+            if not isinstance(data, dict) or "name" not in data:
+                continue
+            cid = data.get("id") or f"{data['name']}-{len(order)}"
+            if cid not in calls:
+                calls[cid] = {"name": data["name"], "args": None, "result": None}
+                order.append(cid)
+            if "args" in data:
+                calls[cid]["args"] = data["args"]
+            if "response" in data:
+                calls[cid]["result"] = _tool_result(data["response"])
+    answer = []
+    for art in res.get("artifacts") or []:
+        answer += [p.get("text", "") for p in art.get("parts") or [] if p.get("kind") == "text"]
+    if not answer:
+        status_msg = ((res.get("status") or {}).get("message") or {})
+        answer = [p.get("text", "") for p in status_msg.get("parts") or [] if p.get("kind") == "text"]
+    return {
+        "ok": True,
+        "contextId": res.get("contextId") or context_id,
+        "state": (res.get("status") or {}).get("state"),
+        "answer": "\n\n".join(a for a in answer if a).strip(),
+        "tools": [calls[c] for c in order],
+    }
+
+
+def chat_stream(name: str, text: str, context_id: str | None = None):
+    """One streamed turn over A2A message/stream. Yields small events for the chat page:
+    delta (text as it is typed), message (a finished block of text), tool_call, tool_result,
+    done and error."""
+    import urllib.request
+    import uuid as _uuid
+    name = slug(name)
+    text = (text or "").strip()
+    if not text or not get_agent(name):
+        yield {"t": "error", "error": "Type a message first." if text else "Unknown agent."}
+        return
+    msg = {"role": "user", "messageId": _uuid.uuid4().hex, "kind": "message",
+           "parts": [{"kind": "text", "text": text[:4000]}]}
+    if context_id:
+        msg["contextId"] = context_id
+    body = json.dumps({"jsonrpc": "2.0", "id": _uuid.uuid4().hex, "method": "message/stream",
+                       "params": {"message": msg}}).encode()
+    req = urllib.request.Request(f"{_a2a_base()}/api/a2a/{NS}/{name}/", data=body, method="POST",
+                                 headers={"content-type": "application/json", "accept": "text/event-stream"})
+    seen_calls, seen_results = set(), set()
+    ctx, state = context_id, None
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            for raw in r:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    ev = (json.loads(line[5:]) or {}).get("result") or {}
+                except json.JSONDecodeError:
+                    continue
+                ctx = ev.get("contextId") or ctx
+                if ev.get("kind") != "status-update":
+                    continue
+                status = ev.get("status") or {}
+                state = status.get("state") or state
+                if state == "submitted":
+                    continue
+                partial = (ev.get("metadata") or {}).get("kagent_adk_partial")
+                for part in (status.get("message") or {}).get("parts") or []:
+                    if part.get("kind") == "text" and part.get("text"):
+                        yield {"t": "delta" if partial else "message", "text": part["text"]}
+                    data = part.get("data") if part.get("kind") == "data" else None
+                    if isinstance(data, dict) and "name" in data:
+                        cid = data.get("id") or data["name"]
+                        if "args" in data and cid not in seen_calls:
+                            seen_calls.add(cid)
+                            yield {"t": "tool_call", "id": cid, "name": data["name"], "args": data["args"]}
+                        if "response" in data and cid not in seen_results:
+                            seen_results.add(cid)
+                            yield {"t": "tool_result", "id": cid, "name": data["name"],
+                                   "result": _tool_result(data["response"])}
+    except Exception as e:  # noqa: BLE001 - surface any transport failure to the chat
+        yield {"t": "error", "error": f"Could not reach {name} through kagent: {e}"}
+        return
+    yield {"t": "done", "contextId": ctx, "state": state}
 
 
 def _registry_mcp_rows() -> dict:
@@ -1599,6 +1752,20 @@ def agent_status(name: str) -> dict:
         "state": kstate,
         "detail": kmsg[:240],
     })
+    # A deploy cut off half way (the console restarted mid-request) leaves the agent running
+    # with no record of it and no automatic grants. Heal it here, from what kagent reports.
+    if ready and rec.get("yaml") and not rec.get("applied"):
+        rec["applied"] = True
+        rec["apply_error"] = None
+        rec.setdefault("registry", {"ok": True, "detail": "Recovered: kagent reports the agent ready."})
+        store = load_store()
+        store["agents"] = [rec if a["name"] == name else a for a in store["agents"]]
+        save_store(store)
+        rec["auto_granted"] = [sid for sid in mcp_tiers(rec)["auto"]
+                               if sid in GATEWAY_MCP and _apply_policy(sid).returncode == 0]
+        store = load_store()
+        store["agents"] = [rec if a["name"] == name else a for a in store["agents"]]
+        save_store(store)
     steps.append({
         "id": "ready", "label": "Ready to prompt",
         "state": "done" if ready else "wait",

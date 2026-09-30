@@ -7,8 +7,9 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/stage.css">
 </head>
-<body>
+<body class="stage">
 <nav class="console-nav">
   <a class="brand" href="/">
     <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
@@ -28,83 +29,115 @@
   <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking cluster</span></span>
 </nav>
 
-<header class="hero kw-hero">
-  <div class="wrap">
-    <div class="crumb"><a href="/">← All demos</a></div>
-    <div class="eyebrow">DATA CLASSIFICATION · KERNWERK AG</div>
-    <h1>Some of this data cannot leave the region, and developers cannot be trusted to know which</h1>
-    <div class="kw-brief">
-      <section class="kw-company">
-        <h2>The company</h2>
-        <p><strong>Kernwerk AG</strong>, a German industrial manufacturer.</p>
-        <ul class="kw-facts">
-          <li><b>31,000</b> employees across the EU</li>
-          <li>A <b>US subsidiary</b></li>
-          <li>A strong <b>works council</b></li>
-          <li>A strong <b>data protection</b> function</li>
-        </ul>
+<header class="st-hero">
+  <div class="st-wrap">
+    <a class="st-crumb" href="/">← All demos</a>
+    <div class="st-eyebrow">Data classification · Kernwerk AG</div>
+    <h1>Some of this data cannot leave the region, and developers <em>cannot be trusted to know which</em>.</h1>
+    <p class="lead">The gateway reads every prompt and sends it to the only place it is allowed to go, for every developer and every agent.</p>
+
+    <div class="st-brief">
+      <section class="st-company">
+        <div class="st-eyebrow">The company</div>
+        <h2>Kernwerk AG</h2>
+        <p>A German industrial manufacturer.</p>
+        <div class="st-facts">
+          <div><b>31,000</b><span>employees across the EU</span></div>
+          <div><b>US</b><span>subsidiary</span></div>
+          <div><b>Strong</b><span>works council</span></div>
+          <div><b>Strong</b><span>data protection function</span></div>
+        </div>
       </section>
-      <blockquote class="kw-quote">
+      <blockquote class="st-quote">
         <p>“We have three classes of data. One class can go anywhere. One class must stay in the EU. One class must never touch a model we do not host ourselves.”</p>
         <p>“Today that distinction lives in a policy document and in the heads of about four people. Developers are shipping agent features weekly and I have no way to enforce any of it.”</p>
         <cite>Head of Data Protection, Kernwerk AG</cite>
       </blockquote>
     </div>
-    <div class="kw-classes">
-      <div class="kw-class anywhere"><span>Class 1 · Can go anywhere</span><b>External models, such as Claude</b></div>
-      <div class="kw-class eu"><span>Class 2 · Must stay in the EU</span><b>Models hosted in EU regions only</b></div>
-      <div class="kw-class private"><span>Class 3 · Never leaves Kernwerk</span><b>Kernwerk's own models, in Kernwerk's private datacenter</b><small>Served on NVIDIA RTX PRO 6000 Blackwell GPUs</small></div>
+
+    <div class="st-classes">
+      <div class="st-class c1"><small>Class 1</small><h3>Can go anywhere</h3><p>External models, such as Claude</p></div>
+      <div class="st-class c2"><small>Class 2</small><h3>Must stay in the EU</h3><p>Models hosted in EU regions only</p></div>
+      <div class="st-class c3"><small>Class 3</small><h3>Never leaves Kernwerk</h3><p>Kernwerk's own models, in Kernwerk's private datacenter</p><span>Served on NVIDIA RTX PRO 6000 Blackwell GPUs</span></div>
     </div>
-    <p class="kw-enforced">The gateway reads every prompt and sends it to the only place it is allowed to go, for every developer and every agent.</p>
+
+    <nav class="st-jump" aria-label="Steps">
+      <a href="#k1"><b>01</b>Agentdesktop</a>
+      <a href="#k2"><b>02</b>Gateway decisions</a>
+      <a href="#k2b"><b>02</b>Demo prompts</a>
+      <a href="#k3"><b>03</b>DLP and guardrails</a>
+    </nav>
   </div>
 </header>
 
-<div class="wrap">
-  <div class="feature-grid">
-    <a class="feature-card" href="/kernwerk/desktop">
-      <div class="kicker">DEMO 01 · Enrol</div>
-      <h2>Agentdesktop</h2>
-      <p>One enrolment and this laptop follows the company policy. Claude Desktop and Claude Code both go through the gateway, so no agent feature can go round it.</p>
-      <ul>
-        <li>Enrol this Mac into the fleet</li>
-        <li>Claude Desktop and Claude Code, both covered</li>
-        <li>No model key on the laptop</li>
-      </ul>
-      <span class="go">Open Agentdesktop →</span>
+<div class="st-wrap">
+  <div class="st-journey">
+    <a class="st-step" id="k1" href="/kernwerk/desktop">
+      <div class="st-num">01</div>
+      <div>
+        <div class="st-eyebrow">Enrol</div>
+        <h3>Agentdesktop</h3>
+        <p>One enrolment and this laptop follows the company policy. Claude Desktop and Claude Code both go through the gateway, so no agent feature can go round it.</p>
+        <div class="st-tags"><span>Enrol this Mac</span><span>Both Claudes covered</span><span>No model key on the laptop</span></div>
+        <span class="st-go">Open Agentdesktop <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="row"><div class="box dark">This Mac<small>enrolled</small></div><span class="to">→</span><div class="box">Company gateway<small>the only way out</small></div></div>
+        <div class="row"><div class="box ok">Claude Desktop<small>covered</small></div><div class="box ok">Claude Code<small>covered</small></div></div>
+        <div class="cap">No model key on the laptop</div>
+      </div>
     </a>
-    <a class="feature-card" href="/kernwerk/gateway-decisions">
-      <div class="kicker">DEMO 02 · Routing</div>
-      <h2>Gateway decisions</h2>
-      <p>Ask from Claude Code. The gateway reads the question and sends it where it is allowed to go. Sensitive work stays on models Kernwerk runs itself. General questions may go outside.</p>
-      <ul>
-        <li>The developer does not choose, the policy does</li>
-        <li>Who asked, what kind of question, which model</li>
-        <li>Every decision on the record</li>
-      </ul>
-      <span class="go">Open Gateway decisions →</span>
+
+    <a class="st-step" id="k2" href="/kernwerk/gateway-decisions">
+      <div class="st-num">02</div>
+      <div>
+        <div class="st-eyebrow">Routing</div>
+        <h3>Gateway decisions</h3>
+        <p>Ask from Claude Code. The gateway reads the question and sends it where it is allowed to go. Sensitive work stays on models Kernwerk runs itself; general questions may go outside.</p>
+        <div class="st-tags"><span>The policy chooses, not the developer</span><span>Every decision on the record</span><span id="kw-live">Checking the gateway…</span></div>
+        <span class="st-go">Open Gateway decisions <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="row"><div class="box">General question</div><span class="to">→</span><div class="box c1b">External model<small>Class 1</small></div></div>
+        <div class="row"><div class="box">Sensitive work</div><span class="to">→</span><div class="box dark">Kernwerk's own model<small>stays inside</small></div></div>
+        <div class="cap">Who asked, what kind of question, which model</div>
+      </div>
     </a>
-    <a class="feature-card" href="/kernwerk/prompts">
-      <div class="kicker">DEMO 02 · Demo prompts</div>
-      <h2>Demo prompts</h2>
-      <p>A prepared set of prompts to paste into Claude, in the order that builds the argument. The first prompts contain nothing sensitive and are routed on the task alone. The later ones ask for similar work, but the data they contain changes where the answer is allowed to come from.</p>
-      <ul>
-        <li>Copy a prompt and see where the gateway sends it</li>
-        <li>The part of each prompt that decides its class is marked</li>
-        <li>A second tab records what actually happened for each one</li>
-      </ul>
-      <span class="go">Open Demo prompts →</span>
+
+    <a class="st-step" id="k2b" href="/kernwerk/prompts">
+      <div class="st-num">02</div>
+      <div>
+        <div class="st-eyebrow">Demo prompts</div>
+        <h3>Prompts that build the argument</h3>
+        <p>A prepared set to paste into Claude, in order. The first ones contain nothing sensitive and are routed on the task alone. The later ones ask for similar work, but the data inside them changes where the answer may come from.</p>
+        <div class="st-tags"><span>Copy and paste</span><span>The deciding part is marked</span><span>A tab records what happened</span></div>
+        <span class="st-go">Open Demo prompts <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="st-prompts">
+          <div><span class="st-line"><i></i><i class="w2"></i></span><em class="c1">Routed on the task</em></div>
+          <div><span class="st-line"><i></i><mark></mark><i class="w3"></i></span><em class="c2">EU data inside</em></div>
+          <div><span class="st-line"><i class="w2"></i><mark class="hot"></mark><i></i></span><em class="c3">Restricted data inside</em></div>
+        </div>
+        <div class="cap">Same kind of work. The highlighted data changes the answer's destination.</div>
+      </div>
     </a>
-    <a class="feature-card" href="/kernwerk/dlp">
-      <div class="kicker">DEMO 03 · Data protection</div>
-      <h2>DLP and guardrails</h2>
-      <p>Ask Claude Desktop for a public post, a works council summary and a restricted finance review, with or without the PDF. Each goes to the only place its class allows, and personal data is replaced first.</p>
-      <ul>
-        <li>Class 1, 2 and 3, each routed live</li>
-        <li>Class 3 answered inside Kernwerk's own datacenter</li>
-        <li>Secrets and prompt attacks stopped at the gateway</li>
-        <li>Every decision and its class on the record</li>
-      </ul>
-      <span class="go">Open Data protection →</span>
+
+    <a class="st-step" id="k3" href="/kernwerk/dlp">
+      <div class="st-num">03</div>
+      <div>
+        <div class="st-eyebrow">Data protection</div>
+        <h3>DLP and guardrails</h3>
+        <p>Ask Claude Desktop for a public post, a works council summary and a restricted finance review, with or without the PDF. Each goes to the only place its class allows, and personal data is replaced first.</p>
+        <div class="st-tags"><span>Class 1, 2 and 3, each routed live</span><span>Secrets and prompt attacks stopped</span><span>Every decision on the record</span></div>
+        <span class="st-go">Open Data protection <i>→</i></span>
+      </div>
+      <div class="st-vis">
+        <div class="row"><div class="box">Public post</div><span class="to">→</span><div class="box c1b">Anywhere<small>Class 1</small></div></div>
+        <div class="row"><div class="box">Works council summary</div><span class="to">→</span><div class="box c2b">EU only<small>Class 2</small></div></div>
+        <div class="row"><div class="box">Restricted finance review</div><span class="to">→</span><div class="box dark">Kernwerk's datacenter<small>Class 3</small></div></div>
+        <div class="row"><div class="box warn">Personal data, secrets, prompt attacks<small>replaced or stopped at the gateway</small></div></div>
+      </div>
     </a>
   </div>
 </div>
@@ -115,9 +148,11 @@ fetch('/api/status').then(r => r.json()).then(s => {
   if (s.decisions) {
     dot.className = 'dot live';
     label.textContent = s.context ? ('live · ' + s.context.split('/').pop()) : 'live';
+    document.getElementById('kw-live').textContent = '● Gateway attached';
   } else {
     dot.className = 'dot off';
     label.textContent = s.error || 'cluster not attached';
+    document.getElementById('kw-live').textContent = 'Gateway not attached';
   }
 }).catch(() => {
   document.getElementById('dot').className = 'dot off';

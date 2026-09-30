@@ -251,6 +251,26 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/agents/skills":
             import agents_lab
             return self._json(agents_lab.create_skill(self._body()))
+        if self.path.startswith("/api/agents/") and self.path.endswith("/chat/stream"):
+            import agents_lab
+            name = self.path.split("/")[-3]
+            body = self._body()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            try:
+                for ev in agents_lab.chat_stream(name, body.get("text", ""), body.get("contextId")):
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return None
+        if self.path.startswith("/api/agents/") and self.path.endswith("/chat"):
+            import agents_lab
+            name = self.path.split("/")[-2]
+            body = self._body()
+            return self._json(agents_lab.chat(name, body.get("text", ""), body.get("contextId")))
         if self.path.startswith("/api/agents/") and self.path.endswith("/approve-github"):
             import agents_lab
             name = self.path.split("/")[-2]

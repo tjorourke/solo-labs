@@ -18,7 +18,7 @@ export MESH_CONTEXT="${MESH_CONTEXT:-kind-mesh1}"
 
 # image name | build context. Tags match the manifests in demo-console/yaml.
 IMAGES=(
-  "my-agents:3|$CONSOLE/agent-runtime"
+  "my-agents:4|$CONSOLE/agent-runtime"
   "telco-inventory:latest|$CONSOLE/telco-mcp"
   "daylight-mcp:1|$CONSOLE/daylight-mcp"
   "fun-mcp:2|$CONSOLE/fun-mcp"
