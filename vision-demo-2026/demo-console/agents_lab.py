@@ -990,6 +990,12 @@ def render_yaml(spec: dict) -> str:
         "    SYSTEM_MESSAGE: |\n"
         f"{indent(system, 6)}\n"
         f"    AGENT_DESCRIPTION: {ystr(desc)}\n"
+        # Every BYO agent runs the same image from the same /app/myagents path, so the
+        # OTel SDK's default service.name resolution is identical for all of them --
+        # every trace in ClickHouse was filed under "myagents", agent name nowhere in
+        # sight. OTEL_SERVICE_NAME is the standard env var the SDK reads before falling
+        # back to that default, so this is the one place this needs fixing.
+        f"    OTEL_SERVICE_NAME: {ystr(name)}\n"
     )
     if allowed:
         deploy_doc += f"    ALLOWED_TOOLS: {ystr(json.dumps(allowed))}\n"

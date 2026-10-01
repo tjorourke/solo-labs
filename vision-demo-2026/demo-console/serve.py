@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 import notebooks  # noqa: E402  (needs ROOT on sys.path)
+import google_sov  # noqa: E402
 PAGES = ROOT / "pages"
 STATIC = ROOT / "static"
 DATA = ROOT / "data"
@@ -125,7 +126,7 @@ def nav_html() -> str:
 # The data classification story reuses Agentdesktop and Gateway decisions, under its
 # own paths, so its nav keeps the presenter inside that story.
 KERNWERK_LINKS = [
-    ("/kernwerk", "Data classification"),
+    ("/kernwerk/eu", "Data classification"),
     ("/kernwerk/desktop", "Agentdesktop"),
     ("/kernwerk/gateway-decisions", "Gateway decisions"),
     ("/kernwerk/prompts", "Demo prompts"),
@@ -135,13 +136,13 @@ KERNWERK_LINKS = [
 
 
 def kernwerk_nav(page: str, active: str) -> str:
-    links = ['    <a href="/" class="up">← All demos</a>'] + [
+    links = ['    <a href="/kernwerk" class="up">← Sovereign demos</a>'] + [
         '    <a href="%s"%s>%s</a>' % (href, ' class="active"' if href == active else "", label)
         for href, label in KERNWERK_LINKS]
     page = re.sub(r'<div class="nav-links">.*?</div>',
                   '<div class="nav-links">\n' + "\n".join(links) + '\n  </div>', page, count=1, flags=re.S)
-    page = re.sub(r'<a href="/user-story-1">← [^<]*</a>', '<a href="/kernwerk">← Data classification</a>', page)
-    return page.replace('href="/dlp-routing"', 'href="/kernwerk"')
+    page = re.sub(r'<a href="/user-story-1">← [^<]*</a>', '<a href="/kernwerk/eu">← Data classification</a>', page)
+    return page.replace('href="/dlp-routing"', 'href="/kernwerk/eu"')
 
 
 def decisions_html(kernwerk: bool = False) -> bytes:
@@ -236,6 +237,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/run":
             return self._run()
+        if self.path == "/api/google/chat":
+            b = self._body()
+            try:
+                return self._json(google_sov.chat(b.get("prompt", ""), b.get("route", "auto")))
+            except Exception as e:
+                return self._json({"status": 0, "error": str(e)})
         if self.path == "/api/quadratic/run":
             return self._quadratic()
         if self.path.startswith("/api/term/"):
@@ -282,12 +289,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(agents_lab.revoke_github(name))
         if self.path == "/api/petstore/fetch":
             import petstore_lab
+            body = self._body()
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             try:
-                for ev in petstore_lab.fetch_and_implement():
+                for ev in petstore_lab.fetch_and_implement(body.get("text")):
                     self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
                     self.wfile.flush()
                     if ev.get("t") == "done":
@@ -549,13 +557,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, notebooks.home_page(), "text/html; charset=utf-8")
         if path == "/user-story-1":
             return self._send(200, (PAGES / "user-story-1.html").read_bytes(), "text/html; charset=utf-8")
+        # /kernwerk is the sovereign chooser: Google Sovereign Cloud (Berlin GCD) or
+        # Kernwerk, the sample EU customer, whose story now lives under /kernwerk/eu.
         if path in ("/kernwerk", "/kernwerk/"):
-            return self._send(200, kernwerk_nav((PAGES / "dlp-routing.html").read_text(), "/kernwerk"), "text/html; charset=utf-8")
+            return self._send(200, (PAGES / "sovereign-home.html").read_bytes(), "text/html; charset=utf-8")
+        if path in ("/kernwerk/eu", "/kernwerk/eu/"):
+            return self._send(200, kernwerk_nav((PAGES / "dlp-routing.html").read_text(), "/kernwerk/eu").encode(),
+                              "text/html; charset=utf-8")
+        if path in ("/google", "/google/"):
+            return self._send(200, (PAGES / "google-sovereign.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/api/google/status":
+            return self._json(google_sov.status())
         # It was /nashville until the page became about data protection and routing
         # rather than the city it was written for. Bookmarks and any slide already
         # printed still work, which matters more than a tidy route table mid-demo.
         if path in ("/dlp-routing", "/nashville"):
-            return self._redirect("/kernwerk")
+            return self._redirect("/kernwerk/eu")
         if path == "/kernwerk/manifests":
             return self._send(200, kernwerk_nav((PAGES / "kernwerk-manifests.html").read_text(),
                                                 path).encode(),

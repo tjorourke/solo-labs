@@ -1287,6 +1287,21 @@ STORIES = [
         ],
         "go": "Open data classification",
     },
+    {
+        "href": "/petstore",
+        "domain": "agentic",
+        "kicker": "AGENT SDLC",
+        "title": "A feature idea becomes a reviewed deploy",
+        "blurb": "pm-bot files a user story as a GitHub issue, dev-bot implements it and "
+                 "commits the code, the platform stages the build, and a human approves "
+                 "or denies before anything reaches prod.",
+        "bullets": [
+            "01 pm-bot drafts and files the issue",
+            "02 dev-bot implements and commits it",
+            "03 Staging review, then approve or deny",
+        ],
+        "go": "Open the Agent SDLC demo",
+    },
 ]
 
 
@@ -1357,6 +1372,19 @@ def home_page() -> str:
           <div><span class="src">Personal data in any prompt</span><span class="arrow">→</span><span class="dst strip">Replaced first</span></div>
         </div>
         <span class="st-go">Open data classification <i>→</i></span>
+      </a>
+      <a class="st-story" href="/petstore">
+        <div class="st-eyebrow">Agent SDLC · 3 steps</div>
+        <h3>A feature idea becomes a reviewed deploy</h3>
+        <p>pm-bot files a user story as a GitHub issue, dev-bot implements it and commits
+          the code, the platform stages the build, and a human approves or denies before
+          anything reaches prod.</p>
+        <div class="st-flow">
+          <div><span class="src">You tell pm-bot the idea</span><span class="arrow">→</span><span class="dst out">GitHub issue, labelled</span></div>
+          <div><span class="src">dev-bot implements it</span><span class="arrow">→</span><span class="dst out">Real commit, staged</span></div>
+          <div><span class="src">You review staging</span><span class="arrow">→</span><span class="dst keep">Approve or deny → prod</span></div>
+        </div>
+        <span class="st-go">Open the Agent SDLC demo <i>→</i></span>
       </a>
     </div>
   </div>

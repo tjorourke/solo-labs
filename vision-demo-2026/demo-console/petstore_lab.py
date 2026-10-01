@@ -74,20 +74,39 @@ def status() -> dict:
     return state
 
 
-def fetch_and_implement():
-    """Hand dev-bot a fixed instruction to look for its own work and implement it.
-    Yields the same small events chat_stream() already yields, for the UI to show live."""
+DEFAULT_FETCH_PROMPT = (
+    "Check demo-petstore for new agent-ready issues. If you find one, "
+    "implement it end to end: read the files, make the change, commit it with "
+    "push_files, comment with the result, and set the label to in-review with "
+    "issue_write."
+)
+
+
+def fetch_and_implement(text: str | None = None):
+    """Hand dev-bot an instruction to look for its own work and implement it -- the
+    canned prompt by default, or whatever the presenter typed instead. Yields the same
+    small events chat_stream() already yields, for the UI to show live as a real chat."""
     state = _load_state()
     state["stage"] = "implementing"
     _save_state(state)
-    text = ("Check demo-petstore for new agent-ready issues. If you find one, "
-            "implement it end to end: read the files, make the change, commit it with "
-            "push_files, comment with the result, and set the label to in-review with "
-            "issue_write.")
-    yield from al.chat_stream("dev-bot", text)
+    yield from al.chat_stream("dev-bot", (text or "").strip() or DEFAULT_FETCH_PROMPT)
     state = _load_state()
     state["stage"] = "implemented"
     _save_state(state)
+
+
+def _ar_ingress_lb() -> str:
+    p = al.kc("-n", "agentgateway-system", "get", "gateway", "ar-ingress",
+             "-o", "jsonpath={.status.addresses[0].value}", check=False)
+    return (p.stdout or "").strip()
+
+
+def staging_url() -> str:
+    return f"http://petstore-staging.{_ar_ingress_lb()}.sslip.io/"
+
+
+def prod_url() -> str:
+    return f"http://petstore-prod.{_ar_ingress_lb()}.sslip.io/"
 
 
 def _resolve_head_sha() -> str | None:
@@ -130,7 +149,12 @@ def build_and_stage() -> dict:
     state["staged_sha"] = sha
     _save_state(state)
     issue = latest_in_review_issue()
-    return {"ok": True, "tag": tag, "sha": sha, "issue": issue}
+    if issue:
+        url = staging_url()
+        _gh("issue", "comment", str(issue["number"]), "--repo", REPO,
+            "--body", f"Staged for review at commit `{sha}`: {url}\n\nApprove or deny from the "
+                      f"demo console's Agent SDLC page.")
+    return {"ok": True, "tag": tag, "sha": sha, "issue": issue, "staging_url": staging_url()}
 
 
 def promote(approve: bool, reason: str = "") -> dict:
@@ -149,7 +173,7 @@ def promote(approve: bool, reason: str = "") -> dict:
         al.kc("-n", "petstore-prod", "rollout", "status", "deploy/petstore", "--timeout=60s", check=False)
         if issue:
             _gh("issue", "comment", str(issue["number"]), "--repo", REPO,
-                "--body", f"Approved and promoted to prod at image tag `{tag}`.")
+                "--body", f"Approved and promoted to prod at image tag `{tag}`: {prod_url()}")
             _gh("issue", "close", str(issue["number"]), "--repo", REPO)
         state["stage"] = "promoted"
         _save_state(state)

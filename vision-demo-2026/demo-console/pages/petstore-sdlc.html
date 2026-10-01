@@ -8,6 +8,16 @@
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/css/app.css">
   <link rel="stylesheet" href="/static/css/stage.css">
+  <style>
+    /* Same confetti effect as static/js/agents.js's celebration moment, inlined so this
+       page doesn't depend on that page's agent-list-specific script. */
+    .ps-confetti { position: fixed; inset: 0; pointer-events: none; z-index: 70; overflow: hidden; }
+    .ps-confetti i {
+      position: absolute; top: -20px; width: 9px; height: 14px; border-radius: 2px;
+      animation-name: ps-fall; animation-timing-function: cubic-bezier(.25, .6, .5, 1); animation-fill-mode: forwards;
+    }
+    @keyframes ps-fall { to { top: 105vh; transform: rotate(720deg) translateX(40px); opacity: .8; } }
+  </style>
 </head>
 <body class="stage">
 <nav class="console-nav">
@@ -90,15 +100,27 @@
     <div class="st-num">2</div>
     <div>
       <div class="st-eyebrow">Developer</div>
-      <h3>Fetch latest &amp; implement</h3>
-      <p>dev-bot looks for the oldest open <code>agent-ready</code> issue itself, reads the
-        real files, writes the change, and commits it directly to main with a single
+      <h3>Ask dev-bot to check for work</h3>
+      <p>This is a real chat turn with dev-bot, same as any other agent on this cluster.
+        It looks for the oldest open <code>agent-ready</code> issue itself, reads the real
+        files, writes the change, and commits it directly to main with a single
         <code>push_files</code> call. Once it finishes, the platform builds that commit and
         rolls it out to <code>petstore-staging</code>. No rebuild happens again before prod.</p>
-      <button id="fetch-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:none;padding:0;font:inherit">Fetch latest &amp; implement <i>→</i></button>
+      <a class="st-go" href="/agents#chat/dev-bot">Open dev-bot's full chat history <i>→</i></a>
     </div>
-    <div class="st-vis">
-      <pre id="fetch-log" style="margin:0;white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace;max-height:220px;overflow:auto">Click "Fetch latest &amp; implement" to start.</pre>
+    <div class="st-vis" style="padding:0;overflow:hidden">
+      <div id="fetch-chat" style="height:220px;overflow:auto;padding:0.9rem;display:flex;flex-direction:column;gap:0.6rem;font-size:0.9rem"></div>
+      <div style="border-top:1px solid rgba(148,163,184,0.2);padding:0.75rem">
+        <button id="suggested-prompt" type="button"
+                style="cursor:pointer;text-align:left;width:100%;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.4);color:inherit;border-radius:8px;padding:0.5rem 0.75rem;font:inherit;margin-bottom:0.5rem">
+          💬 Suggested prompt: "Check for new agent-ready issues and implement one"
+        </button>
+        <form id="fetch-form" style="display:flex;gap:0.5rem;margin:0">
+          <input id="fetch-text" placeholder="Or type your own message to dev-bot"
+                 style="flex:1;background:rgba(0,0,0,0.2);border:1px solid rgba(148,163,184,0.3);color:inherit;border-radius:8px;padding:0.5rem 0.75rem;font:inherit">
+          <button type="submit" style="cursor:pointer;border:0;background:#2563eb;color:#fff;padding:0.5rem 1.1rem;border-radius:8px;font:inherit">Send</button>
+        </form>
+      </div>
     </div>
   </section>
 
@@ -111,10 +133,10 @@
         already running in staging: the same bytes, no rebuild. Deny leaves prod untouched
         and comments on the issue with why.</p>
       <div style="display:flex;gap:0.75rem;margin-top:1rem">
-        <button id="approve-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:#059669;color:#fff;padding:0.6rem 1.1rem;border-radius:8px;font:inherit">Approve → prod</button>
-        <button id="deny-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:#dc2626;color:#fff;padding:0.6rem 1.1rem;border-radius:8px;font:inherit">Deny</button>
+        <button id="approve-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:#059669;color:#fff;padding:0.6rem 1.1rem;border-radius:8px;font:inherit;min-width:140px">Approve → prod</button>
+        <button id="deny-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:#dc2626;color:#fff;padding:0.6rem 1.1rem;border-radius:8px;font:inherit;min-width:90px">Deny</button>
       </div>
-      <div id="promote-result" style="margin-top:0.75rem;font-size:0.9rem"></div>
+      <div id="promote-result" style="margin-top:0.75rem;font-size:0.95rem;font-weight:600;min-height:1.3em"></div>
     </div>
     <div class="st-vis">
       <div class="row">
@@ -154,10 +176,28 @@ async function refreshStatus() {
 refreshStatus();
 setInterval(refreshStatus, 8000);
 
-document.getElementById("fetch-btn").addEventListener("click", async () => {
-  const log = document.getElementById("fetch-log");
-  log.textContent = "";
-  const resp = await fetch("/api/petstore/fetch", { method: "POST" });
+const FETCH_PROMPT = "Check for new agent-ready issues and implement one";
+const chatBox = document.getElementById("fetch-chat");
+
+function addBubble(who, text) {
+  const bg = { user: "#2563eb", bot: "rgba(148,163,184,0.18)", platform: "rgba(56,189,248,0.12)" }[who];
+  const align = who === "user" ? "flex-end" : "flex-start";
+  const el = document.createElement("div");
+  el.style.cssText = `align-self:${align};max-width:85%;background:${bg};border-radius:10px;padding:0.5rem 0.7rem;white-space:pre-wrap`;
+  el.textContent = text;
+  chatBox.appendChild(el);
+  chatBox.scrollTop = chatBox.scrollHeight;
+  return el;
+}
+
+async function sendToDevBot(text) {
+  addBubble("user", text);
+  const replyEl = addBubble("bot", "");
+  let replyText = "";
+  const resp = await fetch("/api/petstore/fetch", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -170,30 +210,87 @@ document.getElementById("fetch-btn").addEventListener("click", async () => {
       const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
       if (!chunk.startsWith("data: ")) continue;
       const ev = JSON.parse(chunk.slice(6));
-      if (ev.t === "delta" || ev.t === "message") log.textContent += ev.text;
-      else if (ev.t === "tool_call") log.textContent += `\n[tool] ${ev.name}\n`;
-      else if (ev.t === "building") log.textContent += `\n\n[platform] building and staging the new commit…\n`;
-      else if (ev.t === "staged") log.textContent += `\n[platform] staged as ${ev.tag || "?"}. Review it, then Approve or Deny above.\n`;
-      else if (ev.t === "error") log.textContent += `\n[error] ${ev.error}\n`;
+      if (ev.t === "delta" || ev.t === "message") { replyText += ev.text; replyEl.textContent = replyText; }
+      else if (ev.t === "tool_call") addBubble("bot", `🔧 ${ev.name}(${JSON.stringify(ev.args || {})})`);
+      else if (ev.t === "building") addBubble("platform", "Building and staging the new commit…");
+      else if (ev.t === "staged") addBubble("platform", `Staged as ${ev.tag || "?"}. Review it, then Approve or Deny above.`);
+      else if (ev.t === "error") addBubble("platform", `Error: ${ev.error}`);
     }
-    log.scrollTop = log.scrollHeight;
+    chatBox.scrollTop = chatBox.scrollHeight;
   }
   refreshStatus();
+}
+
+document.getElementById("suggested-prompt").addEventListener("click", () => sendToDevBot(FETCH_PROMPT));
+document.getElementById("fetch-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = document.getElementById("fetch-text");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  sendToDevBot(text);
 });
 
-async function promote(approve) {
-  const r = await fetch("/api/petstore/promote", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ approve }),
-  });
-  const d = await r.json();
-  document.getElementById("promote-result").textContent = approve
-    ? (d.ok ? `Promoted ${d.tag} to prod.` : `Error: ${d.error}`)
-    : (d.ok ? "Denied — prod untouched." : `Error: ${d.error}`);
-  refreshStatus();
+function confettiBurst() {
+  const colours = ["#7c3aed", "#a855f7", "#22c55e", "#f59e0b", "#3b82f6", "#ec4899"];
+  const layer = document.createElement("div");
+  layer.className = "ps-confetti";
+  for (let i = 0; i < 90; i++) {
+    const b = document.createElement("i");
+    b.style.left = Math.random() * 100 + "vw";
+    b.style.background = colours[i % colours.length];
+    b.style.animationDelay = (Math.random() * 0.6) + "s";
+    b.style.animationDuration = (2.2 + Math.random() * 1.6) + "s";
+    b.style.transform = `rotate(${Math.random() * 360}deg)`;
+    layer.appendChild(b);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 4500);
 }
-document.getElementById("approve-btn").addEventListener("click", () => promote(true));
-document.getElementById("deny-btn").addEventListener("click", () => promote(false));
+
+const approveBtn = document.getElementById("approve-btn");
+const denyBtn = document.getElementById("deny-btn");
+const promoteResult = document.getElementById("promote-result");
+
+async function promote(approve) {
+  // Instant feedback first, every time: a slow click is the thing that makes someone
+  // click again, so disable both and say so before the request even goes out.
+  approveBtn.disabled = true; denyBtn.disabled = true;
+  approveBtn.style.opacity = denyBtn.style.opacity = "0.6";
+  approveBtn.style.cursor = denyBtn.style.cursor = "wait";
+  promoteResult.style.color = "inherit";
+  promoteResult.textContent = approve ? "Promoting…" : "Denying…";
+  try {
+    const r = await fetch("/api/petstore/promote", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ approve }),
+    });
+    const d = await r.json();
+    if (approve) {
+      if (d.ok) {
+        promoteResult.style.color = "#22c55e";
+        promoteResult.textContent = `✓ Approved and promoted ${d.tag} to prod.`;
+        confettiBurst();
+      } else {
+        promoteResult.style.color = "#f87171";
+        promoteResult.textContent = `Error: ${d.error}`;
+      }
+    } else {
+      promoteResult.style.color = d.ok ? "#f59e0b" : "#f87171";
+      promoteResult.textContent = d.ok ? "Denied. Prod untouched." : `Error: ${d.error}`;
+    }
+  } catch (e) {
+    promoteResult.style.color = "#f87171";
+    promoteResult.textContent = `Error: ${e}`;
+  } finally {
+    approveBtn.disabled = false; denyBtn.disabled = false;
+    approveBtn.style.opacity = denyBtn.style.opacity = "1";
+    approveBtn.style.cursor = denyBtn.style.cursor = "pointer";
+    refreshStatus();
+  }
+}
+approveBtn.addEventListener("click", () => promote(true));
+denyBtn.addEventListener("click", () => promote(false));
 </script>
 </body>
 </html>

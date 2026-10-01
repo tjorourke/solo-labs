@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sovereign AI · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/stage.css">
+  <style>
+    .st-story.gcp { background: radial-gradient(120% 90% at 100% 0%, #1a56c4 0%, #0f2350 48%, #0b1220 100%); }
+    .st-story.gcp .st-eyebrow { color: #93c5fd; }
+    .st-story.gcp .st-flow .arrow { color: #93c5fd; }
+    .st-story .st-pill { align-self: flex-start; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: #e2e8f0; }
+  </style>
+</head>
+<body class="stage">
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/" class="up">← All demos</a>
+    <a href="/kernwerk" class="active">Sovereign AI</a>
+    <a href="/google">Google Sovereign Cloud</a>
+    <a href="/kernwerk/eu">Kernwerk</a>
+  </div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking Berlin</span></span>
+</nav>
+
+<header class="st-hero">
+  <div class="st-wrap">
+    <a class="st-crumb" href="/">← All demos</a>
+    <div class="st-eyebrow">Sovereign AI</div>
+    <h1>Keep regulated data <em>inside the boundary</em>, and still reach a frontier model.</h1>
+    <p class="lead">Two views of the same gateway. One runs live in Google's sovereign cloud in Berlin. The other tells the story through a sample EU customer.</p>
+  </div>
+</header>
+
+<section class="st-section">
+  <div class="st-wrap">
+    <div class="st-stories">
+      <a class="st-story gcp" href="/google">
+        <div class="st-eyebrow">Google Sovereign Cloud · Berlin · live</div>
+        <h3>Gemma in the boundary, Gemini at the frontier</h3>
+        <p>Enterprise agentgateway on GKE Autopilot in Google Cloud Dedicated, u-germany-northeast1. The vLLM Semantic Router reads each prompt and picks the route.</p>
+        <div class="st-flow">
+          <div><span class="src">Law, finance, health</span><span class="arrow">→</span><span class="dst keep">Gemma 3 27B · H100 in Berlin</span></div>
+          <div><span class="src">Code, maths, general</span><span class="arrow">→</span><span class="dst out">Gemini 2.5 Flash · frontier</span></div>
+          <div><span class="src">Router down</span><span class="arrow">→</span><span class="dst keep">Falls back to Gemma</span></div>
+        </div>
+        <span class="st-pill" id="gcd-pill">checking Berlin…</span>
+        <span class="st-go">Connect to Berlin <i>→</i></span>
+      </a>
+      <a class="st-story" href="/kernwerk/eu">
+        <div class="st-eyebrow">Kernwerk AG · sample EU customer</div>
+        <h3>Data that must not leave</h3>
+        <p>Three classes of data and a gateway that routes each question live, with personal data replaced before anything reaches an outside model.</p>
+        <div class="st-flow">
+          <div><span class="src">Class 1 · public post</span><span class="arrow">→</span><span class="dst out">Can go anywhere</span></div>
+          <div><span class="src">Class 2 · works council</span><span class="arrow">→</span><span class="dst out">Must stay in the EU</span></div>
+          <div><span class="src">Class 3 · finance review</span><span class="arrow">→</span><span class="dst keep">Never leaves Kernwerk</span></div>
+          <div><span class="src">Personal data in any prompt</span><span class="arrow">→</span><span class="dst strip">Replaced first</span></div>
+        </div>
+        <span class="st-go">Open data classification <i>→</i></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<script>
+(async () => {
+  const pill = document.getElementById('gcd-pill'), dot = document.getElementById('dot'),
+        label = document.getElementById('status-label');
+  try {
+    const s = await (await fetch('/api/google/status')).json();
+    if (s.reachable) {
+      pill.textContent = 'Berlin gateway reachable'; pill.classList.add('up');
+      dot.className = 'dot live'; label.textContent = 'Berlin connected';
+    } else {
+      pill.textContent = 'Berlin not connected'; pill.classList.add('down');
+      dot.className = 'dot warn'; label.textContent = 'Berlin not connected';
+    }
+  } catch (e) { pill.textContent = 'status unavailable'; }
+})();
+</script>
+</body>
+</html>

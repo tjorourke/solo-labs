@@ -33,8 +33,8 @@
   <div class="st-wrap">
     <a class="st-crumb" href="/">← All demos</a>
     <div class="st-eyebrow">Data classification · Kernwerk AG</div>
-    <h1>Some of this data cannot leave the region, and developers <em>cannot be trusted to know which</em>.</h1>
-    <p class="lead">The gateway reads every prompt and sends it to the only place it is allowed to go, for every developer and every agent.</p>
+    <h1>Route prompts according to <em>Kernwerk's data policy</em>.</h1>
+    <p class="lead">Kernwerk restricts which models can process company data. This demo uses the gateway to classify prompts and route them to an external provider, an EU-hosted model or a model running on Kernwerk's own infrastructure.</p>
 
     <div class="st-brief">
       <section class="st-company">
@@ -44,21 +44,21 @@
         <div class="st-facts">
           <div><b>31,000</b><span>employees across the EU</span></div>
           <div><b>US</b><span>subsidiary</span></div>
-          <div><b>Strong</b><span>works council</span></div>
-          <div><b>Strong</b><span>data protection function</span></div>
+          <div><b>Works council</b><span>employee representation</span></div>
+          <div><b>Data protection</b><span>dedicated team</span></div>
         </div>
       </section>
       <blockquote class="st-quote">
-        <p>“We have three classes of data. One class can go anywhere. One class must stay in the EU. One class must never touch a model we do not host ourselves.”</p>
-        <p>“Today that distinction lives in a policy document and in the heads of about four people. Developers are shipping agent features weekly and I have no way to enforce any of it.”</p>
+        <p>“Public data can go to external providers. Some internal data has to stay in the EU, and restricted data can only go to models we host ourselves.”</p>
+        <p>“We have this written down, but developers are adding agent features every week. We need to apply the policy to those requests and check where the data went.”</p>
         <cite>Head of Data Protection, Kernwerk AG</cite>
       </blockquote>
     </div>
 
     <div class="st-classes">
-      <div class="st-class c1"><small>Class 1</small><h3>Can go anywhere</h3><p>External models, such as Claude</p></div>
-      <div class="st-class c2"><small>Class 2</small><h3>Must stay in the EU</h3><p>Models hosted in EU regions only</p></div>
-      <div class="st-class c3"><small>Class 3</small><h3>Never leaves Kernwerk</h3><p>Kernwerk's own models, in Kernwerk's private datacenter</p><span>Served on NVIDIA RTX PRO 6000 Blackwell GPUs</span></div>
+      <div class="st-class c1"><small>Class 1</small><h3>External models permitted</h3><p>May use providers outside the EU</p></div>
+      <div class="st-class c2"><small>Class 2</small><h3>EU-hosted models only</h3><p>Must be processed within the EU</p></div>
+      <div class="st-class c3"><small>Class 3</small><h3>Kernwerk-hosted models only</h3><p>Processed in Kernwerk's private data centre</p><span>Served on NVIDIA RTX PRO 6000 Blackwell GPUs</span></div>
     </div>
 
     <nav class="st-jump" aria-label="Steps">
@@ -77,14 +77,14 @@
       <div>
         <div class="st-eyebrow">Enrol</div>
         <h3>Agentdesktop</h3>
-        <p>One enrolment and this laptop follows the company policy. Claude Desktop and Claude Code both go through the gateway, so no agent feature can go round it.</p>
-        <div class="st-tags"><span>Enrol this Mac</span><span>Both Claudes covered</span><span>No model key on the laptop</span></div>
+        <p>Enrol this Mac to configure Claude Desktop and Claude Code to use the company gateway. Model provider credentials stay at the gateway.</p>
+        <div class="st-tags"><span>Mac enrolment</span><span>Claude Desktop and Claude Code</span><span>Gateway-held provider keys</span></div>
         <span class="st-go">Open Agentdesktop <i>→</i></span>
       </div>
       <div class="st-vis">
-        <div class="row"><div class="box dark">This Mac<small>enrolled</small></div><span class="to">→</span><div class="box">Company gateway<small>the only way out</small></div></div>
-        <div class="row"><div class="box ok">Claude Desktop<small>covered</small></div><div class="box ok">Claude Code<small>covered</small></div></div>
-        <div class="cap">No model key on the laptop</div>
+        <div class="row"><div class="box dark">This Mac<small>enrolled</small></div><span class="to">→</span><div class="box">Company gateway<small>configured endpoint</small></div></div>
+        <div class="row"><div class="box ok">Claude Desktop<small>configured</small></div><div class="box ok">Claude Code<small>configured</small></div></div>
+        <div class="cap">Provider credentials held at the gateway</div>
       </div>
     </a>
 
@@ -93,14 +93,14 @@
       <div>
         <div class="st-eyebrow">Routing</div>
         <h3>Gateway decisions</h3>
-        <p>Ask from Claude Code. The gateway reads the question and sends it where it is allowed to go. Sensitive work stays on models Kernwerk runs itself; general questions may go outside.</p>
-        <div class="st-tags"><span>The policy chooses, not the developer</span><span>Every decision on the record</span><span id="kw-live">Checking the gateway…</span></div>
+        <p>Send a prompt from Claude Code, then inspect the routing decision. The gateway selects a model based on the task and data class. EU-only and restricted data limit which models it can use.</p>
+        <div class="st-tags"><span>Task and data-class routing</span><span>Request log</span><span id="kw-live">Checking the gateway…</span></div>
         <span class="st-go">Open Gateway decisions <i>→</i></span>
       </div>
       <div class="st-vis">
-        <div class="row"><div class="box">General question</div><span class="to">→</span><div class="box c1b">External model<small>Class 1</small></div></div>
-        <div class="row"><div class="box">Sensitive work</div><span class="to">→</span><div class="box dark">Kernwerk's own model<small>stays inside</small></div></div>
-        <div class="cap">Who asked, what kind of question, which model</div>
+        <div class="row"><div class="box">Public data</div><span class="to">→</span><div class="box c1b">External model<small>Class 1</small></div></div>
+        <div class="row"><div class="box">Restricted data</div><span class="to">→</span><div class="box dark">Kernwerk-hosted model<small>Class 3</small></div></div>
+        <div class="cap">Inspect the model selected for each request</div>
       </div>
     </a>
 
@@ -108,18 +108,18 @@
       <div class="st-num">03</div>
       <div>
         <div class="st-eyebrow">Demo prompts</div>
-        <h3>Prompts that build the argument</h3>
-        <p>A prepared set to paste into Claude, in order. The first ones contain nothing sensitive and are routed on the task alone. The later ones ask for similar work, but the data inside them changes where the answer may come from.</p>
-        <div class="st-tags"><span>Copy and paste</span><span>The deciding part is marked</span><span>A tab records what happened</span></div>
+        <h3>Try the example prompts</h3>
+        <p>Paste these examples into Claude in order. Start with task-based routing, then try similar requests containing EU-only or restricted data. Each example highlights the text used for classification and shows the expected route.</p>
+        <div class="st-tags"><span>Copyable prompts</span><span>Classification text highlighted</span><span>Observed results</span></div>
         <span class="st-go">Open Demo prompts <i>→</i></span>
       </div>
       <div class="st-vis">
         <div class="st-prompts">
-          <div><span class="st-line"><i></i><i class="w2"></i></span><em class="c1">Routed on the task</em></div>
-          <div><span class="st-line"><i></i><mark></mark><i class="w3"></i></span><em class="c2">EU data inside</em></div>
-          <div><span class="st-line"><i class="w2"></i><mark class="hot"></mark><i></i></span><em class="c3">Restricted data inside</em></div>
+          <div><span class="st-line"><i></i><i class="w2"></i></span><em class="c1">Task-based routing</em></div>
+          <div><span class="st-line"><i></i><mark></mark><i class="w3"></i></span><em class="c2">EU-only data</em></div>
+          <div><span class="st-line"><i class="w2"></i><mark class="hot"></mark><i></i></span><em class="c3">Restricted data</em></div>
         </div>
-        <div class="cap">Same kind of work. The highlighted data changes the answer's destination.</div>
+        <div class="cap">Compare routes for prompts with different data classes</div>
       </div>
     </a>
 
@@ -128,15 +128,15 @@
       <div>
         <div class="st-eyebrow">Data protection</div>
         <h3>DLP and guardrails</h3>
-        <p>Ask Claude Desktop for a public post, a works council summary and a restricted finance review, with or without the PDF. Each goes to the only place its class allows, and personal data is replaced first.</p>
-        <div class="st-tags"><span>Class 1, 2 and 3, each routed live</span><span>Secrets and prompt attacks stopped</span><span>Every decision on the record</span></div>
+        <p>Try the public post, works council summary and restricted finance review in Claude Desktop. You can paste the text or attach the sample PDF. Inspect the route and any personal-data replacements, then test the secret and prompt-injection checks.</p>
+        <div class="st-tags"><span>Class 1, 2 and 3 examples</span><span>Personal-data replacement</span><span>Secret and prompt-injection checks</span></div>
         <span class="st-go">Open Data protection <i>→</i></span>
       </div>
       <div class="st-vis">
-        <div class="row"><div class="box">Public post</div><span class="to">→</span><div class="box c1b">Anywhere<small>Class 1</small></div></div>
+        <div class="row"><div class="box">Public post</div><span class="to">→</span><div class="box c1b">External model<small>Class 1</small></div></div>
         <div class="row"><div class="box">Works council summary</div><span class="to">→</span><div class="box c2b">EU only<small>Class 2</small></div></div>
-        <div class="row"><div class="box">Restricted finance review</div><span class="to">→</span><div class="box dark">Kernwerk's datacenter<small>Class 3</small></div></div>
-        <div class="row"><div class="box warn">Personal data, secrets, prompt attacks<small>replaced or stopped at the gateway</small></div></div>
+        <div class="row"><div class="box">Restricted finance review</div><span class="to">→</span><div class="box dark">Kernwerk's data centre<small>Class 3</small></div></div>
+        <div class="row"><div class="box warn">Gateway checks<small>Personal data is replaced; detected secrets and prompt injections are blocked</small></div></div>
       </div>
     </a>
   </div>
