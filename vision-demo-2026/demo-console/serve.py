@@ -101,6 +101,7 @@ NAV = """<nav class="console-nav">
     <a href="/cost">Cost</a>
     <a href="/agents">My agents</a>
     <a href="/approvals">Platform approval</a>
+    <a href="/petstore">Agent SDLC</a>
     <a href="/substrate">Substrate</a>
   </div>
   <span class="nav-status"><i class="dot live"></i><span>live from the cluster</span></span>
@@ -279,6 +280,29 @@ class Handler(BaseHTTPRequestHandler):
             import agents_lab
             name = self.path.split("/")[-2]
             return self._json(agents_lab.revoke_github(name))
+        if self.path == "/api/petstore/fetch":
+            import petstore_lab
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            try:
+                for ev in petstore_lab.fetch_and_implement():
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                    self.wfile.flush()
+                    if ev.get("t") == "done":
+                        self.wfile.write(f"data: {json.dumps({'t': 'building'})}\n\n".encode())
+                        self.wfile.flush()
+                        result = petstore_lab.build_and_stage()
+                        self.wfile.write(f"data: {json.dumps({'t': 'staged', **result})}\n\n".encode())
+                        self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return None
+        if self.path == "/api/petstore/promote":
+            import petstore_lab
+            body = self._body()
+            return self._json(petstore_lab.promote(bool(body.get("approve")), body.get("reason", "")))
         if self.path.startswith("/api/desktop/"):
             return self._desktop_post()
         if self.path == "/api/notebook/run":
@@ -576,6 +600,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, (PAGES / "approvals.html").read_bytes(), "text/html; charset=utf-8")
         if path == "/substrate":
             return self._send(200, (PAGES / "substrate.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/petstore":
+            return self._send(200, (PAGES / "petstore-sdlc.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/api/petstore/status":
+            import petstore_lab
+            return self._json(petstore_lab.status())
         parts = path.strip("/").split("/", 1)
         if parts[0] in notebooks.DEMOS:
             demo = notebooks.load(parts[0])

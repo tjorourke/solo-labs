@@ -1,0 +1,18 @@
+# Two namespaces for the agent-SDLC demo's own sample app (tjorourke/demo-petstore),
+# kept off every other demo on mesh1: ambient-enrolled like the rest of the cluster, but
+# isolated by the NetworkPolicy in 20-networkpolicy.yaml rather than sharing kagent's.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petstore-staging
+  labels:
+    istio.io/dataplane-mode: ambient
+    topology.istio.io/network: mesh1
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petstore-prod
+  labels:
+    istio.io/dataplane-mode: ambient
+    topology.istio.io/network: mesh1

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent SDLC · demo-petstore · Solo.io</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/stage.css">
+</head>
+<body class="stage">
+<nav class="console-nav">
+  <a class="brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+      <g stroke="#a78bfa" stroke-width="2.4" opacity="0.6" stroke-linecap="round">
+        <line x1="24" y1="7" x2="7" y2="24"/><line x1="24" y1="7" x2="41" y2="24"/>
+        <line x1="7" y1="24" x2="41" y2="24"/><line x1="7" y1="24" x2="24" y2="41"/>
+        <line x1="41" y1="24" x2="24" y2="41"/>
+      </g>
+      <circle cx="24" cy="7" r="5" fill="#a78bfa"/>
+      <circle cx="7" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="41" cy="24" r="5" fill="#7c3aed"/>
+      <circle cx="24" cy="41" r="5" fill="#5b21b6"/>
+    </svg>
+    Solo.io
+  </a>
+  <div class="nav-links">
+    <a href="/desktop">Agentdesktop</a>
+    <a href="/decisions">Gateway decisions</a>
+    <a href="/economy">Token economics</a>
+    <a href="/cost">Cost</a>
+    <a href="/agents">My agents</a>
+    <a href="/approvals">Platform approval</a>
+    <a href="/petstore">Agent SDLC</a>
+    <a href="/substrate">Substrate</a>
+  </div>
+  <span class="nav-status"><i class="dot" id="dot"></i><span id="status-label">checking cluster</span></span>
+</nav>
+
+<header class="st-hero">
+  <div class="st-wrap">
+    <a class="st-crumb" href="/">← All demos</a>
+    <div class="st-eyebrow">Agent SDLC</div>
+    <h1>A product idea becomes a <em>reviewed, deployed</em> feature.</h1>
+    <p class="lead">Two kagent agents, one GitHub issue as the handoff between them, and a human
+      approval gate before anything reaches prod. Every step below is real: a real repo
+      (<a href="https://github.com/tjorourke/demo-petstore" target="_blank" rel="noopener">tjorourke/demo-petstore</a>),
+      a real commit, a real deploy on kind-mesh1.</p>
+  </div>
+</header>
+
+<div class="st-wrap">
+
+  <section class="st-step" style="cursor:default">
+    <div class="st-num">•</div>
+    <div>
+      <div class="st-eyebrow">How the pieces talk</div>
+      <h3>Not agent-to-agent. Agent-to-GitHub, twice.</h3>
+      <p>pm-bot and dev-bot never call each other. Each speaks A2A to kagent, the same
+        protocol every agent on this cluster uses for chat, and each reaches GitHub through
+        the same MCP waypoint the rest of this demo already trusts. The GitHub issue, its
+        body and its label, is the only interface between them: a real, auditable handoff a
+        person can read at any point, not a hidden message between two LLMs.</p>
+    </div>
+    <div class="st-vis">
+      <div class="row"><div class="box">You (chat)</div><span class="to">A2A →</span><div class="box ok">pm-bot</div></div>
+      <div class="row"><div class="box ok">pm-bot</div><span class="to">MCP: issue_write →</span><div class="box dark">GitHub issue<small>label: agent-ready</small></div></div>
+      <div class="row"><div class="box">GitHub issue</div><span class="to">MCP: list_issues →</span><div class="box ok">dev-bot</div></div>
+      <div class="row"><div class="box ok">dev-bot</div><span class="to">MCP: push_files →</span><div class="box dark">main branch<small>label: in-review</small></div></div>
+      <div class="cap">The platform (not an agent) builds main and rolls it to staging. Deterministic, not LLM-driven.</div>
+    </div>
+  </section>
+
+  <section class="st-step" style="cursor:default">
+    <div class="st-num">1</div>
+    <div>
+      <div class="st-eyebrow">Product manager</div>
+      <h3>Tell pm-bot what you want</h3>
+      <p>pm-bot checks for duplicates, writes a proper user story with acceptance criteria,
+        creates the issue, and labels it <code>agent-ready</code>.</p>
+      <a class="st-go" href="/agents#chat/pm-bot">Chat with pm-bot <i>→</i></a>
+    </div>
+    <div class="st-vis" id="issue-card">
+      <div class="cap">Checking for the latest issue…</div>
+    </div>
+  </section>
+
+  <section class="st-step" style="cursor:default">
+    <div class="st-num">2</div>
+    <div>
+      <div class="st-eyebrow">Developer</div>
+      <h3>Fetch latest &amp; implement</h3>
+      <p>dev-bot looks for the oldest open <code>agent-ready</code> issue itself, reads the
+        real files, writes the change, and commits it directly to main with a single
+        <code>push_files</code> call. Once it finishes, the platform builds that commit and
+        rolls it out to <code>petstore-staging</code>. No rebuild happens again before prod.</p>
+      <button id="fetch-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:none;padding:0;font:inherit">Fetch latest &amp; implement <i>→</i></button>
+    </div>
+    <div class="st-vis">
+      <pre id="fetch-log" style="margin:0;white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace;max-height:220px;overflow:auto">Click "Fetch latest &amp; implement" to start.</pre>
+    </div>
+  </section>
+
+  <section class="st-step" style="cursor:default">
+    <div class="st-num">3</div>
+    <div>
+      <div class="st-eyebrow">Human in the loop</div>
+      <h3>Review staging, then approve or deny</h3>
+      <p>Nothing reaches prod without this click. Approve promotes the exact image tag
+        already running in staging: the same bytes, no rebuild. Deny leaves prod untouched
+        and comments on the issue with why.</p>
+      <div style="display:flex;gap:0.75rem;margin-top:1rem">
+        <button id="approve-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:#059669;color:#fff;padding:0.6rem 1.1rem;border-radius:8px;font:inherit">Approve → prod</button>
+        <button id="deny-btn" class="st-go" type="button" style="cursor:pointer;border:0;background:#dc2626;color:#fff;padding:0.6rem 1.1rem;border-radius:8px;font:inherit">Deny</button>
+      </div>
+      <div id="promote-result" style="margin-top:0.75rem;font-size:0.9rem"></div>
+    </div>
+    <div class="st-vis">
+      <div class="row">
+        <div class="box">Staging<small id="staging-tag">none yet</small></div>
+        <span class="to">→</span>
+        <div class="box dark">Prod<small id="prod-tag">none yet</small></div>
+      </div>
+      <div class="cap">
+        <a id="staging-link" href="#" target="_blank" rel="noopener">Open staging preview →</a>
+        &nbsp;·&nbsp;
+        <a id="prod-link" href="#" target="_blank" rel="noopener">Open prod preview →</a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const LB = "192.168.97.148"; // ar-ingress address; status() keeps image tags live
+document.getElementById("staging-link").href = `http://petstore-staging.${LB}.sslip.io/`;
+document.getElementById("prod-link").href = `http://petstore-prod.${LB}.sslip.io/`;
+
+async function refreshStatus() {
+  try {
+    const r = await fetch("/api/petstore/status");
+    const s = await r.json();
+    const issue = s.agent_ready_issue;
+    const card = document.getElementById("issue-card");
+    card.innerHTML = issue
+      ? `<div class="row"><div class="box ok">#${issue.number}</div><div class="box">${issue.title}</div></div>
+         <div class="cap"><a href="${issue.url}" target="_blank" rel="noopener">Open on GitHub →</a></div>`
+      : `<div class="cap">No open agent-ready issue right now.</div>`;
+    document.getElementById("staging-tag").textContent = s.staging_image || "—";
+    document.getElementById("prod-tag").textContent = s.prod_image || "—";
+  } catch (e) { /* cluster not reachable right now, leave the last known state on screen */ }
+}
+refreshStatus();
+setInterval(refreshStatus, 8000);
+
+document.getElementById("fetch-btn").addEventListener("click", async () => {
+  const log = document.getElementById("fetch-log");
+  log.textContent = "";
+  const resp = await fetch("/api/petstore/fetch", { method: "POST" });
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      if (!chunk.startsWith("data: ")) continue;
+      const ev = JSON.parse(chunk.slice(6));
+      if (ev.t === "delta" || ev.t === "message") log.textContent += ev.text;
+      else if (ev.t === "tool_call") log.textContent += `\n[tool] ${ev.name}\n`;
+      else if (ev.t === "building") log.textContent += `\n\n[platform] building and staging the new commit…\n`;
+      else if (ev.t === "staged") log.textContent += `\n[platform] staged as ${ev.tag || "?"}. Review it, then Approve or Deny above.\n`;
+      else if (ev.t === "error") log.textContent += `\n[error] ${ev.error}\n`;
+    }
+    log.scrollTop = log.scrollHeight;
+  }
+  refreshStatus();
+});
+
+async function promote(approve) {
+  const r = await fetch("/api/petstore/promote", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ approve }),
+  });
+  const d = await r.json();
+  document.getElementById("promote-result").textContent = approve
+    ? (d.ok ? `Promoted ${d.tag} to prod.` : `Error: ${d.error}`)
+    : (d.ok ? "Denied — prod untouched." : `Error: ${d.error}`);
+  refreshStatus();
+}
+document.getElementById("approve-btn").addEventListener("click", () => promote(true));
+document.getElementById("deny-btn").addEventListener("click", () => promote(false));
+</script>
+</body>
+</html>

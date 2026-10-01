@@ -1,0 +1,68 @@
+# Default-deny for both petstore namespaces, so this demo can never touch -- or be touched
+# by -- any other workload on mesh1.
+#
+# Ingress: only from agentgateway-system, where ar-ingress lives (30-httproute.yaml). A
+# human reaches the app through that gateway's sslip.io hostname, never a direct Service IP.
+# Egress: DNS, plus istio-system:15012 for the workload's own ambient cert rotation
+# (without it the pod answers fine for 10-15 minutes, then HBONE stops accepting its
+# identity -- see fact_agent_authoring_series_platform). Nothing else: the app serves a
+# hardcoded pet list and calls out to nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: petstore-isolation
+  namespace: petstore-staging
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agentgateway-system
+    ports:
+    - { protocol: TCP, port: 8080 }
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - { protocol: UDP, port: 53 }
+    - { protocol: TCP, port: 53 }
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - { protocol: TCP, port: 15012 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: petstore-isolation
+  namespace: petstore-prod
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agentgateway-system
+    ports:
+    - { protocol: TCP, port: 8080 }
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - { protocol: UDP, port: 53 }
+    - { protocol: TCP, port: 53 }
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - { protocol: TCP, port: 15012 }

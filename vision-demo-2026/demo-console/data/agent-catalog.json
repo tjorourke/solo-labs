@@ -46,25 +46,110 @@
       "url": "http://github-mcp.kagent.svc.cluster.local/",
       "publicUrl": "http://192.168.97.147/",
       "tools": [
-        {"id": "get_me", "description": "Who the token is acting as."},
-        {"id": "search_repositories", "description": "Search repositories by name or topic."},
-        {"id": "get_file_contents", "description": "Read a file from a repository."},
-        {"id": "list_issues", "description": "List issues in a repository."},
-        {"id": "issue_read", "description": "Read one issue, its comments, labels or sub-issues."},
-        {"id": "search_issues", "description": "Search issues and pull requests."},
-        {"id": "list_pull_requests", "description": "List pull requests in a repository."},
-        {"id": "pull_request_read", "description": "Read a pull request, files, reviews or status."},
-        {"id": "search_pull_requests", "description": "Search pull requests across repositories."},
-        {"id": "list_commits", "description": "List commits on a branch or pull request."},
-        {"id": "get_commit", "description": "Read one commit."},
-        {"id": "list_branches", "description": "List branches in a repository."},
-        {"id": "search_code", "description": "Search file contents in a repository."},
-        {"id": "get_repository_tree", "description": "List the files and folders in a repository."},
-        {"id": "list_releases", "description": "List published releases."},
-        {"id": "get_latest_release", "description": "Read the latest release."},
-        {"id": "actions_list", "description": "List GitHub Actions workflows and runs."},
-        {"id": "list_code_scanning_alerts", "description": "List code scanning alerts."},
-        {"id": "list_dependabot_alerts", "description": "List Dependabot alerts."}
+        {
+          "id": "get_me",
+          "description": "Who the token is acting as."
+        },
+        {
+          "id": "search_repositories",
+          "description": "Search repositories by name or topic."
+        },
+        {
+          "id": "get_file_contents",
+          "description": "Read a file from a repository."
+        },
+        {
+          "id": "list_issues",
+          "description": "List issues in a repository."
+        },
+        {
+          "id": "issue_read",
+          "description": "Read one issue, its comments, labels or sub-issues."
+        },
+        {
+          "id": "search_issues",
+          "description": "Search issues and pull requests."
+        },
+        {
+          "id": "list_pull_requests",
+          "description": "List pull requests in a repository."
+        },
+        {
+          "id": "pull_request_read",
+          "description": "Read a pull request, files, reviews or status."
+        },
+        {
+          "id": "search_pull_requests",
+          "description": "Search pull requests across repositories."
+        },
+        {
+          "id": "list_commits",
+          "description": "List commits on a branch or pull request."
+        },
+        {
+          "id": "get_commit",
+          "description": "Read one commit."
+        },
+        {
+          "id": "list_branches",
+          "description": "List branches in a repository."
+        },
+        {
+          "id": "search_code",
+          "description": "Search file contents in a repository."
+        },
+        {
+          "id": "get_repository_tree",
+          "description": "List the files and folders in a repository."
+        },
+        {
+          "id": "list_releases",
+          "description": "List published releases."
+        },
+        {
+          "id": "get_latest_release",
+          "description": "Read the latest release."
+        },
+        {
+          "id": "actions_list",
+          "description": "List GitHub Actions workflows and runs."
+        },
+        {
+          "id": "list_code_scanning_alerts",
+          "description": "List code scanning alerts."
+        },
+        {
+          "id": "list_dependabot_alerts",
+          "description": "List Dependabot alerts."
+        },
+        {
+          "id": "issue_write",
+          "description": "Create or update an issue."
+        },
+        {
+          "id": "label_write",
+          "description": "Create, update or set labels on an issue."
+        },
+        {
+          "id": "list_label",
+          "description": "List labels in a repository."
+        },
+        {
+          "id": "create_or_update_file",
+          "description": "Create or update a single file."
+        },
+        {
+          "id": "push_files",
+          "description": "Push multiple files to a repository in one commit."
+        },
+        {
+          "id": "create_branch",
+          "description": "Create a new branch."
+        },
+        {
+          "id": "add_issue_comment",
+          "description": "Comment on an issue."
+        }
       ]
     },
     {
@@ -75,11 +160,26 @@
       "url": "http://server-everything.mcp-servers.svc.cluster.local:3000/mcp",
       "publicUrl": "",
       "tools": [
-        {"id": "echo", "description": "Return the message unchanged."},
-        {"id": "printenv", "description": "Print environment variables the server can see."},
-        {"id": "reverse_text", "description": "Reverse a string."},
-        {"id": "sum", "description": "Add a list of numbers."},
-        {"id": "to_uppercase", "description": "Upper-case a string."}
+        {
+          "id": "echo",
+          "description": "Return the message unchanged."
+        },
+        {
+          "id": "printenv",
+          "description": "Print environment variables the server can see."
+        },
+        {
+          "id": "reverse_text",
+          "description": "Reverse a string."
+        },
+        {
+          "id": "sum",
+          "description": "Add a list of numbers."
+        },
+        {
+          "id": "to_uppercase",
+          "description": "Upper-case a string."
+        }
       ]
     },
     {
@@ -90,17 +190,50 @@
       "url": "http://kagent-tools.kagent.svc.cluster.local:8084/mcp",
       "publicUrl": "",
       "tools": [
-        {"id": "k8s_get_resources", "description": "List Kubernetes resources."},
-        {"id": "k8s_describe_resource", "description": "Describe one resource."},
-        {"id": "k8s_get_pod_logs", "description": "Read pod logs."},
-        {"id": "k8s_get_events", "description": "Events in a namespace."},
-        {"id": "k8s_get_resource_yaml", "description": "YAML for one resource."},
-        {"id": "k8s_get_available_api_resources", "description": "API resources this cluster has."},
-        {"id": "k8s_get_cluster_configuration", "description": "Cluster configuration."},
-        {"id": "istio_proxy_status", "description": "Envoy proxy sync status."},
-        {"id": "istio_list_waypoints", "description": "Waypoints in the mesh."},
-        {"id": "istio_ztunnel_config", "description": "ztunnel config for a namespace."},
-        {"id": "istio_analyze_cluster_configuration", "description": "Istio config issues."}
+        {
+          "id": "k8s_get_resources",
+          "description": "List Kubernetes resources."
+        },
+        {
+          "id": "k8s_describe_resource",
+          "description": "Describe one resource."
+        },
+        {
+          "id": "k8s_get_pod_logs",
+          "description": "Read pod logs."
+        },
+        {
+          "id": "k8s_get_events",
+          "description": "Events in a namespace."
+        },
+        {
+          "id": "k8s_get_resource_yaml",
+          "description": "YAML for one resource."
+        },
+        {
+          "id": "k8s_get_available_api_resources",
+          "description": "API resources this cluster has."
+        },
+        {
+          "id": "k8s_get_cluster_configuration",
+          "description": "Cluster configuration."
+        },
+        {
+          "id": "istio_proxy_status",
+          "description": "Envoy proxy sync status."
+        },
+        {
+          "id": "istio_list_waypoints",
+          "description": "Waypoints in the mesh."
+        },
+        {
+          "id": "istio_ztunnel_config",
+          "description": "ztunnel config for a namespace."
+        },
+        {
+          "id": "istio_analyze_cluster_configuration",
+          "description": "Istio config issues."
+        }
       ]
     },
     {
@@ -111,12 +244,30 @@
       "url": "http://telco-inventory.mcp-servers.svc.cluster.local:3000/",
       "publicUrl": "",
       "tools": [
-        {"id": "list_sites", "description": "List RAN sites in the EMEA inventory."},
-        {"id": "get_site", "description": "Read one site, for example site-berlin."},
-        {"id": "list_slices", "description": "List 5G slices and their SLA."},
-        {"id": "get_slice", "description": "Read one slice: SLA, isolation, congestion."},
-        {"id": "list_alarms", "description": "Open alarms on sites and slices."},
-        {"id": "congestion_now", "description": "Which slices are congested right now."}
+        {
+          "id": "list_sites",
+          "description": "List RAN sites in the EMEA inventory."
+        },
+        {
+          "id": "get_site",
+          "description": "Read one site, for example site-berlin."
+        },
+        {
+          "id": "list_slices",
+          "description": "List 5G slices and their SLA."
+        },
+        {
+          "id": "get_slice",
+          "description": "Read one slice: SLA, isolation, congestion."
+        },
+        {
+          "id": "list_alarms",
+          "description": "Open alarms on sites and slices."
+        },
+        {
+          "id": "congestion_now",
+          "description": "Which slices are congested right now."
+        }
       ]
     },
     {
@@ -127,11 +278,26 @@
       "url": "http://daylight-mcp.kagent.svc.cluster.local/",
       "publicUrl": "",
       "tools": [
-        {"id": "list_places", "description": "EMEA sites it knows, with time zones."},
-        {"id": "daylight", "description": "Sunrise, sunset, civil twilight and day length at a site."},
-        {"id": "work_window", "description": "Safe daylight window for outdoor site work, such as a tower climb."},
-        {"id": "moon_phase", "description": "Moon phase and how much of it is lit."},
-        {"id": "local_time", "description": "Current local time and UTC offset at a site."}
+        {
+          "id": "list_places",
+          "description": "EMEA sites it knows, with time zones."
+        },
+        {
+          "id": "daylight",
+          "description": "Sunrise, sunset, civil twilight and day length at a site."
+        },
+        {
+          "id": "work_window",
+          "description": "Safe daylight window for outdoor site work, such as a tower climb."
+        },
+        {
+          "id": "moon_phase",
+          "description": "Moon phase and how much of it is lit."
+        },
+        {
+          "id": "local_time",
+          "description": "Current local time and UTC offset at a site."
+        }
       ]
     },
     {
@@ -142,11 +308,26 @@
       "url": "http://quiz-mcp.kagent.svc.cluster.local/",
       "publicUrl": "",
       "tools": [
-        {"id": "start_quiz", "description": "Start a round of 10 random questions."},
-        {"id": "check_answer", "description": "Check an answer and keep score."},
-        {"id": "fifty_fifty", "description": "Take away two wrong answers."},
-        {"id": "quiz_score", "description": "Final score and verdict."},
-        {"id": "list_topics", "description": "Topics and how many questions each has."}
+        {
+          "id": "start_quiz",
+          "description": "Start a round of 10 random questions."
+        },
+        {
+          "id": "check_answer",
+          "description": "Check an answer and keep score."
+        },
+        {
+          "id": "fifty_fifty",
+          "description": "Take away two wrong answers."
+        },
+        {
+          "id": "quiz_score",
+          "description": "Final score and verdict."
+        },
+        {
+          "id": "list_topics",
+          "description": "Topics and how many questions each has."
+        }
       ]
     },
     {
@@ -157,10 +338,22 @@
       "url": "http://excuses-mcp.kagent.svc.cluster.local/",
       "publicUrl": "",
       "tools": [
-        {"id": "excuse", "description": "A ready-to-send excuse with a believability score."},
-        {"id": "excuse_battle", "description": "One believable excuse against one outrageous one."},
-        {"id": "rate_excuse", "description": "Score how believable your own excuse is."},
-        {"id": "excuse_styles", "description": "The styles of excuse available."}
+        {
+          "id": "excuse",
+          "description": "A ready-to-send excuse with a believability score."
+        },
+        {
+          "id": "excuse_battle",
+          "description": "One believable excuse against one outrageous one."
+        },
+        {
+          "id": "rate_excuse",
+          "description": "Score how believable your own excuse is."
+        },
+        {
+          "id": "excuse_styles",
+          "description": "The styles of excuse available."
+        }
       ]
     }
   ]
