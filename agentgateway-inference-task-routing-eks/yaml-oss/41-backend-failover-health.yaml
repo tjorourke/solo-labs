@@ -1,0 +1,25 @@
+# Turns the Claude group added to 40-backends.yaml into an actual failover rather than a
+# dormant second entry: without a health policy, agentgateway has no reason to ever try
+# group 2. Two consecutive failures (a parked GPU nodegroup gives a 503 on every request,
+# so that is instant, not flaky) evicts the vLLM provider for 30s; traffic moves to the
+# Claude group for the rest of that window, then agentgateway tries vLLM again on its own.
+# Proven pattern: local-agw/health-policy.yaml.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: task-routing-failover-health
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: vllm-mistral
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: vllm-qwen
+  backend:
+    health:
+      unhealthyCondition: "response.code >= 500"
+      eviction:
+        duration: 30s
+        consecutiveFailures: 2

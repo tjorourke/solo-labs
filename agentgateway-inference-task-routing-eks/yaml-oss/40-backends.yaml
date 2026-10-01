@@ -18,12 +18,34 @@ metadata:
   namespace: agentgateway-system
 spec:
   ai:
-    provider:
-      openai:
-        model: qwen3-coder-30b
-      host: vllm-qwen.models.svc.cluster.local
-      port: 8000
-      path: /v1/chat/completions
+    groups:
+      # Group 1: the real backend, self-hosted on the GPU nodegroup that gets scaled to
+      # zero overnight (project_gpu_nightly_shutdown). Group 2 only serves once
+      # 41-backend-failover-health.yaml's eviction policy has marked this one unhealthy.
+      - providers:
+          - name: vllm-qwen
+            openai:
+              model: qwen3-coder-30b
+            host: vllm-qwen.models.svc.cluster.local
+            port: 8000
+            path: /v1/chat/completions
+      # Group 2: real Claude, so a parked GPU nodegroup degrades the coding class to a
+      # live model instead of a dead end. Its own override replaces the task label the
+      # modelAliases below wrote onto the request, because Anthropic has never heard of
+      # "qwen3-coder-30b". Added 2026-10-01 after excuse-bot/demo-agent/quiz-host-10 (a
+      # different cluster's kagent agents, routed through this gateway) 503'd solid every
+      # time the GPU nodegroup was parked.
+      - providers:
+          - name: anthropic-fallback
+            anthropic: {}
+            policies:
+              auth:
+                secretRef:
+                  name: anthropic-secret
+              ai:
+                overrides:
+                  - field: model
+                    value: claude-sonnet-5
   policies:
     ai:
       # Claude Code asks for max_tokens: 64000, which is more than this model's whole
@@ -59,12 +81,32 @@ metadata:
   namespace: agentgateway-system
 spec:
   ai:
-    provider:
-      openai:
-        model: mistral-small-3.2-24b
-      host: vllm.models.svc.cluster.local
-      port: 8000
-      path: /v1/chat/completions
+    groups:
+      # Group 1: the real backend, self-hosted on the GPU nodegroup that gets scaled to
+      # zero overnight (project_gpu_nightly_shutdown). Group 2 only serves once
+      # 41-backend-failover-health.yaml's eviction policy has marked this one unhealthy.
+      - providers:
+          - name: vllm-mistral
+            openai:
+              model: mistral-small-3.2-24b
+            host: vllm.models.svc.cluster.local
+            port: 8000
+            path: /v1/chat/completions
+      # Group 2: real Claude, so a parked GPU nodegroup degrades finance/telco/general to
+      # a live model instead of a dead end. Its own override replaces the task label the
+      # modelAliases below wrote onto the request, because Anthropic has never heard of
+      # "mistral-small-3.2-24b". Added 2026-10-01, same incident as vllm-qwen above.
+      - providers:
+          - name: anthropic-fallback
+            anthropic: {}
+            policies:
+              auth:
+                secretRef:
+                  name: anthropic-secret
+              ai:
+                overrides:
+                  - field: model
+                    value: claude-haiku-4-5
   policies:
     ai:
       # Claude Code asks for max_tokens: 64000, which is more than this model's whole
