@@ -46,6 +46,16 @@ spec:
                 overrides:
                   - field: model
                     value: claude-sonnet-5
+                  # Without this, generation got capped at exactly 4096 output
+                  # tokens and silently cut off mid-response -- no error, no
+                  # retry, just a truncated tool call the caller never saw fail.
+                  # Caught live 2026-10-01: dev-bot (a different cluster's kagent
+                  # agent, routed through this gateway) mid-generating a
+                  # push_files call for a real code change.
+                  - field: max_tokens
+                    value: 16384
+                  - field: max_completion_tokens
+                    value: 16384
   policies:
     ai:
       # Claude Code asks for max_tokens: 64000, which is more than this model's whole
@@ -107,6 +117,12 @@ spec:
                 overrides:
                   - field: model
                     value: claude-haiku-4-5
+                  # Same gotcha as vllm-qwen's fallback above: no override here meant
+                  # generation silently capped at 4096 output tokens with no error.
+                  - field: max_tokens
+                    value: 16384
+                  - field: max_completion_tokens
+                    value: 16384
   policies:
     ai:
       # Claude Code asks for max_tokens: 64000, which is more than this model's whole

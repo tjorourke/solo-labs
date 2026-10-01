@@ -267,12 +267,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            try:
-                for ev in agents_lab.chat_stream(name, body.get("text", ""), body.get("contextId")):
+            # Draining the generator fully, even once the browser is gone, matters: the
+            # old code let a write failure propagate out of the for loop, which GC'd the
+            # generator mid-iteration and closed chat_stream()'s open connection to
+            # kagent-controller right under it -- so closing the tab or navigating away
+            # mid-turn silently cancelled the agent's actual A2A task, not just the
+            # browser's view of it. Caught live: a dev-bot run that stopped the instant
+            # its final completion started streaming, GitHub never updated, no error
+            # anywhere because nothing had actually failed -- the client just vanished
+            # and took the agent's own request with it.
+            client_gone = False
+            for ev in agents_lab.chat_stream(name, body.get("text", ""), body.get("contextId")):
+                if client_gone:
+                    continue
+                try:
                     self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+                except (BrokenPipeError, ConnectionResetError):
+                    client_gone = True
             return None
         if self.path.startswith("/api/agents/") and self.path.endswith("/chat"):
             import agents_lab
@@ -294,18 +306,27 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            try:
-                for ev in petstore_lab.fetch_and_implement(body.get("text")):
+            # See the identical fix on /chat/stream above: drain the generator fully
+            # even once the browser is gone, so closing the tab mid-turn never cancels
+            # dev-bot's actual work (or the build-and-stage that follows it).
+            client_gone = False
+
+            def emit(ev):
+                nonlocal client_gone
+                if client_gone:
+                    return
+                try:
                     self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
                     self.wfile.flush()
-                    if ev.get("t") == "done":
-                        self.wfile.write(f"data: {json.dumps({'t': 'building'})}\n\n".encode())
-                        self.wfile.flush()
-                        result = petstore_lab.build_and_stage()
-                        self.wfile.write(f"data: {json.dumps({'t': 'staged', **result})}\n\n".encode())
-                        self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+                except (BrokenPipeError, ConnectionResetError):
+                    client_gone = True
+
+            for ev in petstore_lab.fetch_and_implement(body.get("text")):
+                emit(ev)
+                if ev.get("t") == "done":
+                    emit({"t": "building"})
+                    result = petstore_lab.build_and_stage()
+                    emit({"t": "staged", **result})
             return None
         if self.path == "/api/petstore/promote":
             import petstore_lab

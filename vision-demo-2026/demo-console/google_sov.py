@@ -1,27 +1,35 @@
 """Google Sovereign Cloud: the Berlin GCD agentgateway, from the console.
 
 Two routes behind one gateway, chosen by vLLM Semantic Router (VSR) as an
-extProc at PreRouting:
+extProc at PreRouting. agw.* is a ListenerSet on the one agentgateway-proxy, so
+the router sees model traffic only:
 
     gemma   Gemma 3 27B on an H100 inside the cluster. Never leaves Berlin.
     gemini  Gemini 2.5 Flash, Google's frontier model, out through Cloud NAT.
 
-The gateway is internal to the GCD VPC. Set GCD_AGW_URL when something already
-reaches it (an external LB, a tunnel); otherwise this module opens its own
-kubectl port-forward to the gateway Service, using the Berlin kubeconfig.
+The gateway is reached the first way that works, in this order:
 
-    GCD_AGW_URL       e.g. http://34.x.x.x  (unset: port-forward)
-    GCD_LLM_HOST      Host header the HTTPRoute matches (models.agentic.eu0.internal)
+    1. GCD_AGW_URL, if set (a tunnel, anything).
+    2. http://agw.agentic.eu0.internal, when that name resolves on this laptop
+       (./scripts/hosts.sh in google-sov writes it). The fixed hostname the demo
+       is meant to show.
+    3. The agentgateway-proxy-external LoadBalancer IP, looked up with kubectl,
+       with the Host header set (80-ingress.sh EXPOSE_EXTERNAL=1 creates it).
+    4. A kubectl port-forward to the gateway Service, using the Berlin kubeconfig.
+
+    GCD_AGW_URL       e.g. http://34.x.x.x  (unset: try 2-4)
+    GCD_LLM_HOST      Host header the HTTPRoute matches (agw.agentic.eu0.internal)
     GCD_KUBECONFIG    ~/code/google-sov/poc/2026-09-agentic-platform/deploy/.kubeconfig
     GCD_UNIVERSE      apis-berlin-build0.goog
     GCD_AGW_NS        agentgateway-system
-    GCD_AGW_GATEWAY   agentgateway-models
-    GCD_PF_PORT       18090
+    GCD_AGW_GATEWAY   agentgateway-proxy
+    GCD_PF_PORT       18090 (a free port is picked if it is taken)
 """
 from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import threading
 import time
@@ -29,13 +37,14 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-LLM_HOST = os.environ.get("GCD_LLM_HOST", "models.agentic.eu0.internal")
+LLM_HOST = os.environ.get("GCD_LLM_HOST", "agw.agentic.eu0.internal")
 KUBECONFIG = os.path.expanduser(os.environ.get(
     "GCD_KUBECONFIG", "~/code/google-sov/poc/2026-09-agentic-platform/deploy/.kubeconfig"))
 UNIVERSE = os.environ.get("GCD_UNIVERSE", "apis-berlin-build0.goog")
 NS = os.environ.get("GCD_AGW_NS", "agentgateway-system")
-GATEWAY = os.environ.get("GCD_AGW_GATEWAY", "agentgateway-models")
+GATEWAY = os.environ.get("GCD_AGW_GATEWAY", "agentgateway-proxy")
 PF_PORT = int(os.environ.get("GCD_PF_PORT", "18090"))
+EXTERNAL_SVC = os.environ.get("GCD_AGW_EXTERNAL_SVC", "agentgateway-proxy-external")
 
 # What the console sends per route. "auto" lets VSR classify the prompt; an
 # explicit route names the model AND sets the header the HTTPRoute matches, so
@@ -48,6 +57,7 @@ ROUTES = {
 
 _pf_lock = threading.Lock()
 _pf: subprocess.Popen | None = None
+_pf_port = PF_PORT
 
 
 def _env() -> dict:
@@ -64,10 +74,13 @@ def _kubectl(*args: str, timeout: int = 20) -> subprocess.CompletedProcess:
 
 def _gateway_service() -> str:
     r = _kubectl("-n", NS, "get", "svc", "-l", f"gateway.networking.k8s.io/gateway-name={GATEWAY}",
-                 "-o", "jsonpath={.items[0].metadata.name}")
-    if r.returncode != 0 or not r.stdout.strip():
-        raise RuntimeError(_auth_hint(r.stderr) or f"no Service for Gateway {NS}/{GATEWAY} yet")
-    return r.stdout.strip()
+                 "-o", "jsonpath={.items[*].metadata.name}")
+    names = [n for n in r.stdout.split() if n != EXTERNAL_SVC]
+    if r.returncode != 0:
+        raise RuntimeError(_auth_hint(r.stderr) or f"cannot list Services in {NS}")
+    if not names:
+        raise RuntimeError(f"Gateway {NS}/{GATEWAY} is not deployed yet: run ./scripts/80-ingress.sh in google-sov")
+    return names[0]
 
 
 def _auth_hint(stderr: str) -> str:
@@ -77,38 +90,114 @@ def _auth_hint(stderr: str) -> str:
     return s.strip().splitlines()[-1][:200] if s.strip() else ""
 
 
-def _reachable(url: str) -> bool:
+def _probe(url: str) -> str | None:
+    """'ok' when the agw.* models route answers at url, 'no-route' when the
+    gateway answers but has no such route, None when nothing answers. Any HTTP
+    answer from the route counts (a GET on the chat path draws a 405 from the
+    model, or a 503 with no backend), but "route not found" means the gateway is
+    up and the models route is not: 87-vsr-routes.sh has not run."""
+    req = urllib.request.Request(url + "/v1/chat/completions",
+                                 headers={"Host": LLM_HOST, "x-selected-model": ROUTES["gemma"]["header"]})
     try:
-        urllib.request.urlopen(urllib.request.Request(url, headers={"Host": LLM_HOST}), timeout=2)
-        return True
-    except urllib.error.HTTPError:
-        return True          # any HTTP answer means the gateway is there
+        with urllib.request.urlopen(req, timeout=3) as r:
+            body = r.read(200)
+    except urllib.error.HTTPError as e:
+        body = e.read(200)
     except Exception:
+        return None
+    return "no-route" if b"route not found" in body else "ok"
+
+
+def _reachable(url: str) -> bool:
+    return _probe(url) == "ok"
+
+
+def _no_route(where: str) -> RuntimeError:
+    return RuntimeError(f"agentgateway answers at {where} but has no route for {LLM_HOST}: "
+                        "run ./scripts/87-vsr-routes.sh in google-sov")
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket() as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _resolves_publicly(host: str) -> bool:
+    """True when the name resolves to an address a laptop can route to. A private
+    answer (an old in-VPC entry, a stale hosts line) would just hang."""
+    try:
+        ip = socket.gethostbyname(host)
+    except OSError:
         return False
+    a, b = (int(x) for x in ip.split(".")[:2])
+    return not (a == 10 or a == 127 or (a == 172 and 16 <= b <= 31) or (a == 192 and b == 168))
+
+
+def _external_ip() -> str:
+    r = _kubectl("-n", NS, "get", "svc", EXTERNAL_SVC,
+                 "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}", timeout=10)
+    return r.stdout.strip() if r.returncode == 0 else ""
 
 
 def base_url() -> tuple[str, str]:
-    """(url, how) — how is 'configured' or 'port-forward'."""
+    """(url, how) — how is 'configured', 'hostname', 'external-lb' or 'port-forward'."""
     if os.environ.get("GCD_AGW_URL"):
         return os.environ["GCD_AGW_URL"].rstrip("/"), "configured"
-    global _pf
-    url = f"http://127.0.0.1:{PF_PORT}"
+    if _resolves_publicly(LLM_HOST):
+        url = f"http://{LLM_HOST}"
+        p = _probe(url)
+        if p == "ok":
+            return url, "hostname"
+        if p == "no-route":
+            # The gateway is reachable; a port-forward to it would say the same.
+            raise _no_route(url)
+    ip = _external_ip()
+    if ip:
+        p = _probe(f"http://{ip}")
+        if p == "ok":
+            return f"http://{ip}", "external-lb"
+        if p == "no-route":
+            raise _no_route(f"http://{ip}")
+    global _pf, _pf_port
     with _pf_lock:
-        if _pf is not None and _pf.poll() is None and _reachable(url):
-            return url, "port-forward"
+        if _pf is not None and _pf.poll() is None and _reachable(f"http://127.0.0.1:{_pf_port}"):
+            return f"http://127.0.0.1:{_pf_port}", "port-forward"
         if _pf is not None:
             _pf.kill()
             _pf = None
+        # A forward left behind by an earlier console run (pkill -f serve.py does
+        # not take its kubectl child with it) still works: use it.
+        if not _port_free(PF_PORT):
+            p = _probe(f"http://127.0.0.1:{PF_PORT}")
+            if p == "ok":
+                return f"http://127.0.0.1:{PF_PORT}", "port-forward"
+            if p == "no-route":
+                raise _no_route(f"127.0.0.1:{PF_PORT}")
+        _pf_port = PF_PORT if _port_free(PF_PORT) else _free_port()
+        url = f"http://127.0.0.1:{_pf_port}"
         svc = _gateway_service()
-        _pf = subprocess.Popen(["kubectl", "-n", NS, "port-forward", f"svc/{svc}", f"{PF_PORT}:80"],
+        _pf = subprocess.Popen(["kubectl", "-n", NS, "port-forward", f"svc/{svc}", f"{_pf_port}:80"],
                                env=_env(), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
         for _ in range(40):
             if _pf.poll() is not None:
                 err = _pf.stderr.read() if _pf.stderr else ""
                 _pf = None
                 raise RuntimeError(_auth_hint(err) or "port-forward exited")
-            if _reachable(url):
+            p = _probe(url)
+            if p == "ok":
                 return url, "port-forward"
+            if p == "no-route":
+                raise _no_route(f"svc/{svc}")
             time.sleep(0.25)
         raise RuntimeError(f"port-forward to svc/{svc} did not come up")
 
