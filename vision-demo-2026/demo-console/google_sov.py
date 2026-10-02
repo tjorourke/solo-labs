@@ -5,7 +5,7 @@ extProc at PreRouting. agw.* is a ListenerSet on the one agentgateway-proxy, so
 the router sees model traffic only:
 
     gemma   Gemma 3 27B on an H100 inside the cluster. Never leaves Berlin.
-    gemini  Gemini 2.5 Flash, Google's frontier model, out through Cloud NAT.
+    gemini  Gemini 3.8 Flash, Google's frontier model, out through Cloud NAT.
 
 The gateway is reached the first way that works, in this order:
 
@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import secrets
 import subprocess
 import threading
 import time
@@ -38,8 +39,12 @@ import urllib.request
 from pathlib import Path
 
 LLM_HOST = os.environ.get("GCD_LLM_HOST", "agw.agentic.eu0.internal")
-KUBECONFIG = os.path.expanduser(os.environ.get(
-    "GCD_KUBECONFIG", "~/code/google-sov/poc/2026-09-agentic-platform/deploy/.kubeconfig"))
+# console.kubeconfig (91-console-kubeconfig.sh) holds a ServiceAccount token that
+# does not expire; .kubeconfig goes through gcloud, whose Berlin login lasts an hour.
+_DEPLOY = Path("~/code/google-sov/poc/2026-09-agentic-platform/deploy").expanduser()
+KUBECONFIG = os.path.expanduser(os.environ.get("GCD_KUBECONFIG") or str(next(
+    (p for p in (_DEPLOY / "console.kubeconfig", _DEPLOY / ".kubeconfig") if p.exists()),
+    _DEPLOY / ".kubeconfig")))
 UNIVERSE = os.environ.get("GCD_UNIVERSE", "apis-berlin-build0.goog")
 NS = os.environ.get("GCD_AGW_NS", "agentgateway-system")
 GATEWAY = os.environ.get("GCD_AGW_GATEWAY", "agentgateway-proxy")
@@ -52,7 +57,7 @@ EXTERNAL_SVC = os.environ.get("GCD_AGW_EXTERNAL_SVC", "agentgateway-proxy-extern
 ROUTES = {
     "auto": {"model": "auto", "header": None},
     "gemma": {"model": "gemma-3-27b-it", "header": "gemma-3-27b-it"},
-    "gemini": {"model": "gemini-2.5-flash", "header": "gemini-2.5-flash"},
+    "gemini": {"model": "gemini-3.8-flash", "header": "gemini-3.8-flash"},
 }
 
 _pf_lock = threading.Lock()
@@ -63,6 +68,9 @@ _pf_port = PF_PORT
 def _env() -> dict:
     env = dict(os.environ)
     env["KUBECONFIG"] = KUBECONFIG
+    # The console's other demos use KUBE_CONTEXT for EKS/kind. Berlin uses the
+    # current context in its own isolated file, never that inherited context.
+    env.pop("KUBE_CONTEXT", None)
     env["GOOGLE_CLOUD_UNIVERSE_DOMAIN"] = UNIVERSE
     return env
 
@@ -86,7 +94,8 @@ def _gateway_service() -> str:
 def _auth_hint(stderr: str) -> str:
     s = stderr or ""
     if "Refresh token has expired" in s or "reauth" in s.lower() or "credential" in s.lower():
-        return "Berlin credentials expired: run ./scripts/gcd-auth.sh in ~/code/google-sov"
+        return ("Berlin login expired: run ./scripts/gcd-auth.sh in ~/code/google-sov, then "
+                "poc/2026-09-agentic-platform/scripts/91-console-kubeconfig.sh so the console stops needing it")
     return s.strip().splitlines()[-1][:200] if s.strip() else ""
 
 
@@ -205,7 +214,8 @@ def base_url() -> tuple[str, str]:
 def _pods(selector: str) -> list[dict]:
     r = _kubectl("-n", NS, "get", "pods", "-l", selector, "-o", "json")
     if r.returncode != 0:
-        return []
+        # An empty list would read as "0/0 ready": say why nothing came back.
+        raise RuntimeError(_auth_hint(r.stderr) or "kubectl could not list pods")
     out = []
     for p in json.loads(r.stdout).get("items", []):
         cs = p.get("status", {}).get("containerStatuses", [])
@@ -226,14 +236,21 @@ def status() -> dict:
         s["reachable"] = False
         s["error"] = str(e)
         return s
-    s["gateway_pods"] = _pods(f"gateway.networking.k8s.io/gateway-name={GATEWAY}")
-    s["router_pods"] = _pods("app.kubernetes.io/name=semantic-router")
+    # The gateway answers over HTTP without kubectl, so it can be reachable while
+    # the cluster API is not (expired credentials): report that, not empty counts.
+    try:
+        s["gateway_pods"] = _pods(f"gateway.networking.k8s.io/gateway-name={GATEWAY}")
+        s["router_pods"] = _pods("app.kubernetes.io/name=semantic-router")
+    except RuntimeError as e:
+        s["kube_error"] = str(e)
+        return s
     r = _kubectl("-n", NS, "get", "agentgatewaybackends", "-o", "json")
     backends = []
     if r.returncode == 0:
         for b in json.loads(r.stdout).get("items", []):
             prov = (b.get("spec", {}).get("ai", {}).get("provider") or {})
-            kind = next(iter(prov), "")
+            # The provider is the one key holding a dict; host, port and path sit beside it.
+            kind = next((k for k, v in prov.items() if isinstance(v, dict)), "")
             backends.append({"name": b["metadata"]["name"], "provider": kind,
                              "model": (prov.get(kind) or {}).get("model", "")})
     s["backends"] = backends
@@ -244,12 +261,18 @@ def status() -> dict:
     return s
 
 
-def chat(prompt: str, route: str = "auto", max_tokens: int = 300) -> dict:
+def chat(prompt: str, route: str = "auto", max_tokens: int = 1500) -> dict:
+    # Gemini 3.8 Flash thinks before it answers and the thinking counts against
+    # max_tokens: at 300 the visible answer came back cut off mid-sentence.
     spec = ROUTES.get(route, ROUTES["auto"])
     url, via = base_url()
     body = json.dumps({"model": spec["model"], "max_tokens": max_tokens,
                        "messages": [{"role": "user", "content": prompt}]}).encode()
-    headers = {"Host": LLM_HOST, "Content-Type": "application/json"}
+    import trustusbank_lab
+    headers = {"Host": LLM_HOST, "Content-Type": "application/json",
+               "Authorization": "Bearer " + trustusbank_lab.console_token()}
+    trace = secrets.token_hex(16)
+    headers["traceparent"] = f"00-{trace}-{secrets.token_hex(8)}-01"
     if spec["header"]:
         headers["x-selected-model"] = spec["header"]
     req = urllib.request.Request(url + "/v1/chat/completions", data=body, headers=headers, method="POST")
@@ -271,13 +294,80 @@ def chat(prompt: str, route: str = "auto", max_tokens: int = 300) -> dict:
     usage = data.get("usage", {}) if isinstance(data, dict) else {}
     routing = {k.lower(): v for k, v in rh.items() if k.lower().startswith(("x-vsr-", "x-selected-"))
                or k.lower() == "x-request-id"}
-    picked = (routing.get("x-vsr-selected-model") or model or spec["model"]).lower()
+    picked = (model or routing.get("x-vsr-selected-model") or spec["model"]).lower()
     return {
         "status": code, "route": route, "via": via, "elapsed": elapsed,
+        "trace_id": trace, "trace_url": f"http://kagent.agentic.eu0.internal/age/tracing/{trace}",
         "model": model, "content": msg, "usage": usage, "routing": routing,
         "target": "gemini" if picked.startswith("gemini") else "gemma",
         "error": None if code == 200 else (data.get("error") if isinstance(data, dict) else None) or data,
     }
+
+
+# A demo answer, not an essay: at 39 tok/s an uncapped Gemma answer ran 38 s and
+# still hit max_tokens. The cap stays high enough for Gemini's thinking tokens.
+BRIEF = "Answer clearly in under 200 words."
+
+
+def chat_stream(prompt: str, route: str = "auto", max_tokens: int = 2048):
+    """chat(), streamed. Yields start (routing headers), delta, then done with usage and timing."""
+    spec = ROUTES.get(route, ROUTES["auto"])
+    t0 = time.time()
+    try:
+        url, via = base_url()
+    except Exception as e:  # noqa: BLE001
+        yield {"t": "done", "status": 0, "error": str(e), "route": route}
+        return
+    body = json.dumps({"model": spec["model"], "max_tokens": max_tokens, "stream": True,
+                       "stream_options": {"include_usage": True},
+                       "messages": [{"role": "system", "content": BRIEF},
+                                    {"role": "user", "content": prompt}]}).encode()
+    import trustusbank_lab
+    headers = {"Host": LLM_HOST, "Content-Type": "application/json", "Accept": "text/event-stream",
+               "Authorization": "Bearer " + trustusbank_lab.console_token()}
+    if spec["header"]:
+        headers["x-selected-model"] = spec["header"]
+    req = urllib.request.Request(url + "/v1/chat/completions", data=body, headers=headers, method="POST")
+    try:
+        resp = urllib.request.urlopen(req, timeout=180)
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        try:
+            err = json.loads(raw).get("error") or raw.decode(errors="replace")[:800]
+        except (json.JSONDecodeError, AttributeError):
+            err = raw.decode(errors="replace")[:800]
+        yield {"t": "done", "status": e.code, "error": err, "route": route, "via": via,
+               "elapsed": round(time.time() - t0, 2)}
+        return
+    except Exception as e:  # noqa: BLE001
+        yield {"t": "done", "status": 0, "error": str(e), "route": route, "via": via}
+        return
+    routing = {k.lower(): v for k, v in resp.headers.items()
+               if k.lower().startswith(("x-vsr-", "x-selected-")) or k.lower() == "x-request-id"}
+    model, usage, ttft, finish = "", {}, None, None
+    yield {"t": "start", "routing": routing, "via": via, "route": route}
+    with resp:
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:") or line == "data: [DONE]":
+                continue
+            try:
+                ev = json.loads(line[5:])
+            except json.JSONDecodeError:
+                continue
+            model = ev.get("model") or model
+            usage = ev.get("usage") or usage
+            for ch in ev.get("choices") or []:
+                finish = ch.get("finish_reason") or finish
+                text = (ch.get("delta") or {}).get("content")
+                if text:
+                    if ttft is None:
+                        ttft = round(time.time() - t0, 2)
+                    yield {"t": "delta", "text": text}
+    picked = (model or routing.get("x-vsr-selected-model") or spec["model"]).lower()
+    yield {"t": "done", "status": 200, "route": route, "via": via, "model": model, "usage": usage,
+           "routing": routing, "elapsed": round(time.time() - t0, 2), "ttft": ttft, "finish": finish,
+           "target": "gemini" if picked.startswith("gemini") else "gemma", "error": None}
 
 
 def stop():

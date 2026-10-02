@@ -51,4 +51,11 @@
     document.getElementById('live-mcp-sub').textContent =
       `MCP servers in AgentRegistry · ${auto} ready to use without approval`;
   }).catch(() => { document.getElementById('live-mcp').textContent = '–'; });
+  // Google Sovereign Cloud: is the Berlin gateway answering, and is Gemma up on its GPU?
+  const gcp = document.getElementById('gcp-live');
+  if (gcp) fetch('/api/google/status').then(r => r.json()).then(st => {
+    const gemma = (st.gemma_pods || []).some(p => p[1] === 'Running');
+    gcp.className = 'st-pill ' + (st.reachable ? 'up' : 'down');
+    gcp.textContent = !st.reachable ? 'Berlin not reachable' : gemma ? 'Berlin live · Gemma up' : 'Berlin live';
+  }).catch(() => { gcp.className = 'st-pill down'; gcp.textContent = 'status unknown'; });
 })();

@@ -154,6 +154,21 @@
 
 </div>
 
+<div id="deny-modal" style="display:none;position:fixed;inset:0;z-index:80;background:rgba(2,6,23,0.7);align-items:center;justify-content:center">
+  <div style="background:#0f172a;color:#e2e8f0;border:1px solid rgba(148,163,184,0.3);border-radius:14px;padding:1.75rem;max-width:460px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+    <h3 style="margin:0 0 0.4rem 0;color:#e2e8f0">What needs to change?</h3>
+    <p style="margin:0 0 1rem 0;color:#94a3b8;font-size:0.9rem">This goes on the GitHub issue as a comment, and dev-bot reads it on the next pass instead of redoing the feature from scratch.</p>
+    <textarea id="deny-reason" rows="4" autofocus
+              placeholder="e.g. the fallback emoji doesn't read well on the dark theme, use something else"
+              style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid rgba(148,163,184,0.3);color:#e2e8f0;border-radius:8px;padding:0.6rem 0.75rem;font:inherit;resize:vertical"></textarea>
+    <div id="deny-modal-error" style="color:#f87171;font-size:0.85rem;min-height:1.2em;margin-top:0.4rem"></div>
+    <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:1rem">
+      <button id="deny-cancel" type="button" style="cursor:pointer;border:1px solid rgba(148,163,184,0.3);background:none;color:#e2e8f0;padding:0.5rem 1.1rem;border-radius:8px;font:inherit">Cancel</button>
+      <button id="deny-submit" type="button" style="cursor:pointer;border:0;background:#dc2626;color:#fff;padding:0.5rem 1.1rem;border-radius:8px;font:inherit">Deny with this feedback</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const LB = "192.168.97.148"; // ar-ingress address; status() keeps image tags live
 document.getElementById("staging-link").href = `http://petstore-staging.${LB}.sslip.io/`;
@@ -252,7 +267,7 @@ const approveBtn = document.getElementById("approve-btn");
 const denyBtn = document.getElementById("deny-btn");
 const promoteResult = document.getElementById("promote-result");
 
-async function promote(approve) {
+async function promote(approve, reason) {
   // Instant feedback first, every time: a slow click is the thing that makes someone
   // click again, so disable both and say so before the request even goes out.
   approveBtn.disabled = true; denyBtn.disabled = true;
@@ -263,7 +278,7 @@ async function promote(approve) {
   try {
     const r = await fetch("/api/petstore/promote", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ approve }),
+      body: JSON.stringify({ approve, reason }),
     });
     const d = await r.json();
     if (approve) {
@@ -277,7 +292,9 @@ async function promote(approve) {
       }
     } else {
       promoteResult.style.color = d.ok ? "#f59e0b" : "#f87171";
-      promoteResult.textContent = d.ok ? "Denied. Prod untouched." : `Error: ${d.error}`;
+      promoteResult.textContent = d.ok
+        ? "Denied, back to agent-ready for another pass."
+        : `Error: ${d.error}`;
     }
   } catch (e) {
     promoteResult.style.color = "#f87171";
@@ -290,7 +307,36 @@ async function promote(approve) {
   }
 }
 approveBtn.addEventListener("click", () => promote(true));
-denyBtn.addEventListener("click", () => promote(false));
+
+// A deny with no reason leaves dev-bot nothing to revise against, so this is the one
+// click on the page that stops and asks first rather than firing immediately.
+const denyModal = document.getElementById("deny-modal");
+const denyReasonBox = document.getElementById("deny-reason");
+const denyModalError = document.getElementById("deny-modal-error");
+
+function openDenyModal() {
+  denyModalError.textContent = "";
+  denyReasonBox.value = "";
+  denyModal.style.display = "flex";
+  denyReasonBox.focus();
+}
+function closeDenyModal() { denyModal.style.display = "none"; }
+
+denyBtn.addEventListener("click", openDenyModal);
+document.getElementById("deny-cancel").addEventListener("click", closeDenyModal);
+denyModal.addEventListener("click", (e) => { if (e.target === denyModal) closeDenyModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && denyModal.style.display !== "none") closeDenyModal();
+});
+document.getElementById("deny-submit").addEventListener("click", () => {
+  const reason = denyReasonBox.value.trim();
+  if (!reason) { denyModalError.textContent = "A reason is required."; return; }
+  closeDenyModal();
+  promote(false, reason);
+});
+denyReasonBox.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) document.getElementById("deny-submit").click();
+});
 </script>
 </body>
 </html>

@@ -251,3 +251,23 @@ so pair it with the Claude Code-only policy.
 The page never talks to the daemon's socket. Installing adds you to the `agentdesktop`
 group, and a running process does not pick up a new group, so the console would
 otherwise need restarting before it could show anything.
+# Google Sovereign Cloud demo
+
+The `/google` hub links routing, bank agents, the website workflow, the builder,
+and MCP approvals. Berlin infrastructure and policy sources are in
+`~/code/google-sov/poc/2026-09-agentic-platform`; see its `DEMO-READINESS.md`
+and dated `deploy/inventory.json` for versions, load balancers and verification.
+
+All Google agents use workload waypoints. MCP Services require a rotating
+Kubernetes JWT matching the source mesh identity, plus a per-agent tool grant.
+`google_builder.py` uses that repo's `mcp_policies.py` and `mcp_security.py` for
+deployment/approval reconciliation. The fixed SDLC identities are `trustusbank-pm-agent`
+and `trustusbank-dev-agent`, including their Keycloak clients.
+
+TrustUsBank runtime `0.1.8` uses kagent-adk `0.10.0-rc5` and LiteLLM `1.103.2`.
+Gemma tool responses are parsed as complete responses to avoid vLLM's older
+streaming parser dropping quoted/fenced calls; A2A still emits tool events.
+
+Run `./run.sh` after changing Python modules. The console prefers the isolated,
+gitignored Berlin `deploy/console.kubeconfig`; it never selects the other demos'
+inherited EKS/kind `KUBE_CONTEXT` for Google operations.

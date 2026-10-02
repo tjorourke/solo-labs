@@ -1,3 +1,6 @@
+// The same page drives other platforms: a page can set window.AGENTS_API (and the overrides
+// below) before this script, as /google/agents does for Berlin.
+const API = window.AGENTS_API || '/api/agents';
 let catalog = { skills: [], mcp: [], platform: null };
 let agents = [];
 let prompts = [];
@@ -29,7 +32,7 @@ const LAST = 5;
 
 // Starting points for someone who has never written a prompt. Every skill and tool named
 // here is in the catalogue; applyTemplate drops anything the catalogue does not carry.
-const TEMPLATES = [
+const TEMPLATES = window.AGENT_TEMPLATES || [
   {
     id: 'climb', icon: '🗼', title: 'Tower climb planner', name: 'climb-planner',
     blurb: 'Plans safe daylight windows for site work. Ready to use straight away.',
@@ -146,7 +149,8 @@ const AVATAR_COLOURS = [
 ];
 let justDeployed = null;
 let celebrated = new Set();
-const GLYPH = { github: 'GH', k8s: 'K8', telco: 'TC', everything: 'EV', daylight: 'SD', quiz: 'QZ', excuses: 'EX' };
+const GLYPH = Object.assign({ github: 'GH', k8s: 'K8', telco: 'TC', everything: 'EV', daylight: 'SD', quiz: 'QZ', excuses: 'EX' },
+  window.AGENT_GLYPHS || {});
 let previewSeq = 0;
 
 function esc(s) {
@@ -232,7 +236,7 @@ function stateOf(a) {
 
 const STATE_LABEL = {
   live: 'Live',
-  pending: 'Awaiting platform approval',
+  pending: 'Awaiting approval',
   failed: 'Deploy failed',
   off: 'Not deployed',
   draft: 'Draft',
@@ -253,7 +257,7 @@ function chipsHtml(a) {
 function cardHtml(a, opts = {}) {
   const state = opts.state || stateOf(a);
   const by = [a.version, a.updated ? 'updated ' + ago(a.updated) : ''].filter(Boolean).join(' · ');
-  const menu = opts.preview ? '' : `
+  const menu = opts.preview || a.builder === false ? '' : `
       <div class="ag-card-menu">
         <button type="button" class="ag-icon-btn" data-edit="${esc(a.name)}">Edit</button>
         <button type="button" class="ag-icon-btn del" data-del="${esc(a.name)}">Delete</button>
@@ -262,8 +266,8 @@ function cardHtml(a, opts = {}) {
     <div class="ag-card-head">
       <div class="ag-avatar" style="${avatarStyle(a.name)}">${esc(initials(a.name))}</div>
       <div style="min-width:0">
-        <h3>${esc(a.name || 'unnamed-agent')}</h3>
-        <div class="by">${esc(by || opts.by || 'on kagent')}</div>
+        <h3>${esc(a.title || a.name || 'unnamed-agent')}</h3>
+        <div class="by">${a.title ? esc(a.name) + ' · ' : ''}${esc(by || opts.by || 'on kagent')}</div>
       </div>
     </div>
     <p class="ag-card-desc">${esc(a.description || 'No description yet.')}</p>
@@ -278,7 +282,7 @@ function cardHtml(a, opts = {}) {
 async function boot() {
   // Agents answer in a fraction of a second; the catalogue reads the registry and is slower.
   // Paint the cards as soon as the agents land, then repaint with proper names.
-  const catP = fetch('/api/agents/catalog').then(r => r.json());
+  const catP = fetch(API + '/catalog').then(r => r.json());
   const listP = refreshList().catch(() => listFailed());
   catalog = await catP;
   paintPlatform();
@@ -324,6 +328,8 @@ async function boot() {
   });
   showHome();
   loadPrompts();
+  // /agents?new=1 or #new opens straight onto the wizard, for a link from a story page.
+  if (location.hash === '#new' || new URLSearchParams(location.search).has('new')) startNew();
 }
 
 // The registry read is not on the critical path: the wizard works with the box typed by
@@ -331,7 +337,7 @@ async function boot() {
 async function loadPrompts() {
   const sel = document.getElementById('prompt-pick');
   try {
-    const r = await fetch('/api/agents/prompts').then(x => x.json());
+    const r = await fetch(API + '/prompts').then(x => x.json());
     prompts = r.prompts || [];
   } catch (e) {
     prompts = [];
@@ -366,7 +372,7 @@ function paintPlatform() {
   const note = document.getElementById('platform-note');
   if (p.kagent) {
     dot.className = 'dot live';
-    label.textContent = 'kagent on mesh1';
+    label.textContent = p.label || 'kagent on mesh1';
   } else {
     dot.className = 'dot off';
     label.textContent = 'YAML only · kagent not installed';
@@ -401,7 +407,7 @@ function paintSkills() {
     ${card('', 'None', 'No skill', 'The prompt on its own.')}
     ${catalog.skills.map(s => card(s.id, s.domain || 'Skill', s.title, s.description || '',
       s.ready === false ? ' <span class="warn">Not ready in registry.</span>' : '')).join('')}
-    <button type="button" class="ag-pick add" id="new-skill"><b>＋</b><strong>Write a skill</strong><p>Commit it to git and register it</p></button>
+    ${window.SKILL_AUTHORING === false ? '' : `<button type="button" class="ag-pick add" id="new-skill"><b>＋</b><strong>Write a skill</strong><p>Commit it to git and register it</p></button>`}
   </div>`;
 }
 
@@ -567,6 +573,8 @@ function applyTemplate(id) {
 }
 
 function applyDemo() {
+  // The release-briefing defaults need the github server; a platform without it starts blank.
+  if (!(catalog.mcp || []).some(m => m.id === 'github')) return;
   document.getElementById('description').value = DEMO.description;
   document.getElementById('prompt').value = DEMO.prompt;
   selectSkill(DEMO.skills[0] || '');
@@ -616,7 +624,7 @@ async function saveSkill() {
   msg.textContent = 'Writing the package, committing and pushing…';
   let r;
   try {
-    r = await fetch('/api/agents/skills', {
+    r = await fetch(API + '/skills', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -629,7 +637,7 @@ async function saveSkill() {
   btn.disabled = false;
   if (!r.ok) { msg.textContent = r.error || 'Could not create the skill.'; return; }
 
-  catalog = await fetch('/api/agents/catalog').then(x => x.json());
+  catalog = await fetch(API + '/catalog').then(x => x.json());
   selectSkill(r.id);
   closeSkillModal();
 
@@ -668,7 +676,7 @@ function paintPreview() {
   box.innerHTML = cardHtml({
     ...spec,
     name: spec.name || 'your-agent',
-    yaml: current ? current.yaml : 'modelName: claude-haiku-4-5',
+    yaml: current ? current.yaml : 'modelName: ' + (window.AGENT_MODEL || 'claude-haiku-4-5'),
   }, { preview: true, state: 'draft', by: editing && current ? 'next version after ' + current.version : 'v1 on first deploy' });
 }
 
@@ -782,7 +790,7 @@ async function paintReview() {
   pre.textContent = 'Rendering…';
   const seq = ++previewSeq;
   try {
-    const r = await fetch('/api/agents/preview', {
+    const r = await fetch(API + '/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(spec),
@@ -861,7 +869,7 @@ async function deploy() {
   }, 500);
   let r;
   try {
-    r = await fetch('/api/agents', {
+    r = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(spec),
@@ -889,7 +897,7 @@ function listFailed() {
 }
 
 async function refreshList() {
-  const r = await fetch('/api/agents').then(x => x.json());
+  const r = await fetch(API).then(x => x.json());
   agents = r.agents || [];
   loaded = true;
   paintList();
@@ -940,6 +948,8 @@ function closeDetail() {
 }
 
 function paintDetailHead(a) {
+  document.getElementById('detail-edit').style.display = a.builder === false ? 'none' : '';
+  document.getElementById('detail-del').style.display = a.builder === false ? 'none' : '';
   const state = stateOf(a);
   const st = document.getElementById('detail-state');
   st.className = 'ag-state ' + state;
@@ -1041,7 +1051,7 @@ function paintApproval(a) {
 }
 
 async function pollStatus(name) {
-  const st = await fetch('/api/agents/' + encodeURIComponent(name) + '/status').then(r => r.json());
+  const st = await fetch(API + '/' + encodeURIComponent(name) + '/status').then(r => r.json());
   if (selected !== name) return;
   const known = ['done', 'wait', 'fail'];
   document.getElementById('life').innerHTML = (st.steps || []).map(s => {
@@ -1092,7 +1102,7 @@ function paintCelebrate(a, st, needsMcp) {
   } else if (waiting) {
     html = `<div class="ag-cele-icon">🛡️</div><div><h3>${esc(a.name)} is deployed. One step left.</h3>
       <p>${autoNames.length ? `${esc(autoNames.join(', '))} already work${autoNames.length === 1 ? 's' : ''}. ` : ''}A platform admin approves ${esc(tiers(a).restricted.map(serverName).join(', '))}. Until then those tools stay closed.</p></div>
-      <a class="btn primary" href="/approvals">Ask for approval</a>`;
+      <a class="btn primary" href="${window.APPROVALS_PAGE || '/approvals'}">Ask for approval</a>`;
   } else {
     html = `<div class="ag-cele-icon"><span class="ag-spinner sm"></span></div><div><h3>Starting ${esc(a.name)}</h3>
       <p>AgentRegistry has it. kagent is starting it now; the steps below go green as it comes up.</p></div>`;
@@ -1102,7 +1112,7 @@ function paintCelebrate(a, st, needsMcp) {
   box.style.display = '';
   if ((live || waiting) && !celebrated.has(a.name)) {
     celebrated.add(a.name);
-    if (live) confetti();
+    if (live || window.CONFETTI_ON_DEPLOY) confetti();
   }
 }
 
@@ -1127,7 +1137,7 @@ async function remove(name) {
   const who = name || selected;
   if (!who) return;
   if (!confirm('Delete ' + who + ' from AgentRegistry and kagent?')) return;
-  await fetch('/api/agents/' + encodeURIComponent(who), { method: 'DELETE' });
+  await fetch(API + '/' + encodeURIComponent(who), { method: 'DELETE' });
   if (selected === who) {
     selected = null;
     document.getElementById('detail').style.display = 'none';

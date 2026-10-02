@@ -12,14 +12,14 @@ FROM debian:bookworm-slim AS deps
 COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /bin/uv
 COPY --from=base /python /python
 COPY --from=base /.kagent/.venv /.kagent/.venv
-RUN uv pip install --python /.kagent/.venv/bin/python --no-cache "litellm>=1.75"
+RUN uv pip install --python /.kagent/.venv/bin/python --no-cache "litellm==1.103.2"
 
 FROM base
 COPY --from=deps /.kagent/.venv /.kagent/.venv
 WORKDIR /app
 COPY myagents/ myagents/
 
-ENV OTEL_SERVICE_NAME=agentregistry-agents
+ENV OTEL_SERVICE_NAME=trustusbank-agents
 ENV PYTHONPATH=/app
 
 CMD ["myagents"]

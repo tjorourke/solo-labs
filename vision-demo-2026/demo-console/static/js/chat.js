@@ -5,6 +5,7 @@
   let chatName = null;
   let contextId = null;
   let busy = false;
+  let route = null;         // the last turn's `agent` event: who called, as which identity, on which pod
   let quiz = null;          // { id, questions: {qid: {...}}, answers: [{qid, correct, ...}], verdict }
   let activity = [];        // every tool call this chat, for the side panel
   const cards = {};         // question id -> its card element, so check_answer can mark it
@@ -27,21 +28,75 @@
   const friendly = n => FRIENDLY[baseTool(n)] || humanTool(baseTool(n));
   const isQuizAgent = a => (a.mcp || []).some(m => m.id === 'quiz' && (m.tools || []).length);
 
-  // Small, safe markdown: escape first, then bold, italics, code, bullets and line breaks.
-  function md(text) {
-    let h = esc(text || '');
-    h = h.replace(/`([^`]+)`/g, '<code>$1</code>')
-         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-         .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-    const lines = h.split('\n');
-    let out = '', list = false;
-    for (const line of lines) {
-      const m = line.match(/^\s*[-•]\s+(.*)$/);
-      if (m) { if (!list) { out += '<ul>'; list = true; } out += `<li>${m[1]}</li>`; continue; }
-      if (list) { out += '</ul>'; list = false; }
-      out += line.trim() ? `<p>${line}</p>` : '';
+  // Gemma sometimes writes a tool call out as text (```tool_code\nget_app_settings()```)
+  // instead of making it: usually a tool it has not been allowed. Never show that as a reply.
+  const CALL_BLOCK = /```[a-z_]*\s*\[?\s*[A-Za-z_][\w.]*\s*\([^`]*\)\s*\]?\s*(```|$)/g;
+  const CALL_BARE = /^\s*\[?\s*[A-Za-z_][\w.]*\s*\([^)]*\)\s*\]?\s*$/;
+  // The pythonic list form with keyword arguments, whose strings may hold anything,
+  // brackets and newlines included: [create_issue(title="...", body="...")].
+  const CALL_LIST = /^\s*\[\s*[A-Za-z_][\w.]*\s*\(\s*(\)|[A-Za-z_]\w*\s*=)[\s\S]*\)\s*\]\s*$/;
+  function clean(text) {
+    const t = String(text || '').replace(CALL_BLOCK, '').trim();
+    return CALL_BARE.test(t) || CALL_LIST.test(t) ? '' : t;
+  }
+  function calledName(text) {
+    const m = String(text || '').match(/([A-Za-z_][\w.]*)\s*\(/);
+    return m ? baseTool(m[1]) : '';
+  }
+
+  // A tool result that is an error, in any of the shapes MCP servers use. The model tends to
+  // explain these away ("the configuration file is missing"), so the chat shows them as they are.
+  function toolError(r) {
+    if (r == null) return '';
+    if (typeof r === 'string') return /^\s*(error|failed)\b|\b(40[134]|5\d\d)\b.*(not found|forbidden|unauthori[sz]ed|error)/i.test(r) ? r : '';
+    if (typeof r === 'object') {
+      if (r.isError) return (r.content || []).map(c => c.text || '').join(' ') || 'the tool reported an error';
+      if (r.error) return typeof r.error === 'string' ? r.error : (r.error.message || JSON.stringify(r.error));
     }
-    return out + (list ? '</ul>' : '');
+    return '';
+  }
+
+  // Small, safe markdown: escape first, then headings, lists, fenced code, quotes
+  // and inline bold/italic/code. Re-rendered on every chunk, so an unclosed fence
+  // mid-stream still shows as code.
+  function inline(t) {
+    return t.replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, '$1<em>$2</em>');
+  }
+  function md(text) {
+    const lines = esc(text || '').split('\n');
+    let out = '', list = null, para = [], code = null;
+    const flushPara = () => { if (para.length) out += `<p>${inline(para.join('<br>'))}</p>`; para = []; };
+    const closeList = () => { if (list) out += `</${list}>`; list = null; };
+    for (const line of lines) {
+      if (code !== null) {
+        if (/^\s*```/.test(line)) { out += `<pre><code>${code.join('\n')}</code></pre>`; code = null; }
+        else code.push(line);
+        continue;
+      }
+      let m;
+      if (/^\s*```/.test(line)) { flushPara(); closeList(); code = []; continue; }
+      if ((m = line.match(/^\s*(#{1,6})\s+(.*)$/))) {
+        flushPara(); closeList();
+        const n = Math.min(m[1].length + 2, 6);
+        out += `<h${n}>${inline(m[2].replace(/\s*#+\s*$/, ''))}</h${n}>`; continue;
+      }
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flushPara(); closeList(); out += '<hr>'; continue; }
+      if ((m = line.match(/^\s*(?:[-•*+]|(\d+)[.)])\s+(.*)$/))) {
+        flushPara();
+        const kind = m[1] ? 'ol' : 'ul';
+        if (list !== kind) { closeList(); out += kind === 'ol' && m[1] !== '1' ? `<ol start="${m[1]}">` : `<${kind}>`; list = kind; }
+        out += `<li>${inline(m[2])}</li>`; continue;
+      }
+      if ((m = line.match(/^\s*&gt;\s?(.*)$/))) { flushPara(); closeList(); out += `<blockquote>${inline(m[1])}</blockquote>`; continue; }
+      if (!line.trim()) { flushPara(); closeList(); continue; }
+      if (list && /^\s{2,}\S/.test(line)) { out = out.replace(/<\/li>$/, ` ${inline(line.trim())}</li>`); continue; }
+      closeList(); para.push(line.trim());
+    }
+    flushPara(); closeList();
+    if (code !== null) out += `<pre><code>${code.join('\n')}</code></pre>`;
+    return out;
   }
 
   // A to D options in the agent's latest message, however it formats them.
@@ -59,6 +114,7 @@
     if (!a) return;
     chatName = name;
     if (fresh) { contextId = null; quiz = null; activity = []; $('chat-log').innerHTML = ''; }
+    route = null;
     if (typeof poll !== 'undefined' && poll) clearInterval(poll);
     $('home-view').style.display = 'none';
     $('wizard-view').style.display = 'none';
@@ -67,11 +123,11 @@
     document.getElementById('platform-note').style.display = 'none';
     $('chat-avatar').textContent = initials(a.name);
     $('chat-avatar').setAttribute('style', avatarStyle(a.name));
-    $('chat-name').textContent = a.name;
+    $('chat-name').textContent = a.title || a.name;
     const tools = (a.mcp || []).filter(m => (m.tools || []).length).map(m => serverName(m.id));
     $('chat-sub').textContent = (a.description || '') + (tools.length ? ` · uses ${tools.join(', ')}` : '');
     $('chat-view').classList.toggle('quiz', isQuizAgent(a));
-    $('chat-text').placeholder = isQuizAgent(a) ? 'Type an answer, or ask anything' : `Message ${a.name}`;
+    $('chat-text').placeholder = isQuizAgent(a) ? 'Type an answer, or ask anything' : `Message ${a.title || a.name}`;
     if (location.hash !== '#chat/' + name) history.replaceState(null, '', '#chat/' + name);
     if (fresh) welcome(a);
     paintSide();
@@ -94,7 +150,7 @@
       : ['What can you do?', 'Give me a quick example of what you are for'];
     $('chat-log').innerHTML = `<div class="ag-chat-empty">
       <div class="ag-avatar lg" style="${avatarStyle(a.name)}">${esc(initials(a.name))}</div>
-      <h3>${esc(a.name)}</h3>
+      <h3>${esc(a.title || a.name)}</h3>
       <p>${esc(a.description || 'Say hello.')}</p>
       <div class="ag-suggest">${picks.map(p => `<button type="button" data-say="${esc(p)}">${esc(p)}</button>`).join('')}</div>
     </div>`;
@@ -125,7 +181,13 @@
     scroll();
   }
   function serverOf(name) {
-    const m = (catalog.mcp || []).find(x => name.startsWith((x.registryName || x.id).replace(/-/g, '_') + '_'));
+    let m = (catalog.mcp || []).find(x => name.startsWith((x.registryName || x.id).replace(/-/g, '_') + '_'));
+    if (!m) {
+      // Unprefixed tool names (kagent in Berlin): the agent's own server that lists the tool.
+      const a = agents.find(x => x.name === chatName) || {};
+      const own = (a.mcp || []).find(x => (x.tools || []).includes(baseTool(name))) || ((a.mcp || []).length === 1 && a.mcp[0]);
+      if (own) m = (catalog.mcp || []).find(x => x.id === own.id) || { name: own.id };
+    }
     return m ? m.name : 'an MCP server';
   }
 
@@ -143,7 +205,7 @@
     const textEl = agentEl.querySelector('.ag-msg-text');
     let shown = '', started = false;
     try {
-      const res = await fetch(`/api/agents/${encodeURIComponent(chatName)}/chat/stream`, {
+      const res = await fetch(`${window.AGENTS_API || "/api/agents"}/${encodeURIComponent(chatName)}/chat/stream`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, contextId }),
       });
@@ -163,20 +225,32 @@
           if (ev.t === 'delta') {
             if (!started) { shown = ''; started = true; }
             shown += ev.text;
-            textEl.innerHTML = md(shown) + '<span class="ag-caret"></span>';
+            textEl.innerHTML = clean(shown) ? md(clean(shown)) + '<span class="ag-caret"></span>'
+              : '<span class="ag-typing"><i></i><i></i><i></i></span>';
             scroll();
           } else if (ev.t === 'message') {
             shown = ev.text; started = false;
-            textEl.innerHTML = md(shown);
+            if (clean(shown)) textEl.innerHTML = md(clean(shown));
           } else if (ev.t === 'tool_call') {
             toolChip(ev, agentEl);
             activity.push({ id: ev.id, name: ev.name, args: ev.args, result: undefined });
           } else if (ev.t === 'tool_result') {
             const chip = agentEl.querySelector(`.ag-toolchip[data-id="${CSS.escape(ev.id)}"]`);
             if (chip) chip.classList.add('done');
+            const err = toolError(ev.result);
+            if (err) {
+              if (chip) chip.classList.add('failed');
+              const note = document.createElement('p');
+              note.className = 'ag-chat-err ag-toolerr';
+              note.textContent = `${friendly(ev.name)} failed: ${String(err).slice(0, 400)}`;
+              agentEl.querySelector('.ag-msg-body').insertBefore(note, textEl);
+            }
             const act = activity.find(x => x.id === ev.id);
             if (act) act.result = ev.result;
             track(ev);
+            paintSide();
+          } else if (ev.t === 'agent') {
+            route = ev;
             paintSide();
           } else if (ev.t === 'done') {
             contextId = ev.contextId || contextId;
@@ -188,7 +262,12 @@
     } catch (e) {
       textEl.innerHTML = `<p class="ag-chat-err">The console lost the connection: ${esc(e.message || e)}</p>`;
     }
-    if (!shown && !textEl.querySelector('.ag-chat-err')) textEl.innerHTML = '<p class="ag-muted">No reply.</p>';
+    if (shown && !clean(shown) && !textEl.querySelector('.ag-chat-err')) {
+      const n = calledName(shown);
+      textEl.innerHTML = `<p class="ag-muted">The agent wrote a call to ${n ? `<code>${esc(n)}</code>` : 'a tool'} as text instead of running it, so it did not run. `
+        + 'Either that tool is not allowed for this agent yet, or the model garbled the call: send the request again.</p>';
+    } else if (!shown && !textEl.querySelector('.ag-chat-err')) textEl.innerHTML = '<p class="ag-muted">No reply.</p>';
+    shown = clean(shown);
     busy = false;
     $('chat-send').disabled = false;
     if (!questionCard(shown, agentEl, textEl)) answerButtons(shown);
@@ -329,9 +408,18 @@
       side.innerHTML = scoreboard();
       return;
     }
-    side.innerHTML = `<div class="ag-kicker">What it did</div>` + (activity.length
-      ? `<ol class="ag-activity">${activity.map(x => `<li class="${x.result === undefined ? 'wait' : 'done'}">
-          <strong>${esc(friendly(x.name))}</strong><span>via ${esc(serverOf(x.name))}</span></li>`).join('')}</ol>`
+    // The route a turn takes, from the backend's `agent` event (Berlin sends one; kind does not).
+    const hop = (label, sub) => `<li><strong>${esc(label)}</strong>${sub ? `<span>${esc(sub)}</span>` : ''}</li>`;
+    const routeCard = route ? `<div class="ag-kicker">Route</div><ol class="ag-route">
+        ${hop(route.user || 'signed out', 'Keycloak')}
+        ${hop(route.agent_id || chatName, route.identity_detail || (route.own_identity === false ? "no identity of its own: the user's token" : 'its own identity'))}
+        ${hop('kagent', route.deployment)}
+        ${hop('agentgateway', '')}
+        ${hop(window.CHAT_ROUTE_MODEL || window.AGENT_MODEL || 'the model', '')}</ol>` : '';
+    const via = x => route ? `agentgateway → ${serverOf(x.name)}` : serverOf(x.name);
+    side.innerHTML = routeCard + `<div class="ag-kicker">What it did</div>` + (activity.length
+      ? `<ol class="ag-activity">${activity.map(x => `<li class="${x.result === undefined ? 'wait' : (toolError(x.result) ? 'failed' : 'done')}">
+          <strong>${esc(friendly(x.name))}</strong><span>via ${esc(via(x))}</span></li>`).join('')}</ol>`
       : `<p class="ag-muted">Tool calls show here as the agent makes them, through agentgateway with its own identity.</p>`);
   }
 
@@ -375,8 +463,9 @@
   $('chat-new').onclick = () => openChat(chatName, true);
   $('detail-chat').onclick = () => { if (selected) openChat(selected); };
 
-  // Deep link: /agents#chat/quiz-host2 opens straight into the chat once the list has loaded.
-  const want = (location.hash.match(/^#chat\/(.+)$/) || [])[1];
+  // Deep link: /agents#chat/quiz-host2 or /agents?chat=quiz-host2 opens straight into the
+  // chat once the list has loaded.
+  const want = (location.hash.match(/^#chat\/(.+)$/) || [])[1] || new URLSearchParams(location.search).get('chat');
   if (want) {
     const wait = setInterval(() => {
       if (typeof loaded !== 'undefined' && loaded && catalog.platform) { clearInterval(wait); openChat(decodeURIComponent(want)); }

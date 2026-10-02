@@ -126,7 +126,7 @@ def nav_html() -> str:
 # The data classification story reuses Agentdesktop and Gateway decisions, under its
 # own paths, so its nav keeps the presenter inside that story.
 KERNWERK_LINKS = [
-    ("/kernwerk/eu", "Data classification"),
+    ("/kernwerk", "Data classification"),
     ("/kernwerk/desktop", "Agentdesktop"),
     ("/kernwerk/gateway-decisions", "Gateway decisions"),
     ("/kernwerk/prompts", "Demo prompts"),
@@ -136,13 +136,39 @@ KERNWERK_LINKS = [
 
 
 def kernwerk_nav(page: str, active: str) -> str:
-    links = ['    <a href="/kernwerk" class="up">← Sovereign demos</a>'] + [
+    links = ['    <a href="/" class="up">← All demos</a>'] + [
         '    <a href="%s"%s>%s</a>' % (href, ' class="active"' if href == active else "", label)
         for href, label in KERNWERK_LINKS]
     page = re.sub(r'<div class="nav-links">.*?</div>',
                   '<div class="nav-links">\n' + "\n".join(links) + '\n  </div>', page, count=1, flags=re.S)
-    page = re.sub(r'<a href="/user-story-1">← [^<]*</a>', '<a href="/kernwerk/eu">← Data classification</a>', page)
-    return page.replace('href="/dlp-routing"', 'href="/kernwerk/eu"')
+    page = re.sub(r'<a href="/user-story-1">← [^<]*</a>', '<a href="/kernwerk">← Data classification</a>', page)
+    return page.replace('href="/dlp-routing"', 'href="/kernwerk"')
+
+
+GOOGLE_COST_UI = "http://kagent.agentic.eu0.internal/age/cost-management"
+GOOGLE_LINKS = [
+    ("/google", "Google Sovereign Cloud"),
+    ("/google/routing", "Routing"),
+    ("/google/dlp", "Data protection"),
+    ("/google/agents", "Agents"),
+    ("/google/sdlc", "Website"),
+    ("/google/approvals", "Approvals"),
+    (GOOGLE_COST_UI, "Cost"),
+]
+
+
+def google_nav(page: str, active: str) -> str:
+    """A console page reused under /google: the Google steps in the nav, the crumb back to /google."""
+    links = ['    <a href="/" class="up">← All demos</a>'] + [
+        '    <a href="%s"%s%s>%s</a>' % (href, ' class="active"' if href == active else "",
+                                      ' target="_blank" rel="noopener"' if href.startswith("http") else "", label)
+        for href, label in GOOGLE_LINKS]
+    page = re.sub(r'<div class="nav-links">.*?</div>',
+                  '<div class="nav-links">\n' + "\n".join(links) + '\n  </div>', page, count=1, flags=re.S)
+    page = re.sub(r'<a class="st-crumb" href="[^"]*">← [^<]*</a>',
+                  '<a class="st-crumb" href="/google">← Google Sovereign Cloud</a>', page)
+    return re.sub(r'<div class="crumb"><a href="[^"]*">← [^<]*</a>',
+                  '<div class="crumb"><a href="/google">← Google Sovereign Cloud</a>', page)
 
 
 def decisions_html(kernwerk: bool = False) -> bytes:
@@ -237,12 +263,71 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/run":
             return self._run()
+        if self.path == "/api/google/chat/stream":
+            b = self._body()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            try:
+                for ev in google_sov.chat_stream(b.get("prompt", ""), b.get("route", "auto")):
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         if self.path == "/api/google/chat":
             b = self._body()
             try:
                 return self._json(google_sov.chat(b.get("prompt", ""), b.get("route", "auto")))
             except Exception as e:
                 return self._json({"status": 0, "error": str(e)})
+        if self.path == "/api/google/dlp/clear":
+            import google_dlp
+            try:
+                return self._json(google_dlp.clear_history())
+            except OSError as e:
+                return self._json({"ok": False, "error": f"Could not save history reset: {e}"})
+        if self.path == "/api/google/dlp/ask":
+            # Whole answers, not a stream: the response guardrail can only check
+            # an answer it can hold.
+            b = self._body()
+            import google_dlp
+            try:
+                return self._json(google_dlp.ask(b.get("prompt", ""), b.get("route", "auto")))
+            except Exception as e:
+                return self._json({"status": 0, "error": str(e)})
+        if self.path == "/api/google/dlp/upload":
+            b = self._body()
+            import google_dlp
+            try:
+                return self._json(google_dlp.upload(b.get("name", "document"),
+                                                    b.get("data", ""), b.get("prompt", "")))
+            except Exception as e:
+                return self._json({"status": 0, "error": str(e)})
+        if self.path.startswith(("/api/google/agents", "/api/google/approvals")):
+            return self._google_agents_post()
+        if self.path.startswith("/api/google/builder/") or self.path.startswith("/api/google/mcp/"):
+            return self._google_builder_post()
+        if self.path.startswith("/api/trustusbank/") and self.path.endswith("/chat/stream"):
+            import trustusbank_lab
+            domain = self.path.split("/")[-3]
+            body = self._body()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            # Drain fully even if the browser leaves, so the agent's A2A task is not cancelled.
+            client_gone = False
+            for ev in trustusbank_lab.chat_stream(domain, body.get("text", ""), body.get("contextId")):
+                if client_gone:
+                    continue
+                try:
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    client_gone = True
+            return None
         if self.path == "/api/quadratic/run":
             return self._quadratic()
         if self.path.startswith("/api/term/"):
@@ -328,6 +413,42 @@ class Handler(BaseHTTPRequestHandler):
                     result = petstore_lab.build_and_stage()
                     emit({"t": "staged", **result})
             return None
+        if self.path.startswith("/tubsdlc/site/"):
+            return self._tubsdlc_site("POST")
+        if self.path in ("/api/tubsdlc/pm", "/api/tubsdlc/fetch",
+                         "/api/trustusbank/sdlc/pm", "/api/trustusbank/sdlc/fetch"):
+            import trustusbank_sdlc
+            body = self._body()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            # Drain fully even if the browser leaves: the agent's turn, and the
+            # build-and-stage after the engineer's, must not die with the tab.
+            gen = (trustusbank_sdlc.pm_chat(body.get("text", "")) if self.path.endswith("/pm")
+                   else trustusbank_sdlc.fetch_and_implement(body.get("text")))
+            client_gone = False
+            for ev in gen:
+                if client_gone:
+                    continue
+                try:
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    client_gone = True
+            return None
+        if self.path in ("/api/tubsdlc/spec", "/api/trustusbank/sdlc/spec"):
+            import trustusbank_sdlc
+            body = self._body()
+            return self._json(trustusbank_sdlc.spec_decision(bool(body.get("approve")), body.get("reason", ""),
+                                                             body.get("number")))
+        if self.path in ("/api/tubsdlc/promote", "/api/trustusbank/sdlc/promote"):
+            import trustusbank_sdlc
+            body = self._body()
+            return self._json(trustusbank_sdlc.promote(bool(body.get("approve")), body.get("reason", "")))
+        if self.path in ("/api/tubsdlc/stage", "/api/trustusbank/sdlc/stage"):
+            import trustusbank_sdlc
+            return self._json(trustusbank_sdlc.build_and_stage())
         if self.path == "/api/petstore/promote":
             import petstore_lab
             body = self._body()
@@ -354,6 +475,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(substrate.stop())
         self.send_response(404)
         self.end_headers()
+
+    def _tubsdlc_site(self, method):
+        """The TrustUsBank app, staging or prod, proxied through the gateway so the
+        SDLC page can preview it without /etc/hosts entries."""
+        import trustusbank_sdlc
+        env, _, rest = self.path[len("/tubsdlc/site/"):].partition("/")
+        if not rest and "?" not in env and not self.path.endswith("/"):
+            return self._redirect(f"/tubsdlc/site/{env}/")
+        body = None
+        if method == "POST":
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        code, headers, data = trustusbank_sdlc.site_proxy(env, rest, method, body,
+                                                          self.headers.get("Content-Type"))
+        self.send_response(code)
+        for k, v in headers.items():
+            self.send_header(k, v)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _body(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -550,12 +690,108 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             emit({"type": "error", "text": str(e)[:400]})
 
+    def _google_agents_post(self):
+        """/google/agents and /google/approvals: agents.html and approvals.html on Berlin,
+        the same contract /api/agents serves for kind (google_builder.py)."""
+        import google_builder as gb
+        path = urlparse(self.path).path
+        rest = path.split("/", 4)[4] if path.count("/") >= 4 else ""
+        body = self._body()
+        if rest == "":
+            return self._json(gb.create_contract(body))
+        if rest == "preview":
+            return self._json(gb.preview(body))
+        if rest == "skills":
+            return self._json({"ok": False, "error": "Skills on Berlin are fixed prompt fragments; pick one."})
+        name, _, action = rest.partition("/")
+        if action == "approve-github":
+            return self._json(gb.approve_contract(name, "approve"))
+        if action == "revoke-github":
+            return self._json(gb.approve_contract(name, "deny"))
+        if action == "chat/stream":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            client_gone = False
+            for ev in gb.chat_stream(name, body.get("text", ""), body.get("contextId")):
+                if client_gone:
+                    continue
+                try:
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    client_gone = True
+            return None
+        return self._json({"ok": False, "error": "unknown route"})
+
+    def _google_page(self, page: str, active: str, approvals: bool) -> bytes:
+        """agents.html or approvals.html, with the Google nav and window.AGENTS_API set."""
+        import google_builder as gb
+        html = google_nav((PAGES / page).read_text(), active)
+        html = html.replace('href="/approvals"', 'href="/google/approvals"').replace('href="/agents"', 'href="/google/agents"')
+        if approvals:
+            html = html.replace("Allowed automatically", "Platform-managed grants")
+            html = html.replace(
+                "Some MCP servers are safe enough that nobody should have to sign off: this is decided once, by labelling the server's AgentRegistry record. An agent that picks one gets its grant at deploy. It is still enforced at the gateway: the agent must present its own signed MCP token, matching its mesh identity, and only the tools it picked are allowed. Every other agent gets a 403 before a session opens. Deleting the agent takes the grant straight back out.",
+                "The bank and website agents have explicit grants maintained in the infrastructure repository. Every MCP request requires a short-lived signed workload JWT matching the caller’s mesh identity. Each grant allows only the named tools; missing or invalid tokens get 401, mismatched identities get 403, and ungranted tools stay hidden and cannot be called.")
+            html = html.replace("No agent uses an auto-approved server yet. Try the Tower climb planner on", "No platform-managed grants found. See")
+        icons = {"payments": "💶", "compliance": "🛡️", "credit": "🏦", "gdpr": "🔒"}
+        templates = [{"id": a["domain"], "icon": icons.get(a["domain"], "🤖"), "title": a["title"], "name": "my-" + a["domain"],
+                      "blurb": a["description"], "description": a["description"],
+                      "prompt": gb.TEMPLATE_PROMPTS.get(a["domain"], a["description"]),
+                      "skill": "bank-customers", "tools": {f"trustusbank-{a['domain']}-tools": gb.TUB_TOOLS[a["domain"]]}}
+                     for a in gb.tl.AGENTS]
+        cfg = {"AGENTS_API": "/api/google/approvals" if approvals else "/api/google/agents",
+               "APPROVALS_PAGE": "/google/approvals", "CONFETTI_ON_DEPLOY": True, "SKILL_AUTHORING": False,
+               "AGENT_MODEL": gb.MODEL["name"], "AGENT_TEMPLATES": templates,
+               "CHAT_ROUTE_MODEL": f"{gb.MODEL['title']} · H100 Berlin",
+               "AGENT_GLYPHS": {f"trustusbank-{d}-tools": g for d, g in icons.items()}}
+        inject = "<script>" + "".join(f"window.{k}={json.dumps(v)};" for k, v in cfg.items()) + "</script>\n"
+        marker = '<script src="/static/js/'
+        i = html.find(marker)
+        return (html[:i] + inject + html[i:]).encode() if i >= 0 else html.encode()
+
+    def _google_builder_post(self):
+        """The Google page's agent builder and MCP approvals (google_builder.py)."""
+        import google_builder
+        parts = self.path.split("/")
+        body = self._body()
+        if self.path == "/api/google/builder/deploy":
+            return self._json(google_builder.deploy(body))
+        if self.path.startswith("/api/google/builder/") and self.path.endswith("/review"):
+            tools = body.get("tools")
+            return self._json(google_builder.approve(parts[-2], tools if isinstance(tools, list) else None,
+                                                     body.get("decision", "")))
+        if self.path.endswith("/chat/stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            client_gone = False
+            for ev in google_builder.chat_stream(parts[-3], body.get("text", ""), body.get("contextId")):
+                if client_gone:
+                    continue
+                try:
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    client_gone = True
+            return None
+        return self._json({"ok": False, "error": "unknown builder route"})
+
     def do_DELETE(self):
         path = urlparse(self.path).path
         if path.startswith("/api/agents/"):
             import agents_lab
             name = path.split("/")[-1]
             return self._json(agents_lab.delete_agent(name))
+        if path.startswith("/api/google/agents/"):
+            import google_builder
+            return self._json(google_builder.delete_contract(path.split("/")[-1]))
+        if path.startswith("/api/google/builder/"):
+            import google_builder
+            return self._json(google_builder.delete(path.split("/")[-1]))
         self.send_response(404)
         self.end_headers()
 
@@ -578,22 +814,82 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, notebooks.home_page(), "text/html; charset=utf-8")
         if path == "/user-story-1":
             return self._send(200, (PAGES / "user-story-1.html").read_bytes(), "text/html; charset=utf-8")
-        # /kernwerk is the sovereign chooser: Google Sovereign Cloud (Berlin GCD) or
-        # Kernwerk, the sample EU customer, whose story now lives under /kernwerk/eu.
+        # Kernwerk, the sample EU customer. Google Sovereign Cloud has its own story on
+        # the home page, so /kernwerk no longer needs a chooser in front of it.
         if path in ("/kernwerk", "/kernwerk/"):
-            return self._send(200, (PAGES / "sovereign-home.html").read_bytes(), "text/html; charset=utf-8")
-        if path in ("/kernwerk/eu", "/kernwerk/eu/"):
-            return self._send(200, kernwerk_nav((PAGES / "dlp-routing.html").read_text(), "/kernwerk/eu").encode(),
+            return self._send(200, kernwerk_nav((PAGES / "dlp-routing.html").read_text(), "/kernwerk").encode(),
                               "text/html; charset=utf-8")
+        if path in ("/kernwerk/eu", "/kernwerk/eu/"):
+            return self._redirect("/kernwerk")
         if path in ("/google", "/google/"):
+            return self._send(200, google_nav((PAGES / "google-hub.html").read_text(), "/google").encode(),
+                              "text/html; charset=utf-8")
+        if path == "/google/routing":
+            return self._send(200, google_nav((PAGES / "google-routing.html").read_text(), "/google/routing").encode(),
+                              "text/html; charset=utf-8")
+        if path in ("/google/dlp", "/google/dlp/"):
+            return self._send(200, google_nav((PAGES / "google-dlp.html").read_text(), "/google/dlp").encode(),
+                              "text/html; charset=utf-8")
+        if path == "/api/google/dlp/status":
+            import google_dlp
+            return self._json(google_dlp.status())
+        if path == "/api/google/dlp/samples":
+            import google_dlp
+            return self._json(google_dlp.samples())
+        if path == "/api/google/dlp/events":
+            import google_dlp
+            return self._json(google_dlp.events())
+        if path == "/google/sdlc":
+            return self._send(200, google_nav((PAGES / "google-sdlc.html").read_text(), "/google/sdlc").encode(),
+                              "text/html; charset=utf-8")
+        if path.startswith("/tubsdlc/site/"):
+            return self._tubsdlc_site("GET")
+        if path in ("/google/agents", "/google/agents/"):
+            return self._send(200, self._google_page("agents.html", "/google/agents", False), "text/html; charset=utf-8")
+        if path in ("/google/approvals", "/google/approvals/"):
+            return self._send(200, self._google_page("approvals.html", "/google/approvals", True),
+                              "text/html; charset=utf-8")
+        if path.startswith(("/api/google/agents", "/api/google/approvals")):
+            import google_builder as gb
+            approvals = path.startswith("/api/google/approvals")
+            rest = path.split("/", 4)[4] if path.count("/") >= 4 else ""
+            if rest == "":
+                # Platform-managed grants are read-only but still visible, so
+                # the admin can inspect every bank and SDLC agent's policy.
+                return self._json(gb.list_contract(include_bank=True))
+            if rest == "catalog":
+                return self._json(gb.catalog_contract())
+            if rest == "prompts":
+                return self._json(gb.prompts())
+            if rest.endswith("/status"):
+                return self._json(gb.status_contract(rest.split("/")[0]))
+        if path == "/google/all":   # the old one-page version, kept while the steps move out of it
             return self._send(200, (PAGES / "google-sovereign.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/api/google/mcp":
+            import google_builder
+            return self._json(google_builder.mcp_catalog())
+        if path == "/api/google/builder/catalog":
+            import google_builder
+            return self._json(google_builder.catalog())
+        if path == "/api/google/builder/agents":
+            import google_builder
+            return self._json(google_builder.agents())
+        if path.startswith("/api/google/builder/") and path.endswith("/status"):
+            import google_builder
+            return self._json(google_builder.status(path.split("/")[-2]))
         if path == "/api/google/status":
             return self._json(google_sov.status())
+        if path in ("/api/tubsdlc/status", "/api/trustusbank/sdlc/status"):
+            import trustusbank_sdlc
+            return self._json(trustusbank_sdlc.status())
+        if path == "/api/trustusbank/status":
+            import trustusbank_lab
+            return self._json(trustusbank_lab.status())
         # It was /nashville until the page became about data protection and routing
         # rather than the city it was written for. Bookmarks and any slide already
         # printed still work, which matters more than a tidy route table mid-demo.
         if path in ("/dlp-routing", "/nashville"):
-            return self._redirect("/kernwerk/eu")
+            return self._redirect("/kernwerk")
         if path == "/kernwerk/manifests":
             return self._send(200, kernwerk_nav((PAGES / "kernwerk-manifests.html").read_text(),
                                                 path).encode(),

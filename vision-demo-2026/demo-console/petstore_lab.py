@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -63,14 +64,47 @@ def latest_in_review_issue() -> dict | None:
     return issues[-1] if issues else None
 
 
+_AUTOSTAGE_INFLIGHT = set()
+_AUTOSTAGE_LOCK = threading.Lock()
+
+
+def _autostage_if_needed(issue: dict | None, staging_tag: str | None) -> None:
+    """Whatever got an issue to in-review -- the console's own fetch, someone chatting
+    to dev-bot directly, a bare curl to its A2A endpoint, a manual push -- staging
+    should never depend on remembering which one does the build. Every status() poll
+    (the page calls this every 8s) checks the real HEAD against what's actually
+    running, and stages it itself if they've drifted. Runs in the background: status()
+    has to return fast, and a docker build does not."""
+    if not issue:
+        return
+    head = _resolve_head_sha()
+    if not head or (staging_tag or "").startswith(head):
+        return
+    with _AUTOSTAGE_LOCK:
+        if issue["number"] in _AUTOSTAGE_INFLIGHT:
+            return
+        _AUTOSTAGE_INFLIGHT.add(issue["number"])
+
+    def run():
+        try:
+            build_and_stage()
+        finally:
+            with _AUTOSTAGE_LOCK:
+                _AUTOSTAGE_INFLIGHT.discard(issue["number"])
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def status() -> dict:
     state = _load_state()
     state["agent_ready_issue"] = latest_agent_ready_issue()
-    state["in_review_issue"] = latest_in_review_issue()
+    issue = latest_in_review_issue()
+    state["in_review_issue"] = issue
     for env, ns in (("staging", "petstore-staging"), ("prod", "petstore-prod")):
         img = al.kc("-n", ns, "get", "deploy/petstore",
                     "-o", "jsonpath={.spec.template.spec.containers[0].image}", check=False)
         state[f"{env}_image"] = (img.stdout or "").strip().split(":")[-1] if img.returncode == 0 else None
+    _autostage_if_needed(issue, state.get("staging_image"))
     return state
 
 
@@ -159,7 +193,10 @@ def build_and_stage() -> dict:
 
 def promote(approve: bool, reason: str = "") -> dict:
     """Approve: the exact tag already reviewed in staging goes to prod, no rebuild.
-    Deny: prod is untouched; staging stays up for another iteration."""
+    Deny: prod is untouched, the reason is the only record of what to fix, and the
+    label goes back to agent-ready so a future "fetch latest" hands it to dev-bot
+    again -- without that flip the issue would just sit in in-review forever with
+    no way back into the loop."""
     state = _load_state()
     tag = state.get("staged_tag")
     issue = latest_in_review_issue()
@@ -178,9 +215,15 @@ def promote(approve: bool, reason: str = "") -> dict:
         state["stage"] = "promoted"
         _save_state(state)
         return {"ok": True, "tag": tag, "issue": issue}
+    reason = (reason or "").strip()
+    if not reason:
+        return {"ok": False, "error": "a reason is required to deny"}
     if issue:
-        body = f"Denied in staging review.{' Reason: ' + reason if reason else ''} Staging stays up for another pass."
+        body = (f"Denied in staging review: {reason}\n\nBack to agent-ready for another pass -- "
+                f"dev-bot should read this comment and revise accordingly.")
         _gh("issue", "comment", str(issue["number"]), "--repo", REPO, "--body", body)
+        _gh("issue", "edit", str(issue["number"]), "--repo", REPO,
+            "--remove-label", "in-review", "--add-label", "agent-ready")
     state["stage"] = "denied"
     _save_state(state)
     return {"ok": True, "denied": True, "issue": issue}

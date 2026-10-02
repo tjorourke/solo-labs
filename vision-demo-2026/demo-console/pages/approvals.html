@@ -7,6 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/approvals.css">
 </head>
 <body>
 <nav class="console-nav">
@@ -46,6 +47,16 @@
 </header>
 
 <div class="wrap">
+  <div id="approvals-loading" class="approvals-loading" role="status" aria-live="polite">
+    <span class="approvals-spinner" aria-hidden="true"></span>
+    <strong>Loading approvals</strong>
+    <span>Reading agent identities and gateway policies…</span>
+  </div>
+  <div id="approvals-error" class="approvals-error" role="alert" hidden>
+    <span id="approvals-error-message"></span>
+    <button type="button" class="btn" id="approvals-retry">Try again</button>
+  </div>
+  <div id="approvals-content" hidden aria-busy="true">
   <div class="panel">
     <div class="panel-head">
       <h2>Waiting on you</h2>
@@ -56,19 +67,42 @@
     <p class="sub" id="pending-empty" style="display:none">Nothing waiting. Deploy an agent with MCP tools on <a href="/agents">My agents</a> and it lands here.</p>
   </div>
 
-  <div class="panel">
-    <h2>Allowed automatically</h2>
-    <p class="sub">Some MCP servers are safe enough that nobody should have to sign off: this is decided once, by labelling the server's AgentRegistry record. An agent that picks one gets its grant at deploy. It is still enforced at the gateway: the agent must present its own signed MCP token, matching its mesh identity, and only the tools it picked are allowed. Every other agent gets a 403 before a session opens. Deleting the agent takes the grant straight back out.</p>
-    <div class="approve-list" id="auto"></div>
-    <p class="sub" id="auto-empty" style="display:none">No agent uses an auto-approved server yet. Try the Tower climb planner on <a href="/agents">My agents</a>.</p>
+  <section class="panel" aria-labelledby="grants-title">
+    <div class="panel-head">
+      <h2 id="grants-title">Approved access</h2>
+      <span class="grant-total" id="grants-total">Loading grants</span>
+    </div>
+    <p class="sub">Every grant names an agent identity and the tools it can use. Expand a row to inspect the policy YAML. Revoking removes manually approved access at the gateway.</p>
+    <div class="grant-toolbar">
+      <label class="grant-search">Search grants
+        <input type="search" id="grant-search" placeholder="Agent, identity, server or tool…" autocomplete="off">
+      </label>
+      <label>Grant source
+        <select id="grant-source">
+          <option value="all">All sources</option>
+          <option value="reviewed">Admin-approved</option>
+          <option value="managed">Platform-managed</option>
+          <option value="automatic">Auto-approved</option>
+        </select>
+      </label>
+    </div>
+    <div class="grant-scroll" role="region" aria-label="Approved MCP grants" tabindex="0">
+      <table class="grant-table">
+        <thead><tr><th scope="col">Agent / policy</th><th scope="col">Workload identity</th>
+          <th scope="col">MCP servers</th><th scope="col">Tools</th><th scope="col">Source</th><th scope="col">Actions</th></tr></thead>
+        <tbody id="grant-rows"></tbody>
+      </table>
+    </div>
+    <p class="sub" id="grants-empty" hidden>No approved grants yet.</p>
+    <div class="grant-pagination">
+      <span id="grant-range" role="status" aria-live="polite"></span>
+      <div><button class="btn" id="grants-prev" type="button">Previous</button>
+        <button class="btn" id="grants-next" type="button">Next</button></div>
+    </div>
+    <p class="footnote">Platform-managed and auto-approved grants are read-only here. Their source controls access.</p>
+  </section>
   </div>
-
-  <div class="panel">
-    <h2>Already allowed</h2>
-    <p class="sub">The grant is one allow expression on the gateway, keyed to the agent's ServiceAccount. Revoking takes it straight back out.</p>
-    <div class="approve-list" id="allowed"></div>
-    <p class="sub" id="allowed-empty" style="display:none">Nothing approved yet.</p>
-  </div>
+</div>
 </div>
 
 <div class="modal-back" id="mcp-modal" style="display:none" role="dialog" aria-modal="true">

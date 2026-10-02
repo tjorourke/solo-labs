@@ -9,11 +9,15 @@
   <link rel="stylesheet" href="/static/css/app.css">
   <link rel="stylesheet" href="/static/css/stage.css">
   <style>
+    .gs-open { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    .gs-open a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px;
+      background: #1a73e8; color: #fff; font-weight: 600; font-size: 14px; text-decoration: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+    .gs-open a:hover { background: #1558b0; }
+    .gs-open a i { font-style: normal; opacity: .85; }
     .gs-conn { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 30px; }
     .gs-conn .st-stat b { font-size: 22px; letter-spacing: -.01em; }
     .gs-conn .st-stat small { word-break: break-all; }
-    .gs-meta { margin-top: 10px; font-size: 12.5px; color: #6b6478; }
-    .gs-meta code { background: #ece7df; border-radius: 6px; padding: 1px 6px; }
     .gs-err { margin-top: 12px; padding: 12px 16px; border-radius: 14px; background: #fffbeb; border: 1px solid #fcd34d; color: #78350f; font-size: 14px; font-weight: 650; }
     .gs-err[hidden] { display: none; }
 
@@ -48,7 +52,8 @@
     .gs-result { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
     .gs-result[hidden] { display: none; }
     .gs-answer, .gs-why { border-radius: 24px; background: #fff; border: 1px solid #e8e2d8; padding: 22px 24px; }
-    .gs-answer .txt { white-space: pre-wrap; font-size: 15.5px; line-height: 1.6; color: #221c30; }
+    .gs-answer .txt { white-space: pre-wrap; font-size: 15.5px; line-height: 1.6; color: #221c30;
+                    height: 320px; overflow-y: auto; overscroll-behavior: contain; }
     .gs-why table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .gs-why td { padding: 7px 0; border-bottom: 1px solid #f0ebe3; vertical-align: top; }
     .gs-why td:first-child { color: #6b6478; font-weight: 700; padding-right: 12px; white-space: nowrap; }
@@ -58,7 +63,7 @@
     .gs-stats b { display: block; font-size: 22px; font-weight: 850; letter-spacing: -.02em; }
     .gs-stats span { font-size: 12px; font-weight: 650; color: #6b6478; }
 
-    .gs-log { margin: 18px 0 70px; }
+    .gs-log { margin: 18px 0 10px; }
     .gs-log-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 10px; }
     .gs-log-head small { color: #6b6478; font-size: 12.5px; }
     .gs-log .card { background: #fff; border: 1px solid #d8e0ea; border-left-width: 5px; border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; }
@@ -83,6 +88,34 @@
     .gs-log .hdrs { width: 100%; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #475569; }
     .gs-log .hdrs div { padding: 1px 0; }
     .gs-log .empty { color: #6b6478; font-size: 13.5px; background: #fff; border: 1px dashed #d8e0ea; border-radius: 10px; padding: 14px 16px; }
+
+    .tb-agents { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .tb-agent { text-align: left; border-radius: 20px; padding: 18px 18px 16px; background: #fff; border: 2px solid #e8e2d8; cursor: pointer; font: inherit; transition: border-color .2s, transform .2s, box-shadow .2s; }
+    .tb-agent:hover { border-color: #c4b5fd; }
+    .tb-agent[aria-pressed="true"] { border-color: #16a34a; transform: translateY(-3px); box-shadow: 0 22px 44px -26px rgba(22, 163, 74, .6); }
+    .tb-agent h3 { margin: 6px 0 6px; font-size: 19px; font-weight: 850; letter-spacing: -.02em; color: #120d1f; }
+    .tb-agent p { margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; color: #5d5669; }
+    .tb-agent .st-eyebrow { color: #15803d; display: flex; align-items: center; gap: 6px; }
+    .tb-agent code { font-size: 11.5px; color: #475569; word-break: break-all; }
+    .tb-dot { width: 8px; height: 8px; border-radius: 50%; background: #d4d4d8; display: inline-block; }
+    .tb-dot.ok { background: #16a34a; } .tb-dot.bad { background: #dc2626; }
+    .tb-chain { margin: 16px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; font-weight: 750; }
+    .tb-chain span { background: #f0fdf4; border: 1px solid #86efac; color: #14532d; border-radius: 10px; padding: 6px 10px; }
+    .tb-chain i { font-style: normal; color: #a78bfa; font-weight: 900; }
+    .tb-run { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; }
+    .tb-run[hidden] { display: none; }
+    .tb-trace { border-radius: 24px; background: #fff; border: 1px solid #e8e2d8; padding: 22px 24px; }
+    .tb-step { border-left: 3px solid #86efac; padding: 6px 0 8px 12px; margin: 0 0 10px; font-size: 13px; }
+    .tb-step b { font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #14532d; }
+    .tb-step small { display: block; color: #6b6478; margin: 2px 0 4px; }
+    .tb-step pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+    .tb-id { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; font-size: 13.5px; color: #5d5669; }
+    .tb-id b { display: inline-flex; align-items: center; gap: 8px; background: #120d1f; color: #fff; border-radius: 999px; padding: 6px 14px 6px 6px; font-weight: 750; }
+    .tb-id b i { font-style: normal; width: 24px; height: 24px; border-radius: 50%; background: #16a34a; display: inline-grid; place-items: center; font-size: 12px; }
+    .tb-id.off b { background: #dc2626; }
+    .tb-id code { font-size: 12px; background: #f7f4ef; border: 1px solid #e0d9ce; border-radius: 6px; padding: 2px 6px; color: #120d1f; }
+    .tb-soon { border-radius: 24px; background: #fff; border: 1px dashed #d8e0ea; padding: 22px 26px; margin: 0 0 70px; font-size: 15px; line-height: 1.55; color: #5d5669; }
+    @media (max-width: 1000px) { .tb-agents, .tb-run { grid-template-columns: 1fr; } }
     @media (max-width: 1000px) { .gs-conn, .gs-routes, .gs-result { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -115,7 +148,12 @@
     <a class="st-crumb" href="/kernwerk">← Sovereign AI</a>
     <div class="st-eyebrow">Google Sovereign Cloud · Berlin · u-germany-northeast1</div>
     <h1>One gateway. <em>Gemma</em> keeps it in Germany, <em>Gemini</em> brings the frontier.</h1>
-    <p class="lead">Enterprise agentgateway on GKE Autopilot in Google Cloud Dedicated. Before routing, the vLLM Semantic Router classifies every prompt. Regulated topics stay on Gemma, on an H100 inside the boundary. Everything else may use Gemini.</p>
+    <p class="lead">Enterprise agentgateway on GKE Autopilot in Google Cloud Dedicated. Before routing, the vLLM Semantic Router classifies every prompt. Regulated topics (customer personal data under GDPR / DSGVO, banking secrecy, AML) stay on Gemma, on an H100 inside the German boundary, so no personal data leaves the EU. Everything else may use Gemini.</p>
+
+    <div class="gs-open">
+      <a href="http://kagent.agentic.eu0.internal/age/gateways" target="_blank" rel="noopener">Open agentgateway <i>↗</i></a>
+      <a href="http://kagent.agentic.eu0.internal/ke/agents" target="_blank" rel="noopener">Open kagent <i>↗</i></a>
+    </div>
 
     <div class="gs-conn">
       <div class="st-stat"><span>agentgateway</span><b id="c-gw"><i class="st-skel"></i></b><small id="c-gw-sub">&nbsp;</small></div>
@@ -123,14 +161,13 @@
       <div class="st-stat"><span>Gemma 3 27B · vLLM</span><b id="c-gemma"><i class="st-skel"></i></b><small id="c-gemma-sub">&nbsp;</small></div>
       <div class="st-stat"><span>AI backends</span><b id="c-be"><i class="st-skel"></i></b><small id="c-be-sub">&nbsp;</small></div>
     </div>
-    <div class="gs-meta" id="c-meta"></div>
     <div class="gs-err" id="c-err" hidden></div>
   </div>
 </header>
 
 <section class="st-section">
   <div class="st-wrap">
-    <div class="st-head"><div><div class="st-eyebrow">Two routes, one gateway</div><h2>Where a prompt can go</h2></div></div>
+    <div class="st-head"><div><div class="st-eyebrow">Two routes, one gateway</div><h2>Demo 1 : Where a prompt can go</h2></div></div>
     <div class="gs-routes">
       <div class="gs-route gemma" id="r-gemma">
         <div class="st-eyebrow">Route 1 · sovereign</div>
@@ -141,7 +178,7 @@
       </div>
       <div class="gs-route gemini" id="r-gemini">
         <div class="st-eyebrow">Route 2 · frontier</div>
-        <h3>Gemini 2.5 Flash</h3>
+        <h3>Gemini 3.8 Flash</h3>
         <p>Google's frontier model, for non-sensitive general questions such as event planning, history and general knowledge. The gateway holds the API key and the prompt goes out through Cloud NAT.</p>
         <div class="gs-path"><span>Client</span><i>→</i><span>agentgateway</span><i>→</i><span>Semantic Router</span><i>→</i><span class="out">Cloud NAT → Gemini API</span></div>
         <span class="gs-badge out">Leaves the boundary, by policy</span>
@@ -150,9 +187,9 @@
 
     <div class="gs-ask">
       <div class="gs-samples" id="samples">
-        <button data-p="Review this approach: a Python service retries failed SEPA payment submissions three times with a fixed one-second delay. What are the risks, and how would you implement idempotent retries with exponential backoff?">Gemma · software engineering</button>
-        <button data-p="Explain how a bank calculates its Liquidity Coverage Ratio under Basel III, and which inflows and outflows carry the largest weightings.">Gemma · banking &amp; finance</button>
-        <button data-p="Plan a two-day programme for an international delegation visiting Berlin, combining a cultural highlight each afternoon with a venue suitable for a business dinner.">Gemini · event planning</button>
+        <button data-p="Our banking app sometimes charges a customer twice when they tap Pay twice. Why does that happen, and how do we fix it in the code?">Gemma · software</button>
+        <button data-p="I earn 3,000 euros a month. How much should I save each month to have 10,000 euros in three years?">Gemma · money</button>
+        <button data-p="Plan a two-day cultural visit to Berlin for an international delegation: museums, a concert and a riverside walk.">Gemini · event planning</button>
         <button data-p="Summarise how the printing press changed the spread of scientific knowledge in sixteenth-century Europe, in one paragraph.">Gemini · history</button>
       </div>
       <textarea id="prompt" placeholder="Ask anything. The router decides where it goes."></textarea>
@@ -188,6 +225,744 @@
     </div>
   </div>
 </section>
+<section class="st-section">
+  <div class="st-wrap">
+    <div class="st-head"><div><div class="st-eyebrow">TrustUsBank · agents on kagent, catalogued in AgentRegistry</div><h2>Demo 2 : Finance agents that never leave Germany</h2></div></div>
+    <p class="lead" style="margin:0 0 18px;max-width:900px">Four agents for a Frankfurt bank. AgentRegistry approved each one's tools and pushed it onto kagent; nobody ran kubectl apply on an agent. Every agent thinks with Gemma on the H100, and it can only reach the core-banking MCP server for its own domain, through agentgateway.</p>
+    <div class="tb-id" id="tb-id"></div>
+    <div class="tb-agents" id="tb-agents"></div>
+    <div class="tb-chain"><span>Agent · kagent · ns agentregistry-system</span><i>→</i><span>agentgateway · llm.agentic.eu0.internal</span><i>→</i><span>Gemma 3 27B · H100 · Berlin</span><i>·</i><span id="tb-chain-mcp">agentgateway · mcp.agentic.eu0.internal/mcp/…</span><i>→</i><span>core-banking MCP · ns mcp</span></div>
+
+    <div class="gs-ask">
+      <div class="gs-samples" id="tb-samples"></div>
+      <textarea id="tb-prompt" placeholder="Pick an agent, then ask it something."></textarea>
+      <div class="gs-row">
+        <small id="tb-who" style="color:#6b6478;font-weight:650"></small>
+        <div style="display:flex;gap:8px"><button class="gs-send" id="tb-new" style="background:#f7f4ef;color:#120d1f;border:1px solid #e0d9ce">New conversation</button><button class="gs-send" id="tb-send">Ask the agent</button></div>
+      </div>
+    </div>
+
+    <div class="tb-run" id="tb-run" hidden>
+      <div class="gs-answer">
+        <div class="st-eyebrow" id="tb-a-who">Answer</div>
+        <div class="txt" id="tb-a-txt"></div>
+      </div>
+      <div class="tb-trace">
+        <div class="gs-stats">
+          <div><b id="tb-s-lat">–</b><span>seconds</span></div>
+          <div><b id="tb-s-tools">–</b><span>tool calls</span></div>
+          <div><b id="tb-s-state">–</b><span>task state</span></div>
+        </div>
+        <div class="st-eyebrow" style="margin-bottom:8px">Tool calls, through agentgateway</div>
+        <div id="tb-trace"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="st-section" id="sdlc">
+  <style>
+    #sdlc .sd-flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0 0 18px; }
+    #sdlc .sd-st { position: relative; border-radius: 18px; background: #fff; border: 2px solid #e8e2d8; padding: 14px 16px; transition: border-color .2s, box-shadow .2s, transform .2s; }
+    #sdlc .sd-st b { display: block; font-size: 15.5px; font-weight: 850; letter-spacing: -.01em; color: #120d1f; margin: 4px 0 2px; }
+    #sdlc .sd-st small { font-size: 12.5px; color: #6b6478; line-height: 1.4; display: block; }
+    #sdlc .sd-st .st-eyebrow { font-size: 11px; color: #94a3b8; }
+    #sdlc .sd-st.done { border-color: #86efac; }
+    #sdlc .sd-st.done .st-eyebrow { color: #15803d; }
+    #sdlc .sd-st.now { border-color: #7c3aed; transform: translateY(-3px); box-shadow: 0 22px 44px -26px rgba(124, 58, 237, .6); }
+    #sdlc .sd-st.now .st-eyebrow { color: #7c3aed; }
+    #sdlc .sd-st.bad { border-color: #fca5a5; }
+    #sdlc .sd-st.bad .st-eyebrow { color: #b91c1c; }
+    #sdlc .sd-envs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 0 0 18px; }
+    #sdlc .sd-env { border-radius: 24px; background: #fff; border: 1px solid #e8e2d8; padding: 20px 22px; }
+    #sdlc .sd-env-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    #sdlc .sd-env h3 { margin: 4px 0 2px; font-size: 22px; font-weight: 850; letter-spacing: -.02em; color: #120d1f; }
+    #sdlc .sd-env.staging .st-eyebrow { color: #b45309; }
+    #sdlc .sd-env.prod .st-eyebrow { color: #0b3b60; }
+    #sdlc .sd-env a.sd-open { display: inline-flex; gap: 6px; align-items: center; background: #0b3b60; color: #fff; border-radius: 999px; padding: 8px 14px; font: 750 13px/1 inherit; text-decoration: none; white-space: nowrap; }
+    #sdlc .sd-env.staging a.sd-open { background: #b45309; }
+    #sdlc .sd-env code.host { font-size: 12.5px; color: #475569; word-break: break-all; }
+    #sdlc .sd-kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin-top: 14px; font-size: 13px; }
+    #sdlc .sd-kv span { color: #6b6478; font-weight: 700; }
+    #sdlc .sd-kv code { font-size: 12.5px; color: #120d1f; word-break: break-all; }
+    #sdlc .sd-kv .chg { background: #fef3c7; border-radius: 6px; padding: 0 5px; }
+    #sdlc .sd-work { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    #sdlc .sd-pane { border-radius: 24px; background: #fff; border: 1px solid #e8e2d8; padding: 22px 24px; display: flex; flex-direction: column; }
+    #sdlc .sd-pane h3 { margin: 4px 0 6px; font-size: 20px; font-weight: 850; letter-spacing: -.02em; color: #120d1f; display: flex; align-items: center; gap: 8px; }
+    #sdlc .sd-pane p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.5; color: #5d5669; }
+    #sdlc .sd-pane textarea { width: 100%; box-sizing: border-box; min-height: 84px; border: 1px solid #e0d9ce; border-radius: 14px; padding: 12px 14px; font: 15px/1.5 inherit; resize: vertical; background: #fbfaf7; }
+    #sdlc .sd-pane textarea:focus { outline: 2px solid #c4b5fd; border-color: #c4b5fd; }
+    #sdlc .sd-pane .gs-row { margin-top: auto; padding-top: 12px; }
+    #sdlc .sd-issue { display: block; border: 1px solid #e0d9ce; background: #fbfaf7; border-radius: 12px; padding: 10px 12px; font-size: 13.5px; color: #120d1f; text-decoration: none; margin: 0 0 12px; }
+    #sdlc .sd-issue:hover { border-color: #c4b5fd; }
+    #sdlc .sd-issue i { font-style: normal; color: #6b6478; font-weight: 750; margin-right: 4px; }
+    #sdlc .sd-issue.none { color: #6b6478; border-style: dashed; }
+    #sdlc .sd-review { margin-top: 18px; border-radius: 24px; background: #fff; border: 2px solid #e8e2d8; padding: 22px 24px; }
+    #sdlc .sd-review.armed { border-color: #7c3aed; box-shadow: 0 22px 44px -30px rgba(124, 58, 237, .6); }
+    #sdlc .sd-review-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    #sdlc .sd-review input { flex: 1; min-width: 220px; border: 1px solid #e0d9ce; border-radius: 999px; padding: 10px 16px; font: 14px inherit; background: #fbfaf7; }
+    #sdlc .sd-approve { background: #15803d !important; }
+    #sdlc .sd-deny { background: #b91c1c !important; }
+    #sdlc .sd-note { margin: 10px 0 0; font-size: 13.5px; font-weight: 650; min-height: 1em; }
+    #sdlc .sd-note.ok { color: #15803d; } #sdlc .sd-note.err { color: #b91c1c; }
+    #sdlc .sd-run { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; }
+    #sdlc .sd-run[hidden] { display: none; }
+    #sdlc .sd-plat { border-left: 3px solid #c4b5fd; padding: 6px 0 8px 12px; margin: 0 0 10px; font-size: 13px; }
+    #sdlc .sd-plat b { font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #5b21b6; }
+    #sdlc .sd-plat.err { border-left-color: #fca5a5; } #sdlc .sd-plat.err b { color: #b91c1c; }
+    #sdlc .sd-issues { margin: 18px 0 70px; border-radius: 24px; background: #fff; border: 1px solid #e8e2d8; padding: 20px 24px; }
+    #sdlc .sd-issues ul { list-style: none; margin: 10px 0 0; padding: 0; }
+    #sdlc .sd-issues li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f0ebe3; font-size: 14px; }
+    #sdlc .sd-issues li:last-child { border-bottom: 0; }
+    #sdlc .sd-issues a { color: #120d1f; text-decoration: none; font-weight: 650; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #sdlc .sd-issues a:hover { color: #7c3aed; }
+    #sdlc .sd-lbl { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; border-radius: 999px; padding: 2px 9px; border: 1px solid #cbd5e1; color: #334155; background: #f8fafc; white-space: nowrap; }
+    #sdlc .sd-lbl.agent-ready { color: #1d4ed8; border-color: #bfdbfe; background: #eff6ff; }
+    #sdlc .sd-lbl.in-review { color: #7c3aed; border-color: #ddd6fe; background: #f5f3ff; }
+    #sdlc .sd-lbl.closed { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
+    @media (max-width: 1000px) { #sdlc .sd-flow, #sdlc .sd-envs, #sdlc .sd-work, #sdlc .sd-run { grid-template-columns: 1fr; } }
+  </style>
+  <div class="st-wrap">
+    <div class="st-head"><div><div class="st-eyebrow">TrustUsBank · software delivery</div><h2>Demo 3 : A PM agent and an engineer agent ship a change</h2></div></div>
+    <p class="lead" style="margin:0 0 18px;max-width:900px">The bank's online-banking app runs twice in this cluster, in <code>trustusbank-staging</code> and <code>trustusbank-prod</code>. A PM agent turns a product request into a GitHub issue. An engineer agent picks it up and commits the change. The platform builds the commit in Berlin and deploys it to staging. A person approves or denies it, and only an approved image reaches production. Both agents run on Gemma, and they reach <a id="sd-repo" href="https://github.com/tjorourke/trustusbank-payments" target="_blank" rel="noopener"><code>tjorourke/trustusbank-payments</code></a> only through agentgateway.</p>
+    <div class="gs-err" id="sd-err" hidden></div>
+
+    <div class="sd-flow" id="sd-flow">
+      <div class="sd-st" data-s="issue"><div class="st-eyebrow">1 · PM agent</div><b>Files the issue</b><small>labelled <code>agent-ready</code>, with staging and prod links</small></div>
+      <div class="sd-st" data-s="implement"><div class="st-eyebrow">2 · Engineer agent</div><b>Commits the change</b><small>then moves the issue to <code>in-review</code></small></div>
+      <div class="sd-st" data-s="staging"><div class="st-eyebrow">3 · Platform</div><b>Builds &amp; stages</b><small>linux/amd64 → Berlin registry → <code>trustusbank-staging</code></small></div>
+      <div class="sd-st" data-s="review"><div class="st-eyebrow">4 · You</div><b>Approve or deny</b><small>a denial goes back to the engineer with your reason</small></div>
+      <div class="sd-st" data-s="prod"><div class="st-eyebrow">5 · Production</div><b>Same image, promoted</b><small>no rebuild; the issue closes</small></div>
+    </div>
+
+    <div class="sd-envs">
+      <div class="sd-env staging">
+        <div class="sd-env-top"><div><div class="st-eyebrow">Staging · ns trustusbank-staging</div><h3>Preview</h3><code class="host">staging.payments.agentic.eu0.internal</code></div><a class="sd-open" href="http://staging.payments.agentic.eu0.internal" target="_blank" rel="noopener">Open staging ↗</a></div>
+        <div class="sd-kv" id="sd-env-staging"><span>image</span><code><i class="st-skel"></i></code></div>
+      </div>
+      <div class="sd-env prod">
+        <div class="sd-env-top"><div><div class="st-eyebrow">Production · ns trustusbank-prod</div><h3>Customers</h3><code class="host">payments.agentic.eu0.internal</code></div><a class="sd-open" href="http://payments.agentic.eu0.internal" target="_blank" rel="noopener">Open production ↗</a></div>
+        <div class="sd-kv" id="sd-env-prod"><span>image</span><code><i class="st-skel"></i></code></div>
+      </div>
+    </div>
+
+    <div class="sd-work">
+      <div class="sd-pane">
+        <div class="st-eyebrow" style="color:#15803d">trustusbank-pm-agent · Gemma 3 27B · kagent</div>
+        <h3><i class="tb-dot" id="sd-dot-pm"></i>PM agent</h3>
+        <p>Describe what the bank wants. The PM agent reads the app's current settings and files one issue for the engineer. Its tools are <code>list_issues</code>, <code>get_app_settings</code> and <code>create_issue</code> at <code>mcp.agentic.eu0.internal/mcp/sdlc-pm</code>.</p>
+        <div class="gs-samples" id="sd-pm-samples"></div>
+        <textarea id="sd-pm-text" placeholder="e.g. Raise the daily transfer limit to €10,000 for premium customers."></textarea>
+        <div class="gs-row"><small id="sd-pm-who" style="color:#6b6478;font-weight:650"></small><button class="gs-send" id="sd-pm-send">File the issue</button></div>
+      </div>
+      <div class="sd-pane">
+        <div class="st-eyebrow" style="color:#15803d">trustusbank-dev-agent · Gemma 3 27B · kagent</div>
+        <h3><i class="tb-dot" id="sd-dot-dev"></i>Engineer agent</h3>
+        <p>The engineer finds its own work: the oldest <code>agent-ready</code> issue, with any review denial in its comments. It commits through <code>update_setting</code> or <code>edit_file</code>, then <code>finish_issue</code>. The platform stages whatever it committed.</p>
+        <div class="st-eyebrow" style="margin-bottom:6px">Next issue in its queue</div>
+        <a class="sd-issue none" id="sd-next" target="_blank" rel="noopener">No agent-ready issues</a>
+        <textarea id="sd-dev-text" placeholder="Optional: an instruction for the engineer. Leave blank to pick up the next issue."></textarea>
+        <div class="gs-row"><small style="color:#6b6478;font-weight:650">Implement → build → deploy to staging</small><button class="gs-send" id="sd-dev-send">Pick up the next issue</button></div>
+      </div>
+    </div>
+
+    <div class="sd-review" id="sd-review">
+      <div class="st-eyebrow">Staging review</div>
+      <h3 style="margin:4px 0 4px;font-size:20px;font-weight:850;letter-spacing:-.02em;color:#120d1f">Approve for production?</h3>
+      <a class="sd-issue none" id="sd-inreview" target="_blank" rel="noopener" style="margin-top:8px">Nothing in review</a>
+      <div class="sd-review-row">
+        <button class="gs-send sd-approve" id="sd-approve" disabled>Approve and promote</button>
+        <input id="sd-reason" placeholder="Reason, required to deny: e.g. €10,000 needs a second approver; use €7,500">
+        <button class="gs-send sd-deny" id="sd-deny" disabled>Deny</button>
+      </div>
+      <p class="sd-note" id="sd-note"></p>
+    </div>
+
+    <div class="sd-run" id="sd-run" hidden>
+      <div class="gs-answer">
+        <div class="st-eyebrow" id="sd-a-who">Answer</div>
+        <div class="txt" id="sd-a-txt"></div>
+      </div>
+      <div class="tb-trace">
+        <div class="gs-stats">
+          <div><b id="sd-s-lat">–</b><span>seconds</span></div>
+          <div><b id="sd-s-tools">–</b><span>tool calls</span></div>
+          <div><b id="sd-s-state">–</b><span>state</span></div>
+        </div>
+        <div class="st-eyebrow" style="margin-bottom:8px">GitHub tool calls through agentgateway, then the platform</div>
+        <div id="sd-trace"></div>
+      </div>
+    </div>
+
+    <div class="sd-issues">
+      <div class="gs-log-head" style="margin:0"><div class="st-eyebrow">Issues on tjorourke/trustusbank-payments</div><small id="sd-repo-note"></small></div>
+      <ul id="sd-issues"><li style="color:#6b6478">Loading…</li></ul>
+    </div>
+  </div>
+  <script>
+  (() => {
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let S = {}, busy = false;
+    const ORDER = ['issue', 'implement', 'staging', 'review', 'prod'];
+
+    function flowAt(s) {
+      // Which step the demo is on, from the repo and cluster rather than this tab.
+      if (busy === 'pm') return ['issue', null];
+      if (busy === 'dev') return [S.stage === 'building' ? 'staging' : 'implement', null];
+      if (S.stage === 'building') return ['staging', null];
+      if (S.in_review_issue && S.staging_image && S.staging_image !== S.prod_image) return ['review', null];
+      if (S.in_review_issue) return ['staging', null];
+      if (S.agent_ready_issue) return ['implement', S.stage === 'denied' ? 'review' : null];
+      if (S.stage === 'promoted') return ['done', null];
+      return ['issue', null];
+    }
+
+    function renderFlow() {
+      const [at, bad] = flowAt(S);
+      const i = at === 'done' ? ORDER.length : ORDER.indexOf(at);
+      document.querySelectorAll('#sd-flow .sd-st').forEach((el, n) => {
+        el.className = 'sd-st' + (n < i ? ' done' : n === i ? ' now' : '') + (el.dataset.s === bad ? ' bad' : '');
+      });
+    }
+
+    function envKv(env) {
+      const img = S[env + '_image'], live = S[env + '_live'] || {}, other = S[(env === 'staging' ? 'prod' : 'staging') + '_live'] || {};
+      const diff = (k) => JSON.stringify(live[k]) !== JSON.stringify(other[k]) ? ' class="chg"' : '';
+      const feats = Object.entries(live.features || {}).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v ? 'on' : 'off'}`).join(' · ');
+      const eur = (n) => n == null ? '–' : '€ ' + Number(n).toLocaleString('de-DE');
+      $('sd-env-' + env).innerHTML = `
+        <span>image</span><code>trustusbank-payments:${esc(img || '–')}</code>
+        <span>serving</span><code>${live.sha ? 'commit ' + esc(live.sha) : '<i style="color:#b91c1c">not answering through agentgateway</i>'}</code>
+        <span>daily limit</span><code${diff('limit')}>${eur(live.limit)}</code>
+        <span>features</span><code${diff('features')}>${esc(feats || '–')}</code>
+        <span>banner</span><code${diff('announcement')}>${esc(live.announcement || 'none')}</code>`;
+    }
+
+    function issueLink(el, i, none) {
+      if (i) { el.className = 'sd-issue'; el.href = i.url; el.innerHTML = `<i>#${i.number}</i>${esc(i.title)} ↗`; }
+      else { el.className = 'sd-issue none'; el.removeAttribute('href'); el.textContent = none; }
+    }
+
+    function render() {
+      const err = $('sd-err');
+      err.hidden = S.reachable !== false;
+      if (S.reachable === false) err.textContent = S.error || 'Cannot reach the cluster.';
+      const ag = Object.fromEntries((S.agents || []).map((a) => [a.role, a]));
+      for (const r of ['pm', 'dev']) $('sd-dot-' + r).className = 'tb-dot ' + (ag[r]?.ready ? 'ok' : (S.agents ? 'bad' : ''));
+      if (ag.pm && !$('sd-pm-samples').childElementCount) {
+        $('sd-pm-samples').innerHTML = (ag.pm.prompts || []).map((p) => `<button type="button">${esc(p)}</button>`).join('');
+        $('sd-pm-samples').querySelectorAll('button').forEach((b) => b.onclick = () => { $('sd-pm-text').value = b.textContent; });
+      }
+      $('sd-pm-who').textContent = ag.pm?.deployment ? `kagent · ${ag.pm.deployment}` : '';
+      issueLink($('sd-next'), S.agent_ready_issue, 'No agent-ready issues: ask the PM agent for one');
+      issueLink($('sd-inreview'), S.in_review_issue, 'Nothing in review');
+      const reviewable = !!S.in_review_issue && !!S.staging_image && S.staging_image !== S.prod_image && S.stage !== 'building';
+      $('sd-review').classList.toggle('armed', reviewable);
+      $('sd-approve').disabled = !reviewable || !!busy;
+      $('sd-deny').disabled = !S.in_review_issue || !!busy;
+      $('sd-pm-send').disabled = !!busy;
+      $('sd-dev-send').disabled = !!busy;
+      if (S.reachable) { envKv('staging'); envKv('prod'); }
+      $('sd-issues').innerHTML = (S.issues || []).map((i) => {
+        const lbls = i.state === 'closed' ? '<span class="sd-lbl closed">closed</span>' : i.labels.map((l) => `<span class="sd-lbl ${esc(l)}">${esc(l)}</span>`).join('');
+        return `<li><span style="color:#6b6478;font-weight:750">#${i.number}</span><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>${lbls}</li>`;
+      }).join('') || '<li style="color:#6b6478">No issues yet. Ask the PM agent for one.</li>';
+      $('sd-repo-note').textContent = S.stage === 'building' ? `building ${S.building_sha || ''}…` : (S.stage ? `last step: ${S.stage}` : '');
+      renderFlow();
+    }
+
+    async function poll() {
+      try { S = await (await fetch('/api/tubsdlc/status')).json(); } catch (e) { S = { reachable: false, error: String(e) }; }
+      render();
+    }
+
+    function step(cls, title, sub, body) {
+      const d = document.createElement('div');
+      d.className = cls;
+      d.innerHTML = `<b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}${body ? `<pre>${esc(body)}</pre>` : ''}`;
+      $('sd-trace').appendChild(d);
+      return d;
+    }
+
+    async function stream(url, payload, who) {
+      busy = who; render();
+      $('sd-run').hidden = false; $('sd-trace').innerHTML = ''; $('sd-a-txt').textContent = '';
+      $('sd-a-who').textContent = who === 'pm' ? 'PM agent' : 'Engineer agent';
+      $('sd-s-lat').textContent = '…'; $('sd-s-tools').textContent = '0'; $('sd-s-state').textContent = 'working';
+      const t0 = Date.now(), calls = {};
+      let tools = 0, text = '', delta = '';
+      const tick = setInterval(() => { $('sd-s-lat').textContent = ((Date.now() - t0) / 1000).toFixed(0); }, 500);
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+        const rd = r.body.getReader(), dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await rd.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let k;
+          while ((k = buf.indexOf('\n\n')) >= 0) {
+            const line = buf.slice(0, k); buf = buf.slice(k + 2);
+            if (!line.startsWith('data:')) continue;
+            const ev = JSON.parse(line.slice(5));
+            if (ev.t === 'agent') $('sd-a-who').textContent = `${who === 'pm' ? 'PM agent' : 'Engineer agent'} · ${ev.deployment}`;
+            else if (ev.t === 'delta') { delta += ev.text; $('sd-a-txt').textContent = text + delta; }
+            else if (ev.t === 'message') { text += (text ? '\n\n' : '') + ev.text; delta = ''; $('sd-a-txt').textContent = text; }
+            else if (ev.t === 'tool_call') { tools++; $('sd-s-tools').textContent = tools; calls[ev.id] = step('tb-step', ev.name, `called at ${ev.at}s`, JSON.stringify(ev.args, null, 1)); }
+            else if (ev.t === 'tool_result') {
+              const el = calls[ev.id] || step('tb-step', ev.name);
+              const pre = document.createElement('pre');
+              pre.textContent = '→ ' + JSON.stringify(ev.result, null, 1);
+              el.appendChild(pre);
+            }
+            else if (ev.t === 'error') { step('sd-plat err', 'error', '', ev.error); $('sd-s-state').textContent = 'error'; }
+            else if (ev.t === 'done') $('sd-s-state').textContent = ev.state || 'done';
+            else if (ev.t === 'stage') {
+              if (ev.stage === 'building') { step('sd-plat', 'platform · build & stage', `commit ${ev.sha} → linux/amd64 → Berlin registry → trustusbank-staging`); $('sd-s-state').textContent = 'building'; S.stage = 'building'; render(); }
+              else if (ev.stage === 'staged') { step('sd-plat', 'platform · staged', `trustusbank-payments:${ev.tag} is live in staging`, ev.staging_url); $('sd-s-state').textContent = 'staged'; }
+              else if (ev.stage === 'build_failed') { step('sd-plat err', 'platform · build failed', '', ev.error); $('sd-s-state').textContent = 'failed'; }
+              else step('sd-plat', 'platform', ev.note || ev.stage);
+            }
+          }
+        }
+      } catch (e) {
+        step('sd-plat err', 'error', '', String(e));
+      } finally {
+        clearInterval(tick);
+        $('sd-s-lat').textContent = ((Date.now() - t0) / 1000).toFixed(1);
+        busy = false; poll();
+      }
+    }
+
+    $('sd-pm-send').onclick = () => {
+      const text = $('sd-pm-text').value.trim();
+      if (text) stream('/api/tubsdlc/pm', { text }, 'pm');
+    };
+    $('sd-dev-send').onclick = () => stream('/api/tubsdlc/fetch', { text: $('sd-dev-text').value.trim() }, 'dev');
+
+    async function decide(approve) {
+      const note = $('sd-note'), reason = $('sd-reason').value.trim();
+      if (!approve && !reason) { note.className = 'sd-note err'; note.textContent = 'Say why: the engineer agent reads the reason on its next pass.'; $('sd-reason').focus(); return; }
+      busy = 'review'; render();
+      note.className = 'sd-note'; note.textContent = approve ? 'Promoting the staged image to trustusbank-prod…' : 'Sending it back to the engineer…';
+      try {
+        const r = await (await fetch('/api/tubsdlc/promote', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approve, reason }) })).json();
+        if (!r.ok) throw new Error(r.error);
+        note.className = 'sd-note ok';
+        note.innerHTML = approve
+          ? `Promoted <code>trustusbank-payments:${esc(r.tag)}</code> to production${r.issue ? ` and closed <a href="${esc(r.issue.url)}" target="_blank" rel="noopener">#${r.issue.number}</a>` : ''}.`
+          : `Denied. <a href="${esc(r.issue.url)}" target="_blank" rel="noopener">#${r.issue.number}</a> is back to agent-ready with your reason; production is unchanged.`;
+        $('sd-reason').value = '';
+      } catch (e) {
+        note.className = 'sd-note err'; note.textContent = e.message;
+      } finally {
+        busy = false; poll();
+      }
+    }
+    $('sd-approve').onclick = () => decide(true);
+    $('sd-deny').onclick = () => decide(false);
+
+    poll();
+    setInterval(() => { if (!busy) poll(); }, 6000);
+  })();
+  </script>
+</section>
+
+
+<section class="st-section" id="approvals">
+  <style>
+    #approvals .ap-list { display: grid; gap: 12px; }
+    #approvals details.ap-srv { border-radius: 20px; background: #fff; border: 1px solid #e8e2d8; padding: 0; overflow: hidden; }
+    #approvals details.ap-srv[open] { border-color: #c4b5fd; }
+    #approvals .ap-srv > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 20px; }
+    #approvals .ap-srv > summary::-webkit-details-marker { display: none; }
+    #approvals .ap-srv > summary h3 { margin: 0; font-size: 18px; font-weight: 850; letter-spacing: -.02em; color: #120d1f; }
+    #approvals .ap-srv > summary code { font-size: 12px; color: #475569; }
+    #approvals .ap-srv > summary .sp { flex: 1; }
+    #approvals .ap-body { padding: 0 20px 16px; }
+    #approvals .ap-meta { font-size: 13px; color: #6b6478; margin: 0 0 10px; }
+    #approvals .ap-tool { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: start; border-top: 1px solid #f0ebe3; padding: 12px 0; }
+    #approvals .ap-tool b { font: 700 14px ui-monospace, SFMono-Regular, Menlo, monospace; color: #120d1f; }
+    #approvals .ap-tool p { margin: 3px 0 0; font-size: 13.5px; line-height: 1.45; color: #5d5669; }
+    #approvals .ap-tool details summary { cursor: pointer; font-size: 12.5px; color: #475569; margin-top: 6px; }
+    #approvals .ap-tool pre { margin: 6px 0 0; max-height: 220px; overflow: auto; font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; }
+    #approvals .ap-act { display: flex; gap: 6px; align-items: center; }
+    #approvals .ap-pill { font: 800 11px/1 inherit; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 5px 10px; white-space: nowrap; }
+    #approvals .ap-pill.approved { background: #dcfce7; color: #14532d; }
+    #approvals .ap-pill.pending { background: #fef3c7; color: #78350f; }
+    #approvals .ap-pill.denied { background: #fee2e2; color: #991b1b; }
+    #approvals .ap-btn { border: 0; border-radius: 999px; padding: 7px 13px; font: 800 12.5px/1 inherit; cursor: pointer; color: #fff; }
+    #approvals .ap-btn.ok { background: #15803d; } #approvals .ap-btn.no { background: #b91c1c; }
+    #approvals .ap-btn.ghost { background: #f7f4ef; color: #3f3a4a; border: 1px solid #e0d9ce; }
+    #approvals .ap-btn:disabled { opacity: .45; cursor: wait; }
+    #approvals .ap-note { font-size: 13.5px; font-weight: 650; margin: 10px 0 0; min-height: 1em; color: #5d5669; }
+    #approvals .ap-note.ok { color: #15803d; } #approvals .ap-note.err { color: #b91c1c; }
+  </style>
+  <div class="st-wrap">
+    <div class="st-head"><div><div class="st-eyebrow">Platform admin · AgentRegistry governance</div><h2>Demo 4 : Approve the MCP tools agents may use</h2></div></div>
+    <p class="lead" style="margin:0 0 18px;max-width:900px">Every MCP server in AgentRegistry, with the tools it offers right now, read live through agentgateway. Review each tool's description and input schema, then approve or deny it. The decision is kept on the server's AgentRegistry record. Only approved tools show up in the agent builder below, and each agent's runtime loads only the tools it was granted. Denying a tool also takes it away from any builder agent that already has it.</p>
+    <div class="tb-id" id="ap-who"><b><i>✓</i><span>admin-user</span></b> signed in to AgentRegistry as the platform admin</div>
+    <div class="ap-list" id="ap-list"><div class="st-stat"><i class="st-skel"></i></div></div>
+    <div class="ap-note" id="ap-note"></div>
+    <div class="gs-err" id="ap-err" hidden></div>
+  </div>
+  <script>
+  (() => {
+    const q = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const open = new Set(['trustusbank-payments-tools']);
+    let busy = false;
+
+    function render(cat) {
+      q('ap-err').hidden = cat.reachable !== false;
+      if (cat.reachable === false) { q('ap-err').textContent = 'AgentRegistry: ' + (cat.error || 'unreachable'); return; }
+      if (cat.admin) q('ap-who').querySelector('span').textContent = cat.admin;
+      q('ap-list').innerHTML = cat.servers.map(s => `
+        <details class="ap-srv" data-srv="${esc(s.name)}" ${open.has(s.name) ? 'open' : ''}>
+          <summary>
+            <h3>${esc(s.title)}</h3><code>${esc(s.name)}</code><span class="sp"></span>
+            ${s.counts.approved ? `<span class="ap-pill approved">${s.counts.approved} approved</span>` : ''}
+            ${s.counts.pending ? `<span class="ap-pill pending">${s.counts.pending} pending</span>` : ''}
+            ${s.counts.denied ? `<span class="ap-pill denied">${s.counts.denied} denied</span>` : ''}
+          </summary>
+          <div class="ap-body">
+            <p class="ap-meta">${esc(s.description)}<br><code>${esc(s.url || '')}</code>${s.reviewed_by ? ` · last reviewed by <b>${esc(s.reviewed_by)}</b> ${esc((s.reviewed_at || '').replace('T', ' ').replace('Z', ' UTC'))}` : ''}</p>
+            ${s.error ? `<div class="gs-err">${esc(s.error)}</div>` : ''}
+            <div class="ap-act" style="margin-bottom:6px">
+              <button class="ap-btn ok" data-all="approve">Approve all ${s.tools.length}</button>
+              <button class="ap-btn no" data-all="deny">Deny all</button>
+              <button class="ap-btn ghost" data-all="reset">Reset to pending</button>
+            </div>
+            ${s.tools.map(t => `
+              <div class="ap-tool">
+                <div><b>${esc(t.name)}</b> <span class="ap-pill ${t.state}">${t.state}</span>
+                  <p>${esc(t.description)}</p>
+                  <details><summary>Input schema</summary><pre>${esc(JSON.stringify(t.inputSchema, null, 2))}</pre></details></div>
+                <div class="ap-act">
+                  <button class="ap-btn ok" data-tool="${esc(t.name)}" data-d="approve" ${t.state === 'approved' ? 'disabled' : ''}>Approve</button>
+                  <button class="ap-btn no" data-tool="${esc(t.name)}" data-d="deny" ${t.state === 'denied' ? 'disabled' : ''}>Deny</button>
+                </div>
+              </div>`).join('')}
+          </div>
+        </details>`).join('');
+    }
+
+    async function load() {
+      try { render(await (await fetch('/api/google/mcp')).json()); }
+      catch (e) { q('ap-err').hidden = false; q('ap-err').textContent = String(e); }
+    }
+
+    q('ap-list').addEventListener('toggle', e => {
+      const d = e.target.closest && e.target.closest('details.ap-srv');
+      if (d && e.target === d) d.open ? open.add(d.dataset.srv) : open.delete(d.dataset.srv);
+    }, true);
+    q('ap-list').addEventListener('click', async e => {
+      const b = e.target.closest('button'); if (!b || busy) return;
+      const srv = b.closest('details.ap-srv').dataset.srv;
+      const decision = b.dataset.d || b.dataset.all;
+      const body = { decision }; if (b.dataset.tool) body.tools = [b.dataset.tool];
+      busy = true; q('ap-list').querySelectorAll('button').forEach(x => x.disabled = true);
+      q('ap-note').className = 'ap-note'; q('ap-note').textContent = 'Writing the decision to AgentRegistry…';
+      try {
+        const r = await (await fetch('/api/google/mcp/' + encodeURIComponent(srv) + '/review',
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+        if (!r.ok) throw new Error(r.error || 'review failed');
+        const verb = { approve: 'Approved', deny: 'Denied', reset: 'Reset' }[decision];
+        q('ap-note').className = 'ap-note ok';
+        q('ap-note').textContent = `${verb} ${r.tools.join(', ')} on ${srv} as ${r.reviewed_by}.` +
+          (r.revoked_from.length ? ` Taken away from ${r.revoked_from.join(', ')}, redeployed without it.` : '');
+        window.dispatchEvent(new CustomEvent('mcp-reviewed'));
+      } catch (err) { q('ap-note').className = 'ap-note err'; q('ap-note').textContent = String(err.message || err); }
+      busy = false; load();
+    });
+    load();
+  })();
+  </script>
+</section>
+
+<section class="st-section" id="builder">
+  <style>
+    #builder .bd-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
+    #builder .bd-card { border-radius: 24px; background: #fff; border: 1px solid #e8e2d8; padding: 22px 24px; }
+    #builder .bd-card h4 { margin: 0 0 8px; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #6b6478; }
+    #builder .bd-card h4:not(:first-child) { margin-top: 18px; }
+    #builder input[type=text] { width: 100%; box-sizing: border-box; border: 1px solid #e0d9ce; border-radius: 12px; padding: 11px 14px; font: 600 15px/1.3 inherit; background: #fbfaf7; }
+    #builder textarea { width: 100%; box-sizing: border-box; min-height: 120px; border: 1px solid #e0d9ce; border-radius: 14px; padding: 12px 14px; font: 14px/1.5 inherit; resize: vertical; background: #fbfaf7; }
+    #builder input:focus, #builder textarea:focus { outline: 2px solid #c4b5fd; border-color: #c4b5fd; }
+    #builder .bd-model { display: flex; align-items: center; gap: 10px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 14px; padding: 10px 14px; font-size: 13.5px; color: #14532d; }
+    #builder .bd-model b { font-size: 15px; }
+    #builder .bd-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    #builder .bd-check { display: flex; gap: 9px; align-items: flex-start; border: 1px solid #ede7de; border-radius: 12px; padding: 9px 11px; cursor: pointer; font-size: 13px; line-height: 1.35; color: #5d5669; background: #fff; }
+    #builder .bd-check:has(input:checked) { border-color: #16a34a; background: #f0fdf4; }
+    #builder .bd-check b { display: block; color: #120d1f; font-size: 13.5px; }
+    #builder .bd-check code { font-size: 12.5px; color: #120d1f; font-weight: 700; }
+    #builder .bd-check input { margin-top: 2px; accent-color: #16a34a; }
+    #builder .bd-srv { margin: 10px 0 6px; font-size: 13px; font-weight: 800; color: #120d1f; display: flex; gap: 8px; align-items: baseline; }
+    #builder .bd-srv small { font-weight: 650; color: #b45309; }
+    #builder .bd-none { font-size: 13.5px; color: #78350f; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 12px; padding: 10px 12px; }
+    #builder .bd-cele { margin-top: 16px; display: flex; gap: 16px; align-items: center; border-radius: 20px; padding: 16px 20px; border: 2px solid #e8e2d8; background: #fff; }
+    #builder .bd-cele[hidden] { display: none; }
+    #builder .bd-cele.live { border-color: #16a34a; background: #f0fdf4; }
+    #builder .bd-cele .ic { font-size: 34px; }
+    #builder .bd-cele h3 { margin: 0 0 4px; font-size: 19px; font-weight: 850; color: #120d1f; }
+    #builder .bd-cele p { margin: 0; font-size: 13.5px; color: #5d5669; }
+    #builder .bd-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 12.5px; font-weight: 700; }
+    #builder .bd-steps span { display: inline-flex; align-items: center; gap: 6px; background: #f7f4ef; border-radius: 999px; padding: 5px 10px; color: #5d5669; }
+    #builder .bd-mine { display: grid; gap: 10px; }
+    #builder .bd-agent { display: flex; gap: 12px; align-items: center; border: 2px solid #ede7de; border-radius: 16px; padding: 12px 14px; }
+    #builder .bd-agent.sel { border-color: #16a34a; }
+    #builder .bd-agent .nm { flex: 1; min-width: 0; }
+    #builder .bd-agent .nm b { font-size: 15px; color: #120d1f; }
+    #builder .bd-agent .nm small { display: block; color: #6b6478; font-size: 12px; word-break: break-word; }
+    #builder .bd-btn { border: 0; border-radius: 999px; padding: 8px 14px; font: 800 12.5px/1 inherit; cursor: pointer; background: #120d1f; color: #fff; }
+    #builder .bd-btn.ghost { background: #f7f4ef; color: #3f3a4a; border: 1px solid #e0d9ce; }
+    #builder .bd-btn:disabled { opacity: .45; cursor: wait; }
+    #builder .bd-note { font-size: 13.5px; font-weight: 650; min-height: 1em; color: #5d5669; }
+    #builder .bd-note.err { color: #b91c1c; }
+    @media (max-width: 1000px) { #builder .bd-grid, #builder .bd-checks { grid-template-columns: 1fr; } }
+  </style>
+  <div class="st-wrap">
+    <div class="st-head"><div><div class="st-eyebrow">Build · deploy · chat, declaratively</div><h2>Demo 5 : Build your own agent</h2></div></div>
+    <p class="lead" style="margin:0 0 18px;max-width:900px">Pick a model, write what the agent is for, and give it skills and approved MCP tools. AgentRegistry records the agent and pushes it to kagent as a declarative Agent on GKE in Berlin. Then talk to it, signed in as bob. Its model and tools are reached only through agentgateway.</p>
+    <div class="bd-grid">
+      <div class="bd-card">
+        <h4>Start from</h4>
+        <div class="gs-samples" id="bd-tpl" style="margin:0"></div>
+        <h4>Name</h4>
+        <input type="text" id="bd-name" placeholder="trustusbank-my-payments" maxlength="24" autocomplete="off">
+        <h4>Model</h4>
+        <div class="bd-model" id="bd-model"><span class="tb-dot ok"></span><span><b>Gemma 3 27B</b> · gemma-3-27b-it</span></div>
+        <h4>System prompt</h4>
+        <textarea id="bd-system" placeholder="You are…"></textarea>
+        <h4>Skills</h4>
+        <div class="bd-checks" id="bd-skills"></div>
+        <h4>MCP tools <span style="text-transform:none;letter-spacing:0;font-weight:650">· only what a platform admin approved above</span></h4>
+        <div id="bd-tools"></div>
+        <div class="gs-row">
+          <span class="bd-note" id="bd-note"></span>
+          <button class="gs-send" id="bd-deploy">Deploy to kagent</button>
+        </div>
+      </div>
+      <div class="bd-card">
+        <h4>Your agents</h4>
+        <div class="bd-mine" id="bd-mine"><div class="bd-note">None yet: build one on the left.</div></div>
+        <div class="bd-cele" id="bd-cele" hidden></div>
+      </div>
+    </div>
+    <div id="bd-chat" hidden>
+      <div class="gs-ask">
+        <div class="tb-id"><b><i>✓</i><span>bob</span></b> talking to <code id="bd-chat-name"></code> on kagent · Gemma 3 27B</div>
+        <div class="gs-samples" id="bd-prompts"></div>
+        <textarea id="bd-q" placeholder="Ask your agent…"></textarea>
+        <div class="gs-row"><span class="bd-note" id="bd-chat-note"></span><span>
+          <button class="bd-btn ghost" id="bd-new">New conversation</button>
+          <button class="gs-send" id="bd-send">Send</button></span></div>
+      </div>
+      <div class="tb-run" id="bd-run" hidden>
+        <div class="gs-answer"><div class="st-eyebrow">Answer</div><div class="txt" id="bd-ans"></div></div>
+        <div class="tb-trace"><div class="st-eyebrow" style="margin-bottom:10px">Tool calls</div>
+          <div class="gs-stats"><div><b id="bd-ncalls">0</b><span>tool calls</span></div><div><b id="bd-secs">–</b><span>seconds</span></div></div>
+          <div id="bd-steps"></div></div>
+      </div>
+    </div>
+    <div class="gs-err" id="bd-err" hidden></div>
+  </div>
+  <script>
+  (() => {
+    const q = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    let cat = null, tpl = null, chatWith = null, ctx = null, sending = false, watching = null, mine = [];
+    const celebrated = new Set();
+
+    function confetti() {
+      const colours = ['#7c3aed', '#a855f7', '#22c55e', '#f59e0b', '#3b82f6', '#ec4899'];
+      const layer = document.createElement('div');
+      layer.className = 'ag-confetti';
+      for (let i = 0; i < 90; i++) {
+        const b = document.createElement('i');
+        b.style.left = Math.random() * 100 + 'vw';
+        b.style.background = colours[i % colours.length];
+        b.style.animationDelay = (Math.random() * 0.6) + 's';
+        b.style.animationDuration = (2.2 + Math.random() * 1.6) + 's';
+        b.style.transform = `rotate(${Math.random() * 360}deg)`;
+        layer.appendChild(b);
+      }
+      document.body.appendChild(layer);
+      setTimeout(() => layer.remove(), 4500);
+    }
+
+    function checked(box) { return [...q(box).querySelectorAll('input:checked')].map(i => i.value); }
+
+    function renderTools(keep) {
+      const servers = cat.servers.filter(s => s.tools.length || s.pending);
+      const chosen = new Set(keep || []);
+      const any = servers.some(s => s.tools.length);
+      q('bd-tools').innerHTML = (any ? '' : '<div class="bd-none">No tools are approved yet. Approve some in Demo 4 above and they appear here.</div>') +
+        servers.filter(s => s.tools.length).map(s => `
+          <div class="bd-srv">${esc(s.title)} <code style="font-weight:600;color:#64748b">${esc(s.name)}</code>
+            ${s.pending ? `<small>${s.pending} more awaiting approval</small>` : ''}</div>
+          <div class="bd-checks">${s.tools.map(t => { const id = s.name + '/' + t.name; return `
+            <label class="bd-check"><input type="checkbox" value="${esc(id)}" ${chosen.has(id) ? 'checked' : ''}>
+              <span><code>${esc(t.name)}</code><br>${esc(t.description.split('. ')[0])}</span></label>`; }).join('')}</div>`).join('');
+    }
+
+    function applyTemplate(t) {
+      tpl = t;
+      q('bd-tpl').querySelectorAll('button').forEach(b => b.style.borderColor = b.dataset.id === t.id ? '#16a34a' : '');
+      q('bd-name').value = t.name;
+      q('bd-system').value = t.system;
+      const srv = cat.servers.find(s => s.name === t.server);
+      renderTools(srv ? srv.tools.map(x => srv.name + '/' + x.name) : []);
+    }
+
+    async function loadCatalog() {
+      const keep = cat ? checked('bd-tools') : null;
+      try { cat = await (await fetch('/api/google/builder/catalog')).json(); }
+      catch (e) { q('bd-err').hidden = false; q('bd-err').textContent = String(e); return; }
+      q('bd-err').hidden = cat.reachable !== false;
+      if (cat.reachable === false) q('bd-err').textContent = 'AgentRegistry: ' + (cat.error || 'unreachable');
+      q('bd-model').innerHTML = `<span class="tb-dot ok"></span><span><b>${esc(cat.model.title)}</b> · ${esc(cat.model.name)}<br><small>${esc(cat.model.where)}</small></span>`;
+      if (!q('bd-tpl').children.length) {
+        q('bd-tpl').innerHTML = cat.templates.map(t => `<button data-id="${esc(t.id)}">${esc(t.title)}</button>`).join('') +
+          '<button data-id="blank">Blank</button>';
+        q('bd-skills').innerHTML = cat.skills.map(s => `<label class="bd-check"><input type="checkbox" value="${esc(s.id)}">
+          <span><b>${esc(s.title)}</b>${esc(s.description)}</span></label>`).join('');
+        applyTemplate(cat.templates[0]);
+      } else renderTools(keep);
+    }
+
+    q('bd-tpl').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const t = cat.templates.find(x => x.id === b.dataset.id) ||
+        { id: 'blank', name: 'my-agent', system: 'You are a helpful TrustUsBank assistant running inside Germany. Use your tools before you answer.', server: '', prompts: [] };
+      applyTemplate(t);
+    });
+    window.addEventListener('mcp-reviewed', () => { loadCatalog(); loadMine(); });
+
+    function stepsHtml(st) {
+      return '<div class="bd-steps">' + (st.steps || []).map(s => `<span><i class="tb-dot ${s.ok ? 'ok' : ''}"></i>${esc(s.label)}</span>`).join('') + '</div>';
+    }
+
+    async function watch(name) {
+      watching = name;
+      const box = q('bd-cele');
+      for (let i = 0; i < 150 && watching === name; i++) {
+        let st = {};
+        try { st = await (await fetch('/api/google/builder/' + encodeURIComponent(name) + '/status')).json(); } catch (e) {}
+        box.hidden = false;
+        if (st.ready) {
+          box.className = 'bd-cele live';
+          box.innerHTML = `<div class="ic">🎉</div><div style="flex:1"><h3>${esc(name)} is live</h3><p>Declarative agent on kagent in Berlin, from AgentRegistry. Ready to talk to.</p>${stepsHtml(st)}</div>
+            <button class="gs-send" data-chat="${esc(name)}">Chat with it</button>`;
+          if (!celebrated.has(name)) { celebrated.add(name); confetti(); }
+          loadMine();
+          return;
+        }
+        box.className = 'bd-cele';
+        box.innerHTML = `<div class="ic"><span class="ag-spinner sm"></span></div><div><h3>Starting ${esc(name)}</h3>
+          <p>AgentRegistry has it and is pushing it to kagent. The steps go green as it comes up.${st.error ? ' (' + esc(st.error) + ')' : ''}</p>${stepsHtml(st)}</div>`;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    q('bd-deploy').onclick = async () => {
+      const body = { name: q('bd-name').value.trim(), system: q('bd-system').value, skills: checked('bd-skills'), tools: checked('bd-tools') };
+      q('bd-deploy').disabled = true; q('bd-note').className = 'bd-note'; q('bd-note').textContent = 'Recording it in AgentRegistry…';
+      try {
+        const r = await (await fetch('/api/google/builder/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+        if (!r.ok) throw new Error(r.error);
+        q('bd-note').textContent = `${r.name}: ${r.tools.length} tools, ${r.skills.length} skills. Deploying…`;
+        celebrated.delete(r.name);
+        loadMine();
+        watch(r.name);
+      } catch (e) { q('bd-note').className = 'bd-note err'; q('bd-note').textContent = String(e.message || e); }
+      q('bd-deploy').disabled = false;
+    };
+
+    async function loadMine() {
+      let r;
+      try { r = await (await fetch('/api/google/builder/agents')).json(); } catch (e) { return; }
+      if (r.reachable === false) return;
+      mine = r.agents;
+      q('bd-mine').innerHTML = mine.length ? mine.map(a => `
+        <div class="bd-agent ${chatWith === a.name ? 'sel' : ''}">
+          <span class="tb-dot ${a.ready ? 'ok' : ''}"></span>
+          <div class="nm"><b>${esc(a.name)}</b><small>${a.tools.length ? esc(a.tools.map(t => t.split('/')[1]).join(', ')) : 'no tools'}${a.skills.length ? ' · ' + a.skills.length + ' skills' : ''}</small></div>
+          <button class="bd-btn" data-chat="${esc(a.name)}" ${a.ready ? '' : 'disabled'}>Chat</button>
+          <button class="bd-btn ghost" data-del="${esc(a.name)}">Delete</button>
+        </div>`).join('') : '<div class="bd-note">None yet: build one on the left.</div>';
+    }
+
+    function openChat(name) {
+      chatWith = name; ctx = null;
+      q('bd-chat').hidden = false; q('bd-run').hidden = true;
+      q('bd-chat-name').textContent = name;
+      const a = mine.find(x => x.name === name) || {};
+      const t = cat.templates.find(x => (a.tools || []).some(id => id.startsWith(x.server + '/')));
+      q('bd-prompts').innerHTML = ((t && t.prompts) || []).map(p => `<button>${esc(p)}</button>`).join('');
+      loadMine();
+      q('bd-chat').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    document.getElementById('builder').addEventListener('click', async e => {
+      const c = e.target.closest('[data-chat]'); if (c) return openChat(c.dataset.chat);
+      const d = e.target.closest('[data-del]');
+      if (d) {
+        if (!confirm('Delete ' + d.dataset.del + ' from AgentRegistry and kagent?')) return;
+        d.disabled = true;
+        await fetch('/api/google/builder/' + encodeURIComponent(d.dataset.del), { method: 'DELETE' });
+        if (chatWith === d.dataset.del) { chatWith = null; q('bd-chat').hidden = true; }
+        if (watching === d.dataset.del) { watching = null; q('bd-cele').hidden = true; }
+        loadMine();
+      }
+    });
+    q('bd-prompts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) q('bd-q').value = b.textContent; });
+    q('bd-new').onclick = () => { ctx = null; q('bd-run').hidden = true; q('bd-chat-note').textContent = 'New conversation.'; };
+
+    q('bd-send').onclick = async () => {
+      const text = q('bd-q').value.trim(); if (!text || sending || !chatWith) return;
+      sending = true; q('bd-send').disabled = true;
+      q('bd-run').hidden = false; q('bd-ans').textContent = ''; q('bd-steps').innerHTML = '';
+      q('bd-ncalls').textContent = '0'; q('bd-secs').textContent = '…'; q('bd-chat-note').textContent = 'Thinking…';
+      let calls = 0, partial = '';
+      const onEv = ev => {
+        if (ev.t === 'agent') q('bd-chat-note').textContent = `${ev.user || 'anonymous'} → ${ev.deployment}`;
+        else if (ev.t === 'tool_call') {
+          calls++; q('bd-ncalls').textContent = calls;
+          const el = document.createElement('div'); el.className = 'tb-step'; el.dataset.id = ev.id;
+          el.innerHTML = `<b>${esc(ev.name)}</b><small>${ev.at}s · ${esc(JSON.stringify(ev.args))}</small><pre>…</pre>`;
+          q('bd-steps').appendChild(el);
+        } else if (ev.t === 'tool_result') {
+          const el = [...q('bd-steps').children].find(x => x.dataset.id === ev.id);
+          if (el) el.querySelector('pre').textContent = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2);
+        } else if (ev.t === 'delta') { partial += ev.text; q('bd-ans').textContent = partial; }
+        else if (ev.t === 'message') { partial = ''; q('bd-ans').textContent = ev.text; }
+        else if (ev.t === 'recovering') q('bd-chat-note').textContent = 'The stream dropped; fetching the answer…';
+        else if (ev.t === 'error') { q('bd-chat-note').textContent = ev.error; }
+        else if (ev.t === 'done') { ctx = ev.contextId || ctx; q('bd-secs').textContent = ev.elapsed; if (!q('bd-chat-note').textContent.startsWith('A ')) q('bd-chat-note').textContent = 'Done, as bob.'; }
+      };
+      try {
+        const r = await fetch('/api/google/builder/' + encodeURIComponent(chatWith) + '/chat/stream',
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, contextId: ctx }) });
+        const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+        for (;;) {
+          const { value, done } = await rd.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i; while ((i = buf.indexOf('\n\n')) >= 0) {
+            const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+            if (line.startsWith('data:')) { try { onEv(JSON.parse(line.slice(5))); } catch (e) {} }
+          }
+        }
+      } catch (e) { q('bd-chat-note').textContent = String(e); }
+      sending = false; q('bd-send').disabled = false;
+    };
+
+    loadCatalog(); loadMine();
+    setInterval(() => { if (!sending) loadMine(); }, 10000);
+  })();
+  </script>
+</section>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -200,8 +975,6 @@ async function loadStatus() {
   try { s = await (await fetch('/api/google/status')).json(); }
   catch (e) { s = { reachable: false, error: 'console could not query status' }; }
   const dot = $('dot'), label = $('status-label');
-  $('c-meta').innerHTML = `universe <code>${s.universe || ''}</code> · gateway <code>${s.namespace || ''}/${s.gateway || ''}</code> · host <code>${s.host || ''}</code>` +
-    (s.url ? ` · via ${s.via} <code>${s.url}</code>` : '');
   if (!s.reachable) {
     dot.className = 'dot warn'; label.textContent = 'Berlin not connected';
     ['c-gw', 'c-vsr', 'c-gemma', 'c-be'].forEach(id => stat(id, '–', ''));
@@ -211,6 +984,12 @@ async function loadStatus() {
   }
   $('c-err').hidden = true;
   dot.className = 'dot live'; label.textContent = 'Berlin connected';
+  if (s.kube_error) {
+    // The gateway answers, but kubectl cannot see the cluster: no counts to show.
+    ['c-gw', 'c-vsr', 'c-gemma', 'c-be'].forEach(id => stat(id, 'Unknown', 'kubectl unavailable'));
+    $('c-err').hidden = false; $('c-err').textContent = s.kube_error;
+    return;
+  }
   const ready = ps => `${(ps || []).filter(p => p.ready).length}/${(ps || []).length} ready`;
   const lbl = ps => (ps || []).length && ps.every(p => p.company) ? `company=${ps[0].company}` : '';
   stat('c-gw', ready(s.gateway_pods), lbl(s.gateway_pods) || 'gateway pods');
@@ -234,29 +1013,67 @@ async function send() {
   if (!prompt) return;
   $('send').disabled = true; $('send').textContent = 'Routing…';
   ['r-gemma', 'r-gemini'].forEach(id => $(id).classList.remove('hit'));
-  let r;
-  try {
-    r = await (await fetch('/api/google/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                                  body: JSON.stringify({ prompt, route }) })).json();
-  } catch (e) { r = { status: 0, error: String(e) }; }
-  $('send').disabled = false; $('send').textContent = 'Send through the gateway';
+  // Show the answer box at once and fill it token by token: a silent 30 s wait
+  // reads as a hang in front of an audience.
   $('result').hidden = false;
+  $('a-who').textContent = 'Asking the router…';
+  $('a-txt').textContent = ''; $('why').innerHTML = '';
+  ['s-lat', 's-tok', 's-tps'].forEach(id => $(id).textContent = '–');
+  const t0 = performance.now();
+  const tick = setInterval(() => { $('s-lat').textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
+  let text = '', r = null, chunks = 0;
+  const box = $('a-txt');
+  try {
+    const resp = await fetch('/api/google/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                                         body: JSON.stringify({ prompt, route }) });
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (!line.startsWith('data:')) continue;
+        const ev = JSON.parse(line.slice(5));
+        if (ev.t === 'start') {
+          const h = ev.routing || {}, m = (h['x-vsr-selected-model'] || h['x-selected-model'] || '').toLowerCase();
+          $('send').textContent = 'Answering…';
+          $('a-who').textContent = m ? `${m} · answering…` : 'Answering…';
+          if (m) $('r-' + (m.startsWith('gemini') ? 'gemini' : 'gemma')).classList.add('hit');
+        } else if (ev.t === 'delta') {
+          const pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+          text += ev.text; chunks++; box.textContent = text;
+          if (pinned) box.scrollTop = box.scrollHeight;   // follow the stream unless the presenter scrolled up
+          $('s-tok').textContent = chunks;
+        } else if (ev.t === 'done') { r = ev; }
+      }
+    }
+  } catch (e) { r = { status: 0, error: String(e) }; }
+  clearInterval(tick);
+  r = r || { status: 0, error: 'The stream closed before the gateway answered.' };
+  r.content = text;
+  $('send').disabled = false; $('send').textContent = 'Send through the gateway';
   addDecision(prompt, route, r);
   if (r.status !== 200) {
     $('a-who').textContent = `Error · HTTP ${r.status}`;
-    $('a-txt').textContent = typeof r.error === 'string' ? r.error : JSON.stringify(r.error, null, 2);
-    $('why').innerHTML = ''; return;
+    box.textContent = typeof r.error === 'string' ? r.error : JSON.stringify(r.error, null, 2);
+    return;
   }
+  ['r-gemma', 'r-gemini'].forEach(id => $(id).classList.remove('hit'));
   $('r-' + r.target).classList.add('hit');
   const where = r.target === 'gemma' ? 'stayed in Berlin' : 'left the boundary via Cloud NAT';
   $('a-who').textContent = `${r.model || r.target} · ${where}`;
-  $('a-txt').textContent = r.content || '(empty response)';
-  const toks = (r.usage || {}).completion_tokens;
+  if (!text) box.textContent = '(empty response)';
+  if (r.finish === 'length') box.textContent += '\n\n[cut off at the max_tokens limit]';
+  const toks = (r.usage || {}).completion_tokens || chunks;
   $('s-lat').textContent = r.elapsed;
   $('s-tok').textContent = toks ?? '–';
-  $('s-tps').textContent = toks ? Math.floor(toks / r.elapsed) : '–';
+  $('s-tps').textContent = toks ? Math.floor(toks / Math.max(r.elapsed - (r.ttft || 0), 0.1)) : '–';
   const rows = [['requested', route === 'auto' ? 'model: auto (router decides)' : `forced: ${route}`],
-                ['answered by', r.model || '–']];
+                ['answered by', r.model || '–'],
+                ['first token', r.ttft != null ? `${r.ttft} s` : '–']];
   Object.entries(r.routing || {}).forEach(([k, v]) => rows.push([k, v]));
   if (!Object.keys(r.routing || {}).length) rows.push(['router headers', 'none returned']);
   $('why').innerHTML = rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td><code>${esc(v)}</code></td></tr>`).join('');
@@ -285,7 +1102,7 @@ function addDecision(prompt, route, r) {
   card.className = 'card ' + cls;
   card.innerHTML = `
     <div class="top">
-      <span class="who">${ok ? (gemma ? 'Gemma 3 27B' : 'Gemini 2.5 Flash') : 'Not answered'}</span>
+      <span class="who">${ok ? (gemma ? 'Gemma 3 27B' : 'Gemini 3.8 Flash') : 'Not answered'}</span>
       ${pill(route === 'auto' ? 'task' : '', route === 'auto' ? 'auto' : 'forced ' + route)}
       ${pill('pool-' + (gemma ? 'private' : 'frontier'), pool)}
       ${r.model ? pill('', r.model) : ''}
@@ -315,6 +1132,95 @@ $('prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaK
 
 loadStatus();
 setInterval(loadStatus, 30000);
+
+// ── Demo 2: TrustUsBank agents ───────────────────────────────────────────────
+let tb = { agents: [], domain: null, ctx: null };
+async function tbLoad() {
+  let s;
+  try { s = await (await fetch('/api/trustusbank/status')).json(); } catch (e) { s = { reachable: false, agents: [] }; }
+  tb.agents = s.agents || [];
+  const id = s.identity || {};
+  $('tb-id').className = 'tb-id' + (id.signed_in ? '' : ' off');
+  $('tb-id').innerHTML = id.signed_in
+    ? `<b><i>${esc((id.name || id.user || '?')[0])}</i>Signed in as ${esc(id.name || id.user)}</b>
+       <span><code>preferred_username=${esc(id.user)}</code> <code>team=${esc(id.team || '–')}</code> <code>Groups=${esc((id.groups || []).join(','))}</code>
+       · each agent exchanges this token for one that also carries its own <code>agent_id</code></span>`
+    : `<b><i>!</i>Not signed in</b><span>${esc(id.error || 'calls go to kagent as an anonymous A2A user')}</span>`;
+  if (!tb.domain && tb.agents.length) tb.domain = tb.agents[0].domain;
+  $('tb-agents').innerHTML = tb.agents.map(a => `
+    <button class="tb-agent" data-d="${a.domain}" aria-pressed="${a.domain === tb.domain}">
+      <div class="st-eyebrow"><i class="tb-dot ${s.reachable ? (a.ready && a.mcp_ready ? 'ok' : 'bad') : ''}"></i>${esc(a.domain)}</div>
+      <h3>${esc(a.title)}</h3>
+      <p>${esc(a.description)}</p>
+      <code>agent_id ${esc(a.name)}</code><br>
+      <code>${esc(a.deployment || 'not deployed')}</code>
+    </button>`).join('');
+  document.querySelectorAll('.tb-agent').forEach(b => b.onclick = () => tbPick(b.dataset.d));
+  tbPick(tb.domain, true);
+}
+function tbPick(d, keep) {
+  const a = tb.agents.find(x => x.domain === d); if (!a) return;
+  if (tb.domain !== d || !keep) tb.ctx = null;
+  tb.domain = d;
+  document.querySelectorAll('.tb-agent').forEach(b => b.setAttribute('aria-pressed', b.dataset.d === d));
+  $('tb-samples').innerHTML = a.prompts.map(p => `<button data-p="${esc(p)}">${esc(p.length > 58 ? p.slice(0, 56) + '…' : p)}</button>`).join('');
+  document.querySelectorAll('#tb-samples button').forEach(b => b.onclick = () => { $('tb-prompt').value = b.dataset.p; $('tb-prompt').focus(); });
+  $('tb-chain-mcp').textContent = 'agentgateway · ' + a.mcp_route;
+  $('tb-who').textContent = `${a.title} · ${tb.ctx ? 'continuing the conversation' : 'new conversation'}`;
+}
+async function tbSend() {
+  // One turn at a time: kagent drops the running turn when another arrives on its conversation.
+  const text = $('tb-prompt').value.trim(); if (!text || !tb.domain || tb.busy) return;
+  tb.busy = true;
+  const a = tb.agents.find(x => x.domain === tb.domain);
+  $('tb-send').disabled = true; $('tb-send').textContent = 'Thinking on Gemma…';
+  $('tb-run').hidden = false; $('tb-trace').innerHTML = ''; $('tb-a-txt').textContent = '';
+  $('tb-a-who').textContent = `${a.title} · Gemma 3 27B in Berlin`;
+  ['tb-s-lat', 'tb-s-tools', 'tb-s-state'].forEach(id => $(id).textContent = '…');
+  const t0 = Date.now(); let tools = 0, finalText = '', deltas = '';
+  const tick = setInterval(() => $('tb-s-lat').textContent = ((Date.now() - t0) / 1000).toFixed(0), 500);
+  const steps = {};
+  const onEv = ev => {
+    if (ev.t === 'tool_call') {
+      tools++; $('tb-s-tools').textContent = tools;
+      deltas = ''; $('tb-a-txt').textContent = '';  // the streamed text was the call itself
+      const el = document.createElement('div'); el.className = 'tb-step';
+      el.innerHTML = `<b>${esc(ev.name)}(${esc(Object.entries(ev.args || {}).map(([k, v]) => k + '=' + JSON.stringify(v)).join(', '))})</b>
+        <small>${esc(a.mcp_route)} · called at ${ev.at}s</small><pre>waiting for the tool…</pre>`;
+      steps[ev.id] = el; $('tb-trace').appendChild(el);
+    } else if (ev.t === 'tool_result') {
+      const el = steps[ev.id]; if (el) el.querySelector('pre').textContent = JSON.stringify(ev.result, null, 2);
+    } else if (ev.t === 'delta') { deltas += ev.text; $('tb-a-txt').textContent = deltas; }
+    else if (ev.t === 'message') { finalText = ev.text; $('tb-a-txt').textContent = finalText; }
+    else if (ev.t === 'recovering') { $('tb-s-state').textContent = 'stream closed · waiting for the task'; }
+    else if (ev.t === 'done') { tb.ctx = ev.contextId; $('tb-s-state').textContent = ev.state || '–'; if (ev.elapsed) $('tb-s-lat').textContent = ev.elapsed; }
+    else if (ev.t === 'error') { $('tb-a-who').textContent = 'Error'; $('tb-a-txt').textContent = ev.error; $('tb-s-state').textContent = 'error'; }
+  };
+  try {
+    const r = await fetch(`/api/trustusbank/${tb.domain}/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ text, contextId: tb.ctx }) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 300)}`);
+    const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+    for (;;) {
+      const { value, done } = await rd.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (line.startsWith('data:')) { try { onEv(JSON.parse(line.slice(5))); } catch (e) {} }
+      }
+    }
+  } catch (e) { onEv({ t: 'error', error: String(e) }); }
+  clearInterval(tick);
+  if (!tools) $('tb-s-tools').textContent = '0';
+  if (!$('tb-a-txt').textContent) $('tb-a-txt').textContent = '(no answer text)';
+  tb.busy = false; $('tb-send').disabled = false; $('tb-send').textContent = 'Ask the agent';
+  $('tb-who').textContent = `${a.title} · continuing the conversation`;
+}
+$('tb-send').onclick = tbSend;
+$('tb-new').onclick = () => { tb.ctx = null; tbPick(tb.domain, true); };
+$('tb-prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) tbSend(); });
+tbLoad();
+setInterval(tbLoad, 60000);
 </script>
 </body>
 </html>

@@ -71,7 +71,7 @@
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .ag-card-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; }
-.ag-status { font-size: 13px; font-weight: 750; display: inline-flex; align-items: center; gap: 7px; }
+.ag-status { font-size: 13px; font-weight: 750; white-space: nowrap; display: inline-flex; align-items: center; gap: 7px; }
 .ag-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .ag-status.live { color: var(--green); }
 .ag-status.pending { color: var(--amber); }
@@ -437,6 +437,16 @@ details.ag-yaml-wrap .ag-yaml-head { border-radius: 0; }
 .ag-msg-text ul { margin: 4px 0 6px 18px; padding: 0; }
 .ag-msg-text code { background: #f1f5f9; border-radius: 5px; padding: 1px 5px; font-size: 13px; }
 .ag-msg.user .ag-msg-text code { background: rgba(255,255,255,.2); }
+.ag-msg-text ol { margin: 4px 0 6px 20px; padding: 0; }
+.ag-msg-text li { margin: 2px 0; }
+.ag-msg-text h3, .ag-msg-text h4, .ag-msg-text h5, .ag-msg-text h6 { margin: 10px 0 4px; line-height: 1.3; }
+.ag-msg-text h3 { font-size: 16.5px; } .ag-msg-text h4 { font-size: 15.5px; } .ag-msg-text h5, .ag-msg-text h6 { font-size: 14.5px; }
+.ag-msg-text > :first-child { margin-top: 0; }
+.ag-msg-text pre { background: #1f1b2b; color: #f4f1fa; border-radius: 10px; padding: 10px 12px; margin: 4px 0 8px;
+                   overflow-x: auto; font-size: 12.5px; line-height: 1.5; }
+.ag-msg-text pre code { background: none; padding: 0; color: inherit; }
+.ag-msg-text hr { border: 0; border-top: 1px solid #ece8f5; margin: 10px 0; }
+.ag-msg-text blockquote { margin: 0 0 6px; padding-left: 10px; border-left: 3px solid #e2dcf0; color: #5b5470; }
 .ag-avatar.sm { width: 30px; height: 30px; border-radius: 9px; font-size: 11px; flex-shrink: 0; }
 .ag-msg-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ag-toolchip {
@@ -590,3 +600,20 @@ header.hero.ag-hide { display: none; }
 @keyframes ag-rise { from { transform: translateY(10px); opacity: 0; } 30% { opacity: 1; } to { transform: translateY(-24px); opacity: 0; } }
 .ag-score-verdict small { display: block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #8b7fb0; }
 .ag-score-verdict b { display: block; font-size: 30px; letter-spacing: -.02em; color: #120d1f; margin: 2px 0 4px; }
+
+.ag-state { white-space: nowrap; }
+.ag-toolchip.failed { color: var(--red); border-color: currentColor; }
+.ag-toolerr { margin: 4px 0 6px; font-size: 13px; }
+.ag-route { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 0; }
+.ag-route li { position: relative; padding: 0 0 8px 16px; font-size: 13px; line-height: 1.3; }
+.ag-route li::before { content: ''; position: absolute; left: 3px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--purple, #7c3aed); }
+.ag-route li:not(:last-child)::after { content: ''; position: absolute; left: 5.5px; top: 13px; bottom: 0; width: 1px; background: #d8d4f0; }
+.ag-route li strong { display: block; font-weight: 700; }
+.ag-route li span { display: block; color: var(--muted, #6b7280); font-size: 12px; word-break: break-all; }
+.ag-activity li.failed strong { color: var(--red); }
+/* The edit menu takes no room until hover, so a long status ("Awaiting approval") fits beside Chat. */
+.ag-card-menu { max-width: 0; overflow: hidden; }
+.ag-card:hover .ag-card-menu, .ag-card:focus-within .ag-card-menu { max-width: 140px; }
+.ag-card-foot .ag-status { min-width: 0; overflow: hidden; }
+.ag-card-foot .ag-chat-btn { flex-shrink: 0; margin-left: auto; }
+.ag-card-menu + .ag-chat-btn { margin-left: 6px; }

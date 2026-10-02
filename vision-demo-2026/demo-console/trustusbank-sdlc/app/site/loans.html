@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loans · TrustUsBank</title>
+  <meta name="description" content="TrustUsBank: everyday banking from Frankfurt am Main. An everyday account, savings, cards and loans, with your money protected up to € 100,000.">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <div id="envRibbon" class="env-ribbon" hidden></div>
+  <div class="servicebar">
+    <div class="wrap">
+      <nav><a href="help.html#branches">Branches &amp; ATMs</a><a href="help.html#security">Security</a><a href="help.html#block">Block a card</a></nav>
+      <div class="lang"><b>EN</b><span>·</span><a href="#">DE</a></div>
+    </div>
+  </div>
+  <header class="header">
+    <div class="wrap">
+      <a class="brand" href="index.html"><img src="assets/logo.svg" alt="" width="34" height="34"><span class="brand-name">TrustUs<b>Bank</b></span></a>
+      <nav class="mainnav"><a href="index.html">Home</a><a href="accounts.html">Accounts</a><a href="payments.html">Payments</a><a href="cards.html">Cards</a><a href="loans.html">Loans</a><a href="help.html">Help &amp; contact</a></nav>
+      <div class="header-cta">
+        <a class="btn btn-ghost" href="accounts.html#open">Open an account</a>
+        <a class="btn btn-primary" href="banking/"><svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1Zm2 0h6V7a3 3 0 0 0-6 0v3Z" fill="currentColor"/></svg>Online banking</a>
+      </div>
+    </div>
+  </header>
+  <div id="announcement" class="announcement" hidden></div>
+
+  <section class="page-hero">
+    <div class="wrap">
+      <div class="crumbs"><a href="index.html">Home</a> / Loans</div>
+      <h1>Loans you can understand</h1>
+      <p class="lead">Borrow for the things you are planning, or for a home, with the same payment every month. No hidden fees, and you can pay a personal loan back early for free.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-head"><h2>Loan calculator</h2><p>Worked out at 5.49% a year, all costs included. The rate you get depends on your money history.</p></div>
+      <div class="calc">
+        <div class="calc-in">
+          <div class="range"><label for="loanAmount">Loan amount <output id="loanAmountOut"></output></label><input id="loanAmount" type="range" min="1000" max="60000" step="500" value="15000"></div>
+          <div class="range"><label for="loanTerm">Pay back over <output id="loanTermOut"></output></label><input id="loanTerm" type="range" min="12" max="96" step="6" value="48"></div>
+          <p class="muted small">Example: borrow € 15,000 and pay it back over 4 years at 5.49% a year, all costs included.</p>
+        </div>
+        <div class="calc-out">
+          <span style="color:#A7C4DC">You pay each month</span>
+          <div class="big tnum" id="loanMonthly"></div>
+          <dl><dt>Interest rate</dt><dd>5.49%</dd><dt>Interest you pay</dt><dd id="loanInterest"></dd><dt>Total you pay back</dt><dd id="loanTotal"></dd></dl>
+          <a class="btn btn-accent" href="help.html#contact">Get a quote</a>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section alt">
+    <div class="wrap">
+      <div class="grid3">
+        <article class="card"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16v3M19 16v3M3 16h18v-4l-2-5H5l-2 5v4ZM7 13h.01M17 13h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h3>Car loan</h3><p>From 4.99% a year for new and used cars.</p></article>
+        <article class="card"><div class="icon teal"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 4l9 7M5 10v10h14V10M10 20v-6h4v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h3>Home loan</h3><p>Buy or build a home with a fixed rate for 10, 15 or 20 years, and pay off up to 5% extra each year for free.</p></article>
+        <article class="card"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a4 4 0 0 0 5 5l-9 9-3-3 9-9a4 4 0 0 0-2-2ZM4 20l3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h3>Home improvement loan</h3><p>Up to € 50,000 to make your home warmer and cheaper to run.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="index.html"><img src="assets/logo.svg" alt="" width="30" height="30"><span class="brand-name">TrustUs<b>Bank</b></span></a>
+          <p>TrustUsBank AG<br>Neue Mainzer Straße 52<br>60311 Frankfurt am Main, Germany</p>
+          <p>Customer service <b data-support-phone>+49 69 5550 0100</b><br>Mon–Fri 08:00–20:00, Sat 09:00–14:00</p>
+        </div>
+        <div><h4>Banking</h4><ul><li><a href="accounts.html">Everyday accounts</a></li><li><a href="accounts.html#savings">Savings</a></li><li><a href="cards.html">Cards</a></li><li><a href="loans.html">Loans</a></li></ul></div>
+        <div><h4>Service</h4><ul><li><a href="payments.html">Sending money</a></li><li><a href="help.html">Help centre</a></li><li><a href="help.html#block">Block a card</a></li><li><a href="help.html#branches">Branches</a></li></ul></div>
+        <div><h4>About</h4><ul><li><a href="help.html#security">Security</a></li><li><a href="#">Careers</a></li><li><a href="#">Investor relations</a></li><li><a href="#">Press</a></li></ul></div>
+      </div>
+      <div class="footer-legal">
+        <span>© 2026 TrustUsBank AG · A fictional bank for demonstration only.</span>
+        <span><a href="#">Imprint</a> · <a href="#">Privacy</a> · <a href="#">Terms</a> · <a href="#">Fees</a> · <span id="build" class="build"></span></span>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

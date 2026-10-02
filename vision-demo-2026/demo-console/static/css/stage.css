@@ -84,6 +84,49 @@ a:hover .st-go i { transform: translateX(4px); }
 .st-flow .dst.out { border-color: rgba(196, 181, 253, .45); color: #ddd6fe; }
 .st-flow .dst.strip { border-color: rgba(252, 165, 165, .45); color: #fecaca; }
 
+/* Each story has its own colour, so four tiles do not read as one purple wall.
+   The agentics overview keeps the house purple above. */
+.st-story-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.st-track.six { grid-template-columns: repeat(6, 1fr); }
+
+/* Google: a light card, the four Google colours along the top edge and on the steps. */
+.st-story.gcp {
+  background: linear-gradient(160deg, #ffffff 0%, #f6f9ff 55%, #eef3fd 100%); color: #202124;
+  border: 1px solid #dfe5ef; box-shadow: 0 1px 0 rgba(0,0,0,.02);
+}
+.st-story.gcp::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 6px;
+  background: linear-gradient(90deg, #4285f4 0 25%, #ea4335 25% 50%, #fbbc04 50% 75%, #34a853 75% 100%);
+}
+.st-story.gcp:hover { box-shadow: 0 26px 50px -26px rgba(66, 133, 244, .45); }
+.st-story.gcp .st-eyebrow { color: #1a73e8; }
+.st-story.gcp h3, .st-story.gcp .st-go { color: #202124; }
+.st-story.gcp p { color: #5f6368; }
+.st-story.gcp .st-track span { color: #5f6368; }
+.st-story.gcp .st-track span b { color: #fff; border: 0; }
+.st-story.gcp .st-track span:nth-child(4n+1) b { background: #4285f4; }
+.st-story.gcp .st-track span:nth-child(4n+2) b { background: #ea4335; }
+.st-story.gcp .st-track span:nth-child(4n+3) b { background: #f9ab00; }
+.st-story.gcp .st-track span:nth-child(4n+4) b { background: #34a853; }
+.st-story.gcp .st-track span:not(:last-child)::after { background: #d2dbe9; }
+.st-story.gcp .st-pill { background: #fff; border-color: #dadce0; }
+
+/* Data classification: deep teal. */
+.st-story.data { background: radial-gradient(120% 90% at 100% 0%, #0f766e 0%, #0b3b3a 48%, #071f1f 100%); }
+.st-story.data:hover { box-shadow: 0 26px 50px -24px rgba(13, 148, 136, .55); }
+.st-story.data .st-eyebrow { color: #5eead4; }
+.st-story.data p { color: #b9d8d4; }
+.st-story.data .st-flow .arrow { color: #5eead4; }
+.st-story.data .st-flow .dst.out { border-color: rgba(94, 234, 212, .45); color: #ccfbf1; }
+
+/* Agent SDLC: amber on charcoal. */
+.st-story.sdlc { background: radial-gradient(120% 90% at 100% 0%, #9a5b12 0%, #3a2a1a 46%, #1c1712 100%); }
+.st-story.sdlc:hover { box-shadow: 0 26px 50px -24px rgba(217, 119, 6, .55); }
+.st-story.sdlc .st-eyebrow { color: #fcd34d; }
+.st-story.sdlc p { color: #ddd0bd; }
+.st-story.sdlc .st-flow .arrow { color: #fbbf24; }
+.st-story.sdlc .st-flow .dst.out { border-color: rgba(252, 211, 77, .45); color: #fef3c7; }
+
 /* ---------- lab tiles ---------- */
 .st-labs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .st-lab {

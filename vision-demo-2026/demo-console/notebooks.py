@@ -1260,6 +1260,19 @@ def step_page(demo: Demo, step: Step) -> str:
 # notebook demo is another.
 STORIES = [
     {
+        "href": "/google",
+        "domain": "agentic",
+        "kicker": "GOOGLE SOVEREIGN CLOUD",
+        "title": "Private AI in Berlin",
+        "blurb": "A bank's AI that keeps sensitive questions on its own GPU in Berlin and sends "
+                 "the rest to Gemini, with every agent, tool and euro accounted for.",
+        "bullets": [
+            "01 Routing · 02 Bank agents · 03 Change the website",
+            "04 Build an agent · 05 Approve tools · 06 Cost",
+        ],
+        "go": "Open Google Sovereign Cloud",
+    },
+    {
         "href": "/user-story-1",
         "domain": "agentic",
         "kicker": "AGENTICS",
@@ -1351,6 +1364,17 @@ def home_page() -> str:
   <div class="st-wrap">
     <div class="st-head"><div><div class="st-eyebrow">Follow a story</div><h2>Start here</h2></div></div>
     <div class="st-stories">
+      <a class="st-story gcp" href="/google">
+        <div class="st-story-top"><div class="st-eyebrow">Google Sovereign Cloud · Berlin · 6 steps</div>
+          <span class="st-pill" id="gcp-live">checking…</span></div>
+        <h3>Private AI for a bank, inside Germany</h3>
+        <p>Sensitive questions stay on the bank's own GPU in Berlin, everyday ones go to Gemini. Bank agents, a website the team changes by chat, and every tool and euro accounted for.</p>
+        <div class="st-track six">
+          <span><b>01</b>Routing</span><span><b>02</b>Agents</span><span><b>03</b>Website</span>
+          <span><b>04</b>Build</span><span><b>05</b>Approve</span><span><b>06</b>Cost</span>
+        </div>
+        <span class="st-go">Open Google Sovereign Cloud <i>→</i></span>
+      </a>
       <a class="st-story" href="/user-story-1">
         <div class="st-eyebrow">Agentics overview · 7 steps</div>
         <h3>From an enrolled laptop to agents that sleep between turns</h3>
@@ -1361,7 +1385,7 @@ def home_page() -> str:
         </div>
         <span class="st-go">Open the overview <i>→</i></span>
       </a>
-      <a class="st-story" href="/kernwerk">
+      <a class="st-story data" href="/kernwerk">
         <div class="st-eyebrow">Data classification · 3 steps</div>
         <h3>Data that must not leave</h3>
         <p>Three classes of data and a gateway that routes each question live, with personal data replaced before anything reaches an outside model.</p>
@@ -1373,7 +1397,7 @@ def home_page() -> str:
         </div>
         <span class="st-go">Open data classification <i>→</i></span>
       </a>
-      <a class="st-story" href="/petstore">
+      <a class="st-story sdlc" href="/petstore">
         <div class="st-eyebrow">Agent SDLC · 3 steps</div>
         <h3>A feature idea becomes a reviewed deploy</h3>
         <p>pm-bot files a user story as a GitHub issue, dev-bot implements it and commits
