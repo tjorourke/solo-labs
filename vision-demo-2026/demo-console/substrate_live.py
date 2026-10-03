@@ -15,7 +15,7 @@ import subprocess
 import threading
 import time
 
-CTX = "kind-substrate"
+CTX = "kind-mesh2"
 NS = "kagent"
 POOL = "lab-pool"
 _cache: tuple[float, dict] | None = None

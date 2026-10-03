@@ -9,7 +9,7 @@ the task-routing cluster. /economy is Token economics with MCP.
 
 Each lab reaches its own cluster and pins its own context, so kubectl's current
 context is never consulted: this file pins model-routing for Gateway decisions,
-live_run pins kind-mesh1, substrate pins kind-substrate, and dlp and agents_lab
+live_run pins kind-mesh1, substrate pins kind-mesh2, and dlp and agents_lab
 find model-routing themselves.
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ NS = os.environ.get("DASHBOARD_NAMESPACE", "agentgateway-system")
 
 # opa and decision-gateway only exist on model-routing. The console serves labs
 # from several clusters at once (live_run pins kind-mesh1, substrate pins
-# kind-substrate), so kubectl's current context says nothing about where this
+# kind-mesh2), so kubectl's current context says nothing about where this
 # page's logs are: pin it by name the way dlp and agents_lab already do.
 def current_context() -> str:
     if os.environ.get("KUBE_CONTEXT") or os.environ.get("MODEL_ROUTING_CONTEXT"):
@@ -921,10 +921,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/economy":
             return self._send(200, (PAGES / "economy.html").read_bytes(), "text/html; charset=utf-8")
         if path == "/cost":
-            # The gateway and UI hostnames come from console.env (AGW_HOST, SOLO_UI_HOST).
+            # Cost runs on mesh1: its Enterprise UI, and the ai-gateway's MetalLB address.
+            # Both move when mesh1 is rebuilt, so they are read live rather than configured.
+            import agents_lab
+            ui = (agents_lab.platform().get("ui") or "").rstrip("/")
+            gw = agents_lab.kc("-n", "agentgateway-system", "get", "svc", "ai-gateway", "-o",
+                               "jsonpath={.status.loadBalancer.ingress[0].ip}", check=False).stdout.strip()
             page = (PAGES / "cost.html").read_text()
-            page = (page.replace("__AGW_HOST__", os.environ.get("AGW_HOST", "agw.example.com"))
-                        .replace("__SOLO_UI_HOST__", os.environ.get("SOLO_UI_HOST", "soloui.example.com")))
+            page = page.replace("__UI__", ui or "#").replace("__GW_HOST__", gw or "ai-gateway not found")
             return self._send(200, page.encode(), "text/html; charset=utf-8")
         if path == "/desktop":
             return self._send(200, (PAGES / "desktop.html").read_bytes(), "text/html; charset=utf-8")

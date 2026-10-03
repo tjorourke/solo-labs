@@ -11,11 +11,11 @@
 #   - container-runtime listeners (OrbStack / Docker / vpnkit / lima / qemu):
 #     they publish this lab's own container ports
 #   - kubectl port-forwards for THIS suite's clusters (--context kind-mesh1|
-#     kind-mesh2|kind-substrate|kind-inference), so re-running a Connect cell
+#     kind-mesh2|kind-inference), so re-running a Connect cell
 #     mid-demo does not kill the consoles
 # Everything else on a listed port is killed, and named as it goes.
 
-KEEP_CONTEXTS="${KEEP_CONTEXTS:-kind-mesh1|kind-mesh2|kind-substrate|kind-inference}"
+KEEP_CONTEXTS="${KEEP_CONTEXTS:-kind-mesh1|kind-mesh2|kind-inference}"
 
 free_ports() {
   local port pid args name

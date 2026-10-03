@@ -24,7 +24,7 @@
 # started on first use and left up until `pf-down` (the Teardown cell calls it).
 # Never changes your kubectl context: everything addresses $CTX explicitly.
 
-: "${SUBSTRATE_CTX:=kind-substrate}"
+: "${SUBSTRATE_CTX:=kind-mesh2}"
 export CTX="${CTX:-$SUBSTRATE_CTX}" KAGENT_NS="${KAGENT_NS:-kagent}"
 export SUBSTRATE_API="${SUBSTRATE_API:-http://localhost:18083}"
 export CYN=$'\e[36m' GRN=$'\e[32m' BLD=$'\e[1m' RST=$'\e[0m'

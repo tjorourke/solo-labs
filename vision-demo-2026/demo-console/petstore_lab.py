@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 import agents_lab as al
@@ -95,7 +96,37 @@ def _autostage_if_needed(issue: dict | None, staging_tag: str | None) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+def _newest_tag() -> str:
+    """The most recent build in the kind registry. Tags end in their build time."""
+    try:
+        with urllib.request.urlopen("http://localhost:5001/v2/demo-petstore/tags/list", timeout=5) as r:
+            tags = json.load(r).get("tags") or []
+    except Exception:
+        return "baseline"
+    built = [t for t in tags if t.rsplit("-", 1)[-1].isdigit()]
+    return max(built, key=lambda t: int(t.rsplit("-", 1)[-1])) if built else "baseline"
+
+
+def ensure_environments() -> None:
+    """Put staging and prod back when they are missing, e.g. after mesh1 is rebuilt.
+
+    Both start on the newest image in the registry. Existing environments are left
+    alone, so this never undoes a promotion or a staged build.
+    """
+    if al.kc("get", "ns", "petstore-prod", check=False).returncode == 0:
+        return
+    lb = _ar_ingress_lb()
+    if not lb:
+        return
+    tag = _newest_tag()
+    docs = "\n---\n".join(f.read_text() for f in sorted((al.ROOT / "yaml" / "petstore").glob("*.yaml")))
+    docs = docs.replace("IMAGE_TAG_PLACEHOLDER", tag).replace("LB_PLACEHOLDER", lb)
+    subprocess.run(["kubectl", "--context", MESH, "apply", "-f", "-"], input=docs,
+                   capture_output=True, text=True)
+
+
 def status() -> dict:
+    ensure_environments()
     state = _load_state()
     state["agent_ready_issue"] = latest_agent_ready_issue()
     issue = latest_in_review_issue()
@@ -105,6 +136,7 @@ def status() -> dict:
                     "-o", "jsonpath={.spec.template.spec.containers[0].image}", check=False)
         state[f"{env}_image"] = (img.stdout or "").strip().split(":")[-1] if img.returncode == 0 else None
     _autostage_if_needed(issue, state.get("staging_image"))
+    state["staging_url"], state["prod_url"] = staging_url(), prod_url()
     return state
 
 

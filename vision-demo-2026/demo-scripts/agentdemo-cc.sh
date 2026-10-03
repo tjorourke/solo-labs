@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # agentdemo-cc.sh — stand up the coding-harness agent next to the ADK one, and talk to
-# both. Runs on the Part 5 cluster because a kagent AgentHarness REQUIRES Agent
+# both. Runs on the substrate cluster (mesh2) because a kagent AgentHarness REQUIRES Agent
 # Substrate: its spec.substrate is mandatory, and the harness runs as a gVisor actor on
 # a WorkerPool rather than as a pod of its own.
 #
@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # sourced either would silently point this at mesh1 — where a SandboxAgent is rejected
 # with `unknown field "spec.substrate"` because mesh1 carries no substrate. Use a name
 # nothing else exports, and override deliberately with SUBSTRATE_CTX=... if you need to.
-CTX="${SUBSTRATE_CTX:-kind-substrate}"
+CTX="${SUBSTRATE_CTX:-kind-mesh2}"
 NS="${KAGENT_NS:-kagent}"
 PORT="${ACP_PORT:-19110}"
 # The controller has no acp-sandbox image baked in unless it was built with one, so the

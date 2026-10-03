@@ -17,7 +17,7 @@ this much:
 |---|---|---|
 | Parts 1-3 (ambient, L4, waypoint) | `mesh1` + `mesh2` | 16 GB |
 | Parts 1-4, 7, 8, 11, 13 and the console | `mesh1` + `mesh2` with the Part 4 and Part 7 extras | 20 GB |
-| Everything, including Parts 5/12 and 6 | adds `substrate` and `inference` | 24 GB or more |
+| Everything, including Parts 5/12 and 6 | adds Agent Substrate on `mesh2`, and the `inference` cluster | 24 GB or more |
 
 You do not need every cluster up at once. `docker stop` a cluster's node containers
 between demos and `docker start` them again: kind survives it.
@@ -104,7 +104,7 @@ there, so re-running one after a failure is safe.
 | 2 | `./demo-scripts/agentregistry/setup-mesh1.sh` | kagent, AgentRegistry and the Enterprise UI on `mesh1`. Parts 4 and 8 | ~8 min |
 | 3 | `./demo-scripts/llm-gateway.sh` | the AI gateway, local model servers and the MCP server on `mesh1`. Part 7 | ~1 min |
 | 3b | `./demo-scripts/my-agents-setup.sh` | the MCP servers My agents offers (telco, Site daylight, IT pub quiz, Excuse generator), their gateway policies and their AgentRegistry records. Run after step 3 so the GitHub server gets its token. `status` shows each server's approval tier | ~1 min |
-| 4 | `./demo-scripts/substrate-cluster.sh` | the `substrate` cluster with kagent 0.5.6 and gVisor. Parts 5 and 12 | |
+| 4 | `./demo-scripts/substrate-cluster.sh` | kagent 0.5.6 with Agent Substrate (gVisor) on `mesh2`. Parts 5 and 12 | a few min |
 | 5 | `(cd ../agentgateway-inference-routing-kind && ./scripts/quick.sh up)` | the `inference` cluster. Part 6 | |
 
 Or run all of them in one go, skipping what you do not need:

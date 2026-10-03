@@ -10,8 +10,8 @@
 set -Eeuo pipefail
 
 : "${AD_CONTROLLER_IP:?}" "${AD_KEYCLOAK_IP:?}" "${AD_USER:?}" "${AD_PASSWORD:?}"
-CONTROLLER_HOST=agentdesktop.agentdesktop.svc.cluster.local
-KEYCLOAK_HOST=keycloak.keycloak.svc.cluster.local
+CONTROLLER_HOST="agentdesktop.$AD_CONTROLLER_IP.sslip.io"
+KEYCLOAK_HOST="keycloak.$AD_KEYCLOAK_IP.sslip.io"
 JAR=/tmp/kc-cookies.txt
 # --user manages this user's own tool settings. System mode manages the machine's, and
 # it is the only mode that can reach Claude Desktop: Desktop reads its policy from the
@@ -30,7 +30,8 @@ else
   STATE="$HOME/.local/state/agentdesktop"
 fi
 
-# Resolve the two cluster names the same way the laptop does with /etc/hosts.
+# sslip.io names resolve through public DNS. Pin them anyway, in case the container's
+# resolver refuses private answers for public names.
 grep -q "$CONTROLLER_HOST" /etc/hosts || echo "$AD_CONTROLLER_IP $CONTROLLER_HOST" >> /etc/hosts
 grep -q "$KEYCLOAK_HOST"   /etc/hosts || echo "$AD_KEYCLOAK_IP $KEYCLOAK_HOST"   >> /etc/hosts
 

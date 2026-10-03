@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent
 SCRIPTS = ROOT.parent / "demo-scripts"
 LOAD = SCRIPTS / "substrate-load.sh"
 SCOPE = SCRIPTS / "substrate-scope.sh"
-CTX = os.environ.get("SUBSTRATE_CTX", "kind-substrate")
+CTX = os.environ.get("SUBSTRATE_CTX", "kind-mesh2")
 NS = "kagent"
 POOL = "kagent-default"
 PORT = os.environ.get("SUBSTRATE_SCOPE_PORT", "8123")
@@ -61,7 +61,7 @@ def status() -> dict:
     try:
         pool = kubectl("-n", NS, "get", "workerpool", POOL, "-o", "json")
         if pool.returncode != 0:
-            out["error"] = (pool.stderr.strip().split("\n")[-1] or "no substrate cluster")[:160]
+            out["error"] = (pool.stderr.strip().split("\n")[-1] or "no substrate on mesh2")[:160]
             return out
         out["cluster"] = True
         spec = json.loads(pool.stdout)

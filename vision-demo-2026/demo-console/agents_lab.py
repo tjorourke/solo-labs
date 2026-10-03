@@ -33,6 +33,12 @@ ROUTING_CTX = os.environ.get("ROUTING_CONTEXT") or os.environ.get("MODEL_ROUTING
      if n.endswith("cluster/model-routing") or n == "model-routing"), "")
 ROUTING_NS = "agentgateway-system"
 GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", f"https://{os.environ.get('AGW_HOST', 'agw.example.com')}/v1")
+# "local" (the default) keeps every model call inside mesh1: the agent sends its MCP token
+# to the my-agents-model route, which holds the corp Anthropic key and calls
+# claude-haiku-4-5. "eks" is the model-routing cluster, with the identity check below.
+MODEL_MODE = os.environ.get("MY_AGENTS_MODEL", "local")
+LOCAL_MODEL_URL = "http://my-agents-model.kagent.svc.cluster.local/v1"
+LOCAL_MODEL_YAML = ROOT / "yaml" / "model-local.yaml"
 SIGNING_KEY = Path(os.environ.get("MODEL_GATEWAY_SIGNING_KEY", ROOT.parents[1] / "agentgateway-inference-task-routing-eks" / "identity" / "signing-key.pem"))
 # Private only. A new agent is not entitled to a frontier model because someone typed a
 # name into a wizard; widening that is a platform decision, made on /approvals.
@@ -392,6 +398,49 @@ _MCP_LABELS = {"at": 0.0, "labels": {}}
 _MCP_HAS_TOKEN = set()
 
 
+AR_NS = "agentregistry-system"
+AR_GATEWAY = {"group": "gateway.networking.k8s.io", "kind": "Gateway",
+              "name": "ar-ingress", "namespace": "agentgateway-system"}
+
+
+def settle_registry_gateway_objects():
+    """Stop AgentRegistry's generated gateway objects hot-looping the API server.
+
+    For each remote MCPServer AR writes a gw-rt route, a gw-be backend and a gw-pol policy.
+    The route comes with no parentRefs, so its policy can never attach and the controller
+    rewrites its status hundreds of times a second. The backend comes as spec.mcp, and AR
+    and the controller then ping-pong it about ten times a second. Both melted mesh1
+    (2026-09-21, again 2026-10-03). Parenting the route on ar-ingress and moving the backend
+    to spec.entMcp settles both: AR leaves a field it no longer owns alone. Each route has
+    its own in-cluster hostname, so attaching it takes no traffic from anything else.
+    """
+    routes = kc("-n", AR_NS, "get", "httproute", "-o", "json", check=False)
+    if routes.returncode == 0:
+        for o in json.loads(routes.stdout).get("items", []):
+            name = o["metadata"]["name"]
+            if name.startswith("gw-rt-") and not o["spec"].get("parentRefs"):
+                kc("-n", AR_NS, "patch", "httproute", name, "--type", "merge",
+                   "-p", json.dumps({"spec": {"parentRefs": [AR_GATEWAY]}}), check=False)
+    backends = kc("-n", AR_NS, "get", "enterpriseagentgatewaybackend", "-o", "json", check=False)
+    if backends.returncode == 0:
+        for o in json.loads(backends.stdout).get("items", []):
+            name, spec = o["metadata"]["name"], o["spec"]
+            if name.startswith("gw-be-") and "mcp" in spec and "entMcp" not in spec:
+                kc("-n", AR_NS, "patch", "enterpriseagentgatewaybackend", name, "--type", "json",
+                   "-p", json.dumps([{"op": "remove", "path": "/spec/mcp"},
+                                     {"op": "add", "path": "/spec/entMcp", "value": spec["mcp"]}]),
+                   check=False)
+
+
+def _settle_soon():
+    # AR writes the objects a few seconds after the MCPServer lands.
+    def run():
+        for delay in (5, 20):
+            time.sleep(delay)
+            settle_registry_gateway_objects()
+    threading.Thread(target=run, daemon=True).start()
+
+
 def ensure_registry_mcps(existing: dict | None = None):
     """The platform owns MCPServer records; agents only reference them.
 
@@ -412,6 +461,7 @@ def ensure_registry_mcps(existing: dict | None = None):
             if stale and managed[1] not in published:
                 _arctl("apply", "-f", str(managed[1]), timeout=30)
                 published.add(managed[1])
+                _settle_soon()
             continue
         # A gateway route demands the agent's MCP token, so its record must send one.
         if rname in existing and (not gated or rname in _MCP_HAS_TOKEN):
@@ -438,6 +488,7 @@ def ensure_registry_mcps(existing: dict | None = None):
         tmp.write_text(doc)
         _arctl("apply", "-f", str(tmp), timeout=30)
         tmp.unlink(missing_ok=True)
+        _settle_soon()
 
 
 def setup_platform() -> list:
@@ -703,6 +754,8 @@ def registry_mcp_labels(force: bool = False) -> dict:
     if missing or unlabelled or tokenless:
         ensure_registry_mcps(rows)
         rows = _registry_mcp_rows() or rows
+    # Every 20 seconds at most: also catches objects AR wrote while the console was down.
+    threading.Thread(target=settle_registry_gateway_objects, daemon=True).start()
     _MCP_LABELS.update(at=time.time(), labels=rows)
     return rows
 
@@ -860,6 +913,39 @@ def mint_mcp_token(name: str) -> str:
     })
 
 
+def _corp_key() -> str:
+    key = os.environ.get("CORP_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or ""
+    if key:
+        return key
+    # The console is usually started without the secrets file in its environment.
+    f = Path(os.environ.get("SECRETS_FILE") or ROOT.parent / "secrets.env")
+    if f.is_file():
+        got = subprocess.run(["bash", "-c", f'. "{f}" >/dev/null 2>&1; printf %s "${{CORP_API_KEY:-$ANTHROPIC_API_KEY}}"'],
+                             capture_output=True, text=True)
+        return got.stdout.strip()
+    return ""
+
+
+def ensure_local_model() -> dict:
+    """The in-cluster model route every local agent calls. Safe to re-run."""
+    key = _corp_key()
+    if not key:
+        return {"ok": False, "detail": "no CORP_API_KEY or ANTHROPIC_API_KEY for the local model route"}
+    jwks = mcp_jwks()
+    if not jwks:
+        return {"ok": False, "detail": "could not read the console's MCP signing key"}
+    secret = kc("-n", NS, "create", "secret", "generic", "my-agents-model-key",
+                f"--from-literal=Authorization={key}", "--dry-run=client", "-o", "yaml", check=False)
+    subprocess.run(["kubectl", "--context", MESH, "apply", "-f", "-"], input=secret.stdout,
+                   capture_output=True, text=True)
+    applied = subprocess.run(["kubectl", "--context", MESH, "apply", "-f", "-"],
+                             input=LOCAL_MODEL_YAML.read_text().replace("__JWKS__", jwks),
+                             capture_output=True, text=True)
+    if applied.returncode != 0:
+        return {"ok": False, "detail": (applied.stderr or "apply failed").strip()[:160]}
+    return {"ok": True, "detail": "local model route on mesh1 (claude-haiku-4-5)"}
+
+
 def register_agent_identity(name: str, pools: list | None = None) -> dict:
     """Check that the signed agent group is recognised, without registering a user.
 
@@ -1006,7 +1092,7 @@ def render_yaml(spec: dict) -> str:
     # private-pool only and expiring, which is proportionate for that.
     token = spec.get("token") or ""
     if token:
-        deploy_doc += f"    MODEL_BASE_URL: {ystr(GATEWAY_URL)}\n"
+        deploy_doc += f"    MODEL_BASE_URL: {ystr(spec.get('model_url') or GATEWAY_URL)}\n"
         deploy_doc += f"    MODEL_API_KEY: {ystr(token)}\n"
 
     docs = [prompt_doc] + skill_docs + mcp_docs + [agent_doc, deploy_doc]
@@ -1096,14 +1182,20 @@ def create_agent(spec: dict):
     version = next_version(name)
     # A configured model gateway is an access boundary. Failure to validate its
     # group policy must not silently send the agent to a provider directly.
-    token = mint_agent_token(name)
-    routing = {"ok": False, "detail": "no signing key for the model gateway"}
-    if token:
+    mcp_token = mint_mcp_token(name) if any(sel.get("tools") for sel in mcp_sel) else ""
+    if MODEL_MODE == "local":
+        routing = ensure_local_model()
+        if not routing["ok"]:
+            return {"ok": False, "error": routing["detail"]}
+        token, model_url = mint_mcp_token(name), LOCAL_MODEL_URL
+    else:
+        token, model_url = mint_agent_token(name), GATEWAY_URL
+        routing = {"ok": False, "detail": "no signing key for the model gateway"}
+    if token and MODEL_MODE != "local":
         routing = register_agent_identity(name, spec.get("pools"))
         if not routing["ok"]:
             return {"ok": False, "error": routing["detail"]}
-    mcp_token = mint_mcp_token(name) if any(sel.get("tools") for sel in mcp_sel) else ""
-    yaml_text = render_yaml({**spec, "name": name, "version": version, "token": token,
+    yaml_text = render_yaml({**spec, "name": name, "version": version, "token": token, "model_url": model_url,
                              "mcp_token": mcp_token, "skills": skills})
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     rec = {
@@ -1787,9 +1879,10 @@ def agent_status(name: str) -> dict:
         "ready": ready,
         "logs": log_text,
         "urls": {
-            "kagent": k_ui + "/agents" if k_ui else "",
+            # Solo Enterprise UI: kagent sits under /ke, an agent under /ke/agents/<cluster>/<ns>/<name>.
+            "kagent": k_ui + "/ke/agents" if k_ui else "",
             "registry": r_ui or "",
-            "prompt": (k_ui + "/agents/" + name) if k_ui else "",
+            "prompt": f"{k_ui}/ke/agents/{MESH.removeprefix('kind-')}/{NS}/{name}" if k_ui else "",
         },
         "agent": _with_policy(rec),
         "platform": plat,

@@ -6,7 +6,7 @@
 - **Part 2: L4 identity.** The petshop on `mesh1`: the certificate is the identity, authorise on it in ztunnel, identity-aware access logs, the shared-ServiceAccount gap, workload claims closing it: all at L4, no proxy in the path.
 - **Part 3: Waypoint (L7).** Add the agentgateway waypoint to the petshop: JWT authorisation, canary routing and identity-keyed rate limiting. Needs the petshop from Part 2 §2.1.
 - **Part 4 — AgentRegistry.** On `mesh1`: a governed catalog of approved MCP tool servers, skills and runtimes; scaffold a dice agent with `arctl`, build/publish, kick off the **AWS Bedrock AgentCore** push in the background, deploy to kagent; roll the dice and watch the tool-call trace land in the **kagent UI** (Tracing span tree); add a tool; lock it down with a waypoint AccessPolicy; turn a REST API into MCP tools (OpenAPI → MCP); then invoke the same agent on AgentCore. Needs the extra platform standup below (and AWS + a git repo for the AgentCore beats).
-- **Part 5: Substrate (gVisor).** On its **own** `kind-substrate` cluster (kagent 0.5.6): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool`. Catch `runsc` serving a turn; watch one actor go Suspended → Resuming → Running → Suspending → Suspended on kagent's `/api/substrate/status` with its snapshot version going up; see that concurrency is the worker count (three turns on two workers, then `kubectl scale`); put the same three agents up as pod-backed `Agent`s for comparison; call MCP tools from inside the sandbox; resume the same conversation from its own snapshot; roll a shape change out as a second golden snapshot beside the first; pin an agent to a second `WorkerPool` on its own node; mix a pod agent and a sandboxed agent in one graph; then light up the [Substrate Scope](https://github.com/themsquared/substrate-scope) board with `substrate-load.sh`. Written up as the KB article [Agent Substrate: how kagent runs agents as actors](../kagent-agent-substrate/).
+- **Part 5: Substrate (gVisor).** On `mesh2` (kagent 0.5.6): a `SandboxAgent` runs as a gVisor-sandboxed actor on a pre-warmed `WorkerPool`. Catch `runsc` serving a turn; watch one actor go Suspended → Resuming → Running → Suspending → Suspended on kagent's `/api/substrate/status` with its snapshot version going up; see that concurrency is the worker count (three turns on two workers, then `kubectl scale`); put the same three agents up as pod-backed `Agent`s for comparison; call MCP tools from inside the sandbox; resume the same conversation from its own snapshot; roll a shape change out as a second golden snapshot beside the first; pin an agent to a second `WorkerPool` on its own node; mix a pod agent and a sandboxed agent in one graph; then light up the [Substrate Scope](https://github.com/themsquared/substrate-scope) board with `substrate-load.sh`. Written up as the KB article [Agent Substrate: how kagent runs agents as actors](../kagent-agent-substrate/).
 - **Part 6: Inference routing.** On its **own** `kind-inference` cluster: a standalone agentgateway fronts a vLLM-simulator pool; the GIE Endpoint Picker does KV-cache-aware routing to an `InferencePool`, with serving priority via `InferenceObjective`. (A mesh-integrated gateway can't route GIE pools, so it runs on its own non-mesh gateway.)
 - **Part 7: The AI gateway.** On `mesh1`: one agentgateway in front of every model, key and tool. Corporate model names routed across Azure OpenAI, AWS Bedrock and Anthropic (frontier models only, inference stays in Part 6); failover priority groups; JWT identity stamped on every metric; group-based model access; per-user token limits; virtual keys with a declarative budget; realised-USD chargeback by user/team/BU; and an MCP hub with per-tool authorisation. Needs the small extra standup below.
 
@@ -152,8 +152,8 @@ Consoles are on the mesh1 LoadBalancer IP via `sslip.io` (no `/etc/hosts`): the 
 
 ### The coding harness: agentdemo-cc
 
-`agentdemo-cc.sh` puts the same dice agent up twice, through two different doors, on the
-Part 5 cluster:
+`agentdemo-cc.sh` puts the same dice agent up twice, through two different doors, on
+mesh2, where Agent Substrate runs:
 
 ```bash
 ./demo-scripts/agentdemo-cc.sh up     # agentdemo (ADK image) + agentdemo-cc (harness)
@@ -209,7 +209,7 @@ and why `load` takes a budget and stops there. Nothing in demo-5 itself leaves a
 
 It reads through the kagent controller API, which gives full fidelity (actors and sessions, not just
 pools and pods) on this suite's cluster. Two things to know: it watches the **current** kubectl
-context, so the script switches you to `kind-substrate`; and its scaling buttons really do scale the
+context, so the script switches you to `kind-mesh2`; and its scaling buttons really do scale the
 WorkerPool, so treat them as live actions during a demo.
 
 ```bash

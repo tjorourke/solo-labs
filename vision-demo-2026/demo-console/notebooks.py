@@ -98,7 +98,7 @@ def _ingress_url(prefix: str, id_: str, label: str, note: str) -> dict:
 AR_UI = _ingress_url("agentregistry", "ar-ui", "Open AgentRegistry UI", "catalogue and deployments")
 KAGENT_UI = _ingress_url("kagent", "kagent-ui", "Open kagent UI", "chat, tracing, access policies (admin-user / password)")
 
-# substrate-lab.sh sources substrate-lib.sh, which pins kind-substrate and moves to the suite root.
+# substrate-lab.sh sources substrate-lib.sh, which pins kind-mesh2 and moves to the suite root.
 SUBSTRATE_ENV = """
 . demo-scripts/substrate-lab.sh
 """
@@ -237,8 +237,8 @@ export ISTIOCTL="${ISTIOCTL:-$HOME/.istioctl/bin/istioctl-1.30.3-solo}"
         "short": "Agent Substrate",
         "title": "Agent Substrate: agents that sleep between turns",
         "blurb": "Define a worker pool, put an agent and a harness on it, read the ActorTemplate kagent renders, then watch a conversation get snapshotted and resume, and load the pool until it runs out of workers.",
-        "clusters": ["kind-substrate"],
-        "needs": "The kind-substrate cluster with Solo Enterprise for kagent 0.5.6 and Agent Substrate (demo-scripts/substrate-cluster.sh). Turns make live Anthropic calls.",
+        "clusters": ["kind-mesh2"],
+        "needs": "Solo Enterprise for kagent 0.5.6 and Agent Substrate on kind-mesh2 (demo-scripts/substrate-cluster.sh). Turns make live Anthropic calls.",
         "env": SUBSTRATE_ENV,
         "consoles": [],
     },

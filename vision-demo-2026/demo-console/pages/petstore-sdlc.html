@@ -170,14 +170,13 @@
 </div>
 
 <script>
-const LB = "192.168.97.148"; // ar-ingress address; status() keeps image tags live
-document.getElementById("staging-link").href = `http://petstore-staging.${LB}.sslip.io/`;
-document.getElementById("prod-link").href = `http://petstore-prod.${LB}.sslip.io/`;
-
+// The ar-ingress address changes when mesh1 is rebuilt, so the links come from status().
 async function refreshStatus() {
   try {
     const r = await fetch("/api/petstore/status");
     const s = await r.json();
+    if (s.staging_url) document.getElementById("staging-link").href = s.staging_url;
+    if (s.prod_url) document.getElementById("prod-link").href = s.prod_url;
     const issue = s.agent_ready_issue;
     const card = document.getElementById("issue-card");
     card.innerHTML = issue

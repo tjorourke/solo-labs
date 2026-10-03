@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import time
@@ -342,17 +343,27 @@ def claude_settings():
     }
 
 
+def _names_resolve() -> bool:
+    """The controller and Keycloak sslip.io names answer with their own addresses."""
+    env = VISION / "demo-scripts" / ".agentdesktop-env"
+    if not env.is_file():
+        return False
+    vals = dict(re.findall(r"^export (\w+)=(.*)$", env.read_text(), re.M))
+    pairs = ((vals.get("AD_CONTROLLER_HOST") or f"agentdesktop.{vals.get('AD_CONTROLLER_IP')}.sslip.io",
+              vals.get("AD_CONTROLLER_IP")),
+             (vals.get("AD_KEYCLOAK_HOST") or f"keycloak.{vals.get('AD_KEYCLOAK_IP')}.sslip.io",
+              vals.get("AD_KEYCLOAK_IP")))
+    try:
+        return all(ip and socket.gethostbyname(host) == ip for host, ip in pairs)
+    except OSError:
+        return False
+
+
 def enrol_bits():
     daemon = _local_daemon_up()
     return {
         "script": ENROL.is_file(),
-        "hosts": all(
-            h in Path("/etc/hosts").read_text()
-            for h in (
-                "agentdesktop.agentdesktop.svc.cluster.local",
-                "keycloak.keycloak.svc.cluster.local",
-            )
-        ),
+        "hosts": _names_resolve(),
         "binary": (VISION / "demo-scripts" / ".agentdesktop-bin" / "agentdesktop").is_file(),
         "daemon": daemon,
         "system": SYS_PLIST.exists() or _bin_running(SYS_BIN) or SYS_CODE_SETTINGS.exists(),

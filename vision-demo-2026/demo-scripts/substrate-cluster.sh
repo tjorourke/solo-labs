@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# substrate-cluster.sh — create the dedicated kind-substrate cluster and enable kagent
-# Agent Substrate (gVisor) on it. Part 5 runs here, isolated from mesh1 (which stays on
-# kagent v0.4.3 for Part 4). Idempotent: re-runs skip an existing cluster and upgrade.
+# substrate-cluster.sh — enable kagent Agent Substrate (gVisor) on mesh2 for Parts 5 and 12.
+# Substrate used to have a kind cluster of its own. mesh2 carries only the second half of
+# the ambient demos, so it has the room, and that saves a third cluster. mesh2 comes from
+# setup.sh; this script does not create it. Idempotent: re-runs upgrade in place.
 #
 #   ./demo-scripts/substrate-cluster.sh
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAB_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-if ! kind get clusters 2>/dev/null | grep -qx substrate; then
-  echo "→ creating kind cluster 'substrate' ..."
-  kind create cluster --config "$SCRIPT_DIR/kind/substrate.yaml"
-else
-  echo "→ kind cluster 'substrate' already exists"
+CTX="${SUBSTRATE_CTX:-kind-mesh2}"
+if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx "$CTX"; then
+  echo "✗ no $CTX context. Build mesh1 and mesh2 first: ./demo-scripts/setup.sh" >&2
+  exit 1
 fi
-SUBSTRATE_CTX=kind-substrate bash "$SCRIPT_DIR/substrate-up.sh"
-echo "✔ Part 5 substrate cluster ready (context kind-substrate). Demo it in demo-5-substrate.ipynb."
+SUBSTRATE_CTX="$CTX" bash "$SCRIPT_DIR/substrate-up.sh"
+echo "✔ Agent Substrate ready on $CTX. Demo it in demo-5-substrate.ipynb or demo-12-agent-substrate.ipynb."

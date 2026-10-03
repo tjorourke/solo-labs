@@ -44,7 +44,7 @@ function paint(s) {
   document.getElementById('laptop-cards').innerHTML = `
     <article class="budget ${d.running ? 'ok' : ''}"><div class="top"><h3>Agentdesktop daemon</h3>
       <span class="mode">${d.running ? 'running' : (d.installed ? 'installed, stopped' : 'not installed')}</span></div>
-      <p class="note">${s.enrol?.hosts ? 'Hosts are set.' : 'Hosts lines missing.'} ${s.enrol?.binary ? 'Binary ready.' : 'Binary missing.'} Sign in as ${USER} / password.</p></article>
+      <p class="note">${s.enrol?.hosts ? 'Names resolve.' : 'The sslip.io names do not resolve here.'} ${s.enrol?.binary ? 'Binary ready.' : 'Binary missing.'} Sign in as ${USER} / password.</p></article>
     <article class="budget ${codeManaged ? 'ok' : ''}"><div class="top"><h3>Claude Code</h3>
       <span class="mode">${d.code ? 'EKS gateway, managed' : ((s.claude?.base_url || '').includes(s.gateway_host || 'agw.example.com') ? 'EKS gateway' : (s.claude?.base_url ? 'other gateway' : 'native'))}</span></div>
       <p class="note">A managed settings file the machine owns, so your own ~/.claude/settings.json is left alone.</p></article>

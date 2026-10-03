@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # substrate-scope.sh — run Substrate Scope, a live visualiser for Agent Substrate, against
-# the Part 5 cluster. You watch worker bays fill, actors resume from snapshots and get
+# the substrate cluster (mesh2). You watch worker bays fill, actors resume from snapshots and get
 # checkpointed back, which is the thing demo-5 otherwise has to prove with ps and ls.
 #
 # Runs from the suite root or from demo-scripts/ — it resolves everything from its own
@@ -30,10 +30,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # sourced either would silently point this at mesh1 — where a SandboxAgent is rejected
 # with `unknown field "spec.substrate"` because mesh1 carries no substrate. Use a name
 # nothing else exports, and override deliberately with SUBSTRATE_CTX=... if you need to.
-CTX="${SUBSTRATE_CTX:-kind-substrate}"
+CTX="${SUBSTRATE_CTX:-kind-mesh2}"
 # Read the laptop's kubeconfig, not the caller's. demo-8's connect.sh (and demo-7's) export a
 # minified one-cluster KUBECONFIG so their cells can say plain `kubectl`; under that file
-# $CTX does not exist and this would wrongly report the Part 5 cluster as missing.
+# $CTX does not exist and this would wrongly report the substrate cluster (mesh2) as missing.
 export KUBECONFIG="${SUBSTRATE_KUBECONFIG:-$HOME/.kube/config}"
 DIR="$SCRIPT_DIR/.substrate-scope"
 REPO="https://github.com/themsquared/substrate-scope.git"
@@ -56,7 +56,7 @@ require_substrate() {
     echo "✗ no $CTX context — run $SCRIPT_DIR/substrate-cluster.sh first"; exit 1; }
   kubectl --context "$CTX" get crd workerpools.ate.dev >/dev/null 2>&1 || {
     echo "✗ $CTX has no Agent Substrate installed (no workerpools.ate.dev)."
-    echo "  This needs the Part 5 cluster: $SCRIPT_DIR/substrate-cluster.sh"
+    echo "  Add it to mesh2: $SCRIPT_DIR/substrate-cluster.sh"
     echo "  If you meant a different cluster, set SUBSTRATE_CTX=<context>."
     exit 1; }
 }

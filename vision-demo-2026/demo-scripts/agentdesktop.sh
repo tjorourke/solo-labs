@@ -3,8 +3,8 @@
 # on top of ./demo-scripts/setup.sh and ./demo-scripts/llm-gateway.sh.
 #
 #   - keycloak: a "corp" realm with a public agentdesktop client and three
-#     staff users, exposed on a MetalLB address so the laptop browser and the
-#     in-cluster controller resolve the same issuer string
+#     staff users, exposed on a MetalLB address as keycloak.<ip>.sslip.io, so the
+#     laptop browser and the in-cluster controller use the same issuer string
 #   - agentdesktop ns: PostgreSQL, the controller TLS material (device CA,
 #     controller certificate, gateway JWT signing key) and the controller
 #     itself from the published image
@@ -77,8 +77,8 @@ ok "tools, ai-gateway and the Anthropic secret are present"
 
 # ── 1. Keycloak on a routable address ─────────────────────────────────────────
 # The issuer string has to be identical for the in-cluster controller and the
-# laptop browser, so both use the service DNS name. The laptop resolves it via
-# /etc/hosts to the MetalLB address printed at the end.
+# laptop browser. Both use keycloak.<MetalLB address>.sslip.io: public DNS answers
+# it on the laptop with no /etc/hosts edit, and the controller gets a hostAlias.
 step "Exposing Keycloak on a MetalLB address"
 kc apply -f - >/dev/null <<EOF
 apiVersion: v1
@@ -100,12 +100,22 @@ done
 [ -n "${KC_IP:-}" ] || die "Keycloak LoadBalancer never received an address"
 ok "keycloak-lb = $KC_IP"
 
-ISSUER="http://keycloak.$KC_NS.svc.cluster.local:8080/realms/$REALM"
+KC_HOST="keycloak.$KC_IP.sslip.io"
+ISSUER="http://$KC_HOST:8080/realms/$REALM"
+# A pinned KC_HOSTNAME stamps every token with that one name. Unpinned, Keycloak issues
+# for the host the request came in on, so Part 3's in-cluster callers still get
+# keycloak.keycloak.svc.cluster.local and this realm gets the sslip.io name.
+if [ -n "$(kc -n "$KC_NS" get deploy keycloak -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KC_HOSTNAME")].value}')" ]; then
+  kc -n "$KC_NS" set env deploy/keycloak KC_HOSTNAME- >/dev/null
+  kc -n "$KC_NS" rollout status deploy/keycloak --timeout=300s >/dev/null
+  ok "Keycloak issues for the requested host (KC_HOSTNAME unpinned)"
+fi
 
 # ── 2. The corp realm, client and staff ───────────────────────────────────────
 # kcadm.sh runs inside the pod, so this needs no port-forward and no ingress.
 step "Keycloak realm '$REALM' + public client '$CLIENT_ID'"
-KC_POD="$(kc -n "$KC_NS" get pod -l app=keycloak -o jsonpath='{.items[0].metadata.name}')"
+KC_POD="$(kc -n "$KC_NS" get pod -l app=keycloak --field-selector=status.phase=Running \
+  --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')"
 kcadm() { kc -n "$KC_NS" exec "$KC_POD" -- /opt/keycloak/bin/kcadm.sh "$@"; }
 
 kcadm config credentials --server http://localhost:8080 \
@@ -287,7 +297,33 @@ for _ in $(seq 1 60); do
   [ -n "${AD_IP:-}" ] && break; sleep 2
 done
 [ -n "${AD_IP:-}" ] || die "controller LoadBalancer never received an address"
-ok "controller running at $AD_IP (gateway JWT lifetime 5m)"
+AD_HOST="agentdesktop.$AD_IP.sslip.io"
+# The controller certificate was cut before the LoadBalancer had an address. Add its
+# sslip.io name, signed by the same device CA, so enrolled devices stay trusted.
+TLS_JSON="$(kc -n "$AD_NS" get secret agentdesktop-controller-tls -o json)"
+tls() { printf '%s' "$TLS_JSON" | jq -r --arg k "$1" '.data[$k]' | openssl base64 -d -A; }
+if ! tls controller.pem | openssl x509 -noout -ext subjectAltName 2>/dev/null | grep -q "DNS:$AD_HOST"; then
+  W2="$(mktemp -d)"
+  tls controller-key.pem > "$W2/controller-key.pem"
+  tls device-ca.pem > "$W2/device-ca.pem"
+  tls device-ca-key.pem > "$W2/device-ca-key.pem"
+  openssl req -new -key "$W2/controller-key.pem" -out "$W2/controller.csr" -subj /CN=agentdesktop \
+    -addext "subjectAltName=DNS:$AD_HOST,DNS:agentdesktop,DNS:agentdesktop.$AD_NS,DNS:agentdesktop.$AD_NS.svc,DNS:agentdesktop.$AD_NS.svc.cluster.local" \
+    -addext extendedKeyUsage=serverAuth 2>/dev/null
+  openssl x509 -req -in "$W2/controller.csr" -CA "$W2/device-ca.pem" -CAkey "$W2/device-ca-key.pem" \
+    -set_serial "$(date +%s)" -days 30 -sha256 -copy_extensions copy -out "$W2/controller.pem" 2>/dev/null
+  kc -n "$AD_NS" patch secret agentdesktop-controller-tls --type merge \
+    -p "{\"data\":{\"controller.pem\":\"$(openssl base64 -A -in "$W2/controller.pem")\"}}" >/dev/null
+  rm -rf "$W2"
+  ok "controller certificate now also names $AD_HOST"
+fi
+# The controller fetches the OIDC issuer's metadata and keys. Pin the sslip.io name in
+# the pod rather than trusting the upstream resolver, which may refuse private answers.
+kc -n "$AD_NS" patch deploy agentdesktop --type merge -p \
+  "{\"spec\":{\"template\":{\"spec\":{\"hostAliases\":[{\"ip\":\"$KC_IP\",\"hostnames\":[\"$KC_HOST\"]}]}}}}" >/dev/null
+kc -n "$AD_NS" rollout restart deploy/agentdesktop >/dev/null
+kc -n "$AD_NS" rollout status deploy/agentdesktop --timeout=300s >/dev/null
+ok "controller running at https://$AD_HOST (gateway JWT lifetime 5m)"
 
 # ── 6. Gateway: accept only controller-minted tokens ──────────────────────────
 # jwtAuthentication in Strict mode means a laptop cannot skip the daemon, and
@@ -406,26 +442,24 @@ cat > "$SCRIPT_DIR/.agentdesktop-env" <<EOF
 export AD_CONTROLLER_IP=$AD_IP
 export AD_KEYCLOAK_IP=$KC_IP
 export AD_GATEWAY=$GW_IP
+export AD_CONTROLLER_HOST=$AD_HOST
+export AD_KEYCLOAK_HOST=$KC_HOST
 export AD_ISSUER=$ISSUER
 EOF
+# The daemon config names the controller, so it is written per cluster rather than tracked.
+sed "s|__CONTROLLER_HOST__|$AD_HOST|" "$SCRIPT_DIR/yaml-agentdesktop/daemon.yaml" > "$SCRIPT_DIR/.agentdesktop-daemon.yaml"
 
 step "Platform up"
 cat <<EOF
 
-  Controller   https://agentdesktop.$AD_NS.svc.cluster.local   ($AD_IP)
-  Keycloak     http://keycloak.$KC_NS.svc.cluster.local:8080    ($KC_IP)
+  Controller   https://$AD_HOST
+  Keycloak     http://$KC_HOST:8080
   ai-gateway   http://$GW_IP
   Device CA    /tmp/agentdesktop-device-ca.pem
 
-  Add these two lines to /etc/hosts so the laptop resolves the same names the
-  cluster does (the controller certificate and the OIDC issuer depend on it):
+  Both names are sslip.io, so there is nothing to add to /etc/hosts. Enrol this machine:
 
-    $AD_IP agentdesktop.$AD_NS.svc.cluster.local
-    $KC_IP keycloak.$KC_NS.svc.cluster.local
-
-  Then enrol this machine:
-
-    agentdesktop daemon --user --config demo-scripts/yaml-agentdesktop/daemon.yaml
+    ./demo-scripts/agentdesktop-enrol-mac.sh up
 
   Sign in as tom / password. Users: tom, bob, priya, leaver (all password 'password').
   Sign in as bob for anything that sends a client at the model gateway: that gateway's OPA

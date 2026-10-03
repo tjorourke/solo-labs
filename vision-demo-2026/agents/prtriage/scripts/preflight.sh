@@ -257,17 +257,17 @@ spans="$($K -n solo-cost exec "${CHPOD#pod/}" -c clickhouse -- clickhouse-client
 [ "${spans:-0}" -gt 0 ] && pass "trace visibility" "$spans spans from the agents in ClickHouse" \
                         || fail "trace visibility" "no agent spans: the kagent UI Tracing tab will be empty"
 
-# ------------------------------------------------------- 9. the substrate cluster
-# Section 9 runs the Substrate Scope board, which addresses the Part 5 cluster by
-# context. That cluster is separate from mesh1 and is the first thing to go missing,
-# because deleting it costs nothing and rebuilding it takes minutes you will not have
-# on the day. Checked last because the rest of the part runs without it.
+# ------------------------------------------------------- 9. substrate on mesh2
+# Section 9 runs the Substrate Scope board, which addresses the substrate cluster (mesh2) by
+# context. Substrate runs on mesh2, and a rebuilt mesh2 comes back without it until
+# substrate-cluster.sh runs again, which takes minutes you will not have on the day.
+# Checked last because the rest of the part runs without it.
 #
 # Three things, in the order the viewer needs them: the context, the CRD it reads, and
 # a WorkerPool with its bays actually up. A pool at 0/2 draws an empty board.
-SUBCTX=kind-substrate
+SUBCTX=kind-mesh2
 if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx "$SUBCTX"; then
-  fail "agent substrate" "no $SUBCTX context, section 9 has nothing to show: ./demo-scripts/substrate-cluster.sh"
+  fail "agent substrate" "no $SUBCTX context, section 9 has nothing to show: ./demo-scripts/setup.sh, then ./demo-scripts/substrate-cluster.sh"
 elif ! kubectl --context "$SUBCTX" get crd workerpools.ate.dev >/dev/null 2>&1; then
   fail "agent substrate" "$SUBCTX has no substrate installed (no workerpools.ate.dev): ./demo-scripts/substrate-up.sh"
 else

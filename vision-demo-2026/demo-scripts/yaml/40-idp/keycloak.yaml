@@ -3,8 +3,9 @@
 # ordinary ClusterIP and stays out of the mesh authz story. Dev mode with a
 # realm import: realm "petshop", one public client "petshop" (direct access
 # grants on), and two users — alice (role: user) and bob (roles: user, admin).
-# KC_HOSTNAME pins the token issuer to the in-cluster URL so it matches the
-# RequestAuthentication issuer and the waypoint can fetch JWKS from the same host.
+# No KC_HOSTNAME: Keycloak issues for the host each request arrives on. Part 3's
+# in-cluster callers use keycloak.keycloak.svc.cluster.local, so their tokens match the
+# RequestAuthentication issuer, and Part 9's corp realm uses keycloak.<ip>.sslip.io.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -71,7 +72,6 @@ spec:
           env:
             - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: "admin" }
             - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: "admin" }
-            - { name: KC_HOSTNAME, value: "http://keycloak.keycloak.svc.cluster.local:8080" }
             - { name: KC_HOSTNAME_STRICT, value: "false" }
             - { name: KC_HTTP_ENABLED, value: "true" }
             - { name: KC_HEALTH_ENABLED, value: "true" }

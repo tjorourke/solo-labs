@@ -43,7 +43,7 @@ current chapter, in order, stopping on a failed check or a command error.
 | `/demo-4` | `demo-4-agentics-vision.ipynb` | Build, ship and govern an ADK agent (§1-6 and §9) |
 | `/demo-6` | `demo-6-inference.ipynb` | Inference routing on KV cache and queue depth (own `kind-inference` cluster) |
 | `/demo-7` | `demo-7-llm-gateway.ipynb` | Model access with agentgateway |
-| `/demo-12` | `demo-12-agent-substrate.ipynb` | Agent Substrate: WorkerPool, SandboxAgent, ActorTemplate, AgentHarness, snapshot and resume (`kind-substrate`) |
+| `/demo-12` | `demo-12-agent-substrate.ipynb` | Agent Substrate: WorkerPool, SandboxAgent, ActorTemplate, AgentHarness, snapshot and resume (`kind-mesh2`) |
 | `/demo-11` | `demo-11-rest-to-mcp.ipynb` | Turn a REST API into MCP tools, then compose them |
 | `/demo-13` | `demo-13-defence-in-depth.ipynb` | A kagent incident-response agent with operational tools, Claude through agentgateway, and before/after defence controls |
 | `/demo-1/1.5` | | Failover chapter |

@@ -34,7 +34,7 @@
     <a href="/petstore">Agent SDLC</a>
     <a href="/substrate">Substrate</a>
   </div>
-  <span class="nav-status"><i class="dot live"></i><span>EKS · __AGW_HOST__</span></span>
+  <span class="nav-status"><i class="dot live"></i><span>mesh1 · __GW_HOST__</span></span>
 </nav>
 
 <header class="hero">
@@ -42,25 +42,25 @@
     <div class="crumb"><a href="/user-story-1">← Agentics Overview</a></div>
     <div class="eyebrow">DEMO 05 · Cost</div>
     <h1>Spend through the gateway.</h1>
-    <p>Usage and cost on the live EKS cluster. The graph is in the agentgateway portal. Set Bob's budget there.</p>
+    <p>Usage and cost on mesh1, the local kind cluster. The graph is in the agentgateway portal. Set Bob's budget there.</p>
   </div>
 </header>
 
 <div class="wrap">
-  <a class="cost-cta" href="https://__SOLO_UI_HOST__/age/cost-management" target="_blank" rel="noreferrer">
-    <div class="kicker">Live EKS · Cost Management</div>
+  <a class="cost-cta" href="__UI__/age/cost-management" target="_blank" rel="noreferrer">
+    <div class="kicker">mesh1 · Cost Management</div>
     <h2>Open spend graph</h2>
-    <p>Spend by user, model and provider on the EKS gateway. The portal is the graph. Click through, then set Bob's budget.</p>
+    <p>Spend by user, model and provider on the mesh1 gateway. The portal is the graph. Click through, then set Bob's budget.</p>
     <span class="go">Open the graph →</span>
   </a>
   <div class="panel">
     <div class="panel-head">
       <h2>Bob's budget</h2>
-      <a class="btn primary" href="https://__SOLO_UI_HOST__/age/cost-management/budgets" target="_blank" rel="noreferrer">Set Bob's budget</a>
+      <a class="btn primary" href="__UI__/age/cost-management/budgets" target="_blank" rel="noreferrer">Set Bob's budget</a>
     </div>
     <p class="sub" style="margin:0">Same portal, Budgets tab. Cap bob on the approved frontier. The graph is already being fed from the gateway.</p>
   </div>
-  <p class="footnote">Gateway: <a href="https://__AGW_HOST__" target="_blank" rel="noreferrer">https://__AGW_HOST__</a>. Portal: <a href="https://__SOLO_UI_HOST__/age/" target="_blank" rel="noreferrer">https://__SOLO_UI_HOST__/age/</a>.</p>
+  <p class="footnote">Gateway: <a href="http://__GW_HOST__" target="_blank" rel="noreferrer">http://__GW_HOST__</a>. Portal: <a href="__UI__/age/" target="_blank" rel="noreferrer">__UI__/age/</a>.</p>
 </div>
 </body>
 </html>

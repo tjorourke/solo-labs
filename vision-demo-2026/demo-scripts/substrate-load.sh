@@ -8,7 +8,7 @@
 # there is nothing to remember and nothing to do in order.
 #
 # Runs from anywhere (suite root, demo-scripts/, absolute path) and NEVER changes your
-# kubectl context: it addresses the Part 5 cluster with --context and the viewer gets its
+# kubectl context: it addresses the substrate cluster (mesh2) with --context and the viewer gets its
 # own pinned kubeconfig, so you can stay on mesh1 for demo 4 in the same terminal.
 #
 # It runs for MINUTES rather than for a fixed number of chats, because what you want
@@ -57,13 +57,13 @@ if curl -sf -o /dev/null -m 4 "http://localhost:${PORT}/" 2>/dev/null; then
 else
   echo "→ starting the viewer"
   # Show the viewer's own reason rather than sending you off to run it again. The
-  # usual one is that the Part 5 cluster is not there: this addresses it by context,
+  # usual one is that substrate is not installed on mesh2: this addresses it by context,
   # so it has to exist before anything can be visualised.
   if ! "$SCOPE"; then
     echo
     echo "✗ the viewer would not start. If the message above is about a missing"
-    echo "  kind-substrate context, check 'kind get clusters'. If substrate is not"
-    echo "  listed, build the Part 5 cluster first (a few minutes):"
+    echo "  kind-mesh2 context, check 'kind get clusters' and build mesh2 with"
+    echo "  ./demo-scripts/setup.sh. Then add substrate to it (a few minutes):"
     echo "      ./demo-scripts/substrate-cluster.sh"
     exit 1
   fi

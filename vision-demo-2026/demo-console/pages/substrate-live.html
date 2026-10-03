@@ -100,7 +100,7 @@ async function poll() {
     const s = await fetch('/api/substrate/live').then(r => r.json());
     $('err').textContent = s.error || '';
     if (s.ok) render(s);
-    $('src').textContent = 'live · kind-substrate · ' + new Date().toLocaleTimeString();
+    $('src').textContent = 'live · kind-mesh2 · ' + new Date().toLocaleTimeString();
   } catch (e) { $('err').textContent = 'Cannot reach the console: ' + e; }
   setTimeout(poll, 700);
 }

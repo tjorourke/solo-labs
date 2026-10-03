@@ -35,10 +35,12 @@ if [ -z "$AD_BIN" ]; then
   if command -v agentdesktop >/dev/null 2>&1; then AD_BIN="$(command -v agentdesktop)"
   else AD_BIN="$BIN_DIR/agentdesktop"; fi
 fi
-CFG="$SCRIPT_DIR/yaml-agentdesktop/daemon.yaml"
+CFG="$SCRIPT_DIR/.agentdesktop-daemon.yaml"
 CA=/tmp/agentdesktop-device-ca.pem
-CTRL_HOST=agentdesktop.agentdesktop.svc.cluster.local
-KC_HOST=keycloak.keycloak.svc.cluster.local
+# sslip.io names: public DNS answers them, so the laptop needs no /etc/hosts entries.
+CTRL_HOST="${AD_CONTROLLER_HOST:-agentdesktop.$AD_CONTROLLER_IP.sslip.io}"
+KC_HOST="${AD_KEYCLOAK_HOST:-keycloak.$AD_KEYCLOAK_IP.sslip.io}"
+[ -f "$CFG" ] || sed "s|__CONTROLLER_HOST__|$CTRL_HOST|" "$SCRIPT_DIR/yaml-agentdesktop/daemon.yaml" > "$CFG"
 SOCK="$HOME/.local/state/agentdesktop/agentdesktop.sock"
 CLAUDE_SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 BASELINE="$CLAUDE_SETTINGS.pre-agentdesktop"
@@ -74,7 +76,20 @@ SYS_BIN=/usr/local/bin/agentdesktop
 SYS_ETC=/etc/agentdesktop
 SYS_LOG=/var/log/agentdesktop-daemon.log
 
-need_hosts() { ! grep -q "$CTRL_HOST" /etc/hosts || ! grep -q "$KC_HOST" /etc/hosts; }
+# True when either name does not resolve to its address on this machine.
+need_hosts() {
+  python3 - "$CTRL_HOST" "$AD_CONTROLLER_IP" "$KC_HOST" "$AD_KEYCLOAK_IP" <<'PY'
+import socket, sys
+a = sys.argv[1:]
+for host, ip in zip(a[::2], a[1::2]):
+    try:
+        if socket.gethostbyname(host) != ip:
+            raise SystemExit(0)
+    except OSError:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
 
 # Each enrol mints a new device id. Logout only clears the local identity, so
 # failed or repeated enrols leave Mac rows in the fleet console. The mesh1
@@ -195,14 +210,14 @@ binary)
 
 hosts)
   cat <<EOF
-Add these two lines to /etc/hosts, then re-run. The controller certificate is
-issued for its cluster DNS name and the OIDC issuer uses the same form of
-name, so the laptop has to resolve both the way the cluster does.
+This machine does not resolve the two sslip.io names to their addresses:
 
-  sudo tee -a /etc/hosts <<'HOSTS'
-$AD_CONTROLLER_IP $CTRL_HOST
-$AD_KEYCLOAK_IP $KC_HOST
-HOSTS
+  $CTRL_HOST  should be $AD_CONTROLLER_IP
+  $KC_HOST  should be $AD_KEYCLOAK_IP
+
+sslip.io answers from the name itself, so this is usually a resolver that refuses
+private addresses for public names (DNS rebinding protection). Use another resolver,
+for example 1.1.1.1, or add those two lines to /etc/hosts as a last resort.
 EOF
   ;;
 

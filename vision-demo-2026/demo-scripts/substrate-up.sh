@@ -5,7 +5,7 @@
 # release in place. Either way it turns on the substrate subchart + a 2-replica gVisor
 # WorkerPool.
 #
-#   ./demo-scripts/substrate-up.sh                 # the Part 5 cluster (kind-substrate)
+#   ./demo-scripts/substrate-up.sh                 # Parts 5 and 12 (kind-mesh2)
 #   CTX=kind-mesh1 ./demo-scripts/substrate-up.sh  # add substrate to Part 4's cluster
 #
 # Part 4 and Part 5 now run the SAME kagent version, so the version clash that once
@@ -17,7 +17,7 @@ set -euo pipefail
 # shell that had sourced either silently upgraded Part 4's kagent instead of the Part 5
 # cluster — and a cancelled upgrade there migrates the database forward, which the older
 # controller then cannot start against. Use a name nothing else exports.
-CTX="${SUBSTRATE_CTX:-kind-substrate}"; KAGENT_NS="${KAGENT_NS:-kagent}"
+CTX="${SUBSTRATE_CTX:-kind-mesh2}"; KAGENT_NS="${KAGENT_NS:-kagent}"
 # Say out loud which cluster is about to be changed, so a wrong target is obvious before
 # any helm work starts rather than after.
 echo "→ target cluster: $CTX   (override with SUBSTRATE_CTX=<context>)"

@@ -146,7 +146,7 @@ def reset_script(lab: str) -> str:
                 f'|| {{ printf "Still present: pool-{r} gauges not restored\\n"; exit 1; }}',
             ]
     if lab in ("demo-12", "all"):
-        sub = "kind-substrate"
+        sub = "kind-mesh2"
         remove(sub, "sandboxagent", ["lab-agent"], "kagent")
         remove(sub, "agentharness", ["lab-harness"], "kagent")
         remove(sub, "workerpool", ["lab-pool"], "kagent")

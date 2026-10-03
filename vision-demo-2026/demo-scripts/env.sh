@@ -82,7 +82,7 @@ case "$DEMO" in
     export KENT_CRDS_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise-crds"
     export KENT_CHART="oci://us-docker.pkg.dev/solo-public/kagent-enterprise-helm/charts/kagent-enterprise"
     export KAGENT_ENT_VERSION="${KAGENT_ENT_VERSION:-0.5.6}"
-    # the notebook's helpers (ask, actors, workers, watch-turn, ...) and CTX=kind-substrate
+    # the notebook's helpers (ask, actors, workers, watch-turn, ...) and CTX=kind-mesh2
     source "$LAB_ROOT/demo-scripts/substrate-lib.sh"
     ;;
   7)

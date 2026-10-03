@@ -365,8 +365,11 @@ function pullPrompt() {
   msg.textContent = `Pulled ${p.id}:${p.tag} from AgentRegistry. Edit it freely.`;
 }
 
-function paintPlatform() {
-  const p = catalog.platform || {};
+// The list call carries the platform too and lands in a fraction of a second; the catalogue
+// can take seconds. Until one of them arrives the buttons stay hidden, because an href of
+// "#" with target=_blank just opens this page again.
+function paintPlatform(plat) {
+  const p = plat || catalog.platform || {};
   const dot = document.getElementById('dot');
   const label = document.getElementById('status-label');
   const note = document.getElementById('platform-note');
@@ -381,7 +384,7 @@ function paintPlatform() {
   note.style.display = p.note ? '' : 'none';
   const k = document.getElementById('btn-kagent');
   const r = document.getElementById('btn-registry');
-  if (p.ui) { k.href = p.ui.replace(/\/$/, '') + '/agents'; k.style.display = ''; }
+  if (p.ui) { k.href = p.ui.replace(/\/$/, '') + '/ke/agents'; k.style.display = ''; }
   else k.style.display = 'none';
   if (p.registry_ui) { r.href = p.registry_ui; r.style.display = ''; }
   else r.style.display = 'none';
@@ -900,6 +903,7 @@ async function refreshList() {
   const r = await fetch(API).then(x => x.json());
   agents = r.agents || [];
   loaded = true;
+  if (r.platform) paintPlatform(r.platform);
   paintList();
 }
 
