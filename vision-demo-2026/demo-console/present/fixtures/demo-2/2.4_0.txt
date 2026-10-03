@@ -1,8 +1,0 @@
-{"src":"spiffe://mesh1/ns/petshop/sa/checkout","dst":"petstore.petshop.svc.cluster.local","dir":"inbound","result":"DENY: connection closed due to policy rejection: allow policies exist, but none allowed"}
-{"src":"spiffe://mesh1/ns/petshop/sa/checkout","dst":"petstore.petshop.svc.cluster.local","dir":"inbound","result":"DENY: connection closed due to policy rejection: allow policies exist, but none allowed"}
-{"src":"spiffe://mesh1/ns/petshop/sa/checkout","dst":"petstore.petshop.svc.cluster.local","dir":"outbound","result":"DENY: http status: 401 Unauthorized"}
-{"src":"spiffe://mesh1/ns/petshop/sa/checkout","dst":"petstore.petshop.svc.cluster.local","dir":"outbound","result":"DENY: http status: 401 Unauthorized"}
-{"src":"spiffe://mesh1/ns/petshop/sa/analytics","dst":"petstore.petshop.svc.cluster.local","dir":"inbound","result":"DENY: connection closed due to policy rejection: allow policies exist, but none allowed"}
-{"src":"spiffe://mesh1/ns/petshop/sa/analytics","dst":"petstore.petshop.svc.cluster.local","dir":"outbound","result":"DENY: http status: 401 Unauthorized"}
-{"src":"spiffe://mesh1/ns/petshop/sa/storefront","dst":"petstore.petshop.svc.cluster.local","dir":"outbound","result":"ALLOW"}
-{"src":"spiffe://mesh1/ns/petshop/sa/storefront","dst":"petstore.petshop.svc.cluster.local","dir":"inbound","result":"ALLOW"}

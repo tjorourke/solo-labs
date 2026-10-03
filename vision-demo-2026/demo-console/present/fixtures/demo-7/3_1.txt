@@ -1,2 +1,0 @@
-no token:                     HTTP 401
-alice (valid corporate JWT):  HTTP 200

@@ -1,8 +1,0 @@
-authorizationpolicy.security.istio.io "allow-checkout" deleted
-authorizationpolicy.security.istio.io/allow-gold-checkout created
-attached to ztunnel
-
-  waiting ~25s for the per-pod certs and the policy to converge...
-
-checkout-blue  (tier gold)   -> 200
-checkout-green (tier silver) -> 000   (same sa/checkout, told apart by its cert claim)

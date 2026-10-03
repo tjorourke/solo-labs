@@ -1,5 +1,0 @@
-authorizationpolicy.security.istio.io "l4-allow-petshop-namespace" deleted
-authorizationpolicy.security.istio.io "l4-deny-analytics" deleted
-NAME               ACTION   AGE
-allow-checkout     ALLOW    60s
-allow-storefront   ALLOW    70s

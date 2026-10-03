@@ -1,7 +1,0 @@
-NAME                                                                          ACCEPTED   ENFORCED   AGE
-enterpriseagentgatewaybudget.enterpriseagentgateway.solo.io/service-budgets   True       True       13s
-
-NAME                                                                    AGE
-ratelimitconfig.ratelimit.solo.io/agw-budget-service-budgets-72199133   13s
-ratelimitconfig.ratelimit.solo.io/per-user-tokens                       18s
-  warn	budget	budget exceeded; blocking...	connection.id=16 request.id=16 budget_id=agentgateway-system/service-budgets/batch-pipeline-daily budget_action="BLOCK" budget_unit="TOKENS" budget_limit=100 budget_window="DAILY" phase="admission" outcome="over_limit_block"

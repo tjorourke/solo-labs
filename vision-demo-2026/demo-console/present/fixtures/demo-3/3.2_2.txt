@@ -1,5 +1,0 @@
-  ══ JWT at the waypoint  ·  any valid token may GET, only admin may DELETE ══
-    no token      GET    /pets     401 ✗ no token
-    alice         GET    /pets     200 ✓ allowed
-    alice (user)  DELETE /pets/1   403 ✗ not admin
-    bob (admin)   DELETE /pets/1   200 ✓ allowed

@@ -1,8 +1,0 @@
-deployment.apps/reviews-v1 scaled
-deployment.apps/reviews-v2 scaled
-pod/reviews-v1-7d457568f-jql5r condition met
-pod/reviews-v2-66c97ddb57-zjlpz condition met
-  ══ Local endpoints back  ·  traffic returns to mesh1 (PreferNetwork) ══
-    reviews-v1-7d457568f-jql5r         ×7
-    reviews-v2-66c97ddb57-zjlpz        ×1
-    no v3 = all mesh1  ·  cross-cluster only during the outage

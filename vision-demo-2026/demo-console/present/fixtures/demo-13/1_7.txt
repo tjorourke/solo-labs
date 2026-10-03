@@ -1,7 +1,0 @@
-gateway.gateway.networking.k8s.io/dd-egress created
-serviceentry.networking.istio.io/outside-example created
-Waiting for deployment "dd-egress" rollout to finish: 0 of 1 updated replicas are available...
-Waiting for deployment "dd-egress" rollout to finish: 0 of 1 updated replicas are available...
-deployment "dd-egress" successfully rolled out
-curl: (35) Send failure: Broken pipe
-Outside HTTP 200

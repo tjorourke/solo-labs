@@ -1,4 +1,0 @@
-  == compose two new MCP tools, and give them their own MCP endpoint ==
-enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/pet-workflow created
-enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/petstore-upstream created
-httproute.gateway.networking.k8s.io/pet-workflow created

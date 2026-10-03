@@ -1,8 +1,0 @@
-  mcpServers:
-  - kind: MCPServer
-    name: everything-server
-    tag: latest
-  - kind: MCPServer
-    name: my-mcp
-    tag: latest
-  modelName: claude-haiku-4-5

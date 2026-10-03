@@ -1,9 +1,0 @@
-  Claude (claude-haiku-4-5) is given the tools this endpoint serves: onboard-pet, adopt-pet
-  Task for Claude: Register a new pet called Juniper with ID 6161, then adopt her. Tell me the order number.
-  1. Claude asks for onboard-pet({"id": 6161, "name": "Juniper"})
-     agentgateway runs it and returns: {"status":"available","availableNow":9,"registered":"Juniper","id":6161}
-  2. Claude asks for adopt-pet({"petId": 6161})
-     agentgateway runs it and returns: Adopted Juniper (pet 6161). Order 6161 is placed, and the pet is now sold.
-  Claude's answer:
-  Perfect! I've successfully registered Juniper (ID 6161) and adopted her. **Your order number is 6161.**
-  2 tool calls, 2662 Claude tokens (claude-haiku-4-5)

@@ -1,8 +1,0 @@
-  ══ 20 GETs with alice's token  ·  the canary split (target 90/10) ══
-    petstore     17 / 20   (85%)
-    petstore-v2   3 / 20   (15%)
-
-  ══ 5 GETs with header x-beta: true  ·  pinned to v2 ══
-    petstore-v2   5 / 5
-
-  no token, even on the beta route  →  401   (JWT policy still gates every path)

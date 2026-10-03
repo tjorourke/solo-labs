@@ -1,4 +1,0 @@
-== requests on /resilient, by the model that served them ==
-  claude-sonnet-4-5-20250929 4 requests
-  claude-haiku-4-5          12 requests
-  gpt-5-nano                2 requests

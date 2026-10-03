@@ -1,3 +1,0 @@
-namespace/dd-agents created
-namespace/dd-tools created
-namespace/dd-gateway created

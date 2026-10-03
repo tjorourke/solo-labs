@@ -1,5 +1,0 @@
-  pool-a -> kv-cache=0.95 queue=9
-  pool-b -> kv-cache=0.05 queue=0
-  pool-a: kv-cache=0.95  queue=9
-  pool-b: kv-cache=0.05  queue=0
-  8 requests -> pool-a served 0, pool-b served 8

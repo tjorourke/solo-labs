@@ -1,9 +1,0 @@
-gateway.gateway.networking.k8s.io/dd-waypoint created
-service/model created
-service/tools created
-enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/model created
-enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/tools created
-httproute.gateway.networking.k8s.io/model created
-httproute.gateway.networking.k8s.io/tools created
-Waiting for deployment "dd-waypoint" rollout to finish: 0 of 1 updated replicas are available...
-deployment "dd-waypoint" successfully rolled out

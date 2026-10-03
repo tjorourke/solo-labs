@@ -1,3 +1,0 @@
-  == serve it as MCP with protocol: OpenAPI ==
-enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/rest-petstore created
-httproute.gateway.networking.k8s.io/rest-petstore created

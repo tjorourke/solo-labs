@@ -1,9 +1,0 @@
-  == demo-client's calls right now, before we publish the global hostname ==
-12:59:19 reviews.bookinfo.mesh.internal -> 000
-12:59:20 reviews.bookinfo.mesh.internal -> 000
-12:59:21 reviews.bookinfo.mesh.internal -> 000
-12:59:22 reviews.bookinfo.mesh.internal -> 000
-12:59:23 reviews.bookinfo.mesh.internal -> 000
-12:59:24 reviews.bookinfo.mesh.internal -> 000
-
-    every call -> 000: reviews.bookinfo.mesh.internal has nothing to resolve to yet

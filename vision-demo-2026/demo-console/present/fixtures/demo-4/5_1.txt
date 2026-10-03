@@ -1,9 +1,0 @@
-→ Injecting labels from arctl.yaml: arctl.dev/framework=adk, arctl.dev/language=python
-✓ Agent/agentdemo (latest) configured
-✓ Deployment/everything-server created
-mcpserver.kagent.dev/everything-server condition met
-✗ Deployment/agentdemo failed: object default/agentdemo is terminating; delete + re-apply once GC purges the row
-Error: one or more resources failed to apply
-✓ Deployment/agentdemo created
-Waiting for deployment "agentdemo" rollout to finish: 0 of 1 updated replicas are available...
-deployment "agentdemo" successfully rolled out

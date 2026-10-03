@@ -1,8 +1,0 @@
-  == the agent's prompts.json now carries the skill ==
-# Dice game
-
-Guidance for running a dice game with the agent's tools and reporting the result
-the same way every time.
-
-## Tools to use
-

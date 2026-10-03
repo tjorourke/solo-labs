@@ -1,5 +1,0 @@
-agentgatewaypolicy.agentgateway.dev/ingress-ratelimit created
-
-  ══ 8 rapid requests to /productpage  ·  limit 2/sec ══
-    200 200 429 429 429 429 429 429 
-    → first 2 pass (200), the rest limited (429)

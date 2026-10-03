@@ -1,3 +1,0 @@
-bob calls sum:        {"result":"5"}
-bob calls printenv:   {"denied":"Unknown tool: printenv"}
-alice calls printenv: {"result":"{\"PATH\":\"/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:"}

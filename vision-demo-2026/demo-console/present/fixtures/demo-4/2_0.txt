@@ -1,8 +1,0 @@
-✓ Created agent: agentdemo (framework: adk, language: python, model: anthropic/claude-haiku-4-5)
-
-🚀 Next steps:
-  1. Run locally (optional):
-     arctl run ~/code/solo/solo-demos/vision-demo-2026/agents/agentdemo
-     (export ANTHROPIC_API_KEY in your shell or set it in .env first)
-  2. Publish to the registry:
-     arctl apply -f ~/code/solo/solo-demos/vision-demo-2026/agents/agentdemo/agent.yaml

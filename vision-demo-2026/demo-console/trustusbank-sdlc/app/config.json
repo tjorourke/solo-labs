@@ -1,9 +1,0 @@
-{
-  "announcement": "",
-  "daily_transfer_limit_eur": 5000,
-  "support_phone": "+49 69 5550 0100",
-  "features": {
-    "instant_payments": false,
-    "spending_insights": true
-  }
-}

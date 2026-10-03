@@ -1,7 +1,0 @@
-== before: Suspended v5 ==
-  t+0.1s  Resuming v6
-  t+0.5s  Running v7
-  t+1.5s  Suspended v9
-
-> What number did I ask you to remember?
-  You asked me to remember the number **4242**. I have it noted and can reference it whenever you need it during our conversation.

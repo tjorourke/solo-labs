@@ -1,7 +1,0 @@
-authorizationpolicy.security.istio.io/allow-checkout created
-  ══ now sa/checkout is allowed too  ·  BOTH checkout pods get in ══
-    storefront       200  ✓ ALLOW
-    analytics        000000  ✗ DENY
-    checkout-blue    200  ✓ ALLOW
-    checkout-green   200  ✓ ALLOW
-    checkout-blue and checkout-green share sa/checkout — no L4 rule separates them

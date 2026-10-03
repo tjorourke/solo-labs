@@ -1,5 +1,0 @@
-httproute.gateway.networking.k8s.io/reviews-canary created
-
-  ══ 20 requests through the ingress  ·  target 80/20 ══
-    reviews-v1  18 / 20   (90%)
-    reviews-v2   2 / 20   (10%)

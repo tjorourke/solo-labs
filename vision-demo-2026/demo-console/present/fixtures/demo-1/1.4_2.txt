@@ -1,9 +1,0 @@
-  == the SAME client, moments after the label (give it a few seconds) ==
-12:59:36 reviews.bookinfo.mesh.internal -> 200
-12:59:37 reviews.bookinfo.mesh.internal -> 200
-12:59:38 reviews.bookinfo.mesh.internal -> 200
-12:59:39 reviews.bookinfo.mesh.internal -> 200
-12:59:40 reviews.bookinfo.mesh.internal -> 200
-12:59:41 reviews.bookinfo.mesh.internal -> 200
-
-    now -> 200: the global hostname resolves, the calls land, and the graph comes alive

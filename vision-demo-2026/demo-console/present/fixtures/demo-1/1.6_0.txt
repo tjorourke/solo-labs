@@ -1,7 +1,0 @@
-service/reviews labeled
-  ══ LOCAL hostname, taken over  ·  now served cross-cluster by mesh2 ══
-    reviews-v1-7d457568f-bhrfx         ×1
-    reviews-v2-66c97ddb57-7xh9v        ×2
-    reviews-v3-586d476db5-s5nm4        ×3
-
-    refresh →  http://192.168.97.150:8080/productpage   (reviews back, red stars = mesh2's v3)

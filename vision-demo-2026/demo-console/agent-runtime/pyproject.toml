@@ -1,9 +1,0 @@
-[project]
-name = "myagents"
-version = "0.1"
-description = "Code-free AgentRegistry agent. Prompt and tools come from deploy env."
-readme = "README.md"
-dependencies = [
-  "google-adk==1.25.1",
-]
-requires-python = ">=3.13"

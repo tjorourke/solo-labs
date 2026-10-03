@@ -1,5 +1,0 @@
-authorizationpolicy.security.istio.io/l4-deny-analytics created
-storefront: 13:30:57 storefront -> GET petstore/pets : 200
-analytics: 13:30:57 analytics -> GET petstore/pets : 000000
-spiffe://mesh1/ns/petshop/sa/analytics -> petstore.petshop.svc.cluster.local 
-  error: connection closed due to policy rejection: explicitly denied by: petshop/l4-deny-analytics

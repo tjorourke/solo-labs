@@ -1,8 +1,0 @@
-NAME              TYPE
-aws-agentcore     BedrockAgentCore
-kind-kagent       Kagent
-virtual-default   Virtual
-
-**Roll:** 13-sided die → 12
-**Math:** 12 + 48291 = 48303
-**Prime:** 48303 is not prime (divisible by 3).

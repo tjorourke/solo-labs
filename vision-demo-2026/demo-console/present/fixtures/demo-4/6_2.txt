@@ -1,4 +1,0 @@
-  == tools now (the everything-server list is reduced to sum only) ==
-Asking 'agentdemo' as admin-user (OIDC) ...
-
-roll_die, check_prime, everything_server_sum, my_mcp_word_count

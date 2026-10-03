@@ -1,6 +1,0 @@
-service/petstore-v2 created
-deployment.apps/petstore-v2 created
-Waiting for deployment "petstore-v2" rollout to finish: 0 of 1 updated replicas are available...
-deployment "petstore-v2" successfully rolled out
-httproute.gateway.networking.k8s.io/petstore-split created
-True — accepted by Service/petstore

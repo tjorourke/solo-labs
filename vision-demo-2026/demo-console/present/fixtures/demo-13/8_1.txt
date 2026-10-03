@@ -1,2 +1,0 @@
-enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/identity-metrics created
-identity-metrics Accepted and Attached

@@ -1,5 +1,0 @@
-secret/dd-model-placeholder created
-modelconfig.kagent.dev/defence-model created
-remotemcpserver.kagent.dev/defence-tools created
-agent.kagent.dev/defence-agent created
-agent.kagent.dev/defence-agent condition met

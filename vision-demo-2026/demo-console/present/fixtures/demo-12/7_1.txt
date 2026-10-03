@@ -1,8 +1,0 @@
-workerpool.ate.dev/lab-pool scaled
-Waiting for deployment "lab-pool-deployment" rollout to finish: 2 of 4 updated replicas are available...
-Waiting for deployment "lab-pool-deployment" rollout to finish: 3 of 4 updated replicas are available...
-deployment "lab-pool-deployment" successfully rolled out
-lab-pool-deployment-5cd77cb7f7-6bnvd
-lab-pool-deployment-5cd77cb7f7-kdgv4
-lab-pool-deployment-5cd77cb7f7-twcz8
-lab-pool-deployment-5cd77cb7f7-vvbtj

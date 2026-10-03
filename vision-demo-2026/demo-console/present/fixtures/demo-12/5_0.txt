@@ -1,7 +1,0 @@
-== before: no actor yet ==
-  t+0.1s  Resuming v2
-  t+0.6s  Running v3
-  t+1.8s  Suspended v5
-
-> In two sentences, what does it mean to snapshot a running process?
-  Snapshotting a running process captures its complete state at a specific point in time, including memory contents, file descriptors, and execution context. This snapshot can be used to pause the process, migrate it to another system, or restore it later to resume execution from exactly where it left off.

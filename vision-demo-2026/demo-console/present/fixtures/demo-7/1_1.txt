@@ -1,2 +1,0 @@
-agentgatewaypolicy.agentgateway.dev/extract-model created
-httproute.gateway.networking.k8s.io/models created

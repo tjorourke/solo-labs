@@ -1,5 +1,0 @@
-enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/petshop-ratelimit-storefront created
-  ══ 8 rapid GETs, same alice token, from two different workloads ══
-    storefront       200 200 200 200 200 429 429 429 
-    checkout-blue    200 200 200 200 200 200 200 200 
-    limit followed the workload's certificate (storefront), not the shared user token

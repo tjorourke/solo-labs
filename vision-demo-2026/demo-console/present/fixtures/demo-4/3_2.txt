@@ -1,4 +1,0 @@
-NAME         TAG      PROVIDER    MODEL
-agentdemo    latest   anthropic   claude-haiku-4-5
-demo         v1       anthropic   claude-haiku-4-5
-demo-agent   v1       anthropic   claude-haiku-4-5

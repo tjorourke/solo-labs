@@ -1,8 +1,0 @@
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata: {name: outside-deny, namespace: dd-agents}
-spec:
-  targetRefs:
-  - {group: gateway.networking.k8s.io, kind: Gateway, name: dd-egress}
-  action: DENY
-  rules: [{}]

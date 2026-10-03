@@ -1,5 +1,0 @@
-→ Signing in to AWS and handing the registry the creds (foreground, ~30-60s)…
-✓ AWS ****6081 / us-east-1 ready — in-cluster registry has the creds
-→ Deploying to AgentCore in the BACKGROUND — carry on with §4.
-   started (PID 66606) · watch it: tail -f $TMPDIR/agentcore-deploy.log
-   §9 (ac-invoke) waits for the runtime to be READY, so just run it when you get there.

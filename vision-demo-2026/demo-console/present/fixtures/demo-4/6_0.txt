@@ -1,6 +1,0 @@
-NAME                READY   AGE   WAYPOINT
-everything-server   True    39s   true
-NAME                                   CLASS                              ADDRESS        PROGRAMMED   AGE
-mcpserver-everything-server-waypoint   enterprise-agentgateway-waypoint   10.96.35.165   True         38s
-NAME                                   READY   UP-TO-DATE   AVAILABLE   AGE
-mcpserver-everything-server-waypoint   1/1     1            1           38s

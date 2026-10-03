@@ -1,2 +1,0 @@
-authorizationpolicy.security.istio.io/outside-deny created
-authorizationpolicy.security.istio.io/outside-deny condition met

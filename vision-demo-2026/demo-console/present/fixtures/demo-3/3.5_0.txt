@@ -1,7 +1,0 @@
-enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io "petshop-ratelimit-storefront" deleted
-enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/petshop-transform created
-  == alice's response now carries the gateway-injected identity ==
-HTTP/1.0 200 OK
-Server: BaseHTTP/0.6 Python/3.12.14
-x-authenticated-user: alice
-    (x-user: alice was also added to the REQUEST the backend received, derived from the JWT)

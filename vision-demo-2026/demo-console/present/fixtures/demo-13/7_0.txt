@@ -1,8 +1,0 @@
-Alice request 1: HTTP 200
-Alice request 2: HTTP 200
-Alice request 3: HTTP 200
-Alice request 4: HTTP 200
-Alice request 5: HTTP 200
-Alice request 6: HTTP 200
-Bob request: HTTP 200
-Alice totals: accepted=6 limited=0

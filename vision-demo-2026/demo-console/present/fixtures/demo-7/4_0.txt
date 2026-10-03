@@ -1,4 +1,0 @@
-enterpriseagentgatewaypolicy.enterpriseagentgateway.solo.io/models-access created
-bob (finance) asks for premium-reasoning:      HTTP 403
-alice (engineering) asks for premium-reasoning: HTTP 200
-bob asks for a standard model:             HTTP 200
