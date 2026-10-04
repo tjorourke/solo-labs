@@ -1,0 +1,46 @@
+version: 1
+
+# One existing AgentgatewayBackend per server. Tool names are backend-local.
+servers:
+  corporate:
+    namespace: ops-tools
+    backend: corporate-mcp
+    toolSets:
+      reader: [search_handbook, lookup_colleague]
+  github:
+    namespace: ops-tools
+    backend: github-mcp
+    toolSets:
+      reader: [search_repositories, get_pull_request, list_issues]
+      writer: [create_pull_request, add_issue_comment]
+  finance:
+    namespace: ops-tools
+    backend: finance-mcp
+    toolSets:
+      reader: [read_invoices, read_payments]
+  restricted:
+    namespace: ops-tools
+    backend: restricted-mcp
+    toolSets:
+      admin: [delete_records]
+
+# Membership comes from verified JWT claims, not from this catalogue.
+grants:
+  - name: staff
+    groups: [employees]
+    access: [corporate/reader]
+  - name: developers
+    groups: [development]
+    access: [github/reader]
+  - name: finance-team
+    groups: [finance]
+    access: [finance/reader]
+  - name: finance-automation
+    roles: [finance-reader]
+    access: [corporate/reader, finance/reader]
+  - name: finance-delegated
+    groups: [finance]
+    agentRoles: [finance-reader]
+    access: [finance/reader]
+
+# No grant references restricted/admin: that backend gets an explicit deny.
