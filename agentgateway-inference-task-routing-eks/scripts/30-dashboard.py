@@ -160,14 +160,17 @@ def read_log_lines(stream, chunk=65536):
 
 def follow(target, handler):
     """Follow one deployment's log, restarting if the pod goes away."""
+    wait = 2
     while True:
         p = subprocess.Popen(
             ["kubectl", "--context", CTX, "-n", NS, "logs", "-f", f"--since={SINCE}", f"deploy/{target}"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
         with lock:
             followers.add(p)
+        got = False
         try:
             for line in read_log_lines(p.stdout):
+                got = True
                 try:
                     handler(line)
                 except Exception as error:
@@ -179,7 +182,10 @@ def follow(target, handler):
                 followers.discard(p)
         if p.poll():
             print(f"{target} log follow ended ({p.poll()})", flush=True)
-        time.sleep(2)
+        # Back off while the stream dies at once (no pods, nodes scaled to zero): each
+        # restart runs the AWS CLI for a token. Lines arriving reset the wait.
+        wait = 2 if got else min(wait * 2, 60)
+        time.sleep(wait)
 
 
 def _text(content):
