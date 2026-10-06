@@ -14,11 +14,15 @@
 # than max_model_len". The client is not wrong and the model is not wrong, so the gateway
 # settles it: every request here is capped, whatever the caller asked for.
 #
-# Both spellings of the field, and that is not belt and braces. An override matches the field
-# name on the request as the backend sees it, and a request arriving on /v1/messages has been
-# converted to chat completions by then, where the field is max_completion_tokens. With only
-# the max_tokens entry the cap silently does not apply to either Claude client, which are the
-# only two that reach this backend. Measured 2026-09-19.
+# On OSS agentgateway v1.6.0 the Messages mapping converts a request to the OpenAI Responses
+# API, not chat completions, so the path below is /v1/responses and the model server must
+# serve that API. Checked on v1.6.0 with a test backend. The Enterprise manifest in ../yaml
+# keeps /v1/chat/completions.
+#
+# Both spellings of the field. An override sets the field it names, and a request that
+# carries the other spelling keeps its own value. A request converted from /v1/messages
+# reaches the backend as max_completion_tokens, and OpenAI-shaped clients can send either
+# name, so cap both.
 #
 # count_tokens is the other path a Claude client uses. Claude Desktop sizes its context by
 # posting the conversation to /v1/messages/count_tokens and reading {"input_tokens": N} back.
@@ -38,7 +42,7 @@ spec:
         model: my-model
       host: vllm.models.svc.cluster.local
       port: 8000
-      path: /v1/chat/completions
+      path: /v1/responses
   policies:
     ai:
       routes:

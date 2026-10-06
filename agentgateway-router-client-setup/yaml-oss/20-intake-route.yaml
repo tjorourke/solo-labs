@@ -58,6 +58,10 @@ spec:
 # The openai provider names no `model` on purpose. That field overwrites the model in the
 # request, and it has to survive for the intake policy to set it to `auto` and the router to
 # replace it with a task label.
+# OSS agentgateway v1.6.0 converts a Messages request to the OpenAI Responses API, not chat
+# completions. A router that reads chat completions cannot read it, so Claude traffic fails
+# at the next hop on OSS. The Cursor path (everything except /v1/messages) works on OSS.
+# Checked on v1.6.0 with a test backend standing in for the router.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:

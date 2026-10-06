@@ -49,7 +49,9 @@ spec:
         # nothing to show for it. They need no filtering: the next hop converts the request
         # to chat completions and converts the tools with it.
         #
-        # `output_config` goes, and the deprecated `output_format` with it. Claude Code
+        # `output_config` goes, and the deprecated `output_format` with it. This is only
+        # needed on v2026.9.0: on v2026.9.2 the conversion carries the schema through.
+        # Claude Code
         # asks for structured output on one request per session, the one that names the
         # session in the sidebar, and sends the JSON schema in `output_config.format`. The
         # conversion to chat completions sets `response_format: {"type": "json_schema"}`
