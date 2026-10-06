@@ -34,7 +34,11 @@ spec:
               activity: both
               policies:
                 tokenExchange:
-                  entra: {}
+                  entra:                   # on-behalf-of exchange, so Purview judges the signed-in user
+                    tenantId: 00000000-0000-0000-0000-000000000000
+                    clientId: 00000000-0000-0000-0000-000000000000
+                    clientSecretRef: { name: purview-entra-app, key: client-secret }
+                    scope: https://graph.microsoft.com/.default
           # Layer 3 — the custom webhook for the rest.
           - webhook:
               backendRef:
