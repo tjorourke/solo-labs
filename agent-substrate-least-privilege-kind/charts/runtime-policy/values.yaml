@@ -5,6 +5,7 @@ worker:
   image: "" # Supply the image digest built from the pinned source.
   replicas: 1
   serviceAccountName: substrate-worker
+  automountServiceAccountToken: true
   nodeSelector:
     ate.dev/substrate-version: v0.4.0
     lab.mastertheagent.com/pool: runtime

@@ -3,7 +3,7 @@ kind: ServiceAccount
 metadata:
   name: {{ .Values.worker.serviceAccountName }}
   namespace: {{ .Release.Namespace }}
-automountServiceAccountToken: {{ not .Values.hardened }}
+automountServiceAccountToken: {{ .Values.worker.automountServiceAccountToken }}
 ---
 apiVersion: ate.dev/v1alpha1
 kind: WorkerPool

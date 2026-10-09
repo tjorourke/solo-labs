@@ -1,5 +1,6 @@
 hardened: true
 worker:
+  automountServiceAccountToken: false
   nodeSelector:
     ate.dev/substrate-version: v0.4.0
     lab.mastertheagent.com/pool: runtime

@@ -38,6 +38,9 @@ new worker Pods in `substrate-lab`. It leaves the Substrate controller running
 with its normal RBAC. The policy replaces the worker container's capabilities
 and seccomp setting at admission, so controller reconciliation cannot undo it.
 
+Token mounting is independent: `--set worker.automountServiceAccountToken=false`
+disables it without enabling the custom policy. The hardened values set it to false.
+
 The upstream runtime is installed using the pinned v0.4.0 `ate-setup` installer.
 That build was not published as a matching kagent-distributed Helm chart when
 this lab was written. Do not point an older chart at new images and assume its
