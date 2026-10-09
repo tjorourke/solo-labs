@@ -1,0 +1,18 @@
+hardened: true
+worker:
+  nodeSelector:
+    ate.dev/substrate-version: v0.4.0
+    lab.mastertheagent.com/pool: runtime
+  securityContext:
+    privileged: false
+    runAsUser: 0
+    runAsGroup: 0
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+      add: [NET_ADMIN, SYS_ADMIN, SETUID, SETGID, DAC_OVERRIDE, NET_RAW, SETFCAP, CHOWN, FOWNER]
+    seccompProfile:
+      type: Localhost
+      localhostProfile: substrate-worker.json
+    appArmorProfile:
+      type: Unconfined

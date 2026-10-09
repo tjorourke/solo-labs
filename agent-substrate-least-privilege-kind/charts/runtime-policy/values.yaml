@@ -1,0 +1,36 @@
+# The baseline creates a pool with upstream-generated worker security settings.
+hardened: false
+worker:
+  name: least-privilege
+  image: "" # Supply the image digest built from the pinned source.
+  replicas: 1
+  serviceAccountName: substrate-worker
+  nodeSelector:
+    ate.dev/substrate-version: v0.4.0
+    lab.mastertheagent.com/pool: runtime
+  tolerations:
+    - key: ate.dev/sandboxClass
+      operator: Equal
+      value: gvisor
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # Used only when hardened=true. No securityContext field exists on WorkerPool.
+  securityContext:
+    privileged: false
+    runAsUser: 0
+    runAsGroup: 0
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+      add: [NET_ADMIN, SYS_ADMIN, SETUID, SETGID, DAC_OVERRIDE, NET_RAW, SETFCAP, CHOWN, FOWNER]
+    seccompProfile:
+      type: Localhost
+      localhostProfile: substrate-worker.json
+    appArmorProfile:
+      type: Unconfined

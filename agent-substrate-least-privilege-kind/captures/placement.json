@@ -1,0 +1,7 @@
+{
+  "runtime": "substrate-least-privilege-worker",
+  "atelet": "substrate-least-privilege-worker",
+  "echo": "substrate-least-privilege-worker2",
+  "desiredAtelets": 1,
+  "workerTokenMounted": false
+}

@@ -1,0 +1,16 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial","fontSize":"18px","primaryColor":"#eff6ff","primaryTextColor":"#12233d","primaryBorderColor":"#0e7490","lineColor":"#475569"},"flowchart":{"curve":"linear","nodeSpacing":40,"rankSpacing":45,"padding":20}}}%%
+flowchart LR
+    P["WorkerPool template<br/>nodeSelector: pool=runtime<br/>Tolerates the gvisor taint"] -->|"Required label match"| W
+    D["atelet DaemonSet<br/>nodeSelector: pool=runtime<br/>Same taint toleration"] -->|"Required label match"| L
+    subgraph R["Runtime node"]
+      W["Worker pod<br/>ateom + gVisor actors"]
+      L["atelet<br/>One daemon on this node"]
+      H["Shared host directory<br/>/var/lib/ate"]
+      W --- H
+      L --- H
+    end
+    subgraph N["General node"]
+      G["AGW ingress and egress<br/>Substrate API and controller<br/>PostgreSQL, RustFS, echo"]
+    end
+    classDef runtime fill:#fffbeb,stroke:#b45309,stroke-width:2px;
+    class W,L,H runtime;

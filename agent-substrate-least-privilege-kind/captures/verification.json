@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "date": "2026-10-09T14:42:56.779305+00:00",
+  "checks": [
+    "dedicated worker placement",
+    "one atelet on runtime node",
+    "single daemon hostPath",
+    "no worker API token",
+    "nine effective worker capabilities",
+    "NoNewPrivs and seccomp active",
+    "no host namespaces",
+    "Secret RBAC denied",
+    "cold start and golden snapshot",
+    "memory and file state restored",
+    "actor drop ALL",
+    "HTTP egress",
+    "worker replacement retains policy and actor state",
+    "foreign-UID files restored"
+  ]
+}

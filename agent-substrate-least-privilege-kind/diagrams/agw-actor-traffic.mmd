@@ -1,0 +1,10 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial","fontSize":"18px","primaryColor":"#eff6ff","primaryTextColor":"#12233d","primaryBorderColor":"#0e7490","lineColor":"#475569"},"flowchart":{"curve":"linear","nodeSpacing":35,"rankSpacing":40,"padding":20}}}%%
+flowchart LR
+    C["Client<br/>ate-target-actor header"] -->|"Ingress HTTP"| I["AGW ingress<br/>atenet-router<br/>Resolves and resumes actor"]
+    I -->|"mTLS :443"| W["Worker pod<br/>Ingress atunnel to actor<br/>gVisor sandbox"]
+    O["Same worker pod<br/>Actor to egress atunnel<br/>Intercepts outbound traffic"] -->|"Actor identity over TLS"| E["AGW egress<br/>atenet-egress<br/>Checks actor egress policy"]
+    E -->|"Allowed HTTP :8080"| D["Allowed destination<br/>echo on general node<br/>No model key needed"]
+    classDef gateway fill:#ecfeff,stroke:#0891b2,stroke-width:2px;
+    classDef actor fill:#f0fdf4,stroke:#15803d,stroke-width:2px;
+    class I,E gateway;
+    class W,O actor;

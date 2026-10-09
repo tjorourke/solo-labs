@@ -1,0 +1,74 @@
+{
+  "process": {
+    "Uid": "0\t0\t0\t0",
+    "Gid": "0\t0\t0\t0",
+    "CapEff": "00000000802030cb",
+    "CapBnd": "00000000802030cb",
+    "NoNewPrivs": "1",
+    "Seccomp": "2"
+  },
+  "nodeName": "substrate-least-privilege-worker",
+  "serviceAccountName": "substrate-worker",
+  "automountServiceAccountToken": false,
+  "nodeSelector": {
+    "ate.dev/substrate-version": "v0.4.0",
+    "lab.mastertheagent.com/pool": "runtime"
+  },
+  "hostPaths": [
+    {
+      "path": "/var/lib/ate",
+      "type": "DirectoryOrCreate"
+    }
+  ],
+  "containers": [
+    {
+      "name": "ateom",
+      "securityContext": {
+        "allowPrivilegeEscalation": false,
+        "appArmorProfile": {
+          "type": "Unconfined"
+        },
+        "capabilities": {
+          "add": [
+            "NET_ADMIN",
+            "SYS_ADMIN",
+            "SETUID",
+            "SETGID",
+            "DAC_OVERRIDE",
+            "NET_RAW",
+            "SETFCAP",
+            "CHOWN",
+            "FOWNER"
+          ],
+          "drop": [
+            "ALL"
+          ]
+        },
+        "privileged": false,
+        "runAsGroup": 0,
+        "runAsUser": 0,
+        "seccompProfile": {
+          "localhostProfile": "substrate-worker.json",
+          "type": "Localhost"
+        }
+      },
+      "ports": [
+        {
+          "containerPort": 443,
+          "name": "https",
+          "protocol": "TCP"
+        },
+        {
+          "containerPort": 8443,
+          "name": "connect",
+          "protocol": "TCP"
+        },
+        {
+          "containerPort": 8080,
+          "name": "readyz",
+          "protocol": "TCP"
+        }
+      ]
+    }
+  ]
+}

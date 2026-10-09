@@ -1,0 +1,41 @@
+[
+  {
+    "case": "absent-node-label",
+    "expectedFailure": true,
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-09T14:40:38Z",
+        "message": "0/3 nodes are available: 1 node(s) had untolerated taint(s), 2 node(s) didn't match Pod's node affinity/selector. no new claims to deallocate, preemption: 0/3 nodes are available: 3 Preemption is not helpful for scheduling.",
+        "observedGeneration": 1,
+        "reason": "Unschedulable",
+        "status": "False",
+        "type": "PodScheduled"
+      }
+    ]
+  },
+  {
+    "case": "drop-NET_ADMIN",
+    "expectedFailure": true,
+    "error": "Timed out waiting for fresh golden snapshot: None",
+    "evidence": [
+      "[pod/least-privilege-9ccd98cb5-rqkwb/ateom] {\"time\":\"2026-10-09T14:40:54.074371605Z\",\"level\":\"INFO\",\"msg\":\"Handle RPC\",\"method\":\"/ateom.Ateom/RunWorkload\",\"req\":{\"atespace\":\"ate-golden\",\"actor_name\":\"10471685-84cd-4610-8440-48d1f1362edb\",\"actor_uid\":\"86578a0a-9ab3-43e5-b58b-1fcfd725b54d\",\"actor_template_atespace\":\"substrate-lab\",\"actor_template_name\":\"negative-net-admin-296181000\",\"runsc_path\":\"/var/lib/ate/static-files/gvisor-a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df/runsc\",\"spec\":{\"containers\":[{\"name\":\"probe\",\"wakeup_probe\":{\"http_get\":{\"path\":\"/readyz\",\"port\":80},\"timeout_seconds\":30},\"durable_dir_volume_mounts\":[{\"volume_name\":\"data\",\"mount_path\":\"/home/probe\"}]}]},\"runtime_asset_paths\":{\"gvisor\":\"/var/lib/ate/static-files/gvisor-a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df/runsc\"},\"egress_gateway\":{\"address\":\"atenet-egress.ate-system.svc:443\"},\"cpu_milli\":1000,\"memory_bytes\":536870912,\"actor_dirs\":{\"root_dir\":\"/var/lib/ate/actors/86578a0a-9ab3-43e5-b58b-1fcfd725b54d\",\"oci_bundle_dir\":\"/var/lib/ate/actors/86578a0a-9ab3-43e5-b58b-1fcfd725b54d/bundles\",\"checkpoint_dir\":\"/var/lib/ate/actors/86578a0a-9ab3-43e5-b58b-1fcfd725b54d/checkpoint-state\",\"restore_dir\":\"/var/lib/ate/actors/86578a0a-9ab3-43e5-b58b-1fcfd725b54d/restore-state\",\"durable_dir_volume_mounts_dir\":\"/var/lib/ate/actors/86578a0a-9ab3-43e5-b58b-1fcfd725b54d/durable-dir\",\"system_info_volume_roots_dir\":\"/var/lib/ate/actors/86578a0a-9ab3-43e5-b58b-1fcfd725b54d/system-info\",\"volumes_dir\":\"/var/lib/ate/actors/86578a0a-9ab3-43e5-b58b-1fcfd725b54d/volumes\"}},\"resp\":null,\"err\":\"while setting up the sandbox network: while executing function in target netns: while creating the veth pair: operation not permitted\",\"elapsed-time\":\"8.251748ms\",\"trace_id\":\"cf214681e6ac097ad2eeb3575eb561cb\",\"span_id\":\"90070c3796bdda5e\",\"trace_flags\":\"01\"}"
+    ]
+  },
+  {
+    "case": "drop-CHOWN",
+    "expectedFailure": true,
+    "error": "Actor HTTP 500: error resuming actor \"negative-chown-178052000\"",
+    "evidence": [
+      "[pod/least-privilege-9ccd98cb5-p4x56/ateom] {\"time\":\"2026-10-09T14:41:56.529977081Z\",\"level\":\"INFO\",\"msg\":\"Handle RPC\",\"method\":\"/ateom.Ateom/RestoreWorkload\",\"req\":{\"atespace\":\"substrate-lab\",\"actor_name\":\"negative-chown-178052000\",\"actor_uid\":\"71d855fa-da79-44c9-8fe7-f58dcf3fa835\",\"actor_template_atespace\":\"substrate-lab\",\"actor_template_name\":\"negative-chown-178052000\",\"runsc_path\":\"/var/lib/ate/static-files/gvisor-a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df/runsc\",\"spec\":{\"containers\":[{\"name\":\"probe\",\"wakeup_probe\":{\"http_get\":{\"path\":\"/readyz\",\"port\":80},\"timeout_seconds\":30},\"durable_dir_volume_mounts\":[{\"volume_name\":\"data\",\"mount_path\":\"/home/probe\"}]}]},\"runtime_asset_paths\":{\"gvisor\":\"/var/lib/ate/static-files/gvisor-a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df/runsc\"},\"scope\":1,\"egress_gateway\":{\"address\":\"atenet-egress.ate-system.svc:443\"},\"cpu_milli\":1000,\"memory_bytes\":536870912,\"actor_dirs\":{\"root_dir\":\"/var/lib/ate/actors/71d855fa-da79-44c9-8fe7-f58dcf3fa835\",\"oci_bundle_dir\":\"/var/lib/ate/actors/71d855fa-da79-44c9-8fe7-f58dcf3fa835/bundles\",\"checkpoint_dir\":\"/var/lib/ate/actors/71d855fa-da79-44c9-8fe7-f58dcf3fa835/checkpoint-state\",\"restore_dir\":\"/var/lib/ate/actors/71d855fa-da79-44c9-8fe7-f58dcf3fa835/restore-state\",\"durable_dir_volume_mounts_dir\":\"/var/lib/ate/actors/71d855fa-da79-44c9-8fe7-f58dcf3fa835/durable-dir\",\"system_info_volume_roots_dir\":\"/var/lib/ate/actors/71d855fa-da79-44c9-8fe7-f58dcf3fa835/system-info\",\"volumes_dir\":\"/var/lib/ate/actors/71d855fa-da79-44c9-8fe7-f58dcf3fa835/volumes\"}},\"resp\":null,\"err\":\"while restoring durable-dir volumes: while restoring durable-dir volume \\\"data\\\": restoring ownership of \\\"foreign/file\\\" to 1000:1000: lchownat foreign/file: operation not permitted\",\"elapsed-time\":\"9.119724ms\",\"trace_id\":\"1d519c9027fb3f8ca1995ab3e4d75361\",\"span_id\":\"a1e775b7b62f110a\",\"trace_flags\":\"01\"}"
+    ]
+  },
+  {
+    "case": "drop-FOWNER",
+    "expectedFailure": true,
+    "error": "Actor HTTP 500: error resuming actor \"negative-fowner-905598000\"",
+    "evidence": [
+      "[pod/least-privilege-9ccd98cb5-h66d5/ateom] {\"time\":\"2026-10-09T14:42:15.814735396Z\",\"level\":\"INFO\",\"msg\":\"Handle RPC\",\"method\":\"/ateom.Ateom/RestoreWorkload\",\"req\":{\"atespace\":\"substrate-lab\",\"actor_name\":\"negative-fowner-905598000\",\"actor_uid\":\"32c413ce-d309-46ad-91d7-3d939228c022\",\"actor_template_atespace\":\"substrate-lab\",\"actor_template_name\":\"negative-fowner-905598000\",\"runsc_path\":\"/var/lib/ate/static-files/gvisor-a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df/runsc\",\"spec\":{\"containers\":[{\"name\":\"probe\",\"wakeup_probe\":{\"http_get\":{\"path\":\"/readyz\",\"port\":80},\"timeout_seconds\":30},\"durable_dir_volume_mounts\":[{\"volume_name\":\"data\",\"mount_path\":\"/home/probe\"}]}]},\"runtime_asset_paths\":{\"gvisor\":\"/var/lib/ate/static-files/gvisor-a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df/runsc\"},\"scope\":1,\"egress_gateway\":{\"address\":\"atenet-egress.ate-system.svc:443\"},\"cpu_milli\":1000,\"memory_bytes\":536870912,\"actor_dirs\":{\"root_dir\":\"/var/lib/ate/actors/32c413ce-d309-46ad-91d7-3d939228c022\",\"oci_bundle_dir\":\"/var/lib/ate/actors/32c413ce-d309-46ad-91d7-3d939228c022/bundles\",\"checkpoint_dir\":\"/var/lib/ate/actors/32c413ce-d309-46ad-91d7-3d939228c022/checkpoint-state\",\"restore_dir\":\"/var/lib/ate/actors/32c413ce-d309-46ad-91d7-3d939228c022/restore-state\",\"durable_dir_volume_mounts_dir\":\"/var/lib/ate/actors/32c413ce-d309-46ad-91d7-3d939228c022/durable-dir\",\"system_info_volume_roots_dir\":\"/var/lib/ate/actors/32c413ce-d309-46ad-91d7-3d939228c022/system-info\",\"volumes_dir\":\"/var/lib/ate/actors/32c413ce-d309-46ad-91d7-3d939228c022/volumes\"}},\"resp\":null,\"err\":\"while restoring durable-dir volumes: while restoring durable-dir volume \\\"data\\\": restoring mode on \\\"foreign/file\\\": chmodat foreign/file: operation not permitted\",\"elapsed-time\":\"9.694983ms\",\"trace_id\":\"cb38d6ab9d0faec82a8fd084e5dfbeb2\",\"span_id\":\"260bb68bf3c1380a\",\"trace_flags\":\"01\"}"
+    ]
+  }
+]

@@ -1,0 +1,133 @@
+{
+  "case": "ownership-restore",
+  "actorTemplate": {
+    "metadata": {
+      "atespace": "substrate-lab",
+      "name": "ownership-restore-176228000"
+    },
+    "workerSelector": {
+      "matchLabels": {
+        "workload": "privilege-lab"
+      }
+    },
+    "containers": [
+      {
+        "name": "probe",
+        "image": "localhost:5507/privilege-probe@sha256:c97879a003b23d9700decd25f69175bd07493ae3b0c2ef4b37faee8eebc63a58",
+        "command": [
+          "/probe"
+        ],
+        "securityContext": {
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ],
+            "add": [
+              "CHOWN"
+            ]
+          }
+        },
+        "env": [
+          {
+            "name": "EGRESS_URL",
+            "value": "http://echo.substrate-lab.svc.cluster.local:8080/"
+          },
+          {
+            "name": "OWNERSHIP_PROBE",
+            "value": "true"
+          }
+        ],
+        "wakeupProbe": {
+          "httpGet": {
+            "path": "/readyz",
+            "port": 80
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "data",
+            "mountPath": "/home/probe"
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "data",
+        "durableDir": {}
+      }
+    ],
+    "resources": {
+      "limits": [
+        {
+          "name": "cpu",
+          "quantity": "1"
+        },
+        {
+          "name": "memory",
+          "quantity": "512Mi"
+        }
+      ]
+    },
+    "sandboxConfig": {
+      "sandboxClass": "SANDBOX_CLASS_GVISOR",
+      "configName": "gvisor-default"
+    },
+    "snapshotConfig": {
+      "onCommit": "SNAPSHOT_CONTENT_SCOPE_FULL",
+      "storageLocation": "gs://ate-snapshots/privilege-lab/"
+    }
+  },
+  "templateStatus": {
+    "goldenSnapshotStatus": {
+      "goldenTag": {
+        "atespace": "ate-golden",
+        "name": "a4229331-d487-4aef-997d-f581a30d4094"
+      },
+      "takeGoldenSnapshotAt": "2026-10-09T14:42:54.200585145Z"
+    }
+  },
+  "turn1": {
+    "file": 1,
+    "memory": 1
+  },
+  "actorStatus1": {
+    "CapAmb": "0000000000000000",
+    "CapBnd": "0000000000000001",
+    "CapEff": "0000000000000001",
+    "CapInh": "0000000000000000",
+    "CapPrm": "0000000000000001",
+    "Gid": "0\t0\t0\t0",
+    "NoNewPrivs": "0",
+    "Uid": "0\t0\t0\t0"
+  },
+  "ownership1": {
+    "content": "uid-1000",
+    "gid": 1000,
+    "mode": "0644",
+    "uid": 1000
+  },
+  "egress1": "echo-from-general",
+  "turn2": {
+    "file": 2,
+    "memory": 2
+  },
+  "actorStatus2": {
+    "CapAmb": "0000000000000000",
+    "CapBnd": "0000000000000001",
+    "CapEff": "0000000000000001",
+    "CapInh": "0000000000000000",
+    "CapPrm": "0000000000000001",
+    "Gid": "0\t0\t0\t0",
+    "NoNewPrivs": "0",
+    "Uid": "0\t0\t0\t0"
+  },
+  "ownership2": {
+    "content": "uid-1000",
+    "gid": 1000,
+    "mode": "0644",
+    "uid": 1000
+  },
+  "egress2": "echo-from-general",
+  "passed": true
+}

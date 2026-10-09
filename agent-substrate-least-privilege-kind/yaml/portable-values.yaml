@@ -1,0 +1,6 @@
+# Overlay after hardened-values.yaml when retaining the image-whiteout capability.
+worker:
+  securityContext:
+    capabilities:
+      drop: [ALL]
+      add: [NET_ADMIN, SYS_ADMIN, SETUID, SETGID, DAC_OVERRIDE, NET_RAW, SETFCAP, CHOWN, FOWNER, MKNOD]

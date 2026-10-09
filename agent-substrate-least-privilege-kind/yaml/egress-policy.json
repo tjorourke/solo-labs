@@ -1,0 +1,8 @@
+{
+  "rules": [{
+    "http": {
+      "hostnames": ["echo.substrate-lab.svc.cluster.local"],
+      "ports": {"numbers": [8080]}
+    }
+  }]
+}

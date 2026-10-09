@@ -1,0 +1,11 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial","fontSize":"18px","primaryColor":"#eff6ff","primaryTextColor":"#12233d","primaryBorderColor":"#0e7490","lineColor":"#475569"},"flowchart":{"curve":"linear","nodeSpacing":35,"rankSpacing":45,"padding":20}}}%%
+flowchart TD
+    API["Substrate API<br/>Schedules and resumes actors<br/>Component-specific Kubernetes RBAC"] -->|"Restore / checkpoint RPC"| L["atelet node daemon<br/>Root + DAC_OVERRIDE<br/>Moves snapshots and cleans files"]
+    S["Object storage<br/>RustFS in this lab<br/>Golden and actor snapshots"] <-->|"Snapshot bytes"| L
+    L -->|"Node-local Unix socket"| W["ateom-gvisor worker<br/>Root + nine host capabilities<br/>Mounts, cgroups, networking, file restore"]
+    W -->|"Creates the sandbox with runsc"| G["gVisor Sentry<br/>Handles actor system calls<br/>Restricted access to the host kernel"]
+    G -->|"Linux syscall interface"| A["Actor application<br/>Drop ALL capabilities<br/>Own process and filesystem view"]
+    classDef elevated fill:#fffbeb,stroke:#b45309,stroke-width:2px;
+    classDef sandbox fill:#f0fdf4,stroke:#15803d,stroke-width:2px;
+    class L,W elevated;
+    class G,A sandbox;

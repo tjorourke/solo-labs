@@ -1,0 +1,59 @@
+{
+  "process": {
+    "Uid": "0\t0\t0\t0",
+    "Gid": "0\t0\t0\t0",
+    "CapEff": "0000000000000002",
+    "CapBnd": "0000000000000002",
+    "NoNewPrivs": "1",
+    "Seccomp": "2"
+  },
+  "nodeName": "substrate-least-privilege-worker",
+  "serviceAccountName": "atelet",
+  "automountServiceAccountToken": true,
+  "nodeSelector": {
+    "ate.dev/substrate-version": "v0.4.0",
+    "lab.mastertheagent.com/pool": "runtime"
+  },
+  "hostPaths": [
+    {
+      "path": "/var/lib/ate",
+      "type": "DirectoryOrCreate"
+    }
+  ],
+  "containers": [
+    {
+      "name": "atelet",
+      "securityContext": {
+        "allowPrivilegeEscalation": false,
+        "capabilities": {
+          "add": [
+            "DAC_OVERRIDE"
+          ],
+          "drop": [
+            "ALL"
+          ]
+        },
+        "privileged": false,
+        "readOnlyRootFilesystem": true,
+        "runAsGroup": 0,
+        "runAsUser": 0,
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        }
+      },
+      "ports": [
+        {
+          "containerPort": 8085,
+          "hostPort": 8085,
+          "name": "grpc",
+          "protocol": "TCP"
+        },
+        {
+          "containerPort": 9090,
+          "name": "prometheus",
+          "protocol": "TCP"
+        }
+      ]
+    }
+  ]
+}

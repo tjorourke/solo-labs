@@ -1,0 +1,40 @@
+# Strategic merge patch for the v0.4.0 atelet DaemonSet, gVisor-only kind setup.
+spec:
+  template:
+    spec:
+      nodeSelector:
+        ate.dev/substrate-version: v0.4.0
+        lab.mastertheagent.com/pool: runtime
+      containers:
+        - name: atelet
+          securityContext:
+            privileged: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [DAC_OVERRIDE]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - containerPort: 9090
+              hostPort: null
+          volumeMounts:
+            - name: kubelet-plugins
+              mountPath: /var/lib/kubelet/plugins
+              $patch: delete
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+              $patch: delete
+            - name: host-dev
+              mountPath: /host/dev
+              $patch: delete
+      volumes:
+        - name: kubelet-plugins
+          $patch: delete
+        - name: device-plugins
+          $patch: delete
+        - name: host-dev
+          $patch: delete
