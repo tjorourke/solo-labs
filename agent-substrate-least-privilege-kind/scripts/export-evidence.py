@@ -34,4 +34,8 @@ for node in env['nodes']:
     node['info'] = {k: v for k, v in node['info'].items() if k in ('architecture', 'kernelVersion', 'containerRuntimeVersion', 'kubeletVersion', 'osImage')}
 write('environment', env)
 write('seccomp-arm64-example', load('seccomp-profile')['modified'])
+if all(n['info']['architecture'] == 'arm64' and n['info']['containerRuntimeVersion'] == 'containerd://2.2.0' for n in env['nodes']):
+    profiles = lab / 'profiles'
+    profiles.mkdir(exist_ok=True)
+    (profiles / 'containerd-2.2-arm64.json').write_text(json.dumps(load('seccomp-profile')['modified'], indent=2) + '\n')
 print('Exported passing lifecycle, kernel, placement and negative-control evidence')

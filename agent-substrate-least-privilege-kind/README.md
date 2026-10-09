@@ -56,6 +56,12 @@ SYS_ADMIN and writable node storage remain. AppArmor stays Unconfined; the
 local arm64 host does not enforce AppArmor. The optional `portable-values.yaml`
 keeps MKNOD for runtimes that require it for image whiteouts.
 
+`profiles/containerd-2.2-arm64.json` is the profile validated with this lab on
+arm64, containerd 2.2.0 and the Linux version recorded in the page footer. Copy
+it to `.runtime/seccomp/substrate-worker.json` for that environment. It is not
+an amd64 profile. The `profile` command remains available for adapting the lab
+to a different node image.
+
 The generated local seccomp profile is the node runtime's own default profile,
 with pivot_root allowed. It is captured using a harmless sleeping probe with
 the upstream worker capability set, then mounted onto the runtime node through

@@ -14,7 +14,7 @@
     <rect x="620" y="12" width="568" height="216" rx="16" fill="#f0f9ff" stroke="#bae6fd"/>
     <text x="644" y="53" font-size="23" font-weight="700" fill="#0f172a">General node</text>
     <text x="644" y="84" font-family="monospace" font-size="16" fill="#075985">pool=general</text>
-    <text x="644" y="141" font-size="18" font-weight="700" fill="#0f172a">AGW ingress and egress</text>
+    <text x="644" y="141" font-size="18" font-weight="700" fill="#0f172a">agentgateway ingress and egress</text>
     <text x="644" y="174" font-size="16" fill="#475569">Substrate control plane, storage and other services</text>
     <text x="36" y="261" font-size="15" fill="#475569">WorkerPool and atelet must both select the runtime node.</text>
   </g>
