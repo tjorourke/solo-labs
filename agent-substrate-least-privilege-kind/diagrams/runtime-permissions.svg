@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Permissions within a dedicated Substrate node</title>
+  <desc id="desc">The worker pod has nine host capabilities and contains a gVisor agent sandbox with zero actor capabilities. The atelet node daemon has DAC_OVERRIDE. Both access the node's var lib ate runtime directory.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#64748b"/></marker></defs>
+  <rect width="1200" height="650" rx="18" fill="#fff"/>
+  <rect x="24" y="24" width="1152" height="602" rx="20" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="7 5"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="56" y="74" font-size="24" font-weight="700" fill="#0f172a">Dedicated Kubernetes node</text>
+    <text x="56" y="105" font-size="16" fill="#64748b">Selected with nodeSelector</text>
+
+    <rect x="56" y="150" width="620" height="284" rx="16" fill="#fff" stroke="#d97706" stroke-width="1.5"/>
+    <text x="80" y="191" font-size="23" font-weight="700" fill="#0f172a">Worker pod</text>
+    <rect x="448" y="169" width="204" height="31" rx="15" fill="#fef3c7"/>
+    <text x="550" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#92400e">9 host capabilities</text>
+    <text x="80" y="223" font-size="16" fill="#475569">Sets up the sandbox, its network and files</text>
+
+    <rect x="80" y="249" width="572" height="123" rx="12" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="104" y="286" font-size="21" font-weight="700" fill="#14532d">Agent sandbox</text>
+    <rect x="484" y="265" width="144" height="29" rx="14" fill="#dcfce7"/>
+    <text x="556" y="285" text-anchor="middle" font-size="14" font-weight="700" fill="#166534">0 capabilities</text>
+    <text x="104" y="317" font-size="16" fill="#166534">Your application, running in gVisor</text>
+    <text x="104" y="346" font-size="14" fill="#475569">Actor permissions are configured here.</text>
+    <text x="80" y="408" font-family="monospace" font-size="15" fill="#64748b">ateom-gvisor · runs as root</text>
+
+    <rect x="772" y="150" width="372" height="284" rx="16" fill="#fff" stroke="#d97706" stroke-width="1.5"/>
+    <text x="796" y="191" font-size="23" font-weight="700" fill="#0f172a">Node daemon</text>
+    <text x="796" y="223" font-family="monospace" font-size="16" fill="#64748b">atelet</text>
+    <rect x="796" y="249" width="187" height="31" rx="15" fill="#fef3c7"/>
+    <text x="889.5" y="270" text-anchor="middle" font-size="15" font-weight="700" fill="#92400e">1 host capability</text>
+    <text x="796" y="317" font-size="16" fill="#475569">Loads and saves actor state.</text>
+    <text x="796" y="346" font-size="16" fill="#475569">Cleans up runtime files.</text>
+    <text x="796" y="408" font-family="monospace" font-size="15" fill="#64748b">Root + DAC_OVERRIDE</text>
+
+    <rect x="434" y="515" width="400" height="82" rx="12" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="634" y="548" text-anchor="middle" font-family="monospace" font-size="19" font-weight="700" fill="#3730a3">/var/lib/ate</text>
+    <text x="634" y="577" text-anchor="middle" font-size="15" fill="#475569">Shared runtime files on this node</text>
+    <g fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M366 434V556H426"/>
+      <path d="M958 434V556H842"/>
+    </g>
+    <text x="348" y="485" text-anchor="end" font-size="14" fill="#64748b">read / write</text>
+    <text x="976" y="485" font-size="14" fill="#64748b">read / write</text>
+  </g>
+</svg>

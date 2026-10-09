@@ -311,12 +311,7 @@ def baseline():
     lifecycle('baseline', baseline=True)
 
 def profile():
-    probe = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': 'seccomp-capture', 'namespace': NS},
-        'spec': {'nodeSelector': {'lab.mastertheagent.com/pool': 'runtime'}, 'automountServiceAccountToken': False,
-            'tolerations': [{'key': 'ate.dev/sandboxClass', 'operator': 'Equal', 'value': 'gvisor', 'effect': 'NoSchedule'}],
-            'containers': [{'name': 'capture', 'image': 'busybox:1.36', 'command': ['sleep', '300'],
-                'securityContext': {'runAsUser': 0, 'capabilities': {'drop': ['ALL'], 'add': DEFAULT_CAPS}, 'seccompProfile': {'type': 'RuntimeDefault'}}}]}}
-    apply(probe)
+    k('apply', '-f', LAB / 'yaml/seccomp-capture.yaml')
     try:
         k('-n', NS, 'wait', 'pod/seccomp-capture', '--for=condition=Ready', '--timeout=120s', timeout=130)
         live = inspection(get('-n', NS, 'get', 'pod', 'seccomp-capture'))
