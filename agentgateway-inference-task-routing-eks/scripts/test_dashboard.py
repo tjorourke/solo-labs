@@ -141,7 +141,7 @@ class NativeDecisionTests(CorrelationTests):
         self.assertEqual(dashboard.cards[0]['refused_status'], 422)
 
     def native(self, status=200, user='martink'):
-        event = json.loads(opa(self.a, self.x, 'generic_coding', 'Kernwerk personal data', user))
+        event = json.loads(opa(self.a, self.x, 'generic_coding', 'TrustUsBank personal data', user))
         event['result'] = {'allowed': True}
         event['input']['attributes']['request']['http']['headers']['x-agw-routing-decision'] = json.dumps({
             'user': user, 'status': status, 'task': 'generic_coding', 'pool': 'eu-hosted', 'class': 'coding',
@@ -176,7 +176,7 @@ class NativeDecisionTests(CorrelationTests):
         self.assertEqual(len(dashboard.cards), 1)
         card = dashboard.cards[0]
         self.assertEqual((card['user'], card['pool'], card['status']), ('martink', 'eu-hosted', '429'))
-        self.assertEqual(card['prompt'], 'Kernwerk personal data')
+        self.assertEqual(card['prompt'], 'TrustUsBank personal data')
         self.assertEqual(card['reason'], 'generic_coding, class 2, must stay in the EU')
 
     def test_access_log_does_not_overwrite_original_audit_timestamp(self):

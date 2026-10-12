@@ -61,7 +61,7 @@ def main():
         req = urllib.request.Request(args.base_url.rstrip("/") + path, data=json.dumps(body).encode(), headers={
             "Authorization": "Bearer " + token(user), "Content-Type": "application/json",
             "anthropic-version": "2023-06-01", "traceparent": f"00-{trace}-0123456789abcdef-01",
-            "x-model-pool": "approved-frontier", "x-kernwerk-lane": "public", "x-agw-routing-decision": '{"status":200,"user":"bob"}',
+            "x-model-pool": "approved-frontier", "x-trustusbank-lane": "public", "x-agw-routing-decision": '{"status":200,"user":"bob"}',
         })
         try:
             response = urllib.request.urlopen(req, timeout=180)
@@ -93,7 +93,7 @@ def main():
     spec.loader.exec_module(dashboard)
     # Reverse the usual arrival order to verify the actual wire log formats and
     # exact trace/span join, not just synthetic fixtures.
-    for line in logs("kernwerk-pii"):
+    for line in logs("trustusbank-pii"):
         dashboard.on_pii(line)
     for line in logs("decision-gateway"):
         dashboard.on_gateway(line)

@@ -290,7 +290,7 @@ def on_opa(line):
                   "headers": {"x-model-pool": native.get("pool"),
                               "x-model-class": native.get("class"),
                               "x-routing-reason": native.get("reason") if native["status"] != 403 else None,
-                              "x-kernwerk-lane": native.get("lane") or None},
+                              "x-trustusbank-lane": native.get("lane") or None},
                   "body": json.dumps({"error": {"type": "blocked" if native["status"] == 422 else "forbidden",
                                                 "message": native.get("error")}})}
     headers = result.get("headers", {}) if result.get("allowed") else {}
@@ -319,7 +319,7 @@ def on_opa(line):
         # The class of the caller's own data, for callers whose organisation classifies it.
         # OPA writes this only when it enforced the class, so a class on a card is always a
         # class that was applied, never one that was merely noticed.
-        lane=headers.get("x-kernwerk-lane"),
+        lane=headers.get("x-trustusbank-lane"),
         reason=headers.get("x-routing-reason") or (result.get("headers", {}) or {}).get("x-routing-reason"),
         refused_status=None if result.get("allowed") else result.get("http_status"),
         refused_body=None if result.get("allowed") else str(result.get("body", ""))[:300],
@@ -328,9 +328,9 @@ def on_opa(line):
 
 
 def on_pii(line):
-    """What the personal-data check took out, from kernwerk-pii's own log.
+    """What the personal-data check took out, from trustusbank-pii's own log.
 
-    It runs as a guardrail webhook on the Kernwerk routes, after OPA and before the model,
+    It runs as a guardrail webhook on the TrustUsBank routes, after OPA and before the model,
     and prints one JSON line per prompt and per answer carrying the decision gateway's
     trace id. That id is the same one the access log and OPA's traceparent carry, so the
     redactions land on the request they belong to rather than on whichever card looks
@@ -488,7 +488,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Gateway decisi
  .pill.lane-public { background:#0e7490; }
  .pill.lane-eu { background:#2563eb; }
  .pill.lane-private { background:#15803d; }
- body:not(.page-kernwerk) .lane-filter { display:none; }
+ body:not(.page-trustusbank) .lane-filter { display:none; }
  /* What the personal-data check took out, shown in place: the original text struck
     through and the placeholder the model actually received beside it. */
  .redact { background:rgba(220,38,38,.10); color:#b91c1c; border-radius:3px; padding:0 2px;
@@ -554,10 +554,10 @@ let cards = [], paused = false, buffer = [];
 // The data class is only shown where the story is about data classes. Everywhere else the
 // page is about the task and the pool, and an extra pill would be noise. OPA writes the
 // class only for callers whose organisation classifies its data, so most rows have none.
-const KERNWERK = document.body.classList.contains('page-kernwerk');
+const TRUSTUSBANK = document.body.classList.contains('page-trustusbank');
 const LANES = {public: 'Class 1 \u00b7 nothing restricted',
                eu: 'Class 2 \u00b7 stays in the EU',
-               private: 'Class 3 \u00b7 never leaves Kernwerk'};
+               private: 'Class 3 \u00b7 never leaves TrustUsBank'};
 // A globe for what may leave, a globe inside a boundary for what may leave but not the
 // region, a padlock for what stays. Read before the words are, which is the point.
 const LANE_ICON = {
@@ -566,7 +566,7 @@ const LANE_ICON = {
   private: '<svg viewBox="0 0 16 16" class="li"><rect x="3.2" y="7" width="9.6" height="7" rx="1.6"/><path d="M5.5 7V5.1a2.5 2.5 0 0 1 5 0V7"/></svg>',
 };
 function lanePill(c) {
-  if (!KERNWERK || !c.lane) return '';
+  if (!TRUSTUSBANK || !c.lane) return '';
   return `<span class="pill lane lane-${c.lane}">${LANE_ICON[c.lane] || ''}${esc(LANES[c.lane] || c.lane)}</span>`;
 }
 
@@ -650,7 +650,7 @@ function redacted(original, masked) {
 // check removed struck through and the placeholder the model got in its place.
 function promptBlock(c) {
   const plain = c.question || c.prompt || '(response received; awaiting its policy event)';
-  if (!KERNWERK) return `<div class="prompt">${esc(plain)}</div>`;
+  if (!TRUSTUSBANK) return `<div class="prompt">${esc(plain)}</div>`;
   const marked = redacted(c.original, c.masked);
   const body = marked || esc(c.original || plain);
   const back = c.answer_replaced || 0;
@@ -840,11 +840,11 @@ def main():
     subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deployment",
                     "routing-policy", "decision-gateway", "-o", "name"], check=True)
     watch = [("routing-policy", on_opa), ("decision-gateway", on_gateway)]
-    # Only present when the Kernwerk overlay is installed. Without it the page is the
+    # Only present when the TrustUsBank overlay is installed. Without it the page is the
     # task router's own and simply has no redactions to show.
-    if subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deploy", "kernwerk-pii"],
+    if subprocess.run(["kubectl", "--context", CTX, "-n", NS, "get", "deploy", "trustusbank-pii"],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-        watch.append(("kernwerk-pii", on_pii))
+        watch.append(("trustusbank-pii", on_pii))
     for target, handler in watch:
         threading.Thread(target=follow, args=(target, handler), daemon=True).start()
     print(f"dashboard on http://localhost:{PORT}  (ctrl-c to stop)")

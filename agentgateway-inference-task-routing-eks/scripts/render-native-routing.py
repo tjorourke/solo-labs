@@ -27,7 +27,7 @@ def policies(edition="enterprise"):
               "x-model-class": "metadata.routing.class",
               "x-routing-reason": "metadata.routing.reason",
               "x-routing-user": "metadata.routing.user",
-               "x-kernwerk-lane": 'metadata.routing.lane != "" ? metadata.routing.lane : null'}
+               "x-trustusbank-lane": 'metadata.routing.lane != "" ? metadata.routing.lane : null'}
     pre = policy("decide", {
         "phase": "PreRouting",
         "jwtAuthentication": {"mode": "Strict", "providers": [

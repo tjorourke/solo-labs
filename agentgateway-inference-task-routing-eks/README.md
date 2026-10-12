@@ -271,7 +271,7 @@ that the post-routing metadata gate fails closed. Outside this repository, suppl
 exported legacy policy with `--oracle`. Requires `opa`, PyYAML and `cryptography`.
 
 `scripts/test_native_clients.py --context <context> --base-url <url> --signing-key <path>`
-checks the Kernwerk overlay through both streaming client APIs, including all three data
+checks the TrustUsBank overlay through both streaming client APIs, including all three data
 classes, native refusals, redaction and actual audit/access-log correlation. It makes short
 real model calls. Run `scripts/test_dashboard.py` for the isolated dashboard checks.
 `scripts/test_native_budget.py` takes the same arguments and checks 429 conversion and

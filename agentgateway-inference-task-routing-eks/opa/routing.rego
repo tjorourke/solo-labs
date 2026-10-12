@@ -170,7 +170,7 @@ outcome := object.union(base, {
 }) if { known_caller; has_secret }
 else := object.union(base, {
 	"status": 422, "reason": "blocked, tries to override the model or carries a password",
-	"error": "Stopped at the Kernwerk gateway. This request tries to override the model's rules or carries a password, so no model received it.",
+	"error": "Stopped at the TrustUsBank gateway. This request tries to override the model's rules or carries a password, so no model received it.",
 }) if { known_caller; has_jailbreak }
 else := object.union(object.union(base, decision), {"status": 200, "lane": lane}) if {
 	known_caller

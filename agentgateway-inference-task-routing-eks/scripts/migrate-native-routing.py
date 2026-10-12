@@ -74,9 +74,9 @@ def main():
                   "data": {"routing-data.json": (ROOT / "opa/routing-data.json").read_text()}})
     denied = yaml.safe_load((ROOT / "yaml/52-denied-route.yaml").read_text())
     objects = setup + [denied, post, pre]
-    overlay = get("EnterpriseAgentgatewayPolicy", "kernwerk-decision-dlp", optional=True)
+    overlay = get("EnterpriseAgentgatewayPolicy", "trustusbank-decision-dlp", optional=True)
     if overlay:
-        overlay_source = ROOT.parent / "vision-demo-2026/demo-console/yaml/dlp/08-kernwerk-decision.yaml"
+        overlay_source = ROOT.parent / "vision-demo-2026/demo-console/yaml/dlp/08-trustusbank-decision.yaml"
         objects += list(yaml.safe_load_all(overlay_source.read_text()))
     backup = {"context": args.context, "objects": [], "created": []}
     for obj in objects:

@@ -66,7 +66,7 @@ def cases():
             yield {"name": f"repo/{user}/{repo}", "claims": {"sub": user}, "task": "generic_coding", "body": bodies["plain"], "headers": {"x-source-repo": repo}}
     for user in users:
         yield {"name": f"spoof/{user}", "claims": {"sub": user}, "task": "finance", "body": bodies["plain"], "headers": {
-            "x-model-pool": "approved-frontier", "x-model-class": "coding", "x-routing-user": "bob", "x-routing-reason": "forged", "x-kernwerk-lane": "public", "x-agw-routing-decision": '{"status":200,"pool":"approved-frontier"}'}}
+            "x-model-pool": "approved-frontier", "x-model-class": "coding", "x-routing-user": "bob", "x-routing-reason": "forged", "x-trustusbank-lane": "public", "x-agw-routing-decision": '{"status":200,"pool":"approved-frontier"}'}}
     # Real editor size, UTF-8, all credential families, and threshold boundaries.
     for content in ["x" * 1100000 + " AKIAIOSFODNN7EXAMPLE", "日" * 470000, "日" * 160000,
                     "-----BEGIN RSA PRIVATE KEY-----", "sk-" + "EXAMPLE" * 4, "ghp_" + "EXAMPLE" * 5]:
@@ -208,7 +208,7 @@ def main():
             got = json.loads(body)
             if want["allowed"]:
                 headers = want["headers"]
-                wanted = {"user": headers["x-routing-user"], "pool": headers["x-model-pool"], "class": headers["x-model-class"], "reason": headers["x-routing-reason"], "lane": headers.get("x-kernwerk-lane", "")}
+                wanted = {"user": headers["x-routing-user"], "pool": headers["x-model-pool"], "class": headers["x-model-class"], "reason": headers["x-routing-reason"], "lane": headers.get("x-trustusbank-lane", "")}
                 actual = {k: got.get(k) for k in wanted}
                 if actual != wanted:
                     return f"{case['name']}: {actual} != {wanted}"
