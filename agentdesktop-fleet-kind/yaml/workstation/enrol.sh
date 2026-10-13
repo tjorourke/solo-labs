@@ -72,18 +72,37 @@ DAEMON_PID=$!
 
 sock() { curl -sS --unix-socket "$SOCK" "http://localhost$1"; }
 
-# The daemon publishes the authorization URL as soon as it needs a sign-in.
+# The daemon publishes the authorization URL as soon as it needs a sign-in. A
+# restarted container is already enrolled: the socket reports it and no URL
+# ever appears, so skip the sign-in and just keep the daemon running.
 AUTH_URL=""
+STATUS=""
 for _ in $(seq 1 60); do
   if [ -S "$SOCK" ]; then
-    AUTH_URL="$(sock /v1/enrollment 2>/dev/null | jq -r '.authorizationUrl // empty')"
+    ENROLMENT="$(sock /v1/enrollment 2>/dev/null || true)"
+    STATUS="$(printf '%s' "$ENROLMENT" | jq -r '.status // empty')"
+    [ "$STATUS" = "enrolled" ] && break
+    AUTH_URL="$(printf '%s' "$ENROLMENT" | jq -r '.authorizationUrl // empty')"
     [ -n "$AUTH_URL" ] && break
   fi
   kill -0 "$DAEMON_PID" 2>/dev/null || { echo "daemon exited early:"; cat /tmp/daemon.log; exit 1; }
   sleep 1
 done
+if [ "$STATUS" = "enrolled" ]; then
+  echo "→ [$(hostname)] already enrolled, keeping the daemon up"
+  wait "$DAEMON_PID"
+  exit 0
+fi
 [ -n "$AUTH_URL" ] || { echo "no authorization URL from the daemon:"; cat /tmp/daemon.log; exit 1; }
 echo "→ [$(hostname)] signing in as $AD_USER"
+
+# Pin the issuer host for the life of the container. The daemon refreshes its
+# OIDC token against this name every few minutes; one transient DNS failure
+# there drops the controller stream for good.
+ISSUER_HOST="$(printf '%s' "$AUTH_URL" | sed -E 's|^https?://([^/:]+).*|\1|')"
+if [ -n "$ISSUER_HOST" ] && ! grep -q " $ISSUER_HOST\$" /etc/hosts; then
+  echo "$AD_KEYCLOAK_IP $ISSUER_HOST" >> /etc/hosts
+fi
 
 # Keycloak renders a login form whose action carries the session state. Post
 # the credentials to it and follow the redirect back to the daemon's loopback
