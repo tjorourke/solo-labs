@@ -1,0 +1,26 @@
+# The expressions are OR-ed. Replace both sample object IDs with the `oid`
+# claims from Sarah's and Bob's Entra access tokens.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: azure-devops-mcp-user-rbac
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: azure-devops-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # Sarah (Admin): all tools exposed by this backend.
+            - 'jwt.oid == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"'
+            # Bob (Developer): project listing and work-item queries, reads and writes.
+            - >-
+              jwt.oid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" &&
+              mcp.tool.name in [
+                "core_list_projects", "wit_query", "wit_work_item", "wit_work_item_write"
+              ]

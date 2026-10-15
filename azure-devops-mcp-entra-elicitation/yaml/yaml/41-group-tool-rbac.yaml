@@ -1,0 +1,31 @@
+# Alternative to 40-user-tool-rbac.yaml. Apply ONE of the two policies.
+# The same resource name means this replaces the individual-user rules.
+# Replace the sample IDs with Entra security-group Object IDs, not group names.
+# Configure the gateway API app to include groups in user access tokens.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: azure-devops-mcp-user-rbac
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: azure-devops-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # AGW-Admins group: all tools exposed by this backend.
+            - >-
+              has(jwt.groups) &&
+              jwt.groups.exists(g, g == "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+            # AGW-Developers group: the restricted work-item tool set.
+            - >-
+              has(jwt.groups) &&
+              jwt.groups.exists(g, g == "dddddddd-dddd-4ddd-8ddd-dddddddddddd") &&
+              mcp.tool.name in [
+                "core_list_projects", "wit_query", "wit_work_item", "wit_work_item_write"
+              ]

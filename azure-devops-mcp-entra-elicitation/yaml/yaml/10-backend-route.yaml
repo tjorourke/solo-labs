@@ -1,0 +1,45 @@
+# Azure DevOps Remote MCP, restricted to the work-item toolset.
+# Replace YOUR_AZDO_ORG with the Entra-connected Azure DevOps organisation name
+# in both the backend target path and the HTTPRoute path.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: azure-devops-mcp
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: ado
+        static:
+          host: mcp.dev.azure.com
+          port: 443
+          path: /YOUR_AZDO_ORG
+          protocol: StreamableHTTP
+          policies:
+            tls:
+              sni: mcp.dev.azure.com
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: azure-devops-mcp
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: ai-gateway
+      namespace: agentgateway-system
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /YOUR_AZDO_ORG
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-MCP-Toolsets
+                value: wit
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: azure-devops-mcp

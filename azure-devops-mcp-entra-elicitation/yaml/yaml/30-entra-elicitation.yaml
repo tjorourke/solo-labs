@@ -1,0 +1,17 @@
+# Pause the first call from a user until they complete Entra's authorization-code
+# flow. The gateway then reuses that user's delegated Azure DevOps token.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: azure-devops-mcp-elicitation
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: azure-devops-mcp
+  backend:
+    tokenExchange:
+      mode: ElicitationOnly
+      elicitation:
+        secretName: azure-devops-mcp-elicitation
