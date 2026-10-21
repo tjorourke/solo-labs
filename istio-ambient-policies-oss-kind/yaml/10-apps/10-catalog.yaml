@@ -1,4 +1,4 @@
-# catalog — the server every policy in this lab protects. go-httpbin answers
+# catalog: the server every policy in this lab protects. go-httpbin answers
 # any method on /anything with 200 and echoes the request back, so a 200 means
 # the request reached the pod, and a 403 or a reset means a policy stopped it.
 #

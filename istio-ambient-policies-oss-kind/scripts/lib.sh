@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# lib.sh — shared helpers for istio-ambient-policies-oss-kind.
+# lib.sh: shared helpers for istio-ambient-policies-oss-kind.
 #
 # One kind cluster running UPSTREAM community Istio in ambient mode from the
 # first helm install (no sidecar phase). A small shop app is enrolled with one
 # namespace label, then four policies land one at a time, each with a probe
 # that shows what changed:
 #
-#   1. PeerAuthentication STRICT      (ztunnel, L4)   the non-mesh caller is cut off
+#   1. PeerAuthentication STRICT      (ztunnel, L4)   the non-mesh caller is cut off from catalog
 #   2. AuthorizationPolicy by identity (ztunnel, L4)  only checkout may open the port
 #   3. waypoint + AuthorizationPolicy  (Envoy,   L7)  checkout may GET, nothing else
 #   4. RequestAuthentication + JWT     (Envoy,   L7)  DELETE needs a valid token
@@ -41,9 +41,9 @@ warn() { { __warn "$*";  printf '\n'; } >&2; }
 die()  { { __err "$*";   printf '\n'; } >&2; exit 1; }
 step() { printf '\n' >&2; { __step "══> $*"; printf '\n'; } >&2; }
 
-require() { command -v "$1" >/dev/null 2>&1 || die "$1 not found — install it first"; }
+require() { command -v "$1" >/dev/null 2>&1 || die "$1 not found: install it first"; }
 
-# show <cmd...> — print the command, then run it. The scripts narrate what they
+# show <cmd...>: print the command, then run it. The scripts narrate what they
 # do so a reader (or an audience) sees real kubectl and helm, not wrapper names.
 show() {
   local disp=("$@")
@@ -59,12 +59,12 @@ export LAB_BIN="$LAB_ROOT/.bin"          # istioctl is downloaded here (gitignor
 export PATH="$LAB_BIN:$PATH"
 
 # ── cluster + namespace constants ─────────────────────────────────────────────
-export CLUSTER_NAME="${CLUSTER_NAME:-ambient-policies}"
+export CLUSTER_NAME="${CLUSTER_NAME:-ambient-policies-lab}"
 export CTX="kind-${CLUSTER_NAME}"
 export ISTIO_SYSTEM_NS="${ISTIO_SYSTEM_NS:-istio-system}"
 
-# shop      — ambient-enrolled: catalog (httpbin), checkout and reporting (curl)
-# legacy    — NOT in the mesh: a plain curl pod, the plaintext caller STRICT cuts off
+# shop     : ambient-enrolled: catalog (httpbin), checkout and reporting (curl)
+# legacy   : NOT in the mesh: a plain curl pod, the plaintext caller STRICT cuts off
 export NS_SHOP="${NS_SHOP:-shop}"
 export NS_LEGACY="${NS_LEGACY:-legacy}"
 export WAYPOINT_NAME="${WAYPOINT_NAME:-waypoint}"
@@ -106,7 +106,7 @@ helm_chart() { # helm_chart <name> -> prints args
 kc() { kubectl --context "$CTX" "$@"; }
 ic() { istioctl --context "$CTX" "$@"; }
 
-check_docker() { docker info >/dev/null 2>&1 || die "docker daemon not reachable — start Docker Desktop / OrbStack"; }
+check_docker() { docker info >/dev/null 2>&1 || die "docker daemon not reachable: start Docker Desktop / OrbStack"; }
 
 # ── probes ────────────────────────────────────────────────────────────────────
 # curl_code <namespace> <deployment> <method> [extra curl args...]

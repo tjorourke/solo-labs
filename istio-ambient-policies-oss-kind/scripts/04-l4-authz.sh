@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 04-l4-authz.sh — Policy 2: identity-based L4 authorization on catalog.
+# 04-l4-authz.sh: Policy 2: identity-based L4 authorization on catalog.
 #
 # A selector-based AuthorizationPolicy that only matches on the caller's mTLS
 # principal. ztunnel enforces it on the node where catalog runs. reporting is

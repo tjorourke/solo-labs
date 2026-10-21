@@ -1,0 +1,28 @@
+# Policy 4, tightened: DELETE needs a valid JWT AND the checkout identity.
+# Written by hand. Flightbay 0.4.5 does not generate a JWT rule that also names
+# the caller's identity. It is catalog-jwt-jwt-allow from 50-jwt.yaml with
+# principals added to the same source block, so both must match.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog-jwt-jwt-allow
+  namespace: shop
+spec:
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/shop/sa/checkout
+        requestPrincipals:
+        - testing@secure.istio.io/testing@secure.istio.io
+    to:
+    - operation:
+        methods:
+        - DELETE
+        ports:
+        - "80"
+  targetRefs:
+  - group: ""
+    kind: Service
+    name: catalog

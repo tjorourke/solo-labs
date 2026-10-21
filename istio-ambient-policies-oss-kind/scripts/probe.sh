@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# probe.sh — the same five calls, every time. Run it after each policy and read
+# probe.sh: the same five calls, every time. Run it after each policy and read
 # the column that changed.
 #
 #   checkout   GET     in mesh, the identity the policies allow

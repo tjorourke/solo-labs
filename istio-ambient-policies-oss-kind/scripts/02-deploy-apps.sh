@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 02-deploy-apps.sh — the shop app and the legacy caller, then enrolment.
+# 02-deploy-apps.sh: the shop app and the legacy caller, then enrolment.
 #
 #   1. kubectl apply: namespaces, catalog, checkout, reporting, legacy
 #   2. probe: everyone gets 200, nothing is in the mesh yet

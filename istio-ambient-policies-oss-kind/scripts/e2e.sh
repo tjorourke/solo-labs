@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# e2e.sh — the whole lab, unattended, with assertions. Exits non-zero on any
+# e2e.sh: the whole lab, unattended, with assertions. Exits non-zero on any
 # failed assertion. Runs the same numbered scripts a reader runs by hand, and
 # checks the probe matrix after each policy:
 #
-#                         checkout GET  checkout DELETE  reporting GET  legacy GET  checkout DELETE+JWT
+#                         checkout GET  checkout DELETE  reporting GET  legacy GET  checkout DELETE+JWT  reporting DELETE+JWT
 #   enrolled, no policy   200           200              200            200
 #   1 STRICT              200           200              200            000
 #   2 L4 authz            200           200              000            000
 #   waypoint, L4 revised  200           200              200            000
 #   3 L7 authz            200           403              403            000
-#   4 JWT                 200           403              403            000         200
+#   4 JWT (Flightbay)     200           403              403            000         200                  200
+#   4 JWT (tightened)     200           403              403            000         200                  403
 #
 #   ./scripts/e2e.sh            # build everything and assert after every step
 #   ./scripts/e2e.sh --test     # assert the END state of a cluster that is already up
-# Teardown: ./scripts/99-teardown.sh (kind delete cluster --name ambient-policies)
+# Teardown: ./scripts/99-teardown.sh (kind delete cluster --name ambient-policies-lab)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
@@ -22,7 +23,7 @@ FAILS=0
 assert() { # assert <label> <got> <want>
   if [[ "$2" == "$3" ]]; then ok "$1: $2"; else warn "$1: got '$2', want '$3'"; FAILS=$((FAILS+1)); fi
 }
-# poll_code <label> <timeout-s> <want> <curl_code args...> — a policy takes a
+# poll_code <label> <timeout-s> <want> <curl_code args...>: a policy takes a
 # moment to reach ztunnel or the waypoint, so wait for the expected code.
 poll_code() {
   local label="$1" timeout="$2" want="$3"; shift 3
@@ -75,7 +76,8 @@ poll_code "legacy GET reset"    30 000 "$NS_LEGACY" legacy GET
 step "ASSERT: waypoint in place, L4 policy revised"
 assert "exactly one waypoint pod" "$(kc -n "$NS_SHOP" get pods -l gateway.networking.k8s.io/gateway-name="$WAYPOINT_NAME" --no-headers | grep -c Running || true)" 1
 assert "shop uses the waypoint" "$(kc get ns "$NS_SHOP" -o jsonpath='{.metadata.labels.istio\.io/use-waypoint}')" "$WAYPOINT_NAME"
-assert "catalog-l4 admits the waypoint" "$(kc -n "$NS_SHOP" get authorizationpolicy catalog-l4 -o jsonpath='{.spec.rules[0].from[0].source.principals[0]}')" "cluster.local/ns/shop/sa/$WAYPOINT_NAME"
+assert "catalog-require-waypoint admits the waypoint" "$(kc -n "$NS_SHOP" get authorizationpolicy catalog-require-waypoint -o jsonpath='{.spec.rules[0].from[0].source.principals[0]}')" "cluster.local/ns/shop/sa/$WAYPOINT_NAME"
+assert "catalog-l4 deleted" "$(kc -n "$NS_SHOP" get authorizationpolicy catalog-l4 --no-headers --ignore-not-found | wc -l | tr -d ' ')" 0
 poll_code "checkout GET"    60 200 "$NS_SHOP" checkout GET
 poll_code "reporting GET (no L7 policy yet)" 30 200 "$NS_SHOP" reporting GET
 poll_code "legacy GET reset" 30 000 "$NS_LEGACY" legacy GET
@@ -97,9 +99,10 @@ step "ASSERT: waypoint bypass via pod IP is refused at L4"
 assert "checkout DELETE direct to pod IP" "$(direct_code)" 000
 
 step "ASSERT: end state (all four policies)"
+assert "catalog-strict-mtls is STRICT" "$(kc -n "$NS_SHOP" get peerauthentication catalog-strict-mtls -o jsonpath='{.spec.mtls.mode}')" STRICT
 assert_mesh
 assert "exactly one waypoint pod" "$(kc -n "$NS_SHOP" get pods -l gateway.networking.k8s.io/gateway-name="$WAYPOINT_NAME" --no-headers | grep -c Running || true)" 1
-assert "catalog-l4 admits the waypoint" "$(kc -n "$NS_SHOP" get authorizationpolicy catalog-l4 -o jsonpath='{.spec.rules[0].from[0].source.principals[0]}')" "cluster.local/ns/shop/sa/$WAYPOINT_NAME"
+assert "catalog-require-waypoint admits the waypoint" "$(kc -n "$NS_SHOP" get authorizationpolicy catalog-require-waypoint -o jsonpath='{.spec.rules[0].from[0].source.principals[0]}')" "cluster.local/ns/shop/sa/$WAYPOINT_NAME"
 poll_code "checkout DELETE, no token, 403"     60 403 "$NS_SHOP" checkout DELETE
 poll_code "checkout DELETE, bad token, 401"    30 401 "$NS_SHOP" checkout DELETE -H 'Authorization: Bearer not.a.token'
 poll_code "checkout DELETE, signed token, 200" 30 200 "$NS_SHOP" checkout DELETE -H "Authorization: Bearer $JWT"

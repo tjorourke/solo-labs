@@ -2,8 +2,8 @@
 # and the ServiceAccount is the whole difference: every policy in this lab that
 # names a caller names it by identity, never by IP or label.
 #
-#   checkout  — spiffe://cluster.local/ns/shop/sa/checkout   the caller policies allow
-#   reporting — spiffe://cluster.local/ns/shop/sa/reporting  the caller policies refuse
+#   checkout : spiffe://cluster.local/ns/shop/sa/checkout   the caller policies allow
+#   reporting: spiffe://cluster.local/ns/shop/sa/reporting  the caller policies refuse
 apiVersion: v1
 kind: ServiceAccount
 metadata:

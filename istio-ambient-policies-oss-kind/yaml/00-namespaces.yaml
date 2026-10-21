@@ -2,9 +2,9 @@
 # visible step (scripts/02-deploy-apps.sh labels shop), so the before and after
 # can be compared.
 #
-#   shop    — the app: catalog (server), checkout and reporting (callers).
+#   shop   : the app: catalog (server), checkout and reporting (callers).
 #             Enrolled in ambient with one label; no pod is ever restarted.
-#   legacy  — a caller that is NOT in the mesh. It stands in for the estate
+#   legacy : a caller that is NOT in the mesh. It stands in for the estate
 #             outside the mesh and is what STRICT mTLS cuts off.
 apiVersion: v1
 kind: Namespace

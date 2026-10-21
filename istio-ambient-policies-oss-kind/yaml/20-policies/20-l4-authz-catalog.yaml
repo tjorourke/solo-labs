@@ -1,4 +1,7 @@
 # Policy 2: L4 authorization by identity, enforced by ztunnel.
+# Written by hand. Flightbay 0.4.5 has no task that allows one service account
+# at L4 without a waypoint (its L4 tasks are "Deny by default" and
+# "Allow a namespace").
 #
 # A selector-based AuthorizationPolicy on the catalog pods that matches on the
 # caller's mTLS identity and nothing else: no methods, no paths, no headers.

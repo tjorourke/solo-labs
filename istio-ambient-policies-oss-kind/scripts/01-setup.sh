@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 01-setup.sh — one kind cluster with upstream OSS Istio in AMBIENT mode:
+# 01-setup.sh: one kind cluster with upstream OSS Istio in AMBIENT mode:
 #
 #   1. kind cluster (1 control-plane + 2 workers) + Gateway API CRDs
 #   2. istioctl, downloaded from the upstream GitHub release into .bin/
@@ -19,7 +19,7 @@ step "Creating kind cluster '$CLUSTER_NAME'"
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
   ok "cluster '$CLUSTER_NAME' already exists"
 else
-  show kind create cluster --config "$LAB_ROOT/kind/cluster.yaml"
+  show kind create cluster --name "$CLUSTER_NAME" --config "$LAB_ROOT/kind/cluster.yaml"
   ok "cluster '$CLUSTER_NAME' created"
 fi
 kc wait --for=condition=Ready nodes --all --timeout=120s >/dev/null

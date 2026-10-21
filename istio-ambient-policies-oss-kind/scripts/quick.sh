@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# quick.sh — the harness entry point every lab in this repo shares.
+# quick.sh: the harness entry point every lab in this repo shares.
 #
 #   ./scripts/quick.sh up          # build the cluster, apply every policy, assert (scripts/e2e.sh)
 #   ./scripts/quick.sh test        # assert against a cluster that is already up
-#   ./scripts/quick.sh teardown    # kind delete cluster --name ambient-policies
+#   ./scripts/quick.sh teardown    # kind delete cluster --name ambient-policies-lab
 #
 # scripts/lib.sh sources the repo-wide versions.env matrix, but this lab pins
 # upstream OSS Istio, which the matrix has no key for (it tracks the Solo build
