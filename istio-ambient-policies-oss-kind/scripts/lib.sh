@@ -2,16 +2,17 @@
 # lib.sh: shared helpers for istio-ambient-policies-oss-kind.
 #
 # One kind cluster running UPSTREAM community Istio in ambient mode from the
-# first helm install (no sidecar phase). A small shop app is enrolled with one
-# namespace label, then four policies land one at a time, each with a probe
-# that shows what changed:
+# first helm install (no sidecar phase). Istio Bookinfo is deployed and
+# enrolled by Flightbay's Deploy Bookinfo wizard, which also creates the
+# namespace waypoint. Then four policies land on ratings one at a time, each
+# with a probe that shows what changed:
 #
-#   1. PeerAuthentication STRICT      (ztunnel, L4)   the non-mesh caller is cut off from catalog
-#   2. AuthorizationPolicy by identity (ztunnel, L4)  only checkout may open the port
-#   3. waypoint + AuthorizationPolicy  (Envoy,   L7)  checkout may GET, nothing else
-#   4. RequestAuthentication + JWT     (Envoy,   L7)  DELETE needs a valid token
+#   1. PeerAuthentication STRICT       (ztunnel, L4)  the non-mesh caller is cut off from ratings
+#   2. AuthorizationPolicy by identity (ztunnel, L4)  only reviews may connect: the waypoint gets refused
+#   3. AuthorizationPolicy on waypoint (Envoy,   L7)  reviews may GET, nothing else
+#   4. RequestAuthentication + JWT     (Envoy,   L7)  POST needs a valid token
 #
-# Edition: OSS ONLY. Istio images from docker.io/istio, upstream Helm charts,
+# Edition: OSS. Istio images from docker.io/istio, upstream Helm charts,
 # istioctl from the upstream GitHub release. No licence, no registry auth.
 
 set -Eeuo pipefail
@@ -63,12 +64,14 @@ export CLUSTER_NAME="${CLUSTER_NAME:-ambient-policies-lab}"
 export CTX="kind-${CLUSTER_NAME}"
 export ISTIO_SYSTEM_NS="${ISTIO_SYSTEM_NS:-istio-system}"
 
-# shop     : ambient-enrolled: catalog (httpbin), checkout and reporting (curl)
+# bookinfo : deployed and enrolled by Flightbay (Deploy Bookinfo). The callers
+#            are reviews-v2 (sa bookinfo-reviews, the real ratings caller) and
+#            demo-client (sa bookinfo-demo-client, Flightbay's traffic pod).
 # legacy   : NOT in the mesh: a plain curl pod, the plaintext caller STRICT cuts off
-export NS_SHOP="${NS_SHOP:-shop}"
+export NS_APP="${NS_APP:-bookinfo}"
 export NS_LEGACY="${NS_LEGACY:-legacy}"
-export WAYPOINT_NAME="${WAYPOINT_NAME:-waypoint}"
-export CATALOG_URL="${CATALOG_URL:-http://catalog.${NS_SHOP}/anything}"
+export WAYPOINT_NAME="${WAYPOINT_NAME:-bookinfo-waypoint}"
+export RATINGS_URL="${RATINGS_URL:-http://ratings.${NS_APP}:9080/ratings/0}"
 
 # ── Istio: upstream OSS ───────────────────────────────────────────────────────
 export ISTIO_VERSION="${ISTIO_VERSION:-1.30.6}"
@@ -115,7 +118,7 @@ check_docker() { docker info >/dev/null 2>&1 || die "docker daemon not reachable
 curl_code() {
   local ns="$1" deploy="$2" method="$3"; shift 3
   kc -n "$ns" exec "deploy/$deploy" -- \
-    curl -s -o /dev/null -w '%{http_code}' -X "$method" --max-time 5 "$@" "$CATALOG_URL" 2>/dev/null || true
+    curl -s -o /dev/null -w '%{http_code}' -X "$method" --max-time 5 "$@" "$RATINGS_URL" 2>/dev/null || true
 }
 
 # ztunnel pod on the node a given pod runs on (policy is enforced there)
@@ -124,4 +127,16 @@ ztunnel_for() { # <namespace> <pod-name>
   node="$(kc -n "$1" get pod "$2" -o jsonpath='{.spec.nodeName}')"
   kc -n "$ISTIO_SYSTEM_NS" get pod -l app=ztunnel \
     --field-selector "spec.nodeName=$node" -o jsonpath='{.items[0].metadata.name}'
+}
+
+# wait_code <want> <curl_code args...>: a policy takes a few seconds to reach
+# ztunnel or the waypoint. Wait (up to 30s) until one probe shows it.
+wait_code() {
+  local want="$1"; shift
+  local i
+  for i in $(seq 1 15); do
+    [[ "$(curl_code "$@")" == "$want" ]] && return 0
+    sleep 2
+  done
+  warn "still not $want after 30s: $*"
 }

@@ -2,6 +2,8 @@
 # quick.sh: the harness entry point every lab in this repo shares.
 #
 #   ./scripts/quick.sh up          # build the cluster, apply every policy, assert (scripts/e2e.sh)
+#                                  # Bookinfo comes from test-helpers/deploy-bookinfo.sh here;
+#                                  # the lab page uses Flightbay's Deploy Bookinfo wizard
 #   ./scripts/quick.sh test        # assert against a cluster that is already up
 #   ./scripts/quick.sh teardown    # kind delete cluster --name ambient-policies-lab
 #

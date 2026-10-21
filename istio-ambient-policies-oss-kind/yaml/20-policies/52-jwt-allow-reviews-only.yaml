@@ -1,0 +1,31 @@
+# Policy 4, tightened: POST needs a valid token AND the reviews identity.
+# Hand-written. Flightbay's "Require a JWT" task has no caller field, so this is
+# its ratings-jwt-jwt-allow with one principal added. Same name, so applying it
+# replaces Flightbay's rule.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: flightbay
+    flightbay.dev/test-id: e019cb36e046e8a6
+  name: ratings-jwt-jwt-allow
+  namespace: bookinfo
+spec:
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/bookinfo/sa/bookinfo-reviews
+        requestPrincipals:
+        - testing@secure.istio.io/testing@secure.istio.io
+    to:
+    - operation:
+        methods:
+        - POST
+        ports:
+        - "9080"
+  targetRefs:
+  - group: ""
+    kind: Service
+    name: ratings

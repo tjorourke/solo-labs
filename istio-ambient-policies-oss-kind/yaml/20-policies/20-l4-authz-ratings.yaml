@@ -1,0 +1,21 @@
+# Policy 2: only reviews may connect to the ratings pods. Hand-written.
+# Flightbay's caller rules on this Service go on the waypoint (L7). This one
+# uses a selector and only a principal, so ztunnel on the ratings node
+# enforces it per connection. Because Flightbay already put a waypoint in
+# front of ratings, the connection ztunnel sees comes from the waypoint, so
+# this policy refuses every in-mesh caller. That is the point of the step.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: ratings-l4
+  namespace: bookinfo
+spec:
+  selector:
+    matchLabels:
+      app: ratings
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/bookinfo/sa/bookinfo-reviews

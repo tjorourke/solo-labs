@@ -1,38 +1,52 @@
 #!/usr/bin/env bash
-# 04-l4-authz.sh: Policy 2: identity-based L4 authorization on catalog.
+# 04-l4-authz.sh: Policy 2, identity-based L4 authorization on ratings.
 #
-# A selector-based AuthorizationPolicy that only matches on the caller's mTLS
-# principal. ztunnel enforces it on the node where catalog runs. reporting is
-# refused at the connection, before any HTTP; checkout is unaffected.
+#   1. ratings-l4 (hand-written): a selector-based ALLOW for the reviews
+#      identity only. ztunnel on the ratings node enforces it.
+#   2. Probe: every in-mesh caller gets 503. Flightbay put a waypoint in front
+#      of ratings, so the connection ztunnel checks comes from the waypoint's
+#      identity, not from reviews.
+#   3. ratings-require-waypoint (Flightbay, "Block traffic that skips the
+#      waypoint"), then delete ratings-l4. Only the waypoint may open the port.
+#   4. Probe: back to 200 in the mesh. The per-caller rule moves to L7 (step 5).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
 require kubectl
 
-step "Policy 2: AuthorizationPolicy catalog-l4 (ALLOW only the checkout identity)"
-show kc apply -f "$LAB_ROOT/yaml/20-policies/20-l4-authz-catalog.yaml"
-sleep 2
+step "Policy 2: AuthorizationPolicy ratings-l4 (ALLOW only bookinfo-reviews, hand-written)"
+show kc apply -f "$LAB_ROOT/yaml/20-policies/20-l4-authz-ratings.yaml"
+# ztunnel checks an L4 policy when a connection opens. The waypoint reuses its
+# open connections to the ratings pod, so while traffic keeps them busy they go
+# on returning 200. Restart the waypoint so every request needs a new one.
+show kc -n "$NS_APP" rollout restart "deploy/$WAYPOINT_NAME"
+kc -n "$NS_APP" rollout status "deploy/$WAYPOINT_NAME" --timeout=120s >/dev/null
+wait_code 503 "$NS_APP" reviews-v2 GET
+
+step "Probe: ratings-l4 refuses the waypoint"
+"$SCRIPT_DIR/probe.sh" --no-jwt
+log "503 from the waypoint. It reached the ratings pod as cluster.local/ns/$NS_APP/sa/$WAYPOINT_NAME,"
+log "and ratings-l4 only allows bookinfo-reviews, so ratings' ztunnel reset the waypoint's connection."
+
+step "Allow only the waypoint to reach ratings (YAML from Flightbay)"
+show kc apply -f "$LAB_ROOT/yaml/20-policies/31-require-waypoint.yaml"
+sleep 5
+pod_ip="$(kc -n "$NS_APP" get pod -l app=ratings -o jsonpath='{.items[0].status.podIP}')"
+direct() { kc -n "$NS_APP" exec deploy/reviews-v2 -- curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://${pod_ip}:9080/ratings/0" 2>/dev/null || true; }
+printf '  %-12s %-6s %-30s %s\n' reviews-v2 GET "direct to pod IP $pod_ip" "$(direct)  (ratings-l4 still allows reviews)"
+log "ALLOW policies add up. While ratings-l4 exists, reviews can skip the waypoint."
+
+step "Delete ratings-l4"
+show kc -n "$NS_APP" delete authorizationpolicy ratings-l4
+wait_code 200 "$NS_APP" reviews-v2 GET; sleep 3
+printf '  %-12s %-6s %-30s %s\n' reviews-v2 GET "direct to pod IP $pod_ip" "$(direct)  (reset: only the waypoint may connect)"
 
 step "Probe"
 "$SCRIPT_DIR/probe.sh" --no-jwt
-log "reporting is reset, checkout's DELETE still succeeds: ztunnel cannot see the method."
-log "Method, path and header rules need a waypoint. That is step 5."
-
-step "Where it was enforced: ztunnel on catalog's node"
-catalog_pod="$(kc -n "$NS_SHOP" get pod -l app=catalog -o jsonpath='{.items[0].metadata.name}')"
-zt="$(ztunnel_for "$NS_SHOP" "$catalog_pod")"
-show ic ztunnel-config policies --policy-namespace "$NS_SHOP"
-log "the deny, as ztunnel logged it:"
-kc -n "$ISTIO_SYSTEM_NS" logs "$zt" --since=1m 2>/dev/null \
-  | grep '"src.workload":"reporting' | grep '"direction":"inbound"' | grep 'policy rejection' | tail -1 \
-  | python3 -c 'import sys,json
-for l in sys.stdin:
-    try: d=json.loads(l)
-    except Exception: print("   ", l.strip()); continue
-    for k in ("src.identity","dst.identity","direction","error"):
-        print(f"    {k:14} {d.get(k)}")' || true
+log "Everyone in the mesh gets 200 again. ztunnel now only checks that the call came"
+log "through the waypoint. The waypoint has no policy yet."
 
 echo
-ok "Policy 2 in place: one identity may reach catalog, and the decision is made per connection."
-log "Next: ./scripts/05-waypoint.sh"
+ok "Policy 2 in place: ztunnel admits only the waypoint to ratings."
+log "Next: ./scripts/05-l7-authz.sh"

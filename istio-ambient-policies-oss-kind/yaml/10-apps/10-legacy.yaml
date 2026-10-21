@@ -1,7 +1,7 @@
-# legacy: a caller outside the mesh. Its namespace is never labelled, so no
-# ztunnel redirect applies to it and it talks plain TCP to catalog's pod IP.
-# While catalog accepts plaintext (the PERMISSIVE default) it gets 200 like
-# everyone else. The moment STRICT lands (step 3) its connections are reset.
+# legacy: a test caller outside the mesh (hand-written, not part of Bookinfo).
+# Its namespace is never labelled, so no ztunnel redirect applies to it and it
+# talks plain TCP to the ratings pod. While ratings accepts plaintext (the
+# PERMISSIVE default) it gets 200. Once STRICT lands its connections are reset.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
