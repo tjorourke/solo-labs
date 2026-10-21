@@ -1,4 +1,4 @@
-# Istio Ambient Policies on kind, with Bookinfo and YAML from Flightbay (OSS)
+# Istio Ambient Policies configured using Flightbay
 
 One kind cluster, `ambient-policies-lab`, running upstream Istio 1.30.6 in
 ambient mode. Images come from `docker.io/istio`, the charts from the upstream
