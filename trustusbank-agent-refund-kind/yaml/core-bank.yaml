@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: core-bank, namespace: bank}
+spec:
+  selector: {matchLabels: {app: core-bank}}
+  template:
+    metadata: {labels: {app: core-bank}}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: bank
+        image: python:3.12-slim
+        command: [python, /app/core_bank.py]
+        readinessProbe: {tcpSocket: {port: 8001}}
+        volumeMounts: [{name: app, mountPath: /app}]
+      volumes: [{name: app, configMap: {name: core-bank}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: core-bank, namespace: bank}
+spec:
+  selector: {app: core-bank}
+  ports: [{port: 8001}]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: {name: bank-gw, namespace: bank}
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners: [{name: http, port: 8080, protocol: HTTP}]
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: {name: core-bank, namespace: bank}
+spec:
+  static: {host: core-bank.bank.svc.cluster.local, port: 8001}
+  policies:
+    auth:
+      secretRef: {name: core-bank-key}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: core-bank, namespace: bank}
+spec:
+  parentRefs: [{name: bank-gw}]
+  rules:
+  - matches: [{path: {type: PathPrefix, value: /core}}]
+    backendRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: core-bank}]

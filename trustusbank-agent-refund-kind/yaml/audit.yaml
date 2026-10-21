@@ -1,0 +1,14 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: bank-audit, namespace: bank}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: Gateway, name: bank-gw}]
+  frontend:
+    accessLog:
+      attributes:
+        add:
+        - {name: audit.user, expression: 'jwt.preferred_username'}
+        - {name: audit.sub, expression: 'jwt.sub'}
+        - {name: audit.actor, expression: 'jwt.act.sub'}
+        - {name: audit.chain, expression: 'toJson(jwt.act)'}
+        - {name: audit.call, expression: 'request.headers["x-request-id"]'}

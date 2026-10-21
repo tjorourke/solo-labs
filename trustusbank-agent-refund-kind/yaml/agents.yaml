@@ -1,0 +1,33 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata: {name: orchestrator, namespace: bank}
+spec:
+  type: BYO
+  description: TrustUs Bank deterministic payment orchestrator
+  byo:
+    deployment:
+      image: trustusbank-orchestrator:4
+      imagePullPolicy: Never
+      serviceAccountName: orchestrator
+      labels: {bank-agent: orchestrator}
+      env: [{name: BANK_AGENT, value: orchestrator}]
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata: {name: ledger-agent, namespace: bank}
+spec:
+  type: BYO
+  description: TrustUs Bank ledger specialist with native ADK confirmation
+  byo:
+    deployment:
+      image: trustusbank-ledger:2
+      imagePullPolicy: Never
+      serviceAccountName: ledger-agent
+      labels: {bank-agent: ledger-agent}
+      env:
+      - {name: KAGENT_REQUIRE_APPROVAL, value: refund_payment}
+      - {name: MCP_CONNECT_TIMEOUT, value: '900'}
+      - {name: MCP_TERMINATE_ON_CLOSE, value: 'false'}
+      - {name: MCP_SERVERS_CONFIG, value: '[{"name":"payments","type":"remote","url":"http://bank-gw.bank.svc.cluster.local:8080/mcp"}]'}
+      - name: ANTHROPIC_API_KEY
+        valueFrom: {secretKeyRef: {name: bank-model, key: ANTHROPIC_API_KEY}}

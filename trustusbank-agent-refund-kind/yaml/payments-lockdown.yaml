@@ -1,0 +1,12 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: payments-gateway-only, namespace: bank}
+spec:
+  selector: {matchLabels: {app: payments-mcp}}
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: [cluster.local/ns/bank/sa/bank-gw]
+    to:
+    - operation: {ports: ['8000']}

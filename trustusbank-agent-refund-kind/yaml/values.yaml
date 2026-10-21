@@ -1,0 +1,19 @@
+licensing:
+  createSecret: false
+  secretName: enterprise-agentgateway-license
+tokenExchange:
+  enabled: true
+  issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
+  tokenExpiration: 15m
+  allowedSubjectClaims: [may_act, preferred_username]
+  subjectValidators:
+  - validatorType: remote
+    remoteConfig:
+      url: http://keycloak.keycloak.svc.cluster.local:8080/realms/bank/protocol/openid-connect/certs
+  - validatorType: remote
+    remoteConfig:
+      url: http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/.well-known/jwks.json
+  actorValidators:
+  - validatorType: k8s
+  apiValidators:
+  - validatorType: k8s

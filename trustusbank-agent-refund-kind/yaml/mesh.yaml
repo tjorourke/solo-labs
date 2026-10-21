@@ -1,0 +1,18 @@
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: {name: strict, namespace: bank}
+spec:
+  mtls: {mode: STRICT}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: ledger-workload, namespace: bank}
+spec:
+  selector: {matchLabels: {bank-agent: ledger-agent}}
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: [cluster.local/ns/bank/sa/orchestrator]
+    to:
+    - operation: {ports: ['8080']}

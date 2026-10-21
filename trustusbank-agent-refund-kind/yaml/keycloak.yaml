@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keycloak, namespace: keycloak}
+spec:
+  selector: {matchLabels: {app: keycloak}}
+  template:
+    metadata: {labels: {app: keycloak}}
+    spec:
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:26.3
+        args: [start-dev, --import-realm, --http-port=8080]
+        env:
+        - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
+        - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: admin}
+        - {name: KC_HOSTNAME, value: 'http://keycloak.keycloak.svc.cluster.local:8080'}
+        readinessProbe: {httpGet: {path: /realms/bank, port: 8080}, periodSeconds: 5}
+        volumeMounts: [{name: realm, mountPath: /opt/keycloak/data/import}]
+      volumes: [{name: realm, configMap: {name: realm}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: keycloak, namespace: keycloak}
+spec: {selector: {app: keycloak}, ports: [{port: 8080}]}

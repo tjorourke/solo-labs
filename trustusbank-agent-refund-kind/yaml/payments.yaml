@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: payments-mcp, namespace: bank}
+spec:
+  selector: {matchLabels: {app: payments-mcp}}
+  template:
+    metadata: {labels: {app: payments-mcp}}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: mcp
+        image: python:3.12-slim
+        command: [sh, -c, "pip install -q 'mcp==1.17.0' 'pydantic==2.11.9' && python /app/payments_mcp.py"]
+        readinessProbe: {tcpSocket: {port: 8000}, periodSeconds: 5}
+        volumeMounts: [{name: app, mountPath: /app}]
+      volumes: [{name: app, configMap: {name: payments-mcp}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: payments-mcp, namespace: bank}
+spec:
+  selector: {app: payments-mcp}
+  ports: [{name: http, port: 8000, appProtocol: kgateway.dev/mcp}]
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: {name: payments, namespace: bank}
+spec:
+  mcp:
+    targets:
+    - name: payments
+      static: {host: payments-mcp.bank.svc.cluster.local, port: 8000, path: /mcp, protocol: StreamableHTTP}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: payments, namespace: bank}
+spec:
+  parentRefs: [{name: bank-gw}]
+  rules:
+  - matches: [{path: {type: PathPrefix, value: /mcp}}]
+    backendRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: payments}]
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: sts-jwt, namespace: bank}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: payments}]
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      preserveToken: true
+      providers:
+      - issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
+        jwks:
+          remote:
+            jwksPath: /.well-known/jwks.json
+            backendRef: {group: '', kind: Service, name: enterprise-agentgateway, namespace: agentgateway-system, port: 7777}
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: payments-chain-authz, namespace: bank}
+spec:
+  targetRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: payments}]
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - 'mcp.tool.name == "get_payment" && has(jwt.act) && jwt.aud == "payments-mcp"'
+          - >-
+            mcp.tool.name == "refund_payment"
+            && jwt.aud == "payments-mcp"
+            && jwt.preferred_username == "priya"
+            && has(jwt.act) && jwt.act.sub == "system:serviceaccount:bank:ledger-agent"
+            && has(jwt.act.act) && jwt.act.act.sub == "system:serviceaccount:bank:orchestrator"
+            && !has(jwt.act.act.act)
+            && !jwt.sub.startsWith("system:serviceaccount:")

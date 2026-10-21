@@ -1,0 +1,20 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayParameters
+metadata: {name: bank-runtime, namespace: agentgateway-system}
+spec:
+  sharedExtensions:
+    extauth: {enabled: false}
+    extCache: {enabled: false}
+    ratelimiter: {enabled: false}
+    waf: {enabled: false}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata: {name: enterprise-agentgateway}
+spec:
+  controllerName: solo.io/enterprise-agentgateway
+  parametersRef:
+    group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayParameters
+    name: bank-runtime
+    namespace: agentgateway-system

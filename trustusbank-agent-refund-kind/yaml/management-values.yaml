@@ -1,0 +1,29 @@
+cluster: trustusbank-lab
+platform:
+  multiCluster:
+    enabled: false
+istio:
+  ambient:
+    enabled: false
+service:
+  type: ClusterIP
+products:
+  agentgateway:
+    enabled: true
+    namespace: agentgateway-system
+    features:
+      cost-management: false
+      cost-management-writes: false
+licensing:
+  createSecret: false
+  secretName: trustusbank-management-license
+telemetry:
+  metrics:
+    enabled: false
+  traces:
+    enabled: false
+  collector:
+    replicaCount: 0
+clickhouse:
+  persistentVolume:
+    enabled: false
