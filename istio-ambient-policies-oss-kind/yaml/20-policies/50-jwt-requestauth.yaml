@@ -1,0 +1,25 @@
+# Policy 4, part one: validate JWTs on calls to catalog.
+#
+# A RequestAuthentication tells the waypoint which issuer to trust and which
+# key to verify with. The key is inlined (jwks) so the lab has no outbound
+# dependency; in production jwksUri would point at the identity provider.
+# The issuer and key are Istio's published test pair, and jwt/demo.jwt is a
+# token it signed (sub: testing@secure.istio.io, no expiry worth mentioning).
+#
+# On its own this policy only rejects BAD tokens (401). A request with no
+# token still passes it; deciding that a token is REQUIRED is the
+# AuthorizationPolicy's job (51-l7-authz-catalog-jwt.yaml).
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: catalog-jwt
+  namespace: shop
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: catalog
+  jwtRules:
+    - issuer: testing@secure.istio.io
+      jwks: |
+        { "keys":[ {"e":"AQAB","kid":"DHFbpoIUqrY8t2zpA2qXfCmr5VO5ZEr4RzHU_-envvQ","kty":"RSA","n":"xAE7eB6qugXyCAG3yhh7pkDkT65pHymX-P7KfIupjf59vsdo91bSP9C8H07pSAGQO1MV_xFj9VswgsCg4R6otmg5PV2He95lZdHtOcU5DXIg_pbhLdKXbi66GlVeK6ABZOUW3WYtnNHD-91gVuoeJT_DwtGGcp4ignkgXfkiEm4sw-4sfb4qdt5oLbyVpmW6x9cfa7vs2WTfURiCrBoUqgBo_-4WTiULmmHSGZHOjzwa8WtrtOQGsAFjIbno85jp6MnGGGZPYZbDAa_b3y5u-YpW7ypZrvD8BgtKVjgtQgZhLAGezMt0ua3DRrWnKqTZ0BJ_EyxOGuHJrLsn00fnMQ"}]}

@@ -1,0 +1,61 @@
+# The two in-mesh callers. Same image, same namespace, different ServiceAccounts,
+# and the ServiceAccount is the whole difference: every policy in this lab that
+# names a caller names it by identity, never by IP or label.
+#
+#   checkout  — spiffe://cluster.local/ns/shop/sa/checkout   the caller policies allow
+#   reporting — spiffe://cluster.local/ns/shop/sa/reporting  the caller policies refuse
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: checkout
+  namespace: shop
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: checkout }
+  template:
+    metadata:
+      labels: { app: checkout }
+    spec:
+      serviceAccountName: checkout
+      containers:
+        - name: checkout
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c", "sleep infinity"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reporting
+  namespace: shop
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reporting
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: reporting }
+  template:
+    metadata:
+      labels: { app: reporting }
+    spec:
+      serviceAccountName: reporting
+      containers:
+        - name: reporting
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c", "sleep infinity"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

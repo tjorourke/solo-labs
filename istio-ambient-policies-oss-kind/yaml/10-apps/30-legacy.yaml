@@ -1,0 +1,31 @@
+# legacy — a caller outside the mesh. Its namespace is never labelled, so no
+# ztunnel redirect applies to it and it talks plain TCP to catalog's pod IP.
+# While catalog accepts plaintext (the PERMISSIVE default) it gets 200 like
+# everyone else. The moment STRICT lands (step 3) its connections are reset.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: legacy
+  namespace: legacy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legacy
+  namespace: legacy
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: legacy }
+  template:
+    metadata:
+      labels: { app: legacy }
+    spec:
+      serviceAccountName: legacy
+      containers:
+        - name: legacy
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c", "sleep infinity"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

@@ -1,0 +1,27 @@
+# Policy 3: L7 authorization, enforced by the waypoint.
+#
+# targetRefs instead of a selector: the policy attaches to the catalog Service
+# and runs in the waypoint's Envoy, which is the only place in ambient that can
+# read HTTP. The rule combines identity and method: checkout may GET, and that
+# is all. checkout's DELETE and every call from reporting come back as an
+# HTTP 403 from the waypoint, a response rather than a reset, because the
+# connection was fine and the request was not.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: catalog-l7
+  namespace: shop
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: catalog
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/shop/sa/checkout
+      to:
+        - operation:
+            methods: ["GET"]

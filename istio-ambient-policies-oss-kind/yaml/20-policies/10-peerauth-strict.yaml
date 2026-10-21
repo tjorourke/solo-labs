@@ -1,0 +1,16 @@
+# Policy 1: mesh-wide STRICT mTLS.
+#
+# In the istio-system (root) namespace, so it applies to every enrolled
+# workload. Before this, ztunnel accepts both mTLS (HBONE) and plaintext for
+# an enrolled pod, which is what lets the legacy caller in. After it, only
+# HBONE is accepted, and anything outside the mesh is reset at the TCP level.
+#
+# Enforced by ztunnel. No waypoint involved, no pod restarted.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
