@@ -1,45 +1,229 @@
 apiVersion: kagent.dev/v1alpha2
-kind: Agent
-metadata: {name: orchestrator, namespace: bank}
+kind: ModelConfig
+metadata: {name: bank-model, namespace: bank}
 spec:
-  type: BYO
-  description: TrustUs Bank deterministic payment orchestrator
-  byo:
-    deployment:
-      image: trustusbank-orchestrator:8
-      imagePullPolicy: Never
-      serviceAccountName: orchestrator
-      labels: {bank-agent: orchestrator}
-      env:
-      - {name: BANK_AGENT, value: orchestrator}
-      - {name: BANK_HUMAN_ISSUER, value: 'http://keycloak.localtest.me:18580/realms/bank'}
+  provider: OpenAI
+  model: claude-haiku-4-5
+  apiKeySecret: bank-model-placeholder
+  apiKeySecretKey: ANTHROPIC_API_KEY
+  openAI:
+    baseUrl: http://bank-gw.bank.svc.cluster.local:8080/v1
+    maxTokens: 4096
+    temperature: '0'
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata: {name: customers, namespace: bank}
+spec:
+  description: Customer records, contact history and read-only payment status.
+  protocol: STREAMABLE_HTTP
+  url: http://bank-gw.bank.svc.cluster.local:8080/customers
+  timeout: 60s
+  terminateOnClose: true
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata: {name: fraud, namespace: bank}
+spec:
+  description: Refund risk scores from the fraud vendor.
+  protocol: STREAMABLE_HTTP
+  url: http://bank-gw.bank.svc.cluster.local:8080/fraud-tools
+  timeout: 60s
+  terminateOnClose: true
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata: {name: payments, namespace: bank}
+spec:
+  description: Payment status and refunds through the bank gateway.
+  protocol: STREAMABLE_HTTP
+  url: http://bank-gw.bank.svc.cluster.local:8080/mcp
+  timeout: 60s
+  terminateOnClose: true
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
-metadata: {name: ledger-agent, namespace: bank}
+metadata:
+  name: customer-agent
+  namespace: bank
+  labels: {kagent.solo.io/waypoint: 'true', bank-agent: customer-agent}
 spec:
-  type: BYO
-  description: TrustUs Bank ledger specialist with native ADK confirmation
-  byo:
+  type: Declarative
+  description: Read customer records and explain failed payments.
+  declarative:
+    runtime: python
+    modelConfig: bank-model
     deployment:
-      image: trustusbank-ledger:2
-      imagePullPolicy: Never
-      serviceAccountName: ledger-agent
-      labels: {bank-agent: ledger-agent}
-      annotations:
-        bank-callback-context-version: '1'
-      volumes:
-      - name: callback-context
-        configMap: {name: bank-legacy-runtime-context}
-      volumeMounts:
-      - name: callback-context
-        mountPath: /opt/bank-legacy-runtime
-        readOnly: true
+      labels: {bank-agent: customer-agent, bank-role: agent}
       env:
-      - {name: PYTHONPATH, value: /opt/bank-legacy-runtime}
-      - {name: KAGENT_REQUIRE_APPROVAL, value: refund_payment}
-      - {name: MCP_CONNECT_TIMEOUT, value: '900'}
-      - {name: MCP_TERMINATE_ON_CLOSE, value: 'false'}
-      - {name: MCP_SERVERS_CONFIG, value: '[{"name":"payments","type":"remote","url":"http://bank-gw.bank.svc.cluster.local:8080/mcp"}]'}
-      - name: ANTHROPIC_API_KEY
-        valueFrom: {secretKeyRef: {name: bank-model, key: ANTHROPIC_API_KEY}}
+      - {name: KAGENT_PROPAGATE_TOKEN, value: 'true'}
+      - {name: KAGENT_STS_AUDIENCE, value: customers-mcp}
+    systemMessage: |
+      You are TrustUs Bank's customer records specialist. Call get_customer and
+      get_contact_history for the supplied payment identifier. Report the actual
+      customer, failed payment amount and reason. You cannot issue refunds.
+      Do not invent records. Answer in plain UK English.
+      Never call ask_user or request confirmation for these read-only tools.
+      If a tool is unavailable, return CUSTOMER_RECORDS_UNAVAILABLE to the caller.
+    tools:
+    - type: McpServer
+      mcpServer: {apiGroup: kagent.dev, kind: RemoteMCPServer, name: customers, toolNames: [get_customer, get_contact_history]}
+    a2aConfig:
+      skills:
+      - {id: customers, name: Customer records, description: Read customer and payment context, tags: [customers]}
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: fraud-agent
+  namespace: bank
+  labels: {kagent.solo.io/waypoint: 'true', bank-agent: fraud-agent}
+spec:
+  type: Declarative
+  description: Check refund risk with the fraud vendor.
+  declarative:
+    runtime: python
+    modelConfig: bank-model
+    deployment:
+      labels: {bank-agent: fraud-agent, bank-role: agent}
+      env:
+      - {name: KAGENT_PROPAGATE_TOKEN, value: 'true'}
+      - {name: KAGENT_STS_AUDIENCE, value: fraud-mcp}
+    systemMessage: |
+      You are TrustUs Bank's fraud specialist. Use score_refund and list_flags
+      for the supplied payment. Report the vendor's actual risk result. You
+      cannot approve or issue refunds. Do not invent scores or credentials.
+      Never call ask_user or request confirmation. If a tool is unavailable,
+      return FRAUD_CHECK_UNAVAILABLE to the caller.
+    tools:
+    - type: McpServer
+      mcpServer: {apiGroup: kagent.dev, kind: RemoteMCPServer, name: fraud, toolNames: [score_refund, list_flags]}
+    a2aConfig:
+      skills:
+      - {id: fraud, name: Refund risk, description: Score a refund and list risk flags, tags: [fraud]}
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: refunds-agent
+  namespace: bank
+  labels: {kagent.solo.io/waypoint: 'true', bank-agent: refunds-agent}
+spec:
+  type: Declarative
+  description: Check failed payments and request refunds through the bank gateway.
+  declarative:
+    runtime: python
+    modelConfig: bank-model
+    deployment:
+      labels: {bank-agent: refunds-agent, bank-role: agent}
+      env:
+      - {name: KAGENT_PROPAGATE_TOKEN, value: 'true'}
+      - {name: KAGENT_STS_AUDIENCE, value: payments-mcp}
+    systemMessage: |
+      You are TrustUs Bank's refunds specialist. Always call get_payment first.
+      Only call refund_payment when explicitly asked to refund a FAILED payment,
+      for exactly its recorded amount. For an investigation, read only.
+      For an explicit refund request, always execute refund_payment for the
+      full recorded amount. You do not approve or deny refund requests yourself:
+      the gateway makes that decision. Never substitute a recommendation or an
+      approval request for the actual tool call. Never retry a refused call with
+      a smaller amount. If the tool returns error, connection lost, or isError,
+      return REFUND_REFUSED with the payment identifier and recorded amount.
+      Those errors are not receipts. Success requires the exact bank receipt
+      with refund=ISSUED and credential_valid=true. Never invent success.
+      Never call ask_user or request human confirmation; the assistant owns approval.
+    tools:
+    - type: McpServer
+      mcpServer: {apiGroup: kagent.dev, kind: RemoteMCPServer, name: payments, toolNames: [get_payment, refund_payment]}
+    a2aConfig:
+      skills:
+      - {id: refunds, name: Customer refunds, description: Check failed payments and request refunds, tags: [payments, refunds]}
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: customer-service-assistant
+  namespace: bank
+  labels: {kagent.solo.io/waypoint: 'true', bank-agent: customer-service-assistant}
+spec:
+  type: Declarative
+  description: Carol's read-only customer service assistant.
+  declarative:
+    runtime: python
+    modelConfig: bank-model
+    deployment:
+      labels: {bank-agent: customer-service-assistant, bank-role: agent}
+      env:
+      - {name: KAGENT_PROPAGATE_TOKEN, value: 'true'}
+    systemMessage: |
+      You help customer service at TrustUs Bank. Delegate the payment enquiry to
+      customer-agent and explain what happened. You have no refund tools. Refer
+      refund requests to payments operations. Never invent payment outcomes.
+      Never call ask_user. If customer records are unavailable, say so and stop.
+      Do not estimate settlement times or promise an automatic reversal. Say a
+      refund is due and payments operations must arrange it.
+    tools:
+    - type: Agent
+      agent: {name: customer-agent}
+    a2aConfig:
+      skills:
+      - {id: service, name: Customer service, description: Explain a customer's failed payment, tags: [customers]}
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: payments-assistant
+  namespace: bank
+  labels: {kagent.solo.io/waypoint: 'true', bank-agent: payments-assistant}
+spec:
+  type: Declarative
+  description: The payments team's assistant. Investigates payments and arranges refunds.
+  declarative:
+    runtime: python
+    modelConfig: bank-model
+    deployment:
+      labels: {bank-agent: payments-assistant, bank-role: agent}
+      env:
+      - {name: KAGENT_PROPAGATE_TOKEN, value: 'true'}
+      - {name: KAGENT_STS_AUDIENCE, value: payments-mcp}
+    systemMessage: |
+      You help payments operations at TrustUs Bank. For every new payment,
+      delegate customer context to customer-agent, risk to fraud-agent and
+      payment status to refunds-agent. Investigating alone never issues a refund.
+      When asking the refunds specialist to act, send the payment identifier
+      and requested action. Do not give it policy advice or ask it to escalate
+      instead of executing its tool.
+      When explicitly asked to refund, ask refunds-agent to issue it after the
+      customer and risk checks. If refunds-agent reports that the gateway refused
+      because the amount exceeds GBP 10,000, immediately call your own
+      refund_payment_with_approval with that exact payment and amount. This tool pauses for
+      the person's approval in the chat. Do not merely ask for approval in prose.
+      For EVERY requested refund above GBP 10,000, you MUST call your own
+      refund_payment_with_approval after the specialist attempt, even if the specialist's
+      prose incorrectly claims success. You cannot complete a large refund
+      without this tool call and its returned ISSUED receipt. The specialist
+      cannot issue a large refund. Do not use ask_user or ask a prose question:
+      refund_payment_with_approval itself displays the human approval card.
+      If the refunds agent is unavailable or access is denied for any other
+      reason, report that refunds are unavailable. Never use your own tool to
+      bypass an unavailable agent, a kill switch, or another denial.
+      Never invent identifiers, approvals or receipts. Answer in plain UK English.
+      Never call ask_user. If a specialist cannot complete a read-only check,
+      explain that its records are unavailable instead of asking for confirmation.
+    tools:
+    - type: Agent
+      agent: {name: customer-agent}
+    - type: Agent
+      agent: {name: fraud-agent}
+    - type: Agent
+      agent: {name: refunds-agent}
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: payments
+        toolNames: [refund_payment_with_approval]
+        requireApproval: [refund_payment_with_approval]
+    a2aConfig:
+      skills:
+      - {id: payments, name: Payments operations, description: Investigate and refund customer payments, tags: [payments]}

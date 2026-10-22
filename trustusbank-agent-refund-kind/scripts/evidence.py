@@ -1,51 +1,44 @@
-"""Build evidence only from emitted gateway access-log attributes."""
+"""Join authenticated kagent events to gateway traces and mock-bank receipts."""
 import json
-import re
-import sys
-import os
-from pathlib import Path
+from gateway_client import receipts
 
-legal_reference = {
-    'verified': '21 Oct 2026',
-    'regulation': 'DORA, Regulation (EU) 2022/2554, Article 9 (OJ L 333/1, 27.12.2022)',
-    'source': 'https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32022R2554',
-    'quotes': {
-        '9(4)(b)': 'following a risk-based approach, establish a sound network and infrastructure management structure using appropriate techniques, methods and protocols that may include implementing automated mechanisms to isolate affected information assets in the event of cyber-attacks',
-        '9(4) second subparagraph': 'For the purposes of the first subparagraph, point (b), financial entities shall design the network connection infrastructure in a way that allows it to be instantaneously severed or segmented in order to minimise and prevent contagion, especially for interconnected financial processes.',
-        '9(4)(c)': 'implement policies that limit the physical or logical access to information assets and ICT assets to what is required for legitimate and approved functions and activities only, and establish to that end a set of policies, procedures and controls that address access rights and ensure a sound administration thereof',
-        '9(4)(d)': 'implement policies and protocols for strong authentication mechanisms, based on relevant standards and dedicated control systems, and protection measures of cryptographic keys whereby data is encrypted based on results of approved data classification and ICT risk assessment processes',
-    },
-}
-control_mapping = {
-    'step 6 instance switch': 'relevant to DORA 9(4)(b) and 9(4) second subparagraph',
-    'steps 2, 3 and 5 access controls': 'relevant to DORA 9(4)(c)',
-    'steps 1 and 3 authentication and keys': 'relevant to DORA 9(4)(d)',
-}
 
-records = []
-for line in sys.stdin:
-    if 'audit.chain=' not in line or 'mcp.method.name=tools/call' not in line:
-        continue
-    fields = {}
-    for match in re.finditer(r'([\w.]+)=("(?:\\.|[^"\\])*"|\S+)', line):
-        key, value = match.groups()
-        if value.startswith('"'):
-            value = json.loads(value)
-        fields[key] = value
-    if 'audit.chain' in fields:
-        fields['audit.chain'] = json.loads(fields['audit.chain'])
-    records.append({'timestamp': line.split()[0], 'attributes': fields,
-                    'source': 'bank/bank-gw access log',
-                    'control_mapping': control_mapping})
-assert records, 'No real tool-call audit attributes found'
-pack = {'legal_reference': legal_reference, 'calls': records}
-approval_path = os.environ.get('BANK_APPROVAL_EVIDENCE')
-if approval_path:
-    approval = json.loads(Path(approval_path).read_text())
-    linked = [r for r in records if r['attributes'].get('audit.call') == approval['context_id']
-              and r['attributes'].get('gen_ai.tool.name') == 'refund_payment'
-              and r['attributes'].get('audit.sub') == approval['human_sub']]
-    assert linked, 'No gateway refund call matches the native approval context and human subject'
-    pack['calls'] = linked
-    pack['approval'] = approval
-print(json.dumps(pack, indent=2))
+def session_evidence(client, task):
+    data = client.session(task['contextId'])
+    trace_ids = []
+    calls, responses = [], []
+    for event in sorted(data['events'], key=lambda event: event['created_at']):
+        body = json.loads(event['data'])
+        # Read only the trace header. Never persist the session's bearer header.
+        trace = body.get('actions', {}).get('state_delta', {}).get('headers', {}).get('traceparent')
+        if trace:
+            trace_id = trace.split('-')[1]
+            if trace_id not in trace_ids:
+                trace_ids.append(trace_id)
+        for part in (body.get('content') or {}).get('parts', []):
+            if part.get('function_call'):
+                calls.append(part['function_call'])
+            if part.get('function_response'):
+                responses.append(part['function_response'])
+    return {'user': client.user, 'task_id': task['id'], 'context_id': task['contextId'],
+            'state': task['status']['state'], 'trace_id': trace_ids[-1] if trace_ids else None,
+            'trace_ids': trace_ids,
+            'calls': calls, 'responses': responses}
+
+
+def approved_record(client, pending, completed, before=None):
+    before = before or session_evidence(client, pending)
+    after = session_evidence(client, completed)
+    confirmation = next(p['data'] for p in pending['status']['message']['parts']
+                        if p.get('data', {}).get('name') == 'adk_request_confirmation')
+    original = confirmation['args']['originalFunctionCall']
+    assert original['name'] == 'refund_payment_with_approval'
+    payment_id = original['args']['payment_id']
+    receipt = next(r for r in receipts() if r['payment_id'] == payment_id)
+    assert receipt['refund'] == 'ISSUED' and receipt['credential_valid']
+    assert receipt['act'] == 'system:serviceaccount:bank:payments-assistant'
+    assert receipt['traceparent'].split('-')[1] == after['trace_id']
+    return {'source': 'Authenticated kagent approval, gateway trace and mock bank',
+            'approved_by': client.user, 'approval_id': confirmation['id'],
+            'arguments': original['args'], 'before': before, 'after': after,
+            'receipt': receipt, 'receipt_trace_id': receipt['traceparent'].split('-')[1]}

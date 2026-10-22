@@ -5,19 +5,27 @@ global:
 providers:
   default: anthropic
   anthropic:
-    apiKeySecretRef: bank-model
+    apiKeySecretRef: bank-model-placeholder
     apiKeySecretKey: ANTHROPIC_API_KEY
 oidc:
   issuer: http://keycloak.localtest.me:18580/realms/bank
   clientId: bank-enterprise
   secretRef: bank-enterprise-oidc
-  # The bank bridge performs the real STS delegation itself.
+  stsWellKnownUri: http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/.well-known/openid-configuration
+  # 0.5.11 still needs this: otherwise the controller attempts its legacy OBO
+  # signer before the agent-side STS exchange and returns "handler not ready".
   skipOBO: true
+controller:
+  remoteJwksConfig:
+    serviceRef: {name: enterprise-agentgateway, namespace: agentgateway-system, port: 7777}
+    path: /.well-known/jwks.json
 rbac:
   roleMapping:
     roleMapper: 'has(claims.groups) ? claims.groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
     roleMappings:
       payments-ops: global.Admin
+      customer-service: global.Reader
+      security-ops: global.Admin
 database:
   postgres:
     bundled:

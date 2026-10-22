@@ -1,11 +1,4 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata: {name: orchestrator, namespace: bank}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata: {name: ledger-agent, namespace: bank}
----
+# The kagent controller creates each declarative agent's own ServiceAccount.
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: rogue-agent, namespace: bank}

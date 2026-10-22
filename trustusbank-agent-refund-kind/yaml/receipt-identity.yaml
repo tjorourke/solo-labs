@@ -1,0 +1,26 @@
+# Overwrite caller-supplied identity headers using verified STS claims, then strip
+# the bearer before forwarding. The MCP server passes only these audit fields on.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: payments-receipt-identity, namespace: bank}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: payments}]
+  traffic:
+    transformation:
+      request:
+        set:
+        - {name: x-bank-sub, value: 'jwt.sub'}
+        - {name: x-bank-actor, value: 'has(jwt.act) ? jwt.act.sub : ""'}
+        remove: [authorization]
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: strip-tool-tokens, namespace: bank}
+spec:
+  targetRefs:
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: customers}
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: fraud}
+  traffic:
+    transformation:
+      request:
+        remove: [authorization]

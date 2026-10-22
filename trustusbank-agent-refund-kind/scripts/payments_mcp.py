@@ -1,5 +1,6 @@
 """Disposable payment tools. The gateway owns token verification and tool policy."""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
+from bank_data import payment
 import json
 import urllib.request
 import urllib.error
@@ -9,18 +10,24 @@ mcp = FastMCP('payments', host='0.0.0.0', port=8000, stateless_http=True, json_r
 
 @mcp.tool()
 def get_payment(payment_id: str) -> dict:
-    return {'payment_id': payment_id, 'status': 'FAILED', 'amount_gbp': 25000 if payment_id == 'PAY-25000' else 1250,
-            'reason': 'beneficiary bank timeout'}
+    return payment(payment_id)
 
 
 @mcp.tool()
-def refund_payment(payment_id: str, amount_gbp: float) -> dict:
-    if amount_gbp <= 0:
-        raise ValueError('Refund must be positive')
+def refund_payment(payment_id: str, amount_gbp: float, ctx: Context) -> dict:
+    """Refund exactly the recorded amount of a failed payment."""
+    if amount_gbp != payment(payment_id)['amount_gbp']:
+        raise ValueError('Refund must equal the recorded payment amount')
+    incoming = ctx.request_context.request.headers
+    headers = {'Content-Type': 'application/json'}
+    # Identity headers are overwritten from verified claims at bank-gw.
+    for name in ('x-bank-sub', 'x-bank-actor', 'traceparent', 'tracestate'):
+        if incoming.get(name):
+            headers[name] = incoming[name]
     request = urllib.request.Request(
         'http://bank-gw.bank.svc.cluster.local:8080/core/refund',
         data=json.dumps({'payment_id': payment_id, 'amount_gbp': amount_gbp}).encode(),
-        headers={'Content-Type': 'application/json'})
+        headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=10) as reply:
             return json.load(reply)
@@ -28,4 +35,15 @@ def refund_payment(payment_id: str, amount_gbp: float) -> dict:
         raise ValueError(f'Core bank refused refund: HTTP {error.code}') from error
 
 
-mcp.run(transport='streamable-http')
+@mcp.tool()
+def refund_payment_with_approval(payment_id: str, amount_gbp: float, ctx: Context) -> dict:
+    """Request human approval and then issue a refund above the autonomous limit.
+
+    The payments assistant must attach kagent requireApproval to this tool.
+    The gateway permits only that assistant's delegated token to invoke it.
+    """
+    return refund_payment(payment_id, amount_gbp, ctx)
+
+
+if __name__ == '__main__':
+    mcp.run(transport='streamable-http')

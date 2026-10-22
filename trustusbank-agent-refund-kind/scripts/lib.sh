@@ -19,21 +19,13 @@ tools() {
   k -n bank wait --for=condition=Ready pod/tools --timeout=180s >/dev/null
 }
 incurl() { k -n bank exec tools -- curl --max-time "${CURL_MAX_TIME:-25}" -sS "$@"; }
+core_probe() {
+  k -n bank exec deployment/payments-mcp -- python -c '
+import urllib.request, urllib.error, json
+try:
+ r=urllib.request.urlopen(urllib.request.Request("http://bank-gw.bank.svc.cluster.local:8080/core",data=b"{}",headers={"Content-Type":"application/json"}),timeout=15)
+except urllib.error.HTTPError as e: r=e
+print(r.read().decode()); print("HTTP",r.code)'
+}
 KC=http://keycloak.keycloak.svc.cluster.local:8080/realms/bank/protocol/openid-connect/token
 STS=http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
-GW=http://bank-gw.bank.svc.cluster.local:8080
-user_token() { incurl "$KC" -d grant_type=password -d client_id=payments-ops -d username=bob -d password=password | access_token; }
-access_token() { python3 -c 'import json,sys; d=json.load(sys.stdin); assert "access_token" in d,d; print(d["access_token"])'; }
-exchange() {
-  incurl "$STS/oauth2/token" -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-    -d subject_token_type=urn:ietf:params:oauth:token-type:jwt -d "subject_token=$1" \
-    -d actor_token_type=urn:ietf:params:oauth:token-type:jwt -d "actor_token=$2" -d "audience=$3"
-}
-claims() { python3 -c 'import base64,json,sys;p=sys.stdin.read().strip().split(".")[1];print(json.dumps(json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4))),indent=2))'; }
-chain() {
-  U=$(user_token)
-  O=$(k -n bank create token orchestrator --duration=10m)
-  L=$(k -n bank create token ledger-agent --duration=10m)
-  H1=$(exchange "$U" "$O" ledger-agent | access_token)
-  H2=$(exchange "$H1" "$L" payments-mcp | access_token)
-}

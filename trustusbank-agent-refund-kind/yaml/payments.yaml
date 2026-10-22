@@ -4,8 +4,9 @@ metadata: {name: payments-mcp, namespace: bank}
 spec:
   selector: {matchLabels: {app: payments-mcp}}
   template:
-    metadata: {labels: {app: payments-mcp}}
+    metadata: {labels: {app: payments-mcp, bank-tool: 'true'}}
     spec:
+      serviceAccountName: payments-mcp
       automountServiceAccountToken: false
       containers:
       - name: mcp
@@ -17,7 +18,7 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: payments-mcp, namespace: bank}
+metadata: {name: payments-mcp, namespace: bank, labels: {bank-mcp: payments}}
 spec:
   selector: {app: payments-mcp}
   ports: [{name: http, port: 8000, appProtocol: kgateway.dev/mcp}]
@@ -26,16 +27,20 @@ apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
 metadata: {name: payments, namespace: bank}
 spec:
-  mcp:
+  entMcp:
+    failureMode: FailClosed
+    toolMode: Standard
     targets:
     - name: payments
-      static: {host: payments-mcp.bank.svc.cluster.local, port: 8000, path: /mcp, protocol: StreamableHTTP}
+      selector:
+        namespaces: {matchLabels: {kubernetes.io/metadata.name: bank}}
+        services: {matchLabels: {bank-mcp: payments}}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata: {name: payments, namespace: bank}
 spec:
-  parentRefs: [{name: bank-gw}]
+  parentRefs: [{group: '', kind: Service, name: bank-gw, port: 8080}]
   rules:
   - matches: [{path: {type: PathPrefix, value: /mcp}}]
     backendRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: payments}]
@@ -44,10 +49,13 @@ apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata: {name: sts-jwt, namespace: bank}
 spec:
-  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: payments}]
+  targetRefs:
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: payments}
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: customers}
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: fraud}
   traffic:
     jwtAuthentication:
-      mode: Strict
+      mode: Optional
       preserveToken: true
       providers:
       - issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
@@ -58,7 +66,7 @@ spec:
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
-metadata: {name: payments-chain-authz, namespace: bank}
+metadata: {name: payments-tool-policy, namespace: bank}
 spec:
   targetRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: payments}]
   backend:
@@ -67,12 +75,42 @@ spec:
         action: Allow
         policy:
           matchExpressions:
-          - 'mcp.tool.name == "get_payment" && has(jwt.act) && jwt.aud == "payments-mcp"'
+          - 'source.identity.namespace == "kagent" && source.identity.serviceAccount == "kagent-controller" && mcp.methodName == "tools/list"'
+          - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "refunds-agent" && mcp.tool.name in ["get_payment", "refund_payment"]'
+          - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "payments-assistant" && mcp.tool.name == "refund_payment_with_approval"'
+          - 'mcp.tool.name == "get_payment" && has(jwt.act) && jwt.aud == "payments-mcp" && jwt.act.sub == "system:serviceaccount:bank:refunds-agent"'
           - >-
             mcp.tool.name == "refund_payment"
             && jwt.aud == "payments-mcp"
-            && jwt.preferred_username == "bob"
-            && has(jwt.act) && jwt.act.sub == "system:serviceaccount:bank:ledger-agent"
-            && has(jwt.act.act) && jwt.act.act.sub == "system:serviceaccount:bank:orchestrator"
-            && !has(jwt.act.act.act)
+            && "payments-ops" in jwt.groups
+            && has(jwt.act) && jwt.act.sub == "system:serviceaccount:bank:refunds-agent"
             && !jwt.sub.startsWith("system:serviceaccount:")
+          - >-
+            mcp.tool.name == "refund_payment_with_approval"
+            && jwt.aud == "payments-mcp"
+            && "payments-ops" in jwt.groups
+            && has(jwt.act) && jwt.act.sub == "system:serviceaccount:bank:payments-assistant"
+            && !has(jwt.act.act)
+            && !jwt.sub.startsWith("system:serviceaccount:")
+---
+# Amounts are request data, not tool metadata. Check the buffered JSON at the
+# traffic phase so listing keeps refund_payment visible and a refusal is HTTP 403.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: refund-amount-limit, namespace: bank}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: payments}]
+  traffic:
+    authorization:
+      action: Require
+      policy:
+        matchExpressions:
+        - >-
+          request.method != "POST" || json(request.body).with(b,
+            b.method != "tools/call" || !(b.params.name in ["refund_payment", "refund_payment_with_approval"]) ||
+            (has(jwt.act) &&
+              ((jwt.act.sub == "system:serviceaccount:bank:refunds-agent" &&
+                double(b.params.arguments.amount_gbp) > 0.0 &&
+                double(b.params.arguments.amount_gbp) <= 10000.0) ||
+               (jwt.act.sub == "system:serviceaccount:bank:payments-assistant" &&
+                !has(jwt.act.act)))))

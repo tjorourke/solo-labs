@@ -40,6 +40,8 @@ rbac:
     roleMapper: 'has(claims.groups) ? claims.groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
     roleMappings:
       payments-ops: global.Admin
+      customer-service: global.Reader
+      security-ops: global.Admin
 telemetry:
   metrics:
     enabled: false

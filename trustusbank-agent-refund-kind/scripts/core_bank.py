@@ -34,8 +34,16 @@ class Bank(BaseHTTPRequestHandler):
         self.end_headers()
         result = {'credential_valid': valid, 'payment_id': body.get('payment_id', 'PAY-7781')}
         if valid and self.path == '/core/refund':
-            result.update(refund='ISSUED', amount_gbp=body['amount_gbp'], mock=True)
-            refunds.append({**result, 'timestamp': datetime.now(timezone.utc).isoformat()})
+            previous = next((r for r in refunds if r['payment_id'] == result['payment_id']), None)
+            if previous:
+                result = {**previous, 'idempotent': True}
+            else:
+                result.update(refund='ISSUED', amount_gbp=body['amount_gbp'], mock=True,
+                              sub=self.headers.get('X-Bank-Sub'),
+                              act=self.headers.get('X-Bank-Actor'),
+                              traceparent=self.headers.get('traceparent'),
+                              timestamp=datetime.now(timezone.utc).isoformat())
+                refunds.append(result)
         self.wfile.write(json.dumps(result).encode())
 
 

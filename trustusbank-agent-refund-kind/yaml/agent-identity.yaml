@@ -1,0 +1,56 @@
+# Preserve the human bearer for the runtime's STS exchange. The generated
+# AccessPolicy handles the permitted workload caller; Require also constrains
+# the human on controller-originated calls.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: payments-human-identity, namespace: bank}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-payments-assistant-waypoint}]
+  traffic:
+    transformation:
+      request:
+        set:
+        - {name: Authorization, value: '"Bearer " + jwt.rawToken.unredacted()'}
+    authorization:
+      action: Require
+      policy:
+        matchExpressions: ['request.method == "GET" || (has(jwt.groups) && "payments-ops" in jwt.groups)']
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: customer-service-human-identity, namespace: bank}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-customer-service-assistant-waypoint}]
+  traffic:
+    transformation:
+      request:
+        set:
+        - {name: Authorization, value: '"Bearer " + jwt.rawToken.unredacted()'}
+    authorization:
+      action: Require
+      policy:
+        matchExpressions: ['request.method == "GET" || (has(jwt.groups) && jwt.groups.exists(g, g in ["payments-ops", "customer-service"]))']
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: specialist-human-identity, namespace: bank}
+spec:
+  targetRefs:
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-customer-agent-waypoint}
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-fraud-agent-waypoint}
+  - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-refunds-agent-waypoint}
+  traffic:
+    jwtAuthentication:
+      mode: Optional
+      preserveToken: true
+      providers:
+      - issuer: http://keycloak.localtest.me:18580/realms/bank
+        jwks:
+          remote:
+            backendRef: {name: keycloak, namespace: keycloak, port: 8080}
+            jwksPath: /realms/bank/protocol/openid-connect/certs
+    authorization:
+      action: Require
+      policy:
+        matchExpressions:
+        - 'request.method == "GET" || (has(jwt.sub) && source.identity.namespace == "bank" && source.identity.serviceAccount in ["payments-assistant", "customer-service-assistant"])'

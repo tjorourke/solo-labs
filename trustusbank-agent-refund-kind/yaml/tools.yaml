@@ -1,0 +1,162 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: payments-mcp, namespace: bank}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: customers-mcp, namespace: bank}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: fraud-mcp, namespace: bank}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: customers-mcp, namespace: bank}
+spec:
+  selector: {matchLabels: {app: customers-mcp}}
+  template:
+    metadata: {labels: {app: customers-mcp, bank-tool: 'true'}}
+    spec:
+      serviceAccountName: customers-mcp
+      automountServiceAccountToken: false
+      containers:
+      - name: mcp
+        image: python:3.12-slim
+        command: [sh, -c, "pip install -q 'mcp==1.17.0' 'pydantic==2.11.9' && python /app/customers_mcp.py"]
+        readinessProbe: {tcpSocket: {port: 8000}, periodSeconds: 5}
+        volumeMounts: [{name: app, mountPath: /app}]
+      volumes: [{name: app, configMap: {name: customers-mcp}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: customers-mcp, namespace: bank, labels: {bank-mcp: customers}}
+spec:
+  selector: {app: customers-mcp}
+  ports: [{name: http, port: 8000, appProtocol: kgateway.dev/mcp}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: fraud-mcp, namespace: bank}
+spec:
+  selector: {matchLabels: {app: fraud-mcp}}
+  template:
+    metadata: {labels: {app: fraud-mcp, bank-tool: 'true'}}
+    spec:
+      serviceAccountName: fraud-mcp
+      automountServiceAccountToken: false
+      containers:
+      - name: mcp
+        image: python:3.12-slim
+        command: [sh, -c, "pip install -q 'mcp==1.17.0' 'pydantic==2.11.9' && python /app/fraud_mcp.py"]
+        readinessProbe: {tcpSocket: {port: 8000}, periodSeconds: 5}
+        volumeMounts: [{name: app, mountPath: /app}]
+      volumes: [{name: app, configMap: {name: fraud-mcp}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: fraud-mcp, namespace: bank, labels: {bank-mcp: fraud}}
+spec:
+  selector: {app: fraud-mcp}
+  ports: [{name: http, port: 8000, appProtocol: kgateway.dev/mcp}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: fraud-vendor, namespace: bank}
+spec:
+  selector: {matchLabels: {app: fraud-vendor}}
+  template:
+    metadata: {labels: {app: fraud-vendor, bank-tool: 'true'}}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: vendor
+        image: python:3.12-slim
+        command: [python, /app/fraud_vendor.py]
+        env:
+        - name: VENDOR_API_KEY
+          valueFrom: {secretKeyRef: {name: fraud-vendor-key, key: X-Api-Key}}
+        readinessProbe: {httpGet: {path: /health, port: 8002}}
+        volumeMounts: [{name: app, mountPath: /app}]
+      volumes: [{name: app, configMap: {name: fraud-vendor}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: fraud-vendor, namespace: bank}
+spec:
+  selector: {app: fraud-vendor}
+  ports: [{name: http, port: 8002}]
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: {name: customers, namespace: bank}
+spec:
+  entMcp:
+    failureMode: FailClosed
+    toolMode: Standard
+    targets:
+    - name: customers
+      selector:
+        namespaces: {matchLabels: {kubernetes.io/metadata.name: bank}}
+        services: {matchLabels: {bank-mcp: customers}}
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata: {name: fraud, namespace: bank}
+spec:
+  entMcp:
+    failureMode: FailClosed
+    toolMode: Standard
+    targets:
+    - name: fraud
+      selector:
+        namespaces: {matchLabels: {kubernetes.io/metadata.name: bank}}
+        services: {matchLabels: {bank-mcp: fraud}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: customers, namespace: bank}
+spec:
+  parentRefs: [{group: '', kind: Service, name: bank-gw, port: 8080}]
+  rules:
+  - matches: [{path: {type: PathPrefix, value: /customers}}]
+    backendRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: customers}]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: fraud, namespace: bank}
+spec:
+  parentRefs: [{group: '', kind: Service, name: bank-gw, port: 8080}]
+  rules:
+  - matches: [{path: {type: PathPrefix, value: /fraud-tools}}]
+    backendRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: fraud}]
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: customers-tool-policy, namespace: bank}
+spec:
+  targetRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: customers}]
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - 'source.identity.namespace == "kagent" && source.identity.serviceAccount == "kagent-controller" && mcp.methodName == "tools/list"'
+          - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "customer-agent" && mcp.tool.name in ["get_customer", "get_contact_history"]'
+          - 'has(jwt.act) && jwt.aud == "customers-mcp" && jwt.act.sub == "system:serviceaccount:bank:customer-agent" && mcp.tool.name in ["get_customer", "get_contact_history"]'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: fraud-tool-policy, namespace: bank}
+spec:
+  targetRefs: [{group: enterpriseagentgateway.solo.io, kind: EnterpriseAgentgatewayBackend, name: fraud}]
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - 'source.identity.namespace == "kagent" && source.identity.serviceAccount == "kagent-controller" && mcp.methodName == "tools/list"'
+          - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "fraud-agent" && mcp.tool.name in ["score_refund", "list_flags"]'
+          - 'has(jwt.act) && jwt.aud == "fraud-mcp" && jwt.act.sub == "system:serviceaccount:bank:fraud-agent" && "payments-ops" in jwt.groups && mcp.tool.name in ["score_refund", "list_flags"]'

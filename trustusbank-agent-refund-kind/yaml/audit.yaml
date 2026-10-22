@@ -2,13 +2,28 @@ apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata: {name: bank-audit, namespace: bank}
 spec:
-  targetRefs: [{group: gateway.networking.k8s.io, kind: Gateway, name: bank-gw}]
+  targetRefs:
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: bank-waypoint}
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: agent-payments-assistant-waypoint}
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: agent-customer-service-assistant-waypoint}
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: agent-customer-agent-waypoint}
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: agent-fraud-agent-waypoint}
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: agent-refunds-agent-waypoint}
   frontend:
     accessLog:
       attributes:
         add:
-        - {name: audit.user, expression: 'jwt.preferred_username'}
-        - {name: audit.sub, expression: 'jwt.sub'}
-        - {name: audit.actor, expression: 'jwt.act.sub'}
-        - {name: audit.chain, expression: 'toJson(jwt.act)'}
-        - {name: audit.call, expression: 'request.headers["x-request-id"]'}
+        - {name: audit.user, expression: 'default(jwt.preferred_username, "")'}
+        - {name: audit.sub, expression: 'default(jwt.sub, "")'}
+        - {name: audit.actor, expression: 'default(jwt.act.sub, "")'}
+        - {name: audit.chain, expression: 'default(toJson(jwt.act), "")'}
+    tracing:
+      protocol: GRPC
+      url: http://solo-enterprise-telemetry-collector.agentgateway-system.svc.cluster.local:4317
+      randomSampling: 'true'
+      attributes:
+        add:
+        - {name: bank.user, expression: 'default(jwt.preferred_username, "")'}
+        - {name: bank.sub, expression: 'default(jwt.sub, "")'}
+        - {name: bank.actor, expression: 'default(jwt.act.sub, "")'}
+        - {name: bank.credential_header, expression: 'request.path.startsWith("/v1") ? "x-api-key" : (request.path.startsWith("/core") ? "Authorization" : (request.path.startsWith("/fraud/") ? "X-Api-Key" : ""))'}

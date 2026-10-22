@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/lib.sh"
 tools
-chain
-printf '%s' "$H2" | claims | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-assert d["preferred_username"] == "bob"
-assert d["aud"] == "payments-mcp"
-assert d["act"]["sub"] == "system:serviceaccount:bank:ledger-agent"
-assert d["act"]["act"]["sub"] == "system:serviceaccount:bank:orchestrator"
-print(json.dumps(d,indent=2))'
-R=$(k -n bank create token rogue-agent --duration=10m)
-result=$(exchange "$H1" "$R" payments-mcp)
-printf '%s\n' "$result"
-[[ "$result" == *'does not match may_act claim'* ]]
+python3 - "$LAB/scripts" <<'PY'
+import sys, json
+sys.path.insert(0,sys.argv[1])
+from gateway_client import exchange, claims
+code, result = exchange('bob', 'refunds-agent', 'payments-mcp')
+assert code == 200
+token = claims(result['access_token'])
+assert token['act']['sub'] == 'system:serviceaccount:bank:refunds-agent'
+assert token['aud'] == 'payments-mcp'
+assert 'payments-ops' in token['groups']
+print(json.dumps({k: token[k] for k in ['sub', 'act', 'aud', 'groups']}, indent=2))
+PY

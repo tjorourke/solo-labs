@@ -28,7 +28,7 @@ R=oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts
 helm --kube-context "$CTX" upgrade -i enterprise-agentgateway-crds "$R/enterprise-agentgateway-crds" -n agentgateway-system --create-namespace --version "$AGW_VERSION" --wait
 apply "$LAB/yaml/gateway-runtime.yaml"
 set -a
-source "${SECRETS_FILE:-$HOME/.solo/secrets.env}" >/dev/null 2>&1
+source "${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}" >/dev/null 2>&1
 set +a
 : "${AGENTGATEWAY_LICENSE_KEY:?licence required}"
 printf '%s' "$AGENTGATEWAY_LICENSE_KEY" | k -n agentgateway-system create secret generic enterprise-agentgateway-license --from-file=enterprise-agentgateway-license-key=/dev/stdin --dry-run=client -o yaml | apply_stdin
@@ -42,8 +42,6 @@ apply "$LAB/yaml/identities.yaml"
 tools
 # Helm readiness can precede the STS listener while its signing key starts up.
 incurl --fail --retry 20 --retry-connrefused --retry-delay 2 --retry-max-time 90 "$STS/.well-known/jwks.json" >/dev/null
-chain
-printf '%s' "$H1" | claims
 result=$(incurl -w '\nHTTP %{http_code}\n' "$KC" -d grant_type=password -d client_id=payments-ops -d username=bob -d password=wrong)
 printf '%s\n' "$result"
 [[ "$result" == *'HTTP 401'* ]]

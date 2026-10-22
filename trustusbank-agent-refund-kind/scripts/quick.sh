@@ -4,27 +4,17 @@ case "${1:-}" in
   up)
     bash "$LAB/scripts/01-identity.sh"
     bash "$LAB/scripts/02-mesh.sh"
-    bash "$LAB/scripts/03-delegation.sh"
+    bash "$LAB/scripts/10-kagent-enterprise.sh"
+    bash "$LAB/scripts/05-platform-tools.sh"
     bash "$LAB/scripts/04-vault.sh"
-    bash "$LAB/scripts/05-tools.sh"
-    bash "$LAB/scripts/capture-refund-revoke.sh"
-    bash "$LAB/scripts/03-agents.sh"
-    bash "$LAB/scripts/capture-05.sh"
-    bash "$LAB/scripts/06-approval.sh"
-    bash "$LAB/scripts/capture-rogue.sh"
-    bash "$LAB/scripts/capture-kill.sh"
-    bash "$LAB/scripts/07-evidence.sh"
+    bash "$LAB/scripts/08-management.sh"
+    bash "$LAB/scripts/11-declarative-agents.sh"
+    python3 "$LAB/scripts/client.py" bob 'Reply with only ready. Do not call any tools.'
     ;;
   test)
-    bash "$LAB/scripts/capture-01.sh"
+    tools
     bash "$LAB/scripts/04-vault.sh"
-    bash "$LAB/scripts/capture-03.sh"
-    bash "$LAB/scripts/capture-05.sh"
-    bash "$LAB/scripts/capture-refund-revoke.sh"
-    bash "$LAB/scripts/capture-06.sh"
-    bash "$LAB/scripts/capture-rogue.sh"
-    bash "$LAB/scripts/capture-kill.sh"
-    bash "$LAB/scripts/07-evidence.sh"
+    python3 "$LAB/scripts/verify.py"
     ;;
   teardown)
     for attempt in 1 2 3; do

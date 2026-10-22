@@ -41,12 +41,34 @@ admin = json.loads(k('-n', 'bank', 'exec', 'tools', '--', 'curl', '--fail', '-sS
                     '-d', 'grant_type=password', '-d', 'client_id=admin-cli',
                     '-d', 'username=admin', '-d', 'password=admin'))['access_token']
 realm = json.loads((Path(__file__).parents[1] / 'yaml/realm-bank.json').read_text())
+realm_root = kc + '/admin/realms/bank'
+# Import is only used on the first boot. Reconcile people and mappers on reruns.
+profile = request(realm_root + '/users/profile')
+if not any(a['name'] == 'bank_may_act' for a in profile['attributes']):
+    profile['attributes'].append({'name': 'bank_may_act',
+                                  'permissions': {'view': ['admin'], 'edit': ['admin']}})
+    request(realm_root + '/users/profile', profile, 'PUT')
+for group in realm['groups']:
+    if not any(g['name'] == group['name'] for g in request(realm_root + '/groups')):
+        request(realm_root + '/groups', group, 'POST')
+groups = {g['name']: g['id'] for g in request(realm_root + '/groups')}
+for source in realm['users']:
+    user = {key: value for key, value in source.items() if key != 'groups'}
+    found = request(realm_root + '/users?exact=true&username=' + user['username'])
+    if found:
+        uid = found[0]['id']
+        request(realm_root + '/users/' + uid, user, 'PUT')
+    else:
+        request(realm_root + '/users', user, 'POST')
+        uid = request(realm_root + '/users?exact=true&username=' + user['username'])[0]['id']
+    for group in source['groups']:
+        request(realm_root + '/users/' + uid + '/groups/' + groups[group], method='PUT')
 mappers = copy.deepcopy(next(c for c in realm['clients'] if c['clientId'] == 'bank-ui')['protocolMappers'])
 mappers.append({'name': 'bank-enterprise-audience', 'protocol': 'openid-connect',
                 'protocolMapper': 'oidc-audience-mapper',
                 'config': {'included.client.audience': 'bank-enterprise',
                            'access.token.claim': 'true', 'id.token.claim': 'true'}})
-clients = [
+clients = realm['clients'] + [
     {'clientId': 'bank-enterprise', 'enabled': True, 'publicClient': False,
      'standardFlowEnabled': True, 'serviceAccountsEnabled': True,
      'directAccessGrantsEnabled': True, 'protocol': 'openid-connect',
@@ -90,4 +112,8 @@ if rewrite not in core:
     for key in ('resourceVersion', 'uid', 'creationTimestamp', 'managedFields'):
         dns['metadata'].pop(key, None)
     apply(dns)
-print('Enterprise OIDC clients and issuer routing configured; Bob credentials retained.')
+    # Do not let the first OIDC discovery race CoreDNS's ConfigMap reload and
+    # cache the public localhost answer for keycloak.localtest.me.
+    k('-n', 'kube-system', 'rollout', 'restart', 'deployment/coredns')
+    k('-n', 'kube-system', 'rollout', 'status', 'deployment/coredns', '--timeout=120s')
+print('Enterprise OIDC configured: Carol, Bob and Alice; per-person groups and delegation grants.')

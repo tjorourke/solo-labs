@@ -6,7 +6,7 @@ printf '%s' "$key" | k -n bank create secret generic core-bank-key --from-file=A
 unset key
 # Allow the existing gateway to receive the Secret update, without a restart.
 for attempt in {1..30}; do
-  result=$(incurl -w '\nHTTP %{http_code}\n' "$GW/core" -d '{}')
+  result=$(core_probe)
   [[ "$result" == *'HTTP 200'* ]] && exit 0
   sleep 1
 done

@@ -1,0 +1,75 @@
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata: {name: payments-assistant-ops, namespace: bank}
+spec:
+  action: ALLOW
+  from:
+    subjects:
+    - kind: UserGroup
+      userGroup:
+        claimName: groups
+        claimValue: payments-ops
+        issuer: http://keycloak.localtest.me:18580/realms/bank
+        jwksKey:
+          remote:
+            serviceRef: {name: keycloak, namespace: keycloak, port: 8080}
+            path: /realms/bank/protocol/openid-connect/certs
+  targetRef: {kind: Agent, name: payments-assistant}
+---
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata: {name: customer-service-assistant-cs, namespace: bank}
+spec:
+  action: ALLOW
+  from:
+    subjects:
+    - kind: UserGroup
+      userGroup:
+        claimName: groups
+        claimValue: customer-service
+        issuer: http://keycloak.localtest.me:18580/realms/bank
+        jwksKey:
+          remote:
+            serviceRef: {name: keycloak, namespace: keycloak, port: 8080}
+            path: /realms/bank/protocol/openid-connect/certs
+    - kind: UserGroup
+      userGroup:
+        claimName: groups
+        claimValue: payments-ops
+        issuer: http://keycloak.localtest.me:18580/realms/bank
+        jwksKey:
+          remote:
+            serviceRef: {name: keycloak, namespace: keycloak, port: 8080}
+            path: /realms/bank/protocol/openid-connect/certs
+  targetRef: {kind: Agent, name: customer-service-assistant}
+---
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata: {name: customer-agent-callers, namespace: bank}
+spec:
+  action: ALLOW
+  from:
+    subjects:
+    - {kind: Agent, name: payments-assistant, namespace: bank}
+    - {kind: Agent, name: customer-service-assistant, namespace: bank}
+  targetRef: {kind: Agent, name: customer-agent}
+---
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata: {name: fraud-agent-callers, namespace: bank}
+spec:
+  action: ALLOW
+  from:
+    subjects:
+    - {kind: Agent, name: payments-assistant, namespace: bank}
+  targetRef: {kind: Agent, name: fraud-agent}
+---
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
+metadata: {name: refunds-agent-callers, namespace: bank}
+spec:
+  action: ALLOW
+  from:
+    subjects:
+    - {kind: Agent, name: payments-assistant, namespace: bank}
+  targetRef: {kind: Agent, name: refunds-agent}

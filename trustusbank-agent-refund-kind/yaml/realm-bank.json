@@ -1,17 +1,19 @@
 {
   "realm": "bank", "enabled": true,
-  "groups": [{"name": "payments-ops"}],
-  "users": [{"username": "bob", "enabled": true, "firstName": "Bob", "lastName": "Ops", "email": "bob@bank.example", "emailVerified": true, "groups": ["payments-ops"], "credentials": [{"type": "password", "value": "password", "temporary": false}]}],
+  "groups": [{"name": "payments-ops"}, {"name": "customer-service"}, {"name": "security-ops"}],
+  "users": [
+    {"username": "bob", "enabled": true, "firstName": "Bob", "lastName": "Ops", "email": "bob@bank.example", "emailVerified": true, "groups": ["payments-ops"], "attributes": {"bank_may_act": ["{\"sub\":[\"system:serviceaccount:bank:payments-assistant\",\"system:serviceaccount:bank:customer-service-assistant\",\"system:serviceaccount:bank:customer-agent\",\"system:serviceaccount:bank:fraud-agent\",\"system:serviceaccount:bank:refunds-agent\"]}"]}, "credentials": [{"type": "password", "value": "password", "temporary": false}]},
+    {"username": "carol", "enabled": true, "firstName": "Carol", "lastName": "Service", "email": "carol@bank.example", "emailVerified": true, "groups": ["customer-service"], "attributes": {"bank_may_act": ["{\"sub\":[\"system:serviceaccount:bank:customer-service-assistant\",\"system:serviceaccount:bank:customer-agent\"]}"]}, "credentials": [{"type": "password", "value": "password", "temporary": false}]},
+    {"username": "alice", "enabled": true, "firstName": "Alice", "lastName": "Security", "email": "alice@bank.example", "emailVerified": true, "groups": ["security-ops"], "credentials": [{"type": "password", "value": "password", "temporary": false}]}
+  ],
   "clients": [
     {"clientId": "payments-ops", "publicClient": true, "directAccessGrantsEnabled": true, "protocolMappers": [
       {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper", "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true", "id.token.claim": "true"}},
-      {"name": "may_act", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper", "config": {"claim.name": "may_act", "claim.value": "{\"sub\":[\"system:serviceaccount:bank:orchestrator\",\"system:serviceaccount:bank:ledger-agent\"]}", "jsonType.label": "JSON", "access.token.claim": "true", "id.token.claim": "true"}}
+      {"name": "may_act", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "config": {"user.attribute": "bank_may_act", "claim.name": "may_act", "jsonType.label": "JSON", "multivalued": "false", "access.token.claim": "true", "id.token.claim": "true"}}
     ]},
-    {"clientId": "bank-ui", "publicClient": false, "standardFlowEnabled": true, "directAccessGrantsEnabled": false,
-     "redirectUris": ["http://localhost:18380/oauth2/callback"], "webOrigins": ["http://localhost:18380"],
-     "protocolMappers": [
+    {"clientId": "bank-ui", "publicClient": false, "standardFlowEnabled": true, "redirectUris": ["http://localhost:18380/oauth2/callback"], "protocolMappers": [
       {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper", "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true", "id.token.claim": "true"}},
-      {"name": "may_act", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper", "config": {"claim.name": "may_act", "claim.value": "{\"sub\":[\"system:serviceaccount:bank:orchestrator\",\"system:serviceaccount:bank:ledger-agent\"]}", "jsonType.label": "JSON", "access.token.claim": "true", "id.token.claim": "true"}}
+      {"name": "may_act", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "config": {"user.attribute": "bank_may_act", "claim.name": "may_act", "jsonType.label": "JSON", "multivalued": "false", "access.token.claim": "true", "id.token.claim": "true"}}
     ]}
   ]
 }

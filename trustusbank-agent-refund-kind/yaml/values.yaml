@@ -5,7 +5,7 @@ tokenExchange:
   enabled: true
   issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
   tokenExpiration: 15m
-  allowedSubjectClaims: [may_act, preferred_username]
+  allowedSubjectClaims: [may_act, preferred_username, groups]
   subjectValidators:
   - validatorType: remote
     remoteConfig:
@@ -17,3 +17,5 @@ tokenExchange:
   - validatorType: k8s
   apiValidators:
   - validatorType: k8s
+istio:
+  autoEnabled: true

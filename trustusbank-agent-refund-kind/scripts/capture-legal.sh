@@ -5,4 +5,4 @@ for url in 'https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32022
   printf 'Source: %s\n' "$url"
   curl -sSL --max-time 30 -o /dev/null -w 'HTTP %{http_code}\n' "$url" || true
 done
-printf 'DORA Article 9 wording verified 21 Oct 2026; see the exact quotations in the guide and evidence.py.\n'
+printf 'DORA Article 9 wording verified 21 Oct 2026; see the mapping and source in the guide.\n'

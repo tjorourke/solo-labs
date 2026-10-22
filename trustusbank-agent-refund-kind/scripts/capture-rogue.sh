@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/lib.sh"
 tools
-chain
-rogue=$(k -n bank create token rogue-agent --duration=10m)
-exchange "$H1" "$rogue" payments-mcp | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-assert d.get("error")=="unauthorized_client" and "does not match may_act" in d.get("error_description",""),d
-print("Rogue agent: REFUSED")
-print("Service error:",d["error"])
-print("Bob did not delegate to this agent.")'
-bash "$LAB/scripts/capture-02.sh"
+python3 - "$LAB/scripts" <<'PY'
+import sys, json
+sys.path.insert(0,sys.argv[1])
+from gateway_client import exchange
+status, body = exchange('bob', 'rogue-agent', 'payments-mcp')
+assert status >= 400 and 'may_act' in str(body), (status, body)
+print('HTTP', status)
+print(json.dumps(body, indent=2))
+PY

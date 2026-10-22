@@ -6,7 +6,7 @@ source "${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}" >/dev/null 2>&
 set +a
 KAGENT_ENT_LICENSE_KEY="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-}}"
 : "${KAGENT_ENT_LICENSE_KEY:?Solo Enterprise for kagent licence required}"
-version=${BANK_KAGENT_ENT_VERSION:-0.5.11}
+version=$MGMT_VERSION
 chart=oci://us-docker.pkg.dev/solo-public/solo-enterprise-helm/charts/management
 helm show values "$chart" --version "$version" >/dev/null
 printf '%s' "$KAGENT_ENT_LICENSE_KEY" | k -n agentgateway-system create secret generic trustusbank-management-license --from-file=license-key=/dev/stdin --dry-run=client -o yaml | apply_stdin

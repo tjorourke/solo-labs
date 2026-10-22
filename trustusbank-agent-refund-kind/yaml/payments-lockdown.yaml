@@ -1,12 +1,27 @@
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
-metadata: {name: payments-gateway-only, namespace: bank}
+metadata: {name: tools-gateway-only, namespace: bank}
 spec:
-  selector: {matchLabels: {app: payments-mcp}}
+  selector: {matchLabels: {bank-tool: 'true'}}
   action: ALLOW
   rules:
   - from:
     - source:
-        principals: [cluster.local/ns/bank/sa/bank-gw]
-    to:
-    - operation: {ports: ['8000']}
+        principals: [cluster.local/ns/bank/sa/bank-waypoint]
+---
+# Block direct pod-IP calls as well as Service calls which bypass a waypoint.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: agents-waypoint-only, namespace: bank}
+spec:
+  selector: {matchLabels: {bank-role: agent}}
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/bank/sa/agent-payments-assistant-waypoint
+        - cluster.local/ns/bank/sa/agent-customer-service-assistant-waypoint
+        - cluster.local/ns/bank/sa/agent-customer-agent-waypoint
+        - cluster.local/ns/bank/sa/agent-fraud-agent-waypoint
+        - cluster.local/ns/bank/sa/agent-refunds-agent-waypoint

@@ -1,3 +1,2 @@
 #!/usr/bin/env bash
-source "$(dirname "$0")/lib.sh"
-bash "$LAB/scripts/capture-native.sh" approval
+exec bash "$(dirname "$0")/capture.sh" approval
