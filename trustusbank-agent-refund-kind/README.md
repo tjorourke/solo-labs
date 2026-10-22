@@ -161,4 +161,5 @@ bash scripts/quick.sh teardown
 ```
 
 The script reads the cluster list back to confirm that `trustusbank-lab` is
-gone. See `TASKS.md` for the execution record and `versions.env` for pins.
+gone. See `versions.env` for the pins and the live-spike decisions above for
+the implementation notes.
