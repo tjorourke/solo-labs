@@ -30,6 +30,7 @@ spec:
   entMcp:
     failureMode: FailClosed
     toolMode: Standard
+    sessionRouting: Stateless
     targets:
     - name: payments
       selector:

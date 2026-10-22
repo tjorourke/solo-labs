@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from client import Client, CTX
 from gateway_client import MCP, claims, exchange, kube, receipts
-from evidence import approved_record, session_evidence
+from evidence import approved_record, delegated_tool_result, session_evidence
 
 HERE = Path(__file__).parent
 checks, sessions = {}, {}
@@ -21,8 +21,8 @@ def check(name, condition):
     print('PASS', name, flush=True)
 
 
-def ask(client, agent, prompt, name):
-    code, body = client.ask(agent, prompt)
+def ask(client, agent, prompt, name, context_id=None):
+    code, body = client.ask(agent, prompt, context_id)
     check(name + ': transport', code == 200 and 'error' not in body)
     task = body['result']
     check(name + ': completed', task['status']['state'] == 'completed')
@@ -62,8 +62,23 @@ def main():
     ask(carol, 'customer-service-assistant',
         'A customer says payment PAY-7781 failed this morning and the money has left their account. What happened?', 'carol')
     check('Carol delegated to customer-agent', any('customer_agent' in c['name'] for c in sessions['carol']['calls']))
+    customer = delegated_tool_result(carol, sessions['carol'], 'customer-agent', 'get_customer')
+    check('Carol received the actual customer record',
+          customer['payment_id'] == 'PAY-7781' and customer['customer'] == 'Morgan Taylor'
+          and customer['amount_gbp'] == 1250 and customer['status'] == 'FAILED'
+          and customer['debit_status'] == 'DEBITED')
+    sessions['carol']['customer_record'] = customer
     code, body = carol.ask('payments-assistant', 'Please refund GBP 1,250 to the customer for PAY-7781.')
     check('Carol refused payments assistant', code == 403 or '403' in str(body.get('error', {})))
+    refusal_log = kube('-n', 'bank', 'logs', 'deployment/agent-payments-assistant-waypoint', '--since=2m')
+    carol_sub = claims(carol.token)['sub']
+    refusal_trace = next((re.search(r'trace.id=([0-9a-f]{32})', line).group(1)
+                          for line in reversed(refusal_log.splitlines())
+                          if 'http.status=403' in line and 'jwt.sub=' + carol_sub in line
+                          and re.search(r'trace.id=([0-9a-f]{32})', line)), None)
+    check('Carol refusal has a persisted gateway trace', refusal_trace is not None)
+    sessions['refused'] = {'user': 'carol', 'state': 'rejected',
+                           'trace_id': refusal_trace, 'trace_ids': [refusal_trace]}
     for user in (bob, carol):
         code, body = user.ask('refunds-agent', 'Check payment PAY-7781.')
         check(user.user + ': direct specialist access refused', code == 403 or '403' in str(body.get('error', {})))
@@ -91,13 +106,13 @@ def main():
     sessions['approval'] = approval['after']
     try:
         switch('on')
-        ask(bob, 'payments-assistant', "Another customer's GBP 900 payment PAY-7795 failed. Refund it.", 'kill')
+        blocked = ask(bob, 'payments-assistant', "Another customer's GBP 900 payment PAY-7795 failed. Refund it.", 'kill')
         check('Kill switch prevented bank write', not any(r['payment_id'] == 'PAY-7795' for r in receipts()))
         log = kube('-n', 'bank', 'logs', 'deployment/agent-refunds-agent-waypoint', '--since=3m')
         check('Kill switch denied at waypoint', 'http.status=403' in log)
     finally:
         switch('off')
-    ask(bob, 'payments-assistant', "Another customer's GBP 900 payment PAY-7795 failed. Refund it.", 'restore')
+    ask(bob, 'payments-assistant', 'Try PAY-7795 again.', 'restore', blocked['contextId'])
     check('Refund restored', any(r['payment_id'] == 'PAY-7795' and r['refund'] == 'ISSUED' for r in receipts()))
     code, result = exchange('bob', 'rogue-agent', 'payments-mcp')
     check('Rogue delegation refused by STS', code >= 400 and 'may_act' in str(result))
@@ -107,11 +122,17 @@ def main():
     delegated = claims(result['access_token'])
     check('Delegation retains Bob and specialist', delegated['sub'] == small['sub'] and delegated['act']['sub'].endswith(':refunds-agent'))
     mcp = MCP(result['access_token'])
+    check('Payments MCP is stateless', 'Mcp-Session-Id' not in mcp.headers)
     code, _, _ = mcp.call('refund_payment', payment_id='PAY-7790', amount_gbp=25000)
     check('Gateway amount limit is HTTP 403', code == 403)
     _, wrong = exchange('bob', 'customer-agent', 'payments-mcp')
     code, body, _ = MCP(wrong['access_token']).call('refund_payment', payment_id='PAY-7781', amount_gbp=1250)
     check('Wrong specialist cannot refund', code >= 400 or 'error' in body)
+    for user, agent, audience, path in [('carol', 'customer-agent', 'customers-mcp', 'customers'),
+                                        ('bob', 'fraud-agent', 'fraud-mcp', 'fraud-tools')]:
+        _, token = exchange(user, agent, audience)
+        probe = MCP(token['access_token'], path)
+        check(path + ': MCP is stateless', 'Mcp-Session-Id' not in probe.headers)
     pods = json.loads(kube('-n', 'bank', 'get', 'pods', '-l', 'bank-role=agent', '-o', 'json'))['items']
     check('Five agent pods tested', len(pods) == 5)
     forbidden = ['anthropic-key', 'core-bank-key', 'fraud-vendor-key']

@@ -1,14 +1,24 @@
 {
   "schema_version": 2,
-  "validated_at": "2026-10-22T14:10:10.801831+00:00",
-  "checks_passed": 38,
+  "validated_at": "2026-10-22T16:06:56.688355+00:00",
+  "checks_passed": 43,
+  "customer_record": {
+    "payment_id": "PAY-7781",
+    "status": "FAILED",
+    "debit_status": "DEBITED",
+    "reason": "beneficiary bank timeout",
+    "customer_id": "C-1042",
+    "customer": "Morgan Taylor",
+    "amount_gbp": 1250
+  },
+  "refusal_trace_id": "0cd8ae1c777d2dedbb05e10ce6b40e93",
   "approval": {
     "approved_by": "bob",
     "arguments": {"amount_gbp": 25000, "payment_id": "PAY-7790"},
     "state_before": "input-required",
     "state_after": "completed",
-    "investigation_trace_id": "c9184735f8c26353e2cfb0921d433f89",
-    "approved_trace_id": "ae2bf73e4cc352e1bc705d1048cfecb1"
+    "investigation_trace_id": "4c8a20d02eb7efcfc40fb84360774cab",
+    "approved_trace_id": "a28890a8b11daead8d5bd391218e4bd4"
   },
   "receipt": {
     "credential_valid": true,
@@ -18,8 +28,8 @@
     "mock": true,
     "sub": "78926efc-b420-493d-bb81-5f52ce46bc13",
     "act": "system:serviceaccount:bank:payments-assistant",
-    "traceparent": "00-ae2bf73e4cc352e1bc705d1048cfecb1-016ed8bfedb06d27-01",
-    "timestamp": "2026-10-22T14:09:34.185270+00:00"
+    "traceparent": "00-a28890a8b11daead8d5bd391218e4bd4-280eba6e74ff7b88-01",
+    "timestamp": "2026-10-22T16:06:28.661098+00:00"
   },
-  "telemetry": {"spans": 708, "errors": 2, "models": 60, "usage": 240}
+  "telemetry": {"spans": 714, "errors": 3, "models": 55, "usage": 221}
 }

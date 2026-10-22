@@ -12,6 +12,7 @@ case "${1:-}" in
     python3 "$LAB/scripts/client.py" bob 'Reply with only ready. Do not call any tools.'
     ;;
   test)
+    python3 -m unittest discover -s "$LAB/scripts" -p 'test_*.py'
     tools
     bash "$LAB/scripts/04-vault.sh"
     python3 "$LAB/scripts/verify.py"

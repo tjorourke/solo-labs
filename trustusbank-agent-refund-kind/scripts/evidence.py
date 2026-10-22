@@ -3,6 +3,30 @@ import json
 from gateway_client import receipts
 
 
+def delegated_tool_result(client, parent, agent_name, tool_name):
+    """Read the actual successful MCP result, not the assistant's prose."""
+    children = [r['response']['subagent_session_id'] for r in parent['responses']
+                if r.get('name', '').endswith(agent_name.replace('-', '_'))
+                and r.get('response', {}).get('subagent_session_id')]
+    for child in reversed(children):
+        events = client.session(child)['events']
+        for event in sorted(events, key=lambda e: e['created_at'], reverse=True):
+            body = json.loads(event['data'])
+            for part in (body.get('content') or {}).get('parts', []):
+                response = part.get('function_response') or {}
+                if response.get('name') != tool_name:
+                    continue
+                result = response.get('response', {})
+                if result.get('isError') or result.get('error'):
+                    continue
+                for content in result.get('content', []):
+                    if content.get('type') == 'text':
+                        value = json.loads(content['text'])
+                        if isinstance(value, dict):
+                            return value
+    raise AssertionError(f'{agent_name} did not return a successful {tool_name} result')
+
+
 def session_evidence(client, task):
     data = client.session(task['contextId'])
     trace_ids = []

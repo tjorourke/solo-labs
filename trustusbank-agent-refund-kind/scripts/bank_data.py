@@ -9,5 +9,5 @@ PAYMENTS = {
 def payment(payment_id):
     if payment_id not in PAYMENTS:
         raise ValueError('Unknown payment: ' + payment_id)
-    return {'payment_id': payment_id, 'status': 'FAILED',
+    return {'payment_id': payment_id, 'status': 'FAILED', 'debit_status': 'DEBITED',
             'reason': 'beneficiary bank timeout', **PAYMENTS[payment_id]}

@@ -94,6 +94,7 @@ spec:
   entMcp:
     failureMode: FailClosed
     toolMode: Standard
+    sessionRouting: Stateless
     targets:
     - name: customers
       selector:
@@ -107,6 +108,7 @@ spec:
   entMcp:
     failureMode: FailClosed
     toolMode: Standard
+    sessionRouting: Stateless
     targets:
     - name: fraud
       selector:

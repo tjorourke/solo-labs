@@ -94,12 +94,19 @@ L4 policies prevent direct calls to the tool and mock pods.
 - **A2A identity:** runtime 0.10.3 forwards the original Keycloak bearer when
   `KAGENT_PROPAGATE_TOKEN=true`. The MCP token has one actor, the specialist.
   Do not describe a nested assistant → specialist actor chain that is not there.
+- **MCP transport:** the three mock servers run stateless HTTP. Their gateway
+  backends explicitly use `sessionRouting: Stateless`, so the client does not
+  establish a stateful MCP session or an optional long-running GET stream.
+  The default stateful path intermittently stalled during session setup.
 - **Gateway model format:** the runtime uses the OpenAI-compatible API to the
   gateway; the gateway calls Anthropic. Native Anthropic requests returned a
   Completions parser error on this build.
 - **Approval:** the assistant's tool is named `refund_payment_with_approval`
   to make the intended choice unambiguous. `requireApproval` belongs to that
   tool on the assistant. No sub-agent approval bridge or runtime adapter is used.
+- **Read-only enquiries:** a failed payment is not itself a refund instruction.
+  The assistant sends `READ ONLY` or `ISSUE REFUND` to the payment specialist
+  according to the person's request, after the customer and risk checks.
 - **Amount limit:** `mcp.tool` describes the catalogue entry, not call arguments.
   Its authorisation rule must not test `mcp.tool.arguments`. The separate
   `refund-amount-limit` traffic policy reads `json(request.body)` and returns 403.
@@ -109,6 +116,9 @@ L4 policies prevent direct calls to the tool and mock pods.
   onward Authorization header for STS, without relying on JWT policy ordering.
   Specialist POSTs additionally require an assistant workload identity, so a
   person cannot invoke them directly through the controller's discovery exception.
+  In 0.5.11, a refused UI request can leave an empty chat title because it never
+  reached an agent to create a task. The persistent refusal record is the
+  gateway trace, linked from console Step 2 after `quick.sh test`.
 - **Kill switch:** use explicit Agent subjects. Empty subjects on a named target
   translated to a controller-only ALLOW, not a universal DENY. The separate
   agent-card route keeps discovery available while execution is denied, allowing
