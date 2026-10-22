@@ -99,7 +99,7 @@ elif mode == 'approval':
     call = confirmation['args']['originalFunctionCall']
     assert call['name'] == 'refund_payment' and call['args']['amount_gbp'] == 25000, call
     assert audit_count(payment_id) == before
-    print('GBP 25000 refund: waiting for Priya')
+    print('GBP 25000 refund: waiting for Bob')
     print('Bank writes before approval: 0')
     # Same function_response payload as agentic-verdict-hitl-kind/scripts/approve.sh.
     decision = [{'kind': 'data', 'metadata': {'kagent_type': 'function_response'},
@@ -116,7 +116,7 @@ elif mode == 'approval':
     result = tool_result(complete, 'refund_payment')
     assert result['refund'] == 'ISSUED' and result['amount_gbp'] == 25000
     assert audit_count(payment_id) == before + 1
-    print('Priya approves with Keycloak: HTTP', approved)
+    print('Bob approves with Keycloak: HTTP', approved)
     print('Task state: completed')
     print('GBP 25000 refund:', json.dumps(result))
     claim = USER.split('.')[1]

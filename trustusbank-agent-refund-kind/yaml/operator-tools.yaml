@@ -1,0 +1,32 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: bank-demo-checks, namespace: bank}
+rules:
+- apiGroups: ['']
+  resources: [pods]
+  verbs: [get, list, patch]
+- apiGroups: ['']
+  resources: [pods/log]
+  verbs: [get]
+- apiGroups: ['']
+  resources: [serviceaccounts/token]
+  resourceNames: [rogue-agent]
+  verbs: [create]
+- apiGroups: [security.istio.io]
+  resources: [authorizationpolicies]
+  resourceNames: [kill-ledger-instance]
+  verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: bank-demo-checks, namespace: bank}
+subjects: [{kind: ServiceAccount, name: orchestrator, namespace: bank}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: bank-demo-checks}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: kill-ledger-instance, namespace: bank}
+spec:
+  selector: {matchLabels: {trustusbank-instance: inactive}}
+  action: DENY
+  rules: [{}]

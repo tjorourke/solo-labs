@@ -1,4 +1,8 @@
 providers: {default: ollama}
+controller:
+  auth:
+    mode: trusted-proxy
+    userIdClaim: sub
 database:
   postgres:
     bundled:

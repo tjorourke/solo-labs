@@ -44,6 +44,6 @@ tools
 incurl --fail --retry 20 --retry-connrefused --retry-delay 2 --retry-max-time 90 "$STS/.well-known/jwks.json" >/dev/null
 chain
 printf '%s' "$H1" | claims
-result=$(incurl -w '\nHTTP %{http_code}\n' "$KC" -d grant_type=password -d client_id=payments-ops -d username=priya -d password=wrong)
+result=$(incurl -w '\nHTTP %{http_code}\n' "$KC" -d grant_type=password -d client_id=payments-ops -d username=bob -d password=wrong)
 printf '%s\n' "$result"
 [[ "$result" == *'HTTP 401'* ]]

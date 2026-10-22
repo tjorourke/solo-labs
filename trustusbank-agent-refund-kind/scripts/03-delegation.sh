@@ -5,7 +5,7 @@ chain
 printf '%s' "$H2" | claims | python3 -c '
 import json,sys
 d=json.load(sys.stdin)
-assert d["preferred_username"] == "priya"
+assert d["preferred_username"] == "bob"
 assert d["aud"] == "payments-mcp"
 assert d["act"]["sub"] == "system:serviceaccount:bank:ledger-agent"
 assert d["act"]["act"]["sub"] == "system:serviceaccount:bank:orchestrator"

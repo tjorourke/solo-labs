@@ -1,9 +1,17 @@
 {
   "realm": "bank", "enabled": true,
   "groups": [{"name": "payments-ops"}],
-  "users": [{"username": "priya", "enabled": true, "firstName": "Priya", "lastName": "Ops", "email": "priya@bank.example", "emailVerified": true, "groups": ["payments-ops"], "credentials": [{"type": "password", "value": "priya", "temporary": false}]}],
-  "clients": [{"clientId": "payments-ops", "publicClient": true, "directAccessGrantsEnabled": true, "protocolMappers": [
-    {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper", "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true"}},
-    {"name": "may_act", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper", "config": {"claim.name": "may_act", "claim.value": "{\"sub\":[\"system:serviceaccount:bank:orchestrator\",\"system:serviceaccount:bank:ledger-agent\"]}", "jsonType.label": "JSON", "access.token.claim": "true"}}
-  ]}]
+  "users": [{"username": "bob", "enabled": true, "firstName": "Bob", "lastName": "Ops", "email": "bob@bank.example", "emailVerified": true, "groups": ["payments-ops"], "credentials": [{"type": "password", "value": "password", "temporary": false}]}],
+  "clients": [
+    {"clientId": "payments-ops", "publicClient": true, "directAccessGrantsEnabled": true, "protocolMappers": [
+      {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper", "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true", "id.token.claim": "true"}},
+      {"name": "may_act", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper", "config": {"claim.name": "may_act", "claim.value": "{\"sub\":[\"system:serviceaccount:bank:orchestrator\",\"system:serviceaccount:bank:ledger-agent\"]}", "jsonType.label": "JSON", "access.token.claim": "true", "id.token.claim": "true"}}
+    ]},
+    {"clientId": "bank-ui", "publicClient": false, "standardFlowEnabled": true, "directAccessGrantsEnabled": false,
+     "redirectUris": ["http://localhost:18380/oauth2/callback"], "webOrigins": ["http://localhost:18380"],
+     "protocolMappers": [
+      {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper", "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true", "id.token.claim": "true"}},
+      {"name": "may_act", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper", "config": {"claim.name": "may_act", "claim.value": "{\"sub\":[\"system:serviceaccount:bank:orchestrator\",\"system:serviceaccount:bank:ledger-agent\"]}", "jsonType.label": "JSON", "access.token.claim": "true", "id.token.claim": "true"}}
+    ]}
+  ]
 }

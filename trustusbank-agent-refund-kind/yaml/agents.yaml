@@ -6,11 +6,13 @@ spec:
   description: TrustUs Bank deterministic payment orchestrator
   byo:
     deployment:
-      image: trustusbank-orchestrator:4
+      image: trustusbank-orchestrator:8
       imagePullPolicy: Never
       serviceAccountName: orchestrator
       labels: {bank-agent: orchestrator}
-      env: [{name: BANK_AGENT, value: orchestrator}]
+      env:
+      - {name: BANK_AGENT, value: orchestrator}
+      - {name: BANK_HUMAN_ISSUER, value: 'http://keycloak.localtest.me:18580/realms/bank'}
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
@@ -24,7 +26,17 @@ spec:
       imagePullPolicy: Never
       serviceAccountName: ledger-agent
       labels: {bank-agent: ledger-agent}
+      annotations:
+        bank-callback-context-version: '1'
+      volumes:
+      - name: callback-context
+        configMap: {name: bank-legacy-runtime-context}
+      volumeMounts:
+      - name: callback-context
+        mountPath: /opt/bank-legacy-runtime
+        readOnly: true
       env:
+      - {name: PYTHONPATH, value: /opt/bank-legacy-runtime}
       - {name: KAGENT_REQUIRE_APPROVAL, value: refund_payment}
       - {name: MCP_CONNECT_TIMEOUT, value: '900'}
       - {name: MCP_TERMINATE_ON_CLOSE, value: 'false'}

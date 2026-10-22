@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/lib.sh"
 approval=/tmp/trustusbank-native-approval.json
+ui_approval=$(mktemp)
+if k -n bank exec deploy/orchestrator -- python -c 'from pathlib import Path; print(Path("/tmp/trustusbank-ui-approval.json").read_text())' > "$ui_approval" 2>/dev/null; then
+  cp "$ui_approval" /tmp/trustusbank-ui-approval.json
+  approval=/tmp/trustusbank-ui-approval.json
+fi
+rm -f "$ui_approval"
 if [[ ! -f "$approval" ]]; then
-  printf 'Capture Priya\047s approval with scripts/capture-06.sh before pulling the evidence.\n' >&2
+  printf 'Approve a refund in Bob\047s kagent chat before pulling the evidence.\n' >&2
   exit 1
 fi
 tmp=$(mktemp)

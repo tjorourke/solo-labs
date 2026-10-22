@@ -9,5 +9,5 @@ d=json.load(sys.stdin)
 assert d.get("error")=="unauthorized_client" and "does not match may_act" in d.get("error_description",""),d
 print("Rogue agent: REFUSED")
 print("Service error:",d["error"])
-print("Priya did not delegate to this agent.")'
+print("Bob did not delegate to this agent.")'
 bash "$LAB/scripts/capture-02.sh"

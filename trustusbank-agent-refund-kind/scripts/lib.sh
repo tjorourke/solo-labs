@@ -22,7 +22,7 @@ incurl() { k -n bank exec tools -- curl --max-time "${CURL_MAX_TIME:-25}" -sS "$
 KC=http://keycloak.keycloak.svc.cluster.local:8080/realms/bank/protocol/openid-connect/token
 STS=http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
 GW=http://bank-gw.bank.svc.cluster.local:8080
-user_token() { incurl "$KC" -d grant_type=password -d client_id=payments-ops -d username=priya -d password=priya | access_token; }
+user_token() { incurl "$KC" -d grant_type=password -d client_id=payments-ops -d username=bob -d password=password | access_token; }
 access_token() { python3 -c 'import json,sys; d=json.load(sys.stdin); assert "access_token" in d,d; print(d["access_token"])'; }
 exchange() {
   incurl "$STS/oauth2/token" -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \

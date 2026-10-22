@@ -71,7 +71,7 @@ spec:
           - >-
             mcp.tool.name == "refund_payment"
             && jwt.aud == "payments-mcp"
-            && jwt.preferred_username == "priya"
+            && jwt.preferred_username == "bob"
             && has(jwt.act) && jwt.act.sub == "system:serviceaccount:bank:ledger-agent"
             && has(jwt.act.act) && jwt.act.act.sub == "system:serviceaccount:bank:orchestrator"
             && !has(jwt.act.act.act)

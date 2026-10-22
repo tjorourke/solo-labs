@@ -5,7 +5,7 @@ helm --kube-context "$CTX" upgrade -i vault vault --repo https://helm.releases.h
 k -n vault wait --for=create pod/vault-0 --timeout=180s
 k -n vault wait --for=condition=Ready pod/vault-0 --timeout=180s
 # A scoped, revocable Vault token is the mock bank's credential. Never echo it.
-key=$(k -n vault exec vault-0 -- vault token create -policy=default -ttl=1h -format=json | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])')
+key=$(k -n vault exec vault-0 -- vault token create -policy=default -ttl="${BANK_KEY_TTL:-24h}" -format=json | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])')
 printf '%s' "$key" | k -n bank create secret generic core-bank-key --from-file=Authorization=/dev/stdin --dry-run=client -o yaml | apply_stdin
 k -n bank create configmap core-bank --from-file="$LAB/scripts/core_bank.py" --dry-run=client -o yaml | apply_stdin
 existing=false

@@ -1,16 +1,18 @@
 """The assistant's identity boundary. Native ADK owns the ledger's approval state."""
 import json
+import os
 import uuid
 import urllib.request
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import jwt
+import threading
 
 STS = 'http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777'
 JWKS = jwt.PyJWKClient(STS + '/.well-known/jwks.json')
-HUMAN_ISSUER = 'http://keycloak.keycloak.svc.cluster.local:8080/realms/bank'
-HUMAN_JWKS = jwt.PyJWKClient(HUMAN_ISSUER + '/protocol/openid-connect/certs')
+HUMAN_ISSUER = os.environ.get('BANK_HUMAN_ISSUER', 'http://keycloak.keycloak.svc.cluster.local:8080/realms/bank')
+HUMAN_JWKS = jwt.PyJWKClient('http://keycloak.keycloak.svc.cluster.local:8080/realms/bank/protocol/openid-connect/certs')
 
 
 def delegated_token(subject):
@@ -56,7 +58,7 @@ class Assistant(BaseHTTPRequestHandler):
                 claims = jwt.decode(token, HUMAN_JWKS.get_signing_key_from_jwt(token).key,
                                     algorithms=['RS256'], issuer=HUMAN_ISSUER,
                                     options={'verify_aud': False})
-                if 'act' in claims or claims.get('preferred_username') != 'priya' or 'payments-ops' not in claims.get('groups', []):
+                if 'act' in claims or claims.get('preferred_username') != 'bob' or 'payments-ops' not in claims.get('groups', []):
                     raise ValueError('Human approval token required')
             else:
                 claims = jwt.decode(token, JWKS.get_signing_key_from_jwt(token).key,
@@ -84,4 +86,7 @@ class Assistant(BaseHTTPRequestHandler):
             self.reply(502, json.dumps({'error': str(error)}))
 
 
-ThreadingHTTPServer(('0.0.0.0', 8080), Assistant).serve_forever()
+if __name__ == '__main__':
+    from chat_tools import mcp
+    threading.Thread(target=lambda: mcp.run(transport='streamable-http'), daemon=True).start()
+    ThreadingHTTPServer(('0.0.0.0', 8080), Assistant).serve_forever()

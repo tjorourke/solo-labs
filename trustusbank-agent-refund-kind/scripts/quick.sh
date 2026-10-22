@@ -14,7 +14,6 @@ case "${1:-}" in
     bash "$LAB/scripts/capture-rogue.sh"
     bash "$LAB/scripts/capture-kill.sh"
     bash "$LAB/scripts/07-evidence.sh"
-    bash "$LAB/scripts/08-management.sh"
     ;;
   test)
     bash "$LAB/scripts/capture-01.sh"

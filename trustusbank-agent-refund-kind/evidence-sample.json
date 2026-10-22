@@ -31,7 +31,7 @@
         "gen_ai.tool.name": "refund_payment",
         "mcp.session.id": "aKajNWsppF0GPS5wScnO+s1puMAGmmURKJzmrLQ+qTzaiDAhNvIY3sIFpUyAd4g96+EBKzNVXb6P9iCYZ+uFJpSJyD4tgPNOu5kqOxhtGW5AzhiOK3/3vc9jVrsJ8FYn9gUGSuzhwafd",
         "duration": "30ms",
-        "audit.user": "priya",
+        "audit.user": "bob",
         "audit.sub": "eb245ee2-f524-4146-bf4c-13f33f5d2565",
         "audit.actor": "system:serviceaccount:bank:ledger-agent",
         "audit.chain": {

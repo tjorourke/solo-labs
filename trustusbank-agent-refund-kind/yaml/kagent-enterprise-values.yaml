@@ -1,0 +1,49 @@
+global:
+  licensing:
+    createSecret: false
+    secretName: trustusbank-kagent-license
+providers:
+  default: anthropic
+  anthropic:
+    apiKeySecretRef: bank-model
+    apiKeySecretKey: ANTHROPIC_API_KEY
+oidc:
+  issuer: http://keycloak.localtest.me:18580/realms/bank
+  clientId: bank-enterprise
+  secretRef: bank-enterprise-oidc
+  # The bank bridge performs the real STS delegation itself.
+  skipOBO: true
+rbac:
+  roleMapping:
+    roleMapper: 'has(claims.groups) ? claims.groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
+    roleMappings:
+      payments-ops: global.Admin
+database:
+  postgres:
+    bundled:
+      storageClassName: trustusbank-enterprise-local
+otel:
+  tracing:
+    enabled: true
+    sampler: always_on
+    exporter:
+      otlp:
+        endpoint: http://solo-enterprise-telemetry-collector.agentgateway-system.svc.cluster.local:4317
+        insecure: true
+ui:
+  enabled: false
+kmcp:
+  enabled: false
+kagent-tools:
+  enabled: false
+k8s-agent: {enabled: false}
+kgateway-agent: {enabled: false}
+istio-agent: {enabled: false}
+promql-agent: {enabled: false}
+observability-agent: {enabled: false}
+argo-rollouts-agent: {enabled: false}
+helm-agent: {enabled: false}
+cilium-policy-agent: {enabled: false}
+cilium-manager-agent: {enabled: false}
+cilium-debug-agent: {enabled: false}
+grafana-mcp: {enabled: false}

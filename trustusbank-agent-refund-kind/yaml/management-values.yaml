@@ -5,9 +5,16 @@ platform:
 istio:
   ambient:
     enabled: false
+global:
+  istio:
+    ambient:
+      enabled: false
 service:
   type: ClusterIP
 products:
+  kagent:
+    enabled: true
+    namespace: kagent
   agentgateway:
     enabled: true
     namespace: agentgateway-system
@@ -17,13 +24,29 @@ products:
 licensing:
   createSecret: false
   secretName: trustusbank-management-license
+oidc:
+  issuer: http://keycloak.localtest.me:18580/realms/bank
+ui:
+  publicUrl: http://localhost:18380
+  backend:
+    oidc:
+      clientId: bank-enterprise
+      secretRef: bank-enterprise-oidc
+  frontend:
+    oidc:
+      clientId: bank-enterprise-ui
+rbac:
+  roleMapping:
+    roleMapper: 'has(claims.groups) ? claims.groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
+    roleMappings:
+      payments-ops: global.Admin
 telemetry:
   metrics:
     enabled: false
   traces:
-    enabled: false
+    enabled: true
   collector:
-    replicaCount: 0
+    replicaCount: 1
 clickhouse:
   persistentVolume:
     enabled: false

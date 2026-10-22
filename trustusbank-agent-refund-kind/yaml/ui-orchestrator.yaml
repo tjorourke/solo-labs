@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: Service
+metadata: {name: bank-delegation, namespace: bank}
+spec:
+  selector: {bank-agent: orchestrator}
+  ports: [{name: mcp, port: 8081, targetPort: 8081, appProtocol: kgateway.dev/mcp}]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: assistant-entry, namespace: bank}
+spec:
+  selector: {matchLabels: {bank-agent: orchestrator}}
+  action: ALLOW
+  rules:
+  - to: [{operation: {ports: ['8080']}}]
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/bank/sa/payments-assistant
+        - cluster.local/ns/kagent/sa/kagent-controller
+    to: [{operation: {ports: ['8081']}}]
+---
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata: {name: bank-ui-model, namespace: bank}
+spec:
+  provider: Anthropic
+  model: claude-haiku-4-5
+  apiKeySecret: bank-model
+  apiKeySecretKey: ANTHROPIC_API_KEY
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata: {name: bank-delegation, namespace: bank}
+spec:
+  description: Verified payments-ops sessions and real STS/A2A delegation.
+  protocol: STREAMABLE_HTTP
+  url: http://bank-delegation.bank.svc.cluster.local:8081/mcp
+  timeout: 180s
+  terminateOnClose: false
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata: {name: payments-assistant, namespace: bank}
+spec:
+  type: Declarative
+  description: The payments team's assistant, which Bob uses.
+  declarative:
+    runtime: python
+    deployment:
+      annotations:
+        bank-runtime-context-version: '4'
+      env:
+      - name: PYTHONPATH
+        value: /opt/bank-runtime
+      volumes:
+      - name: bank-runtime-context
+        configMap:
+          name: bank-runtime-context
+      volumeMounts:
+      - name: bank-runtime-context
+        mountPath: /opt/bank-runtime
+        readOnly: true
+    modelConfig: bank-ui-model
+    systemMessage: |
+      You are the payments team's shared assistant, which Bob uses. Bank tools
+      verify the signed-in person's Keycloak session. Refunds use the real STS,
+      ledger A2A and gateway MCP path.
+      For identity questions call bank_session_identity. For a read-only check,
+      call investigate_payment and report the actual payment result.
+      For a refund call request_payment_refund with the requested payment and
+      amount. A completed result is final. IMPORTANT: input-required in that
+      result is the ledger's pause; it does NOT display a card in this chat.
+      You MUST immediately call approve_delegated_refund with the exact returned
+      payment, amount, task, context and confirmation identifiers. Calling that
+      tool requests the visible kagent approval card: requireApproval pauses it
+      BEFORE execution. Do not wait for another user message, ask for permission
+      in prose or claim a card is displayed without making this tool call.
+      A request to arrange a large refund or send it for approval means you must
+      create this actual approval card. After approve_delegated_refund returns,
+      the person has clicked Approve in the UI. Report the bank receipt; never
+      claim that calling the tool bypassed human approval.
+      Never invent identifiers, outcomes or approvals. Stop on error.
+      Explain results in plain UK English. Never display credentials or tokens.
+      For a rogue-agent check call try_rogue_delegation. For an instance stop
+      check call exercise_ledger_stop, which must restore traffic before returning.
+      For compliance evidence call get_refund_evidence. These tools execute real
+      checks as the signed-in person. Never substitute prose for a requested check.
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: bank-delegation
+        allowedHeaders: [Authorization]
+        toolNames: [bank_session_identity, investigate_payment, request_payment_refund, approve_delegated_refund, try_rogue_delegation, exercise_ledger_stop, get_refund_evidence]
+        requireApproval: [approve_delegated_refund]
