@@ -1,6 +1,6 @@
 # Bank refunds with A2A agents and gateway credential injection
 
-Runnable code for the [MasterTheAgent use case](https://mastertheagent.com/solo/bank-refunds-a2a-mcp-egress/).
+Runnable code for the [bank refund lab](https://mastertheagent.com/solo/trustusbank-agent-refund-kind/).
 Six declarative kagent agents investigate failed payments through A2A and MCP.
 Agentgateway checks the caller, enforces a GBP 2,000 autonomous limit and adds
 the bank credential on MCP-to-bank egress. Sarah requests a larger refund and
