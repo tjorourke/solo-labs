@@ -3,6 +3,20 @@ import json
 from gateway_client import receipts
 
 
+def tool_result(session, name):
+    """Extract an actual successful MCP result from this conversation."""
+    for response in reversed(session['responses']):
+        if response.get('name') != name:
+            continue
+        result = response.get('response', {})
+        if result.get('error') or result.get('isError'):
+            continue
+        for item in result.get('content', []):
+            if item.get('type') == 'text':
+                return json.loads(item['text'])
+    raise AssertionError('No successful ' + name + ' result')
+
+
 def delegated_tool_result(client, parent, agent_name, tool_name):
     """Read the actual successful MCP result, not the assistant's prose."""
     children = [r['response']['subagent_session_id'] for r in parent['responses']
@@ -60,7 +74,8 @@ def approved_record(client, pending, completed, before=None):
     payment_id = original['args']['payment_id']
     receipt = next(r for r in receipts() if r['payment_id'] == payment_id)
     assert receipt['refund'] == 'ISSUED' and receipt['credential_valid']
-    assert receipt['act'] == 'system:serviceaccount:bank:payments-assistant'
+    assert receipt['act'] == 'system:serviceaccount:bank:payments-manager'
+    assert receipt['user'] == client.user == 'sarah'
     assert receipt['traceparent'].split('-')[1] == after['trace_id']
     return {'source': 'Authenticated kagent approval, gateway trace and mock bank',
             'approved_by': client.user, 'approval_id': confirmation['id'],

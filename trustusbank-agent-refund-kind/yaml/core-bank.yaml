@@ -53,4 +53,10 @@ metadata: {name: core-credential, namespace: bank}
 spec:
   targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: core-bank}]
   backend:
-    auth: {secretRef: {name: core-bank-key}}
+    auth:
+      secretRef:
+        name: core-bank-key
+        key: Authorization
+      location:
+        header:
+          name: Authorization

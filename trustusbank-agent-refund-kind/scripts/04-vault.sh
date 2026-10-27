@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/lib.sh"
 set +x
+k create namespace vault --dry-run=client -o yaml | apply_stdin
+k label namespace vault bank.trustus/owner=refund-lab --overwrite
 helm --kube-context "$CTX" upgrade -i vault vault --repo https://helm.releases.hashicorp.com -n vault --create-namespace --version "$VAULT_VERSION" --set server.dev.enabled=true --set server.dev.devRootToken=root --set injector.enabled=false --wait --timeout=5m
 k -n vault wait --for=create pod/vault-0 --timeout=180s
 k -n vault wait --for=condition=Ready pod/vault-0 --timeout=180s
@@ -12,7 +14,7 @@ existing=false
 if k -n bank get deployment core-bank >/dev/null 2>&1; then existing=true; fi
 apply "$LAB/yaml/core-bank.yaml"
 if [[ "$existing" == true ]]; then restart_deployment bank core-bank; fi
-k -n bank rollout status deploy/core-bank --timeout=180s
+k -n bank rollout status deploy/core-bank --timeout=5m
 k -n bank wait --for=condition=Programmed gateway/bank-waypoint --timeout=180s
 k -n bank rollout status deploy/bank-waypoint --timeout=180s
 sleep 5

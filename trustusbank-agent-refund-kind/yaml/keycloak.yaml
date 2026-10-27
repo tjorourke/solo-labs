@@ -13,7 +13,7 @@ spec:
         env:
         - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
         - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: admin}
-        - {name: KC_HOSTNAME, value: 'http://keycloak.localtest.me:18580'}
+        - {name: KC_HOSTNAME, value: 'http://refund-idp.localtest.me:19580'}
         readinessProbe: {httpGet: {path: /realms/bank, port: 8080}, periodSeconds: 5}
         volumeMounts: [{name: realm, mountPath: /opt/keycloak/data/import}]
       volumes: [{name: realm, configMap: {name: realm}}]

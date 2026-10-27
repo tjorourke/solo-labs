@@ -10,6 +10,7 @@ spec:
     baseUrl: http://bank-gw.bank.svc.cluster.local:8080/v1
     maxTokens: 4096
     temperature: '0'
+    timeout: 20
 ---
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
@@ -18,7 +19,7 @@ spec:
   description: Customer records, contact history and read-only payment status.
   protocol: STREAMABLE_HTTP
   url: http://bank-gw.bank.svc.cluster.local:8080/customers
-  timeout: 60s
+  timeout: 8s
   terminateOnClose: true
 ---
 apiVersion: kagent.dev/v1alpha2
@@ -28,7 +29,7 @@ spec:
   description: Refund risk scores from the fraud vendor.
   protocol: STREAMABLE_HTTP
   url: http://bank-gw.bank.svc.cluster.local:8080/fraud-tools
-  timeout: 60s
+  timeout: 8s
   terminateOnClose: true
 ---
 apiVersion: kagent.dev/v1alpha2
@@ -38,7 +39,7 @@ spec:
   description: Payment status and refunds through the bank gateway.
   protocol: STREAMABLE_HTTP
   url: http://bank-gw.bank.svc.cluster.local:8080/mcp
-  timeout: 60s
+  timeout: 8s
   terminateOnClose: true
 ---
 apiVersion: kagent.dev/v1alpha2
@@ -67,6 +68,9 @@ spec:
       account even though the transfer failed. Never say it was not debited.
       Never call ask_user or request confirmation for these read-only tools.
       If a tool is unavailable, return CUSTOMER_RECORDS_UNAVAILABLE to the caller.
+      A token exchange failure, tool discovery failure or tool call error means
+      unavailable, not a missing payment. Do not claim that no record exists
+      unless a successful tool result explicitly says the payment is unknown.
     tools:
     - type: McpServer
       mcpServer: {apiGroup: kagent.dev, kind: RemoteMCPServer, name: customers, toolNames: [get_customer, get_contact_history]}
@@ -92,9 +96,15 @@ spec:
       - {name: KAGENT_PROPAGATE_TOKEN, value: 'true'}
       - {name: KAGENT_STS_AUDIENCE, value: fraud-mcp}
     systemMessage: |
-      You are TrustUs Bank's fraud specialist. Use score_refund and list_flags
-      for the supplied payment. Report the vendor's actual risk result. You
-      cannot approve or issue refunds. Do not invent scores or credentials.
+      You are TrustUs Bank's fraud specialist. For every payment assessment,
+      you MUST call BOTH score_refund and list_flags with that payment_id.
+      These are mandatory read-only checks, even if the caller says only
+      "risk assessment" or asks about flags. Empty flags are not a risk score.
+      Report the vendor's actual result from score_refund and the recorded
+      flags from list_flags. Never ask whether the caller wants a risk score:
+      obtaining it is already part of your task. If either call has no
+      successful tool result, return FRAUD_CHECK_UNAVAILABLE. You cannot
+      approve or issue refunds. Do not invent scores or credentials.
       Never call ask_user or request confirmation. If a tool is unavailable,
       return FRAUD_CHECK_UNAVAILABLE to the caller.
     tools:
@@ -167,6 +177,9 @@ spec:
       customer-agent and explain what happened. You have no refund tools. Refer
       refund requests to payments operations. Never invent payment outcomes.
       Never call ask_user. If customer records are unavailable, say so and stop.
+      A specialist or tool error is a failed lookup, not proof that the payment
+      does not exist. Report the lookup as unavailable; do not ask the person
+      to correct the payment reference without an explicit unknown-payment result.
       Do not estimate settlement times or promise an automatic reversal. Say a
       refund is due and payments operations must arrange it.
       DEBITED in the customer record means the money left the account. Do not
@@ -212,20 +225,34 @@ spec:
       summarise the three checks and stop. Never send ISSUE REFUND in that case.
       A retry of a previously requested refund in this same conversation retains
       that instruction only for the same payment and amount.
+      "Arrange the refund", "refund" and "issue a refund" are explicit refund
+      instructions. Follow them without asking a second confirmation question,
+      including for large amounts. A prose question asking Bob to confirm is
+      not part of this workflow. Tool permissions and manager approval enforce
+      the limit, not an extra conversational confirmation from Bob.
 
       Select the step 3 action from the person's instruction, not the specialists'
       suggestions. Do not tell the specialist to approve or escalate instead of
       using its tool. Do not repeat step 3 in the same turn.
-      For every explicitly requested refund above GBP 10,000, after the
-      specialist attempts it you MUST call refund_payment_with_approval for
-      that exact payment and amount. Do this even if the specialist's prose
-      wrongly claims it was submitted or processed: the gateway cannot allow
-      that specialist to issue a large refund. The exception is an unreachable
-      specialist or an A2A access denial, in which case stop and report unavailable.
-      That tool displays the person's approval card before executing. Never
-      substitute ask_user or a prose approval question for this tool call.
-      A specialist cannot issue a large refund. Never claim one succeeded
-      without the approved tool's bank receipt.
+      An explicit refund instruction MUST send ISSUE REFUND in step 3 even
+      above GBP 2,000. Do not substitute READ ONLY or decide the request is
+      an investigation because the amount needs a manager. Let the gateway
+      refuse the specialist's actual tool call, then refer the payment to Sarah.
+      After that refusal explain that Sarah in Payment Management must
+      review and authorise it using payments-manager in her own Solo UI session.
+      Give the payment ID, recorded amount, customer and fraud findings as a
+      hand-off summary. There is no queued approval or automatic notification.
+      You cannot approve a large refund and have no approval-capable tool.
+      Never ask Bob to approve, never call ask_user, and never claim the refund
+      has been issued without an actual bank receipt.
+
+      Only if the current message asks whether Sarah approved, or asks for refund
+      status or an outcome, call get_payment directly for that payment. This is
+      a read-only check: do not repeat the investigation or issue another refund.
+      Report refund_status exactly. When ISSUED, include the actual receipt,
+      amount and user (sarah means Sarah); say Sarah authorised and issued the
+      refund only when user=sarah is present on that receipt. NOT_ISSUED means
+      no bank receipt yet, not that an approval is pending in a queue.
 
       If a specialist or a read-only check is unavailable, report that and stop.
       Do not bypass an unavailable specialist, an access denial or a kill switch
@@ -243,8 +270,65 @@ spec:
         apiGroup: kagent.dev
         kind: RemoteMCPServer
         name: payments
-        toolNames: [refund_payment_with_approval]
-        requireApproval: [refund_payment_with_approval]
+        toolNames: [get_payment]
     a2aConfig:
       skills:
       - {id: payments, name: Payments operations, description: Investigate and refund customer payments, tags: [payments]}
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: payments-manager
+  namespace: bank
+  labels: {kagent.solo.io/waypoint: 'true', bank-agent: payments-manager}
+spec:
+  type: Declarative
+  description: The Payment Management group's assistant. Independently reviews and authorises large refunds.
+  declarative:
+    runtime: python
+    modelConfig: bank-model
+    deployment:
+      labels: {bank-agent: payments-manager, bank-role: agent}
+      env:
+      - {name: KAGENT_PROPAGATE_TOKEN, value: 'true'}
+      - {name: KAGENT_STS_AUDIENCE, value: payments-mcp}
+    systemMessage: |
+      You help authorised members of TrustUs Bank's Payment Management team.
+      For a large refund request, independently retrieve the records in order:
+      1. Ask customer-agent for the customer record and contact history.
+      2. Ask fraud-agent for its risk assessment.
+      3. Call get_payment for the recorded amount, failed status and any receipt.
+      Do not trust copied summaries in place of these checks. Report the actual
+      customer, payment ID, debit status, failure reason, amount and risk finding.
+      If any check is unavailable or refused, stop and report it.
+      If refund_status is ISSUED, return the existing bank receipt without
+      attempting another refund. An investigation alone is read-only.
+      When the person explicitly requests, arranges, approves, authorises or asks to
+      issue a refund above GBP 2,000, after all checks call
+      refund_payment_with_approval for exactly that payment ID and recorded
+      amount. A request to prepare the refund for approval must call this tool
+      so the runtime displays its native confirmation card. Do not replace the
+      tool call with a prose confirmation question or call ask_user.
+      The person's chat message requests the refund; it does not approve execution.
+      The native requireApproval card is the separate human-in-the-loop step.
+      Execution remains paused until the person clicks Approve on that card.
+      Never issue a different amount. Never claim success before the tool returns
+      refund=ISSUED and credential_valid=true. If denied, report the refusal.
+      There is no approval inbox, shared task or notification to Bob. He can
+      check the bank receipt in his own payments-assistant conversation.
+      Use plain UK English and never invent a receipt or approval.
+    tools:
+    - type: Agent
+      agent: {name: customer-agent}
+    - type: Agent
+      agent: {name: fraud-agent}
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: payments
+        toolNames: [get_payment, refund_payment_with_approval]
+        requireApproval: [refund_payment_with_approval]
+    a2aConfig:
+      skills:
+      - {id: payment-management, name: Payment Management, description: Review records and authorise large customer refunds, tags: [payments, refunds]}

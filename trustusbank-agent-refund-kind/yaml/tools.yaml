@@ -161,4 +161,4 @@ spec:
           matchExpressions:
           - 'source.identity.namespace == "kagent" && source.identity.serviceAccount == "kagent-controller" && mcp.methodName == "tools/list"'
           - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "fraud-agent" && mcp.tool.name in ["score_refund", "list_flags"]'
-          - 'has(jwt.act) && jwt.aud == "fraud-mcp" && jwt.act.sub == "system:serviceaccount:bank:fraud-agent" && "payments-ops" in jwt.groups && mcp.tool.name in ["score_refund", "list_flags"]'
+          - 'has(jwt.act) && jwt.aud == "fraud-mcp" && jwt.act.sub == "system:serviceaccount:bank:fraud-agent" && jwt.groups.exists(g, g in ["payments-ops", "payment_mgmt"]) && mcp.tool.name in ["score_refund", "list_flags"]'

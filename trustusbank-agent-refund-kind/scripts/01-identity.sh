@@ -9,10 +9,7 @@ for component in kube-apiserver kube-controller-manager kube-scheduler; do
 done
 k -n kube-system scale deployment coredns --replicas=1 --dry-run=server >/dev/null
 k -n kube-system scale deployment coredns --replicas=1
-if k -n local-path-storage get deployment local-path-provisioner >/dev/null 2>&1; then
-  k -n local-path-storage delete deployment local-path-provisioner --dry-run=server >/dev/null
-  k -n local-path-storage delete deployment local-path-provisioner --wait=false
-fi
+# Keep kind's default local-path provisioner for the kagent PostgreSQL PVC.
 # Reuse the host cache so a cold node does not race a registry TLS handshake.
 image=$(python3 -c 'import sys,yaml;print(next(d for d in yaml.safe_load_all(open(sys.argv[1])) if d["kind"]=="Deployment")["spec"]["template"]["spec"]["containers"][0]["image"])' "$LAB/yaml/keycloak.yaml")
 docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image" >/dev/null
@@ -28,11 +25,14 @@ R=oci://us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts
 helm --kube-context "$CTX" upgrade -i enterprise-agentgateway-crds "$R/enterprise-agentgateway-crds" -n agentgateway-system --create-namespace --version "$AGW_VERSION" --wait
 apply "$LAB/yaml/gateway-runtime.yaml"
 set -a
-source "${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}" >/dev/null 2>&1
+source "$SECRETS_FILE" >/dev/null 2>&1
 set +a
 : "${AGENTGATEWAY_LICENSE_KEY:?licence required}"
 printf '%s' "$AGENTGATEWAY_LICENSE_KEY" | k -n agentgateway-system create secret generic enterprise-agentgateway-license --from-file=enterprise-agentgateway-license-key=/dev/stdin --dry-run=client -o yaml | apply_stdin
-for ns in keycloak bank; do k create namespace "$ns" --dry-run=client -o yaml | apply_stdin; done
+for ns in keycloak bank; do
+  k create namespace "$ns" --dry-run=client -o yaml | apply_stdin
+  k label namespace "$ns" bank.trustus/owner=refund-lab --overwrite
+done
 k -n keycloak create configmap realm --from-file="$LAB/yaml/realm-bank.json" --dry-run=client -o yaml | apply_stdin
 apply "$LAB/yaml/keycloak.yaml"
 k -n keycloak rollout status deploy/keycloak --timeout=300s

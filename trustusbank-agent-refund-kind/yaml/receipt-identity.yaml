@@ -11,6 +11,7 @@ spec:
         set:
         - {name: x-bank-sub, value: 'jwt.sub'}
         - {name: x-bank-actor, value: 'has(jwt.act) ? jwt.act.sub : ""'}
+        - {name: x-bank-user, value: 'has(jwt.preferred_username) ? jwt.preferred_username : jwt.sub'}
         remove: [authorization]
 ---
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1

@@ -1,175 +1,230 @@
-# TrustUs Bank: refunding a customer with an AI agent
+# Bank refunds with A2A agents and gateway credential injection
 
-Carol checks a failed payment. Bob's payments assistant asks three specialists
-to investigate, refunds £1,250 and waits for approval before refunding £25,000.
-Alice can stop the refunds agent with one policy. Compliance follows the trace.
+Runnable code for the [MasterTheAgent use case](https://mastertheagent.com/solo/bank-refunds-a2a-mcp-egress/).
+Six declarative kagent agents investigate failed payments through A2A and MCP.
+Agentgateway checks the caller, enforces a GBP 2,000 autonomous limit and adds
+the bank credential on MCP-to-bank egress. Sarah requests a larger refund and
+confirms the native Approve card in her own manager conversation.
 
 The bank, fraud vendor and payment records are synthetic. No money moves.
+Anthropic model calls are real and use the API key supplied during setup.
 
-## Run
+## Requirements
 
-Requirements: Docker with `docker image save --platform`, kind, kubectl, Helm,
-Python 3 with PyYAML and access to the
-Solo Istio image registry. The sourceable secrets file must provide
-`SOLO_ISTIO_LICENSE_KEY`, `SOLO_LICENSE_KEY`, `AGENTGATEWAY_LICENSE_KEY` and
-`ANTHROPIC_API_KEY`. No key is written to the manifests.
+- Docker, kind, kubectl, Helm and Python 3 with PyYAML.
+- Access to the Solo Istio image registry.
+- Valid Solo Enterprise for Istio, agentgateway and kagent/management licences.
+- An Anthropic API key.
+- Enough local resources for Istio, gateway waypoints, six agent runtimes,
+  PostgreSQL, the Solo UI, ClickHouse, Keycloak and Vault.
+
+This is an **Enterprise-only** lab. It uses Solo Istio Enterprise waypoints,
+Solo STS, kagent Enterprise OIDC and AccessPolicy. The `yaml-oss/` directory is
+an untested illustrative subset, not an OSS edition of the complete use case.
+
+## Install
+
+Clone this directory from `tjorourke/solo-labs`, or work from the canonical
+`solo-demos` repository. There is no dependency on the private staff suite.
+
+Create a sourceable file outside the checkout, readable only by you:
 
 ```bash
-export SECRETS_FILE="$HOME/code/solo/secrets/secrets-envs.sh"
+mkdir -p "$HOME/.config/solo"
+cat > "$HOME/.config/solo/refund-lab.env" <<'EOF'
+SOLO_ISTIO_LICENSE_KEY='YOUR_SOLO_ISTIO_LICENCE'
+AGENTGATEWAY_LICENSE_KEY='YOUR_AGENTGATEWAY_LICENCE'
+SOLO_LICENSE_KEY='YOUR_KAGENT_AND_MANAGEMENT_LICENCE'
+ANTHROPIC_API_KEY='YOUR_ANTHROPIC_API_KEY'
+EOF
+chmod 600 "$HOME/.config/solo/refund-lab.env"
+export SECRETS_FILE="$HOME/.config/solo/refund-lab.env"
 cd trustusbank-agent-refund-kind
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install PyYAML
 bash scripts/quick.sh up
-bash scripts/quick.sh test
 ```
 
-The scripts use only `kind-trustusbank-lab`. `test` resets the mock bank's
-receipts, runs the eight steps and negative controls, restores the kill switch
-and writes `/tmp/trustusbank-evidence.json` and `/tmp/trustusbank-traces.json`.
-The latter supplies the staff console's live trace links.
+The scripts create and mutate only the standalone `kind-trustusbank-lab`
+cluster. They do not use or alter `mesh1`, `mesh2` or the staff console.
+Secrets are created from stdin, not embedded in checked-in manifests.
+The kagent database uses kind's standard local-path provisioner.
 
-Keep these forwards open in separate terminals:
+Keep these two forwards open in separate terminals:
 
 ```bash
-bash scripts/ui-forward.sh kagent     # http://localhost:18380
-bash scripts/ui-forward.sh keycloak   # http://keycloak.localtest.me:18580
+bash scripts/ui-forward.sh kagent
+# http://refund-lab.localhost:19380
+
+bash scripts/ui-forward.sh keycloak
+# http://refund-idp.localtest.me:19580
 ```
 
-Open the [customer service assistant](http://localhost:18380/ke/agents/trustusbank-lab/bank/customer-service-assistant/)
-as **carol / password**, then sign out and use **bob / password** for the
-[payments assistant](http://localhost:18380/ke/agents/trustusbank-lab/bank/payments-assistant/).
-The staff presenter page is `http://localhost:8900/trustusbank-agent-refund`.
+Chrome resolves the UI's `.localhost` name to loopback and treats it as a secure
+context, so browser crypto APIs work over local HTTP. The IdP's `localtest.me`
+name also resolves to loopback. Distinct hostnames and ports keep this lab's
+browser sessions separate from other local demos. Keycloak's issuer
+also resolves inside the cluster through the lab's CoreDNS rewrite and issuer
+Service port. HTTP, fixture passwords and the Vault dev server are lab settings;
+the article explains the production changes.
 
-## The eight steps
+## People and agents
 
-| Step | Person | Action |
+All fixture passwords are `password`. Use separate browser profiles or sign
+out between personas.
+
+| Person | IdP group | Agent |
 | --- | --- | --- |
-| 1 | Carol | Ask the customer service assistant about failed payment PAY-7781. |
-| 2 | Carol | Try the payments assistant. The gateway returns 403. |
-| 3 | Bob | Ask the payments assistant to investigate PAY-7781. Check the three A2A child calls. |
-| 4 | Bob | Request the £1,250 refund. Check the bank receipt and delegated actor. |
-| 5 | Bob | Request PAY-7790 for £25,000. The autonomous attempt is refused; approve the assistant's `refund_payment_with_approval` card. |
-| 6 | Alice | Apply the kill switch. Bob's £900 PAY-7795 request is refused, but his assistant still answers. |
-| 7 | Alice, Bob | Remove the switch; Bob asks to try PAY-7795 again. |
-| 8 | Compliance | Open the approved refund trace and compare the approval with the bank receipt. |
+| Carol | `customer-service` | `customer-service-assistant` |
+| Bob | `payments-ops` | `payments-assistant` |
+| Sarah | `payment_mgmt` | `payments-manager` |
+| Alice | `security-ops` | Applies the scoped kill-switch policy |
 
-Copyable prompts are on the [walkthrough](index.html). To drive a turn through
-the same authenticated A2A API:
+Agent URLs start with:
 
-```bash
-bash scripts/ask.sh carol 'What happened to PAY-7781?' --agent customer-service-assistant
-bash scripts/ask.sh bob 'Look into PAY-7781 for me.'
-bash scripts/capture-rogue.sh
-bash scripts/killswitch.sh on
-bash scripts/killswitch.sh off
+```text
+http://refund-lab.localhost:19380/ke/agents/trustusbank-lab/bank/
 ```
 
-`capture.sh approval` leaves a genuine native approval task pending; it does
-not approve on the person's behalf. The automated test explicitly approves as
-Bob through the API. `capture-01.sh`, `capture-03.sh`, `capture-05.sh`,
-`capture-06.sh` and `capture-07.sh` remain wrappers for terminal captures.
+Append the agent name and `/`. The three specialist agents are called by the
+assistants over A2A, rather than directly by employees.
 
-## Architecture
+## Walk through the use case
 
-![TrustUs Bank architecture](diagrams/architecture.svg)
-
-All five agents are declarative kagent resources. The two assistants delegate
-with `tools[].type: Agent`. Specialists reach three `RemoteMCPServer` endpoints
-through the shared bank waypoint. The native runtime performs the STS exchange.
-
-| Credential | Held by | Agent or MCP pod? |
-| --- | --- | --- |
-| Anthropic API key | `anthropic-key`, injected on model egress | No |
-| Vault-issued bank token | `core-bank-key`, injected on `/core` | No |
-| Fraud vendor API key | `fraud-vendor-key`, injected as `X-Api-Key` | No; the vendor verifier also receives its expected key |
-| Placeholder model string | `bank-model-placeholder` | Yes; it cannot authenticate to Anthropic |
-| Human/delegated tokens | kagent and the request path | Short-lived tokens; kagent also retains human request headers in its session store |
-
-The bank gateway's Service has no backing pods. Istio directs calls to
-`bank-waypoint`, which authenticates the caller over HBONE. MCP selectors and
-Service backends preserve mesh identity on the outgoing connection. Static
-host backends did not: strict mTLS correctly refused them during validation.
-L4 policies prevent direct calls to the tool and mock pods.
-
-## Decisions from the live spikes
-
-- **A2A identity:** runtime 0.10.3 forwards the original Keycloak bearer when
-  `KAGENT_PROPAGATE_TOKEN=true`. The MCP token has one actor, the specialist.
-  Do not describe a nested assistant → specialist actor chain that is not there.
-- **MCP transport:** the three mock servers run stateless HTTP. Their gateway
-  backends explicitly use `sessionRouting: Stateless`, so the client does not
-  establish a stateful MCP session or an optional long-running GET stream.
-  The default stateful path intermittently stalled during session setup.
-- **Gateway model format:** the runtime uses the OpenAI-compatible API to the
-  gateway; the gateway calls Anthropic. Native Anthropic requests returned a
-  Completions parser error on this build.
-- **Approval:** the assistant's tool is named `refund_payment_with_approval`
-  to make the intended choice unambiguous. `requireApproval` belongs to that
-  tool on the assistant. No sub-agent approval bridge or runtime adapter is used.
-- **Read-only enquiries:** a failed payment is not itself a refund instruction.
-  The assistant sends `READ ONLY` or `ISSUE REFUND` to the payment specialist
-  according to the person's request, after the customer and risk checks.
-- **Amount limit:** `mcp.tool` describes the catalogue entry, not call arguments.
-  Its authorisation rule must not test `mcp.tool.arguments`. The separate
-  `refund-amount-limit` traffic policy reads `json(request.body)` and returns 403.
-- **User access:** generated AccessPolicies include a controller discovery
-  exception. The additional `Require` policy enforces the human's groups on
-  every POST. A transformation restores the verified `jwt.rawToken` as the
-  onward Authorization header for STS, without relying on JWT policy ordering.
-  Specialist POSTs additionally require an assistant workload identity, so a
-  person cannot invoke them directly through the controller's discovery exception.
-  In 0.5.11, a refused UI request can leave an empty chat title because it never
-  reached an agent to create a task. The persistent refusal record is the
-  gateway trace, linked from console Step 2 after `quick.sh test`.
-- **Kill switch:** use explicit Agent subjects. Empty subjects on a named target
-  translated to a controller-only ALLOW, not a universal DENY. The separate
-  agent-card route keeps discovery available while execution is denied, allowing
-  the assistant to report the outage.
-- **Legacy OBO:** 0.5.11 still requires `skipOBO: true` for this agent-side STS
-  design. Without it the controller returned `obo token handler not ready`.
-- **Gateway-driven exchange:** retesting with explicit `tokenType: Jwt` returned
-  403 rather than the old `unsupported token_type: N_A`. It is not used here.
-- **Tool concurrency:** the pinned Python MCP client intermittently stalled
-  during concurrent discovery/calls. The gateway sets Anthropic's
-  `disable_parallel_tool_use` flag. The assistant still visits all three
-  specialists, with their calls scheduled sequentially.
-
-## Telemetry and evidence
-
-`always_on` agent sampling and gateway sampling send OTLP/gRPC to the Solo
-management collector. ClickHouse holds the spans. The evidence script joins
-the authenticated native approval, gateway trace IDs and core-bank receipt.
-The approval HTTP request starts a new trace; the evidence keeps the earlier
-autonomous-refusal trace and the approved-call trace under the same task context.
-It records claims and header names, never credential values or bearer tokens.
-
-For a second person's approval queue, use the pattern in
-[`agentic-hitl-kind`](../agentic-hitl-kind/). For a production Vault integration,
-use Secrets Store CSI and `EnterpriseAgentgatewayExternalSecret` rather than
-the lab's explicit token-to-Secret provisioning script. Christian Posta's
-credential-injection series describes the proxy-gateway model used here:
-the agent does not hold the downstream credential.
-
-## Edition and regulation
-
-This is **Enterprise-only**: Solo Istio waypoints, kagent Enterprise OIDC and
-AccessPolicy, and Solo STS are part of the demonstrated flow.
-`yaml-oss/credential-injection.yaml` is an **untested illustrative subset** for
-the portable model backend, route and authorisation. It is not an OSS edition
-of the complete lab.
-
-The controls are relevant to [DORA Article 9](https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32022R2554):
-9(4)(b), including the following subparagraph, concerns isolation and severing
-or segmenting connections; 9(4)(c) concerns access limited to legitimate and
-approved functions; 9(4)(d) concerns strong authentication and cryptographic
-key protection. Steps 6–7 demonstrate isolation, steps 1–5 access and approval,
-and steps 3–5 authentication and gateway-held credentials. Running this lab is
-not a compliance assessment or claim.
-
-## Teardown
+Start with clean mock receipts and new chats:
 
 ```bash
-bash scripts/quick.sh teardown
+bash scripts/reset-receipts.sh
 ```
 
-The script reads the cluster list back to confirm that `trustusbank-lab` is
-gone. See `versions.env` for the pins and the live-spike decisions above for
-the implementation notes.
+1. **Carol, customer-service-assistant:**
+
+   > A customer says payment PAY-7781 failed this morning and the money has left their account. What happened?
+
+   Expect Morgan Taylor, GBP 1,250, FAILED, DEBITED and a beneficiary bank timeout.
+
+2. **Carol, payments-assistant:**
+
+   > Please refund GBP 1,250 to the customer for PAY-7781.
+
+   The agent waypoint refuses this access. This build can leave an empty chat
+   title after a refusal; the gateway trace is the lasting denial record.
+
+3. **Bob, payments-assistant:**
+
+   > Look into PAY-7781 for me. The customer was charged but the merchant says nothing arrived.
+
+   Inspect the customer, fraud and refunds specialist child calls. Investigation
+   alone must not issue a refund.
+
+4. **Bob, in that payments conversation:**
+
+   > Refund the GBP 1,250 to the customer for PAY-7781.
+
+   Expect an actual bank receipt with `credential_valid: true` and refunds-agent
+   as the delegated actor.
+
+5. **Bob:**
+
+   > The customer has a second failed transfer, PAY-7790 for GBP 25,000. Arrange the refund.
+
+   This is another payment for Morgan Taylor. The autonomous call exceeds GBP
+   2,000 and is refused. Pass the payment reference and findings to Sarah manually.
+
+6. **Sarah, payments-manager in her own browser session:**
+
+   > Please arrange a GBP 25,000 refund for PAY-7790. Independently check the customer, fraud and payment records, then prepare the refund for my approval.
+
+   Her assistant independently retrieves the records and pauses at the native
+   `refund_payment_with_approval` card. Check PAY-7790 and 25000, then click
+   **Approve**. Sending the prompt is the request, not the approval. **Reject**
+   does not issue a refund. Bob cannot submit Sarah's confirmation.
+
+7. **Bob, back in his original conversation:**
+
+   > Has Sarah approved the refund for PAY-7790? Check the refund status.
+
+   This is a read-only receipt lookup, not another refund instruction.
+
+8. **Alice, then Bob:**
+
+   ```bash
+   bash scripts/killswitch.sh on
+   ```
+
+   > Another customer's GBP 900 payment PAY-7795 failed. Refund it.
+
+   Bob's assistant stays available, but refunds-agent execution is refused.
+
+9. **Alice, then Bob:**
+
+   ```bash
+   bash scripts/killswitch.sh off
+   ```
+
+   > Try PAY-7795 again.
+
+   Inspect the issued receipt and the separate gateway/agent traces.
+
+## How the agents were built
+
+There is no custom orchestrator or approval queue. `yaml/agents.yaml` contains
+six `kagent.dev/v1alpha2` declarative Agent resources and three RemoteMCPServers.
+They share a ModelConfig pointing at the gateway's OpenAI-compatible model
+endpoint. `tools[].type: Agent` enables the assistants' A2A calls; specialist
+`McpServer` tools use the gateway URLs. Each agent receives its own waypoint.
+
+| Source | Purpose |
+| --- | --- |
+| `yaml/agents.yaml` | Six agents, model configuration, A2A skills, MCP tools and manager `requireApproval` |
+| `yaml/access.yaml`, `yaml/agent-identity.yaml` | IdP groups, native agent access and verified onward identity |
+| `yaml/realm-bank.json` | Synthetic people, groups and group-derived `may_act.sub` grants |
+| `yaml/payments.yaml` | Stateless Payments MCP backend, delegated-identity checks and GBP 2,000 traffic-phase limit |
+| `yaml/core-bank.yaml`, `yaml/egress.yaml` | Bank route, authorised MCP workload and explicit egress credential injection |
+| `yaml/payments-lockdown.yaml` | Strict mesh paths; no direct tool/bank bypass |
+| `scripts/*_mcp.py`, `scripts/bank_data.py` | Synthetic MCP tools and records, deployed from ConfigMaps |
+| `scripts/core_bank.py` | Mock bank, idempotent receipts and Vault credential validation |
+
+The native runtime performs STS exchange. A2A forwards the original human
+bearer; the specialist's MCP token has one actor. Do not infer a nested
+assistant → specialist actor chain that is not present.
+
+## Credentials and production scope
+
+The agent and MCP pod specs reference no downstream provider/bank Secrets.
+They still use short-lived identities, and kagent retains human request
+headers in its session store. The model string in agent pods is only a
+non-authenticating placeholder.
+
+The lab creates a Vault token, stages it in `core-bank-key`, and the gateway
+adds Authorization on `/core` egress. The mock bank validates the token with
+Vault per request. `scripts/04-vault.sh` demonstrates revocation and
+`scripts/renew-core-key.sh` updates the Secret without restarting the gateway.
+This is a synthetic bank credential, not a claim that Vault can revoke every
+real bank's API key. VSO, tenant isolation and a production bank integration
+are recommendations in the article, not installed components here.
+
+Keep the stateless MCP backends and disabled Anthropic parallel tool use on
+these pinned builds. The native Python MCP discovery path has shown an
+intermittent timeout; a completed answer saying records are unavailable is
+not success. `quick.sh wake` verifies the actual customer record.
+
+## Verify, reset and remove
+
+```bash
+bash scripts/quick.sh test       # Native story, approval, negative controls and amount boundaries
+bash scripts/quick.sh wake       # Read-only readiness, may renew an expired bank credential
+python3 scripts/reset.py         # Scoped history, pending-task, receipt and trace reset
+bash scripts/quick.sh teardown   # Deletes only the standalone trustusbank-lab cluster
+```
+
+`test` confirms native approval **as Sarah** for automated validation. For a
+manual demonstration, use the native UI button yourself. The verifier writes
+redacted evidence and trace IDs under `/tmp/trustusbank-*`; never publish raw
+kagent REST session responses, which contain saved bearer headers.
+
+The reset clears only bank data on this standalone context. It retains the
+installed agents, policies, IdP groups and platform, and verifies removal.
+New controller discovery can produce fresh technical traces afterwards.
+Use teardown when finished to release the temporary cluster's resources.

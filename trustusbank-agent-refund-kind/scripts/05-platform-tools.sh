@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/lib.sh"
 set +x
-source "${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}" >/dev/null 2>&1
+source "$SECRETS_FILE" >/dev/null 2>&1
 : "${ANTHROPIC_API_KEY:?Anthropic key required}"
 printf '%s' "$ANTHROPIC_API_KEY" | k -n bank create secret generic anthropic-key --from-file=Authorization=/dev/stdin --dry-run=client -o yaml | apply_stdin
 printf '%s' placeholder | k -n bank create secret generic bank-model-placeholder --from-file=ANTHROPIC_API_KEY=/dev/stdin --dry-run=client -o yaml | apply_stdin

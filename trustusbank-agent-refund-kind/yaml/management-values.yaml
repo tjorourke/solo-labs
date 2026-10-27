@@ -25,9 +25,9 @@ licensing:
   createSecret: false
   secretName: trustusbank-management-license
 oidc:
-  issuer: http://keycloak.localtest.me:18580/realms/bank
+  issuer: http://refund-idp.localtest.me:19580/realms/bank
 ui:
-  publicUrl: http://localhost:18380
+  publicUrl: http://refund-lab.localhost:19380
   backend:
     oidc:
       clientId: bank-enterprise
@@ -40,6 +40,7 @@ rbac:
     roleMapper: 'has(claims.groups) ? claims.groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
     roleMappings:
       payments-ops: global.Admin
+      payment_mgmt: global.Reader
       customer-service: global.Reader
       security-ops: global.Admin
 telemetry:

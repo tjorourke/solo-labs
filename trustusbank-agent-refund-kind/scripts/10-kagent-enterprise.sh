@@ -2,7 +2,7 @@
 source "$(dirname "$0")/lib.sh"
 set +x
 set -a
-source "${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}" >/dev/null 2>&1
+source "$SECRETS_FILE" >/dev/null 2>&1
 set +a
 export KAGENT_ENT_LICENSE_KEY="${KAGENT_ENT_LICENSE_KEY:-${SOLO_LICENSE_KEY:-}}"
 : "${KAGENT_ENT_LICENSE_KEY:?Solo Enterprise for kagent licence required}"
@@ -15,8 +15,7 @@ tools
 python3 "$LAB/scripts/enterprise-oidc.py"
 printf '%s' "$KAGENT_ENT_LICENSE_KEY" | k -n kagent create secret generic trustusbank-kagent-license --from-file=enterprise-kagent-license-key=/dev/stdin --dry-run=client -o yaml | apply_stdin
 printf '%s' placeholder | k -n kagent create secret generic bank-model-placeholder --from-file=ANTHROPIC_API_KEY=/dev/stdin --dry-run=client -o yaml | apply_stdin
-docker exec trustusbank-lab-control-plane mkdir -p -m 0777 /var/local/trustusbank-enterprise-kagent-db
-apply "$LAB/yaml/kagent-enterprise-storage.yaml"
+# Use kind's standard local-path provisioner for the kagent database.
 # Do not uninstall an already migrated Enterprise release on rerun.
 if helm --kube-context "$CTX" list -n kagent -o json | python3 -c 'import json,sys;sys.exit(not any(r["name"]=="kagent" and r["chart"].startswith("kagent-0.") for r in json.load(sys.stdin)))'; then
   helm --kube-context "$CTX" uninstall kagent -n kagent --wait --timeout=5m

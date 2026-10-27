@@ -41,6 +41,7 @@ class Bank(BaseHTTPRequestHandler):
                 result.update(refund='ISSUED', amount_gbp=body['amount_gbp'], mock=True,
                               sub=self.headers.get('X-Bank-Sub'),
                               act=self.headers.get('X-Bank-Actor'),
+                              user=self.headers.get('X-Bank-User'),
                               traceparent=self.headers.get('traceparent'),
                               timestamp=datetime.now(timezone.utc).isoformat())
                 refunds.append(result)

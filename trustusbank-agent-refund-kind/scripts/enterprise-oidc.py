@@ -44,14 +44,17 @@ realm = json.loads((Path(__file__).parents[1] / 'yaml/realm-bank.json').read_tex
 realm_root = kc + '/admin/realms/bank'
 # Import is only used on the first boot. Reconcile people and mappers on reruns.
 profile = request(realm_root + '/users/profile')
-if not any(a['name'] == 'bank_may_act' for a in profile['attributes']):
-    profile['attributes'].append({'name': 'bank_may_act',
+if not any(a['name'] == 'bank_may_act_sub' for a in profile['attributes']):
+    profile['attributes'].append({'name': 'bank_may_act_sub',
                                   'permissions': {'view': ['admin'], 'edit': ['admin']}})
     request(realm_root + '/users/profile', profile, 'PUT')
 for group in realm['groups']:
     if not any(g['name'] == group['name'] for g in request(realm_root + '/groups')):
         request(realm_root + '/groups', group, 'POST')
 groups = {g['name']: g['id'] for g in request(realm_root + '/groups')}
+for group in realm['groups']:
+    # Delegation is inherited from IdP group membership, not a named person.
+    request(realm_root + '/groups/' + groups[group['name']], group, 'PUT')
 for source in realm['users']:
     user = {key: value for key, value in source.items() if key != 'groups'}
     found = request(realm_root + '/users?exact=true&username=' + user['username'])
@@ -75,10 +78,8 @@ clients = realm['clients'] + [
      'protocolMappers': mappers},
     {'clientId': 'bank-enterprise-ui', 'enabled': True, 'publicClient': True,
      'standardFlowEnabled': True, 'protocol': 'openid-connect',
-     'redirectUris': ['http://localhost:18380/*', 'http://localhost:18390/*',
-                      'http://127.0.0.1:18390/*'],
-     'webOrigins': ['http://localhost:18380', 'http://localhost:18390',
-                    'http://127.0.0.1:18390'],
+     'redirectUris': ['http://refund-lab.localhost:19380/*', 'http://refund-lab.localhost:19390/*'],
+     'webOrigins': ['http://refund-lab.localhost:19380', 'http://refund-lab.localhost:19390'],
      'attributes': {'pkce.code.challenge.method': 'S256', 'post.logout.redirect.uris': '+'},
      'protocolMappers': mappers},
 ]
@@ -98,14 +99,14 @@ for ns in ('kagent', 'agentgateway-system'):
 svc = json.loads(k('-n', 'keycloak', 'get', 'service', 'keycloak', '-o', 'json'))
 ports = svc['spec']['ports']
 ports[0]['name'] = 'http'
-if not any(p['port'] == 18580 for p in ports):
-    ports.append({'name': 'issuer', 'port': 18580, 'targetPort': 8080})
+if not any(p['port'] == 19580 for p in ports):
+    ports.append({'name': 'issuer', 'port': 19580, 'targetPort': 8080})
 patch = json.dumps({'spec': {'ports': ports}})
 k('-n', 'keycloak', 'patch', 'service', 'keycloak', '--type=merge', '-p', patch, '--dry-run=server')
 k('-n', 'keycloak', 'patch', 'service', 'keycloak', '--type=merge', '-p', patch)
 dns = json.loads(k('-n', 'kube-system', 'get', 'configmap', 'coredns', '-o', 'json'))
 core = dns['data']['Corefile']
-rewrite = 'rewrite name keycloak.localtest.me keycloak.keycloak.svc.cluster.local'
+rewrite = 'rewrite name refund-idp.localtest.me keycloak.keycloak.svc.cluster.local'
 if rewrite not in core:
     dns['data']['Corefile'] = core.replace('ready', 'ready\n    ' + rewrite, 1)
     dns.pop('status', None)
@@ -116,4 +117,4 @@ if rewrite not in core:
     # cache the public localhost answer for keycloak.localtest.me.
     k('-n', 'kube-system', 'rollout', 'restart', 'deployment/coredns')
     k('-n', 'kube-system', 'rollout', 'status', 'deployment/coredns', '--timeout=120s')
-print('Enterprise OIDC configured: Carol, Bob and Alice; per-person groups and delegation grants.')
+print('Enterprise OIDC configured: Carol, Bob, Sarah and Alice; group-derived delegation grants.')

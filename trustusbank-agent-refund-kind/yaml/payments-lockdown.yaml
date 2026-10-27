@@ -21,6 +21,7 @@ spec:
     - source:
         principals:
         - cluster.local/ns/bank/sa/agent-payments-assistant-waypoint
+        - cluster.local/ns/bank/sa/agent-payments-manager-waypoint
         - cluster.local/ns/bank/sa/agent-customer-service-assistant-waypoint
         - cluster.local/ns/bank/sa/agent-customer-agent-waypoint
         - cluster.local/ns/bank/sa/agent-fraud-agent-waypoint

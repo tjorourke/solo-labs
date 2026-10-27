@@ -78,8 +78,12 @@ spec:
           matchExpressions:
           - 'source.identity.namespace == "kagent" && source.identity.serviceAccount == "kagent-controller" && mcp.methodName == "tools/list"'
           - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "refunds-agent" && mcp.tool.name in ["get_payment", "refund_payment"]'
-          - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "payments-assistant" && mcp.tool.name == "refund_payment_with_approval"'
-          - 'mcp.tool.name == "get_payment" && has(jwt.act) && jwt.aud == "payments-mcp" && jwt.act.sub == "system:serviceaccount:bank:refunds-agent"'
+          - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "payments-assistant" && mcp.tool.name == "get_payment"'
+          - 'mcp.methodName == "tools/list" && source.identity.namespace == "bank" && source.identity.serviceAccount == "payments-manager" && mcp.tool.name in ["get_payment", "refund_payment_with_approval"]'
+          - >-
+            mcp.tool.name == "get_payment" && has(jwt.act) && jwt.aud == "payments-mcp" &&
+            (("payments-ops" in jwt.groups && jwt.act.sub in ["system:serviceaccount:bank:refunds-agent", "system:serviceaccount:bank:payments-assistant"]) ||
+             ("payment_mgmt" in jwt.groups && jwt.act.sub == "system:serviceaccount:bank:payments-manager"))
           - >-
             mcp.tool.name == "refund_payment"
             && jwt.aud == "payments-mcp"
@@ -89,8 +93,8 @@ spec:
           - >-
             mcp.tool.name == "refund_payment_with_approval"
             && jwt.aud == "payments-mcp"
-            && "payments-ops" in jwt.groups
-            && has(jwt.act) && jwt.act.sub == "system:serviceaccount:bank:payments-assistant"
+            && "payment_mgmt" in jwt.groups
+            && has(jwt.act) && jwt.act.sub == "system:serviceaccount:bank:payments-manager"
             && !has(jwt.act.act)
             && !jwt.sub.startsWith("system:serviceaccount:")
 ---
@@ -112,6 +116,7 @@ spec:
             (has(jwt.act) &&
               ((jwt.act.sub == "system:serviceaccount:bank:refunds-agent" &&
                 double(b.params.arguments.amount_gbp) > 0.0 &&
-                double(b.params.arguments.amount_gbp) <= 10000.0) ||
-               (jwt.act.sub == "system:serviceaccount:bank:payments-assistant" &&
+                double(b.params.arguments.amount_gbp) <= 2000.0) ||
+               (jwt.act.sub == "system:serviceaccount:bank:payments-manager" &&
+                "payment_mgmt" in jwt.groups &&
                 !has(jwt.act.act)))))

@@ -3,6 +3,7 @@ set -Eeuo pipefail
 LAB=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$LAB/versions.env"
 CTX=kind-trustusbank-lab
+export SECRETS_FILE="${SECRETS_FILE:-$HOME/.config/solo/refund-lab.env}"
 k() { kubectl --context "$CTX" "$@"; }
 apply() { k apply --dry-run=server -f "$1" >/dev/null; k apply -f "$1"; }
 apply_stdin() { local tmp; tmp=$(mktemp); chmod 600 "$tmp"; cat > "$tmp"; apply "$tmp"; rm -f "$tmp"; }

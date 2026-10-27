@@ -1,5 +1,23 @@
 apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
 kind: AccessPolicy
+metadata: {name: payments-manager-mgmt, namespace: bank}
+spec:
+  action: ALLOW
+  from:
+    subjects:
+    - kind: UserGroup
+      userGroup:
+        claimName: groups
+        claimValue: payment_mgmt
+        issuer: http://refund-idp.localtest.me:19580/realms/bank
+        jwksKey:
+          remote:
+            serviceRef: {name: keycloak, namespace: keycloak, port: 8080}
+            path: /realms/bank/protocol/openid-connect/certs
+  targetRef: {kind: Agent, name: payments-manager}
+---
+apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
+kind: AccessPolicy
 metadata: {name: payments-assistant-ops, namespace: bank}
 spec:
   action: ALLOW
@@ -9,7 +27,7 @@ spec:
       userGroup:
         claimName: groups
         claimValue: payments-ops
-        issuer: http://keycloak.localtest.me:18580/realms/bank
+        issuer: http://refund-idp.localtest.me:19580/realms/bank
         jwksKey:
           remote:
             serviceRef: {name: keycloak, namespace: keycloak, port: 8080}
@@ -27,7 +45,7 @@ spec:
       userGroup:
         claimName: groups
         claimValue: customer-service
-        issuer: http://keycloak.localtest.me:18580/realms/bank
+        issuer: http://refund-idp.localtest.me:19580/realms/bank
         jwksKey:
           remote:
             serviceRef: {name: keycloak, namespace: keycloak, port: 8080}
@@ -36,7 +54,7 @@ spec:
       userGroup:
         claimName: groups
         claimValue: payments-ops
-        issuer: http://keycloak.localtest.me:18580/realms/bank
+        issuer: http://refund-idp.localtest.me:19580/realms/bank
         jwksKey:
           remote:
             serviceRef: {name: keycloak, namespace: keycloak, port: 8080}
@@ -52,6 +70,7 @@ spec:
     subjects:
     - {kind: Agent, name: payments-assistant, namespace: bank}
     - {kind: Agent, name: customer-service-assistant, namespace: bank}
+    - {kind: Agent, name: payments-manager, namespace: bank}
   targetRef: {kind: Agent, name: customer-agent}
 ---
 apiVersion: policy.kagent-enterprise.solo.io/v1alpha1
@@ -62,6 +81,7 @@ spec:
   from:
     subjects:
     - {kind: Agent, name: payments-assistant, namespace: bank}
+    - {kind: Agent, name: payments-manager, namespace: bank}
   targetRef: {kind: Agent, name: fraud-agent}
 ---
 apiVersion: policy.kagent-enterprise.solo.io/v1alpha1

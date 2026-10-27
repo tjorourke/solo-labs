@@ -3,3 +3,4 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: trustusbank-lab
 nodes:
 - role: control-plane
+  image: kindest/node:v1.35.0

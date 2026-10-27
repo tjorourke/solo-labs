@@ -139,7 +139,7 @@ def texts(value):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('user', choices=['bob', 'carol', 'alice'])
+    parser.add_argument('user', choices=['bob', 'carol', 'sarah', 'alice'])
     parser.add_argument('prompt')
     parser.add_argument('--agent', default='payments-assistant')
     parser.add_argument('--json', action='store_true')

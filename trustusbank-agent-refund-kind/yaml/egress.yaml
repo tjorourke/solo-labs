@@ -30,7 +30,7 @@ spec:
       action: Allow
       policy:
         matchExpressions:
-        - 'source.identity.namespace == "bank" && source.identity.serviceAccount in ["payments-assistant", "customer-service-assistant", "customer-agent", "fraud-agent", "refunds-agent"]'
+        - 'source.identity.namespace == "bank" && source.identity.serviceAccount in ["payments-assistant", "payments-manager", "customer-service-assistant", "customer-agent", "fraud-agent", "refunds-agent"]'
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

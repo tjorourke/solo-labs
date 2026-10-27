@@ -8,7 +8,7 @@ providers:
     apiKeySecretRef: bank-model-placeholder
     apiKeySecretKey: ANTHROPIC_API_KEY
 oidc:
-  issuer: http://keycloak.localtest.me:18580/realms/bank
+  issuer: http://refund-idp.localtest.me:19580/realms/bank
   clientId: bank-enterprise
   secretRef: bank-enterprise-oidc
   stsWellKnownUri: http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/.well-known/openid-configuration
@@ -24,12 +24,13 @@ rbac:
     roleMapper: 'has(claims.groups) ? claims.groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
     roleMappings:
       payments-ops: global.Admin
+      payment_mgmt: global.Reader
       customer-service: global.Reader
       security-ops: global.Admin
 database:
   postgres:
     bundled:
-      storageClassName: trustusbank-enterprise-local
+      storageClassName: standard
 otel:
   tracing:
     enabled: true

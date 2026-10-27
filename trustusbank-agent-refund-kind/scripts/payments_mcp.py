@@ -10,7 +10,12 @@ mcp = FastMCP('payments', host='0.0.0.0', port=8000, stateless_http=True, json_r
 
 @mcp.tool()
 def get_payment(payment_id: str) -> dict:
-    return payment(payment_id)
+    """Read the payment and its current bank refund receipt. This never moves money."""
+    record = payment(payment_id)
+    with urllib.request.urlopen('http://bank-gw.bank.svc.cluster.local:8080/core/refunds', timeout=5) as reply:
+        receipts = json.load(reply)['refunds']
+    receipt = next((r for r in receipts if r['payment_id'] == payment_id), None)
+    return {**record, 'refund_status': 'ISSUED' if receipt else 'NOT_ISSUED', 'refund_receipt': receipt}
 
 
 @mcp.tool()
@@ -21,7 +26,7 @@ def refund_payment(payment_id: str, amount_gbp: float, ctx: Context) -> dict:
     incoming = ctx.request_context.request.headers
     headers = {'Content-Type': 'application/json'}
     # Identity headers are overwritten from verified claims at bank-gw.
-    for name in ('x-bank-sub', 'x-bank-actor', 'traceparent', 'tracestate'):
+    for name in ('x-bank-sub', 'x-bank-actor', 'x-bank-user', 'traceparent', 'tracestate'):
         if incoming.get(name):
             headers[name] = incoming[name]
     request = urllib.request.Request(
@@ -39,8 +44,8 @@ def refund_payment(payment_id: str, amount_gbp: float, ctx: Context) -> dict:
 def refund_payment_with_approval(payment_id: str, amount_gbp: float, ctx: Context) -> dict:
     """Request human approval and then issue a refund above the autonomous limit.
 
-    The payments assistant must attach kagent requireApproval to this tool.
-    The gateway permits only that assistant's delegated token to invoke it.
+    The payments manager must attach kagent requireApproval to this tool.
+    The gateway permits only Payment Management through that assistant.
     """
     return refund_payment(payment_id, amount_gbp, ctx)
 

@@ -9,8 +9,9 @@ case "${1:-}" in
     bash "$LAB/scripts/04-vault.sh"
     bash "$LAB/scripts/08-management.sh"
     bash "$LAB/scripts/11-declarative-agents.sh"
-    python3 "$LAB/scripts/client.py" bob 'Reply with only ready. Do not call any tools.'
+    bash "$LAB/scripts/wake.sh"
     ;;
+  wake) bash "$LAB/scripts/wake.sh" ;;
   test)
     python3 -m unittest discover -s "$LAB/scripts" -p 'test_*.py'
     tools
@@ -18,12 +19,9 @@ case "${1:-}" in
     python3 "$LAB/scripts/verify.py"
     ;;
   teardown)
-    for attempt in 1 2 3; do
-      kind delete cluster --name trustusbank-lab || true
-      if kind get clusters | python3 -c 'import sys;sys.exit("trustusbank-lab" in sys.stdin.read().split())'; then break; fi
-      sleep 3
-    done
-    kind get clusters | python3 -c 'import sys; clusters=sys.stdin.read().split();assert "trustusbank-lab" not in clusters; print("Confirmed: trustusbank-lab absent")'
+    [[ "$CTX" == kind-trustusbank-lab ]] || { printf 'Refusing to delete an unexpected cluster\n' >&2; exit 1; }
+    kind delete cluster --name trustusbank-lab
+    kind get clusters | python3 -c 'import sys; assert "trustusbank-lab" not in sys.stdin.read().split(); print("Confirmed: standalone trustusbank-lab absent")'
     ;;
-  *) printf 'Usage: bash scripts/quick.sh {up|test|teardown}\n' >&2; exit 2 ;;
+  *) printf 'Usage: bash scripts/quick.sh {up|wake|test|teardown}\n' >&2; exit 2 ;;
 esac

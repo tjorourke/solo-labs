@@ -2,9 +2,9 @@
 source "$(dirname "$0")/lib.sh"
 # Resolve the remote port from the installed Service, never from chart defaults.
 case "${1:-kagent}" in
-  kagent) ns=agentgateway-system; service=solo-enterprise-ui; port_name=http; local_port=18380 ;;
-  keycloak) ns=keycloak; service=keycloak; port_name=''; local_port=18580 ;;
-  management) ns=agentgateway-system; service=solo-enterprise-ui; port_name=http; local_port=18390 ;;
+  kagent) ns=agentgateway-system; service=solo-enterprise-ui; port_name=http; local_port=19380 ;;
+  keycloak) ns=keycloak; service=keycloak; port_name=''; local_port=19580 ;;
+  management) ns=agentgateway-system; service=solo-enterprise-ui; port_name=http; local_port=19390 ;;
   *) printf 'Usage: ui-forward.sh {kagent|keycloak|management}\n' >&2; exit 2 ;;
 esac
 if [[ -n "$port_name" ]]; then

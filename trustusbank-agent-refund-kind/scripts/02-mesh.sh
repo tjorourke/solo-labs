@@ -2,7 +2,7 @@
 # Install the Solo distribution on this lab's cluster only.
 source "$(dirname "$0")/lib.sh"
 set +x
-source "${SECRETS_FILE:-$HOME/code/solo/secrets/secrets-envs.sh}" >/dev/null 2>&1
+source "$SECRETS_FILE" >/dev/null 2>&1
 : "${SOLO_ISTIO_LICENSE_KEY:?Solo Istio licence required}"
 cluster=trustusbank-lab
 repo=oci://us-docker.pkg.dev/soloio-img/istio-helm

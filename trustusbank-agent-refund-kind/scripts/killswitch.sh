@@ -15,6 +15,6 @@ case "${1:-}" in
     ;;
   *) echo 'Usage: bash scripts/killswitch.sh on|off' >&2; exit 2 ;;
 esac
-printf 'kagent policies: http://localhost:18380/ke/access-policies/\n'
-printf 'Agent: http://localhost:18380/ke/agents/trustusbank-lab/bank/refunds-agent/\n'
-printf 'Gateway policies: http://localhost:18380/age/policies\n'
+printf 'kagent policies: http://refund-lab.localhost:19380/ke/access-policies/\n'
+printf 'Agent: http://refund-lab.localhost:19380/ke/agents/trustusbank-lab/bank/payments-assistant/\n'
+printf 'Gateway policies: http://refund-lab.localhost:19380/age/policies\n'

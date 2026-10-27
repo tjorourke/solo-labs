@@ -3,6 +3,21 @@
 # the human on controller-originated calls.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
+metadata: {name: payments-manager-human-identity, namespace: bank}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-payments-manager-waypoint}]
+  traffic:
+    transformation:
+      request:
+        set:
+        - {name: Authorization, value: '"Bearer " + jwt.rawToken.unredacted()'}
+    authorization:
+      action: Require
+      policy:
+        matchExpressions: ['request.method == "GET" || (has(jwt.groups) && "payment_mgmt" in jwt.groups)']
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
 metadata: {name: payments-human-identity, namespace: bank}
 spec:
   targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-payments-assistant-waypoint}]
@@ -40,11 +55,12 @@ spec:
   - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-fraud-agent-waypoint}
   - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: agent-refunds-agent-waypoint}
   traffic:
+    timeouts: {request: 20s}
     jwtAuthentication:
       mode: Optional
       preserveToken: true
       providers:
-      - issuer: http://keycloak.localtest.me:18580/realms/bank
+      - issuer: http://refund-idp.localtest.me:19580/realms/bank
         jwks:
           remote:
             backendRef: {name: keycloak, namespace: keycloak, port: 8080}
@@ -53,4 +69,4 @@ spec:
       action: Require
       policy:
         matchExpressions:
-        - 'request.method == "GET" || (has(jwt.sub) && source.identity.namespace == "bank" && source.identity.serviceAccount in ["payments-assistant", "customer-service-assistant"])'
+        - 'request.method == "GET" || (has(jwt.sub) && source.identity.namespace == "bank" && source.identity.serviceAccount in ["payments-assistant", "payments-manager", "customer-service-assistant"])'
