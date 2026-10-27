@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/lib.sh"
+# Fetch the pinned runtime before creating six pods. A cold kubelet pull left
+# every runtime waiting for the same image until the rollout budget expired.
+# Use the host cache and explicit kind import, as the identity/mesh phases do.
+image="ghcr.io/kagent-dev/kagent/app:$KAGENT_RUNTIME_VERSION"
+docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image"
+platform="linux/$(k get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}')"
+archive=$(mktemp)
+trap 'rm -f "$archive"' EXIT
+docker image save --platform "$platform" -o "$archive" "$image"
+kind load image-archive "$archive" --name trustusbank-lab
+rm -f "$archive"
+trap - EXIT
 apply "$LAB/yaml/agents.yaml"
 # Restore the verified bearer after the generated JWT policy so the runtime
 # can exchange it. The extra Require rule checks the human on controller calls.

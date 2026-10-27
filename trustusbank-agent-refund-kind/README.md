@@ -27,6 +27,13 @@ an untested illustrative subset, not an OSS edition of the complete use case.
 Clone this directory from `tjorourke/solo-labs`, or work from the canonical
 `solo-demos` repository. There is no dependency on the private staff suite.
 
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/tjorourke/solo-labs.git bank-refund-labs
+cd bank-refund-labs
+git sparse-checkout set trustusbank-agent-refund-kind
+```
+
 Create a sourceable file outside the checkout, readable only by you:
 
 ```bash
@@ -50,6 +57,46 @@ The scripts create and mutate only the standalone `kind-trustusbank-lab`
 cluster. They do not use or alter `mesh1`, `mesh2` or the staff console.
 Secrets are created from stdin, not embedded in checked-in manifests.
 The kagent database uses kind's standard local-path provisioner.
+
+`kind/cluster.yaml` pins a single control-plane node to Kubernetes v1.35.0.
+That node also schedules the lab workloads. Setup installs Gateway API,
+Keycloak, enterprise agentgateway and STS, Solo Istio ambient, kagent
+Enterprise and PostgreSQL, the mock bank and MCP tools, Vault, management UI
+and telemetry, followed by the six agents and their access policies.
+The pinned agent runtime image is fetched into Docker's host cache and loaded
+into kind before the agent pods are created, so its download is separate from
+their readiness deadline.
+
+### End-to-end lifecycle
+
+From this directory, after preparing the environment above:
+
+```bash
+bash scripts/quick.sh up
+bash scripts/quick.sh test
+```
+
+The existing `quick.sh` contract creates the standalone kind installation and
+verifies the native workflow. `up` and `test` retain the cluster for review and
+further changes. Run `bash scripts/quick.sh teardown` only after review and an
+explicit decision to remove it.
+
+Maintainers can run the registered fleet entry from the `solo-demos` root:
+
+```bash
+bash scripts/labs-e2e.sh --only trustusbank-agent-refund-kind --concurrency 1 \
+  --no-teardown \
+  --gcloud-config default --secrets "$SECRETS_FILE"
+```
+
+The existing fleet runner uses an isolated kubeconfig. `--no-teardown` retains
+the cluster for review and further changes. Results and logs are recorded under
+`.e2e-runs/`. Use that run's `trustusbank-agent-refund-kind.kubeconfig` when
+opening the native UI after a retained fleet run. Teardown is a separate,
+explicit action after review. `--gcloud-config` selects the registry login for
+the lab process without changing the user's active gcloud configuration.
+
+### Open the interactive installation
 
 Keep these two forwards open in separate terminals:
 
@@ -216,7 +263,6 @@ not success. `quick.sh wake` verifies the actual customer record.
 bash scripts/quick.sh test       # Native story, approval, negative controls and amount boundaries
 bash scripts/quick.sh wake       # Read-only readiness, may renew an expired bank credential
 python3 scripts/reset.py         # Scoped history, pending-task, receipt and trace reset
-bash scripts/quick.sh teardown   # Deletes only the standalone trustusbank-lab cluster
 ```
 
 `test` confirms native approval **as Sarah** for automated validation. For a
@@ -227,4 +273,15 @@ kagent REST session responses, which contain saved bearer headers.
 The reset clears only bank data on this standalone context. It retains the
 installed agents, policies, IdP groups and platform, and verifies removal.
 New controller discovery can produce fresh technical traces afterwards.
-Use teardown when finished to release the temporary cluster's resources.
+
+### Teardown after review
+
+Keep the cluster for review and further changes. Only when explicitly ready
+to remove it:
+
+```bash
+bash scripts/quick.sh teardown
+```
+
+This deletes only the standalone `trustusbank-lab` cluster and verifies that it
+is absent.

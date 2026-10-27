@@ -13,4 +13,14 @@ elif [[ "$result" != *'HTTP 200'* ]]; then
   printf 'Bank egress is unavailable: %s\n' "$result" >&2
   exit 1
 fi
-python3 "$LAB/scripts/health.py"
+# Ready pods can precede the first usable agent route after cold bootstrap.
+# Poll the existing read-only check; every success still requires real records.
+for attempt in {1..5}; do
+  if python3 "$LAB/scripts/health.py"; then exit 0; fi
+  if [[ "$attempt" -lt 5 ]]; then
+    printf 'Read-only agent readiness attempt %s/5 failed; retrying in 3s.\n' "$attempt" >&2
+    sleep 3
+  fi
+done
+printf 'Native agent readiness did not return the expected customer record.\n' >&2
+exit 1
