@@ -1,0 +1,78 @@
+# crm-mcp: the demo MCP server. The single-file server is mounted from the
+# crm-mcp-src ConfigMap, created with:
+#   kubectl -n extmcp-demo create configmap crm-mcp-src --from-file=server.py=src/server.py
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crm-mcp
+  namespace: extmcp-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crm-mcp
+  template:
+    metadata:
+      labels:
+        app: crm-mcp
+    spec:
+      containers:
+      - name: server
+        image: python:3.12-slim
+        command: ["python", "/app/server.py"]
+        ports:
+        - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+        volumeMounts:
+        - name: src
+          mountPath: /app
+      volumes:
+      - name: src
+        configMap:
+          name: crm-mcp-src
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crm-mcp
+  namespace: extmcp-demo
+spec:
+  selector:
+    app: crm-mcp
+  ports:
+  - port: 8000
+    targetPort: 8000
+---
+# The MCP backend and the route that binds it to the gateway.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: crm-mcp
+  namespace: extmcp-demo
+spec:
+  mcp:
+    targets:
+    - name: crm
+      static:
+        backendRef:
+          name: crm-mcp
+        port: 8000
+        path: /mcp
+        protocol: StreamableHTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp
+  namespace: extmcp-demo
+spec:
+  parentRefs:
+  - name: extmcp-gw
+  rules:
+  - backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: crm-mcp

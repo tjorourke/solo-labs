@@ -1,0 +1,25 @@
+# ExtMCP guardrails: gate tools/call at the Request phase, mutate the
+# tools/list Response. failureMode: FailClosed means a guardrail-mcp outage
+# denies every gated call rather than letting it through ungated.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: crm-mcp-guardrails
+  namespace: extmcp-demo
+spec:
+  targetRefs:
+  - group: agentgateway.dev
+    kind: AgentgatewayBackend
+    name: crm-mcp
+  backend:
+    mcp:
+      guardrails:
+        processors:
+        - remote:
+            backendRef:
+              name: guardrail-mcp
+              port: 4445
+            failureMode: FailClosed
+          methods:
+            tools/call: Request
+            tools/list: Response

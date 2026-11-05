@@ -1,0 +1,21 @@
+# The gateway, declared entirely through the Kubernetes API. Reached with
+# `kubectl port-forward`, so no NodePort shaping is needed.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: extmcp-demo
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: extmcp-gw
+  namespace: extmcp-demo
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+  - name: mcp
+    protocol: HTTP
+    port: 3000
+    allowedRoutes:
+      namespaces:
+        from: Same
