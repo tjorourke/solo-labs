@@ -1,0 +1,62 @@
+# users-mcp: the demo MCP server (get_users / delete_user).
+# The single-file server is mounted from the users-mcp-src ConfigMap, created with:
+#   kubectl -n mcp-write-approval create configmap users-mcp-src --from-file=server.py=src/server.py
+apiVersion: v1
+kind: Secret
+metadata:
+  name: users-mcp-state-key
+  namespace: mcp-write-approval
+stringData:
+  # HMAC key for MRTR requestState integrity protection.
+  secret: change-me-lab-only-0b9f4c
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-mcp
+  namespace: mcp-write-approval
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: users-mcp
+  template:
+    metadata:
+      labels:
+        app: users-mcp
+    spec:
+      containers:
+      - name: server
+        image: python:3.12-slim
+        command: ["python", "/app/server.py"]
+        env:
+        - name: MCP_STATE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: users-mcp-state-key
+              key: secret
+        ports:
+        - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+        volumeMounts:
+        - name: src
+          mountPath: /app
+      volumes:
+      - name: src
+        configMap:
+          name: users-mcp-src
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: users-mcp
+  namespace: mcp-write-approval
+spec:
+  selector:
+    app: users-mcp
+  ports:
+  - port: 8000
+    targetPort: 8000

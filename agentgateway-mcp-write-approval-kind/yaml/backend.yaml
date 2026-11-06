@@ -1,0 +1,16 @@
+# The MCP backend and the route that binds it to the gateway.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: users-mcp
+  namespace: mcp-write-approval
+spec:
+  mcp:
+    targets:
+    - name: users
+      static:
+        backendRef:
+          name: users-mcp
+        port: 8000
+        path: /mcp
+        protocol: StreamableHTTP
