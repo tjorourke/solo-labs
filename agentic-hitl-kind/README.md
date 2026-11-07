@@ -6,7 +6,7 @@ Single-cluster lab showing **two distinct HITL surfaces** on one MCP-driven agen
 | Layer | Approver | Surface | Mechanism |
 |---|---|---|---|
 | **Agent HITL** | End user, mid-conversation | kagent chat UI | `requireApproval` on the agent's MCP tool stanza |
-| **Gateway HITL** | Platform reviewer, out-of-band | Standalone approval queue UI | `AgentgatewayPolicy` with `extAuth` (PreRouting): Check() parks until a decision arrives |
+| **Gateway HITL** | Platform reviewer, out-of-band | `hitl-extauth` admin API (`GET /pending`, `POST /decide/{id}`) | `AgentgatewayPolicy` with `extAuth` (PreRouting): Check() parks until a decision arrives |
 
 The same `ops-tools` MCP server backs both. The gateway distinguishes the two tiers by **path** (`/mcp/public` vs `/mcp/privileged`), so we don't need body-inspection CEL.
 
@@ -37,8 +37,9 @@ The same `ops-tools` MCP server backs both. The gateway distinguishes the two ti
             │  /privileged: run_migration                    │         │
             └────────────────────────────────────────────────┘         │
                                                                        │
-                                  hitl-ui :8080 ◄───── HTMX poll ──────┘
-                                  (browser tab)        & decide POST
+                                  admin HTTP :8081
+                                  GET /pending
+                                  POST /decide/{id} ───────────────────┘
 ```
 
 ## Components
@@ -49,13 +50,12 @@ The same `ops-tools` MCP server backs both. The gateway distinguishes the two ti
 | `scripts/01-cluster.sh`        | kind + metallb |
 | `scripts/02-agentgateway.sh`   | Enterprise agentgateway install (needs licence) |
 | `scripts/03-kagent.sh`         | kagent OSS install (needs OpenAI key) |
-| `scripts/04-mcp-and-hitl.sh`   | Build + kind-load 3 images; apply manifests |
+| `scripts/04-mcp-and-hitl.sh`   | Build + kind-load 2 images; apply manifests |
 | `scripts/05-agents.sh`         | Apply both agents (declarative + LangGraph) |
 | `scripts/quick.sh`             | Orchestrator: `up`, `teardown`, `status` |
-| `scripts/port-forward.sh`      | kagent UI + hitl-ui + gateway access |
+| `scripts/port-forward.sh`      | kagent UI + hitl-extauth admin API |
 | `src/ops-tools/`               | Python MCP server, mock in-memory orders DB |
 | `src/hitl-extauth/`            | Go: ext-auth gRPC + admin HTTP |
-| `src/hitl-ui/`                 | Go: HTMX approval queue UI |
 | `src/langgraph-agent/`         | Python: BYO LangGraph agent + kagentCheckpointer |
 | `yaml/`                        | All manifests, grouped by component |
 | `demo-scripts/runbook.md`      | Live demo narrative |
@@ -81,10 +81,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # 2. Bring it all up (~5 min first time)
 ./scripts/quick.sh up
 
-# 3. Open the two UIs (each in its own browser tab)
+# 3. Open the kagent dashboard and the reviewer API
 ./scripts/port-forward.sh
-# kagent dashboard → http://localhost:8080
-# hitl approval UI → http://localhost:8090
+# kagent dashboard           → http://localhost:8080
+# hitl-extauth admin API     → http://localhost:8081/pending
 ```
 
 ## Demo flow
@@ -93,7 +93,7 @@ See [`demo-scripts/runbook.md`](demo-scripts/runbook.md) for the live walkthroug
 
 1. **`cluster_db_query`** → no HITL, runs immediately.
 2. **`truncate_table orders`** → agent HITL fires in the chat UI. Approve → runs.
-3. **`run_migration v3`** → gateway HITL fires in the approval queue UI (separate tab). Different role approves → runs.
+3. **`run_migration v3`** → gateway HITL parks the call. Approve it with `POST /decide/{id}` on the admin API → runs.
 
 ## Teardown
 

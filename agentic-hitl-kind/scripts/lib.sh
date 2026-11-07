@@ -51,7 +51,6 @@ export GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
 # Image tags for the three custom services we build + kind-load
 export OPS_TOOLS_IMAGE="ops-tools:dev"
 export HITL_EXTAUTH_IMAGE="hitl-extauth:dev"
-export HITL_UI_IMAGE="hitl-ui:dev"
 export LANGGRAPH_AGENT_IMAGE="langgraph-agent:dev"
 
 # ── secrets loader ────────────────────────────────────────────────────────────

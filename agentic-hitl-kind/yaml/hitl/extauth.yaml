@@ -46,7 +46,7 @@ spec:
       targetPort: 9001
       appProtocol: kubernetes.io/h2c
 ---
-# HTTP admin API consumed by hitl-ui.
+# HTTP admin API: GET /pending and POST /decide/{id}.
 apiVersion: v1
 kind: Service
 metadata:

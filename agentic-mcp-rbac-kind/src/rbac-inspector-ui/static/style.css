@@ -1,4 +1,4 @@
-/* Dark palette lifted from agentic-hitl-kind/src/hitl-ui/main.go so the
+/* Dark palette shared with older HITL lab samples so the
    three lab UIs feel like one product. */
 :root {
   --bg: #0b0f17; --panel: #131a26; --panel-2: #1a2333; --border: #243044;

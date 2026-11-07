@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# port-forward.sh — open the kagent dashboard and HITL approval UI locally.
+# port-forward.sh — open the kagent dashboard and the hitl-extauth admin API locally.
 #
 # Runs both port-forwards in the foreground; Ctrl-C tears down both.
 
@@ -8,8 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 step "Starting port-forwards"
-log "kagent dashboard → http://localhost:8080"
-log "hitl approval UI → http://localhost:8090"
+log "kagent dashboard          → http://localhost:8080"
+log "hitl-extauth admin API    → http://localhost:8081/pending"
 log "(Ctrl-C to stop)"
 echo ""
 
@@ -21,7 +21,7 @@ trap cleanup EXIT INT TERM
 
 # kagent UI — the chart exposes svc/kagent-ui on port 8080
 kc -n kagent port-forward svc/kagent-ui 8080:8080 >/dev/null &
-# hitl approval queue — svc/hitl-ui port 80 → container 8080
-kc -n hitl port-forward svc/hitl-ui 8090:80 >/dev/null &
+# reviewer API — list parked calls and decide them
+kc -n hitl port-forward svc/hitl-extauth-admin 8081:8081 >/dev/null &
 
 wait

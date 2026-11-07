@@ -8,9 +8,9 @@ A ~10-minute walkthrough of two-layer human-in-the-loop on an MCP-driven agent.
 | Role | What they own |
 |---|---|
 | **End user** | The person chatting with the agent in kagent dashboard. Approves contextual things they asked for. |
-| **Platform reviewer** | Watches the gateway approval queue in a second browser tab. Approves things that affect shared infrastructure. |
+| **Platform reviewer** | Lists and decides parked calls on the `hitl-extauth` admin API. Approves things that affect shared infrastructure. |
 
-Same human plays both roles in this demo, but use two browser tabs to make the role boundary obvious.
+Same human plays both roles in this demo, but use the kagent chat for one and `curl` against the admin API for the other, so the role boundary stays obvious.
 
 ## Setup
 
@@ -20,10 +20,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ./scripts/port-forward.sh   # leave this running
 ```
 
-Then open both tabs:
+Then open the dashboard and keep a terminal for the reviewer API:
 
 - `http://localhost:8080`: **kagent dashboard** (end user)
-- `http://localhost:8090`: **HITL approval queue** (platform reviewer)
+- `http://localhost:8081/pending`: **hitl-extauth admin API** (platform reviewer)
 
 Select the `dba-assistant` agent (or `dba-assistant-langgraph` for the BYO variant) in the kagent UI.
 
@@ -53,42 +53,51 @@ The agent picks `truncate_table`. The chat **pauses** with an approval card:
 └─────────────────────────────────────────────┘
 ```
 
-The HITL approval queue tab (the platform reviewer's tab) shows nothing: this is the user's call, not the platform's.
+`GET http://localhost:8081/pending` shows nothing: this is the user's call, not the platform's.
 
 Approve. Tool runs, orders is empty, agent confirms.
 
 **Point out:** the gate lives inside the agent's tool stanza (`requireApproval`). The agent itself paused: kagent's chat UI rendered the actionable card.
 
 <a id="scene-3--gateway-hitl-fires-in-the-platform-queue"></a>
-## Scene 3: gateway HITL fires in the platform queue
+## Scene 3: gateway HITL fires on the admin API
 
 Switch back to the kagent chat:
 
 > Apply migration v3.
 
-The agent picks `run_migration("v3")` and the chat shows "tool call dispatched — waiting on downstream approval".
+The agent picks `run_migration("v3")` and the chat shows the tool call waiting.
 
-In the **HITL approval queue tab** a new card appears:
+In a terminal, list what is parked:
 
-```
-run_migration                                14:32:11
-                                 path /privileged/mcp
-{
-  "version": "v3"
-}
-[ Approve ]  [ Reject ]
+```bash
+curl -s http://localhost:8081/pending | jq
 ```
 
-The card includes the parsed JSON-RPC tool name and arguments: extracted at the gateway via `forwardBody` purely for display. The gating decision is path-based.
+The pending item includes the parsed JSON-RPC tool name and arguments, extracted at the gateway via `forwardBody` purely so a reviewer can see what they are deciding. The gating decision itself is path-based.
 
-Click **Approve**. The kagent chat unfreezes; the agent reports the migration succeeded.
+Approve it with the request id from that list:
 
-**Point out:** different role, different UI, same MCP wire protocol. The agent doesn't even know there's a gate: agentgateway parked the HTTP request before it reached the MCP server.
+```bash
+curl -s -X POST http://localhost:8081/decide/p-15 \
+  -H 'Content-Type: application/json' \
+  -d '{"approved": true, "reason": "approved per CHG-1234"}' -w '%{http_code}\n'
+```
+
+The kagent chat unfreezes; the agent reports the migration succeeded.
+
+**Point out:** different role, different surface, same MCP wire protocol. The agent doesn't even know there's a gate: agentgateway parked the HTTP request before it reached the MCP server.
 
 <a id="scene-4--rejection-path"></a>
 ## Scene 4: rejection path
 
-Repeat Scene 3. This time, click **Reject** in the approval queue.
+Repeat Scene 3. This time, reject the parked call:
+
+```bash
+curl -s -X POST http://localhost:8081/decide/p-20 \
+  -H 'Content-Type: application/json' \
+  -d '{"approved": false, "reason": "rejected by reviewer"}' -w '%{http_code}\n'
+```
 
 The agent receives an `HTTP 403` with the denial reason `{"approved": false, "reason": "rejected by reviewer"}` and reports the failure verbatim. It does not retry.
 
@@ -118,7 +127,7 @@ kubectl --context kind-hitl -n hitl logs deploy/hitl-extauth --tail=20
 | Gateway IP stays `<pending>` for >2 min | MetalLB pool exhausted | `kubectl -n metallb-system get ipaddresspool kind-pool -o yaml` and adjust |
 | RemoteMCPServer never marks tools as discovered | gateway svc name differs from `hitl-gateway` | `kc -n agentgateway-system get svc` then update `yaml/mcp/remote-mcp-servers.yaml` |
 | LangGraph agent pod CrashLoopBackoff with "could not load MCP tools" | gateway not ready when agent starts | Pod will retry up to 20× × 3s; if it persists, check ops-tools is `Ready` and `kubectl -n hitl logs deploy/hitl-extauth` for `Check parked` lines on any test request |
-| Gateway HITL approval card never appears in `hitl-ui` | extAuth not firing: check `AgentgatewayPolicy` status is `Accepted: True, Attached: True` | `kc -n ops-tools get agentgatewaypolicy privileged-extauth -o yaml \| grep -A5 conditions` |
+| `GET /pending` stays empty after `run_migration` | extAuth not firing: check `AgentgatewayPolicy` status is `Accepted: True, Attached: True` | `kc -n ops-tools get agentgatewaypolicy privileged-extauth -o yaml \| grep -A5 conditions` |
 
 ## Teardown
 

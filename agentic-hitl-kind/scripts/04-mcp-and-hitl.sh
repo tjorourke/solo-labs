@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# 04-mcp-and-hitl.sh — build + kind-load + deploy the three custom services.
+# 04-mcp-and-hitl.sh — build + kind-load + deploy the two custom services.
 #
 #   ops-tools       — Python MCP server (mock DB)
 #   hitl-extauth    — Go gRPC ext-auth + admin HTTP
-#   hitl-ui         — Go HTMX approval queue
 #
 # Then applies the gateway / HTTPRoute / EAGW policy / RemoteMCPServer manifests.
 
@@ -16,7 +15,6 @@ source "$SCRIPT_DIR/lib.sh"
 step "Building and loading custom images into kind"
 build_and_load "$LAB_ROOT/src/ops-tools"     "$OPS_TOOLS_IMAGE"
 build_and_load "$LAB_ROOT/src/hitl-extauth"  "$HITL_EXTAUTH_IMAGE"
-build_and_load "$LAB_ROOT/src/hitl-ui"       "$HITL_UI_IMAGE"
 
 # ── 2. Namespaces ─────────────────────────────────────────────────────────────
 step "Creating namespaces"
@@ -29,16 +27,11 @@ kc apply -f "$LAB_ROOT/yaml/ops-tools/deployment.yaml" >/dev/null
 wait_deploy ops-tools ops-tools 120s
 ok "ops-tools ready"
 
-# ── 4. Deploy hitl-extauth + hitl-ui ──────────────────────────────────────────
+# ── 4. Deploy hitl-extauth ────────────────────────────────────────────────────
 step "Deploying hitl-extauth"
 kc apply -f "$LAB_ROOT/yaml/hitl/extauth.yaml" >/dev/null
 wait_deploy hitl hitl-extauth 120s
 ok "hitl-extauth ready"
-
-step "Deploying hitl-ui"
-kc apply -f "$LAB_ROOT/yaml/hitl/ui.yaml" >/dev/null
-wait_deploy hitl hitl-ui 120s
-ok "hitl-ui ready"
 
 # ── 5. Apply the gateway + routes + extauth policy ───────────────────────────
 step "Applying Gateway + HTTPRoutes"

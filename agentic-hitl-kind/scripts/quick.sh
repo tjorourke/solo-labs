@@ -30,7 +30,7 @@ case "$cmd" in
 
   Context:  $CTX
   Next:     ./scripts/port-forward.sh
-            (then open http://localhost:8080 + http://localhost:8090)
+            (then open http://localhost:8080 and http://localhost:8081/pending)
 
   See the demo script:
     demo-scripts/runbook.md

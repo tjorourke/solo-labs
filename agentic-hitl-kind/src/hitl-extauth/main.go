@@ -4,7 +4,7 @@
 // Two listeners:
 //
 //   :9001  gRPC  envoy.service.auth.v3.Authorization — consumed by agentgateway
-//   :8081  HTTP  admin API — consumed by hitl-ui (and curl, for debugging)
+//   :8081  HTTP  admin API — consumed by curl, or anything you wire to the same API
 //
 //     GET  /pending           → list parked requests
 //     POST /decide/{id}       → {"approved": bool, "reason": string}
