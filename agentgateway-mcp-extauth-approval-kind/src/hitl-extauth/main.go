@@ -1,13 +1,11 @@
 // hitl-extauth: Envoy ext-auth gRPC service that parks a Check() call on a Go
 // channel until a decision arrives via the admin HTTP API.
 //
-// Adapted from agentic-hitl-kind's hitl-extauth: that lab gates by HTTPRoute
-// path (two endpoints, /public and /privileged) and parks everything that
-// reaches the privileged one. This variant gates a single endpoint by reading
-// the tool name out of the JSON-RPC body and looking it up in a mounted
-// ConfigMap (allow / approve / deny). That is what lets one MCP server expose
-// both get_users (allowed) and delete_user (needs approval) on one route,
-// one policy, without baking the names into the image.
+// The HTTPRoute binds /mcp to users-mcp. Check() selects that server's block
+// in the mounted ConfigMap and matches the JSON-RPC tool name against its
+// allow, approve and deny lists. Tool rules can change without an image rebuild.
+// Adding another backend requires a separate route and serverForPath binding.
+// Part 1 (agentic-hitl-kind) instead gates the entire /privileged route.
 //
 // Two listeners:
 //
@@ -16,7 +14,7 @@
 //
 //	  GET  /pending           → list parked requests
 //	  POST /decide/{id}       → {"approved": bool, "reason": string}
-//	  GET  /policy            → the lists currently loaded from the ConfigMap
+//	  GET  /policy            → server blocks currently loaded from the ConfigMap
 //	  GET  /metrics           → Prometheus metrics, including approval_needed_total
 //	  GET  /healthz
 //
@@ -28,11 +26,13 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -56,16 +56,17 @@ type Decision struct {
 }
 
 type Pending struct {
-	ID         string            `json:"id"`
-	ReceivedAt time.Time         `json:"receivedAt"`
-	Method     string            `json:"method"`
-	Path       string            `json:"path"`
-	Headers    map[string]string `json:"headers"`
-	Body       string            `json:"body,omitempty"`
+	ID         string    `json:"id"`
+	ReceivedAt time.Time `json:"receivedAt"`
+	Method     string    `json:"method"`
+	Path       string    `json:"path"`
+	User       string    `json:"user,omitempty"`
+	Agent      string    `json:"agent,omitempty"`
 
-	RPCMethod string         `json:"rpcMethod,omitempty"` // "initialize" / "tools/list" / "tools/call" / ...
-	ToolName  string         `json:"toolName,omitempty"`  // only set when RPCMethod == "tools/call"
-	ToolArgs  map[string]any `json:"toolArgs,omitempty"`  // only set when RPCMethod == "tools/call"
+	RPCMethod  string         `json:"rpcMethod,omitempty"`  // "initialize" / "tools/list" / "tools/call" / ...
+	ServerName string         `json:"serverName,omitempty"` // bound to the HTTPRoute, not supplied by the caller
+	ToolName   string         `json:"toolName,omitempty"`   // only set when RPCMethod == "tools/call"
+	ToolArgs   map[string]any `json:"toolArgs,omitempty"`   // only set when RPCMethod == "tools/call"
 
 	decision chan Decision `json:"-"`
 }
@@ -190,14 +191,28 @@ type extAuthServer struct {
 	store *PolicyStore
 }
 
+// serverForPath binds the ext-auth request path to the backend in httproute.yaml.
+// All three edition manifests restrict /mcp to the users-mcp Service. This is an
+// explicit lab route binding, not MCP server discovery or a gateway target ID.
+// A new backend needs its own route and a corresponding binding here. Never
+// infer the server from client headers, JSON params or a tool-name prefix.
+func serverForPath(path string) string {
+	uri, err := url.ParseRequestURI(path)
+	if err == nil && uri.EscapedPath() == "/mcp" {
+		return "users-mcp"
+	}
+	return ""
+}
+
 func (e *extAuthServer) Check(ctx context.Context, req *auth_v3.CheckRequest) (*auth_v3.CheckResponse, error) {
 	httpReq := req.GetAttributes().GetRequest().GetHttp()
 	id := fmt.Sprintf("p-%d", e.q.counter.Add(1))
 
 	rpcMethod, toolName, toolArgs := parseMCP(httpReq.GetBody())
-	verdict, reason := e.store.snapshot().decide(toolName)
+	serverName := serverForPath(httpReq.GetPath())
+	verdict, reason := e.store.snapshot().decide(serverName, toolName)
 	if toolName != "" {
-		recordVerdict(verdict, toolName)
+		recordVerdict(verdict, serverName, toolName)
 	}
 
 	if verdict == VerdictAllow {
@@ -212,14 +227,16 @@ func (e *extAuthServer) Check(ctx context.Context, req *auth_v3.CheckRequest) (*
 		return deniedResponse(id, reason), nil
 	}
 
+	user, agent := delegatedIdentity(httpReq.GetHeaders())
 	p := &Pending{
 		ID:         id,
 		ReceivedAt: time.Now().UTC(),
 		Method:     httpReq.GetMethod(),
 		Path:       httpReq.GetPath(),
-		Headers:    httpReq.GetHeaders(),
-		Body:       httpReq.GetBody(),
+		User:       user,
+		Agent:      agent,
 		RPCMethod:  rpcMethod,
+		ServerName: serverName,
 		ToolName:   toolName,
 		ToolArgs:   toolArgs,
 		decision:   make(chan Decision, 1),
@@ -324,4 +341,72 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// delegatedIdentity only extracts display claims after the gateway has validated
+// the signature, issuer and audience. It is not a JWT verifier. Two issuers are
+// trusted, each set by the Enterprise overlay:
+//
+//	DELEGATED_ISSUER  Solo STS. A minted token must carry act.sub as a
+//	                  Kubernetes ServiceAccount: user and agent are recorded.
+//	USER_ISSUER       The identity provider (Keycloak in this lab). A user's own
+//	                  token has no act claim: only the user is recorded.
+//
+// Any other issuer, or a token whose shape does not match its issuer, records
+// nothing. The OSS path sets neither variable. Never expose this gRPC service
+// outside the trusted gateway network.
+func delegatedIdentity(headers map[string]string) (string, string) {
+	stsIssuer := os.Getenv("DELEGATED_ISSUER")
+	userIssuer := os.Getenv("USER_ISSUER")
+	if stsIssuer == "" && userIssuer == "" {
+		return "", ""
+	}
+	var bearer string
+	for k, v := range headers {
+		if strings.EqualFold(k, "authorization") {
+			bearer = v
+			break
+		}
+	}
+	fields := strings.Fields(bearer)
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
+		return "", ""
+	}
+	parts := strings.Split(fields[1], ".")
+	if len(parts) != 3 {
+		return "", ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", ""
+	}
+	var c struct {
+		Issuer string          `json:"iss"`
+		User   string          `json:"preferred_username"`
+		Actor  json.RawMessage `json:"act"`
+	}
+	if json.Unmarshal(raw, &c) != nil || c.Issuer == "" || c.User == "" {
+		return "", ""
+	}
+	switch {
+	case stsIssuer != "" && c.Issuer == stsIssuer:
+		var act struct {
+			Subject string `json:"sub"`
+		}
+		if len(c.Actor) == 0 || json.Unmarshal(c.Actor, &act) != nil {
+			return "", ""
+		}
+		sa := strings.Split(act.Subject, ":")
+		if len(sa) != 4 || sa[0] != "system" || sa[1] != "serviceaccount" || sa[2] == "" || sa[3] == "" {
+			return "", ""
+		}
+		return c.User, sa[3]
+	case userIssuer != "" && c.Issuer == userIssuer:
+		// A user token that claims an actor did not come from a direct sign-in.
+		if len(c.Actor) != 0 && string(c.Actor) != "null" {
+			return "", ""
+		}
+		return c.User, ""
+	}
+	return "", ""
 }

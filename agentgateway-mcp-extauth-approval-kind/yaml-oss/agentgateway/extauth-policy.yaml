@@ -1,0 +1,24 @@
+# AgentgatewayPolicy (OSS) targeting the single /mcp route. ext-auth fires
+# before every request is forwarded, so a denial never reaches the backend.
+#
+# forwardBody includes the JSON-RPC tool name in the Check() request.
+# hitl-extauth binds the request path to users-mcp, then applies that server's
+# allow, approve and deny lists from the hitl-tool-policy ConfigMap.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-extauth
+  namespace: mcp-extauth-demo
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: mcp
+  traffic:
+    extAuth:
+      backendRef:
+        name: hitl-extauth
+        port: 9001
+      forwardBody:
+        maxSize: 65536
+      grpc: {}

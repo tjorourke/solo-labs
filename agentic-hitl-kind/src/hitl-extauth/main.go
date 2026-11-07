@@ -3,12 +3,12 @@
 //
 // Two listeners:
 //
-//   :9001  gRPC  envoy.service.auth.v3.Authorization — consumed by agentgateway
-//   :8081  HTTP  admin API — consumed by curl, or anything you wire to the same API
+//	:9001  gRPC  envoy.service.auth.v3.Authorization — consumed by agentgateway
+//	:8081  HTTP  admin API — consumed by curl, or anything you wire to the same API
 //
-//     GET  /pending           → list parked requests
-//     POST /decide/{id}       → {"approved": bool, "reason": string}
-//     GET  /healthz
+//	  GET  /pending           → list parked requests
+//	  POST /decide/{id}       → {"approved": bool, "reason": string}
+//	  GET  /healthz
 //
 // The gating decision is NOT in this service — the gateway's HTTPRoute path
 // match is what decides whether ext-auth fires at all. This service just
@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,12 +45,12 @@ type Decision struct {
 }
 
 type Pending struct {
-	ID         string            `json:"id"`
-	ReceivedAt time.Time         `json:"receivedAt"`
-	Method     string            `json:"method"`
-	Path       string            `json:"path"`
-	Headers    map[string]string `json:"headers"`
-	Body       string            `json:"body,omitempty"`
+	ID         string    `json:"id"`
+	ReceivedAt time.Time `json:"receivedAt"`
+	Method     string    `json:"method"`
+	Path       string    `json:"path"`
+	User       string    `json:"user,omitempty"`
+	Agent      string    `json:"agent,omitempty"`
 
 	// Parsed from body when it's an MCP JSON-RPC request — purely for UI
 	// display. The routing decision was made by the gateway path match before
@@ -171,13 +173,14 @@ func (e *extAuthServer) Check(ctx context.Context, req *auth_v3.CheckRequest) (*
 		}, nil
 	}
 
+	user, agent := delegatedIdentity(httpReq.GetHeaders())
 	p := &Pending{
 		ID:         id,
 		ReceivedAt: time.Now().UTC(),
 		Method:     httpReq.GetMethod(),
 		Path:       httpReq.GetPath(),
-		Headers:    httpReq.GetHeaders(),
-		Body:       httpReq.GetBody(),
+		User:       user,
+		Agent:      agent,
 		RPCMethod:  rpcMethod,
 		ToolName:   toolName,
 		ToolArgs:   toolArgs,
@@ -289,4 +292,49 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// delegatedIdentity only extracts display claims after the gateway has validated
+// the signature, issuer and audience. It is not a JWT verifier. The Enterprise
+// overlay sets DELEGATED_ISSUER; the OSS path leaves identity empty. Never expose
+// this gRPC service outside the trusted gateway network.
+func delegatedIdentity(headers map[string]string) (string, string) {
+	issuer := os.Getenv("DELEGATED_ISSUER")
+	if issuer == "" {
+		return "", ""
+	}
+	var bearer string
+	for k, v := range headers {
+		if strings.EqualFold(k, "authorization") {
+			bearer = v
+			break
+		}
+	}
+	fields := strings.Fields(bearer)
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
+		return "", ""
+	}
+	parts := strings.Split(fields[1], ".")
+	if len(parts) != 3 {
+		return "", ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", ""
+	}
+	var c struct {
+		Issuer string `json:"iss"`
+		User   string `json:"preferred_username"`
+		Actor  struct {
+			Subject string `json:"sub"`
+		} `json:"act"`
+	}
+	if json.Unmarshal(raw, &c) != nil || c.Issuer != issuer {
+		return "", ""
+	}
+	sa := strings.Split(c.Actor.Subject, ":")
+	if len(sa) != 4 || sa[0] != "system" || sa[1] != "serviceaccount" || sa[2] == "" || sa[3] == "" {
+		return "", ""
+	}
+	return c.User, sa[3]
 }

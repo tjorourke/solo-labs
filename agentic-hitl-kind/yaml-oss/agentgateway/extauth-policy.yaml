@@ -1,0 +1,33 @@
+# AgentgatewayPolicy (OSS) targeting the /privileged HTTPRoute. ext-auth fires
+# before the request is forwarded to the MCP server, so a denial never reaches
+# the MCP server upstream.
+#
+# Schema note: in OSS v1alpha1, `phase` is a sibling of `extAuth` (at
+# spec.traffic.phase, not inside extAuth). PreRouting is only allowed when the
+# policy targets a Gateway / XListenerSet — not an HTTPRoute. Since we want
+# the policy scoped to the /privileged HTTPRoute, we leave phase at its default
+# (PostRouting); the gate still runs before the backend call.
+#
+# forwardBody pulls the JSON-RPC body into the ext-auth Check() request — used
+# only for display in the approval UI ("the agent wants to call run_migration
+# with version='v3'"). The gating decision is made at the HTTPRoute path level,
+# not from the body content.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: privileged-extauth
+  namespace: ops-tools
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: mcp-privileged
+  traffic:
+    extAuth:
+      backendRef:
+        name: hitl-extauth
+        namespace: hitl
+        port: 9001
+      forwardBody:
+        maxSize: 65536
+      grpc: {}

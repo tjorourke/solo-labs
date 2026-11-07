@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ops-tools
+  namespace: ops-tools
+  labels: { app: ops-tools }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ops-tools }
+  template:
+    metadata:
+      labels: { app: ops-tools }
+    spec:
+      containers:
+        - name: ops-tools
+          image: ops-tools:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ops-tools
+  namespace: ops-tools
+  labels: { app: ops-tools }
+spec:
+  selector: { app: ops-tools }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

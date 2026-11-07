@@ -1,0 +1,31 @@
+Bob calls MCP himself (Enterprise, kind cluster hitl-sts-part2), 7 November 2026
+enterprise-agentgateway v2026.10.0, Keycloak 26.3, realm hitl-part2
+
+Bob's Keycloak access token (client dba-client) carries:
+  iss  http://keycloak.keycloak.svc.cluster.local:8080/realms/hitl-part2
+  aud  hitl-mcp   (added by the hitl-mcp-audience mapper in realm.json)
+  preferred_username bob, and no act claim
+sts-jwt.yaml trusts two issuers, each with its own JWKS: Keycloak and Solo STS.
+hitl-extauth: USER_ISSUER (Keycloak) records user only; DELEGATED_ISSUER (STS) records user and agent.
+
+scripts/test-enterprise.py output:
+PASS Bob token -> STS exchange as dba-agent
+PASS may_act rejects an unlisted actor
+PASS Strict JWT rejects missing and invalid tokens
+{"pending":[{"id":"p-3","receivedAt":"2026-11-07T17:41:52.938515101Z","method":"POST","path":"/mcp","user":"bob","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+PASS Bob direct: queue shows user bob and no agent; reviewer rejected it
+PASS authenticated initialize and tools/list do not park
+PASS ConfigMap allow and default deny
+{"pending":[{"id":"p-9","receivedAt":"2026-11-07T17:41:56.517365023Z","method":"POST","path":"/mcp","user":"bob","agent":"dba-agent","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+PASS approve releases delete_user
+PASS reject blocks delete_user
+PASS u-2 deleted, rejected u-3 retained
+PASS queue empty; no raw credentials retained; cluster left running
+
+go test ./... in src/hitl-extauth: ok
+
+The lab page's curl commands for this path (port-forward Keycloak, svc/extauth-gw on
+23000 and the admin API; Bob's Keycloak token straight to MCP) were run as written at
+18:33 GMT after a users-mcp restart, then rejected:
+PENDING {"pending":[{"id":"p-25","receivedAt":"2026-11-07T18:33:19.796191601Z","method":"POST","path":"/mcp","user":"bob","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+curl: (22) The requested URL returned error: 403   (caller, after the reviewer rejected)

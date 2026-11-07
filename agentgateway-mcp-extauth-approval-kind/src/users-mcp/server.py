@@ -1,13 +1,8 @@
-"""users-mcp: a real MCP server (mcp.server.fastmcp), one endpoint, two tools.
+"""Users MCP server with read-only get_users and destructive delete_user tools.
 
-get_users is read-only; delete_user is destructive. The server itself has no
-concept of approval at all. It trusts whoever calls it, exactly like any
-real MCP server you didn't write. The gate lives entirely in front of it, at
-agentgateway, via the hitl-extauth service (see ../hitl-extauth/main.go):
-tool names listed under allow in a ConfigMap pass straight through, names
-listed under approve park for a human decision, and anything else is denied.
-This server would behave identically with no gateway in front of it at all,
-which is the point.
+The server has no approval logic. At the gateway, hitl-extauth selects the
+users-mcp ConfigMap block and applies its allow, approve and deny tool rules.
+The server only receives calls the gateway forwards.
 """
 from __future__ import annotations
 

@@ -1,0 +1,19 @@
+# Easy to miss, and the pattern breaks without it: the ext-authz gRPC contract
+# puts no deadline on Check() itself, but agentgateway's own default timeout on
+# the call to the approval backend does: a parked request is cut loose after
+# about two seconds, the caller gets 403, and a later approval finds nothing
+# left to release. This raises it to however long a reviewer may reasonably
+# take; hitl-extauth's own PARK_TIMEOUT_SEC (600s) is the other half of that.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: hitl-extauth-timeout
+  namespace: mcp-extauth-demo
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: hitl-extauth
+  backend:
+    http:
+      requestTimeout: 600s

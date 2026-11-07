@@ -1,0 +1,9 @@
+PASS Bob token -> STS exchange as dba-agent
+PASS may_act rejects an unlisted actor
+PASS Strict JWT rejects missing, invalid and non-STS tokens
+PASS authenticated initialize and tools/list do not park
+{"pending":[{"id":"p-4","receivedAt":"2026-11-07T16:47:07.187981317Z","method":"POST","path":"/privileged/mcp","user":"bob","agent":"dba-agent","rpcMethod":"tools/call","toolName":"run_migration","toolArgs":{"version":"v3"}}]}
+PASS approve releases run_migration
+PASS reject blocks run_migration
+PASS approved v3 persisted; rejected v4 absent; public read unparked
+PASS queue empty; no raw credentials retained; cluster left running

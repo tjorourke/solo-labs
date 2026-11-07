@@ -1,0 +1,10 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: {name: extauth-gw, namespace: mcp-extauth-demo}
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+  - name: mcp
+    port: 3000
+    protocol: HTTP
+    allowedRoutes: {namespaces: {from: Same}}

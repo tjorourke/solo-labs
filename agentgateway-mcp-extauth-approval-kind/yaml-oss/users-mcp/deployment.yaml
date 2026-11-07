@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-mcp
+  namespace: mcp-extauth-demo
+  labels: { app: users-mcp }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: users-mcp }
+  template:
+    metadata:
+      labels: { app: users-mcp }
+    spec:
+      containers:
+        - name: users-mcp
+          image: users-mcp:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: users-mcp
+  namespace: mcp-extauth-demo
+  labels: { app: users-mcp }
+spec:
+  selector: { app: users-mcp }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      appProtocol: http

@@ -1,0 +1,27 @@
+# Validate before ext-auth, retaining the token only for identity extraction.
+# Two trusted issuers, each with its own JWKS. agentgateway picks the provider
+# whose issuer matches the token's iss claim, then checks signature, aud and exp.
+#   Keycloak: Bob's own sign-in token, when he calls MCP himself.
+#   Solo STS: the token minted when the dba-agent acts for Bob.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: sts-jwt, namespace: mcp-extauth-demo}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: Gateway, name: extauth-gw}]
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      preserveToken: true
+      providers:
+      - issuer: http://keycloak.keycloak.svc.cluster.local:8080/realms/hitl-part2
+        audiences: [hitl-mcp]
+        jwks:
+          remote:
+            jwksPath: /realms/hitl-part2/protocol/openid-connect/certs
+            backendRef: {group: "", kind: Service, name: keycloak, namespace: keycloak, port: 8080}
+      - issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
+        audiences: [hitl-mcp]
+        jwks:
+          remote:
+            jwksPath: /.well-known/jwks.json
+            backendRef: {group: "", kind: Service, name: enterprise-agentgateway, namespace: agentgateway-system, port: 7777}

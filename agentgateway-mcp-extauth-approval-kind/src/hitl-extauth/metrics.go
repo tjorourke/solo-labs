@@ -14,14 +14,14 @@ var (
 			Name: "hitl_extauth_verdicts_total",
 			Help: "ConfigMap policy verdicts for MCP tools/call requests. verdict=approve means the call was parked for a reviewer.",
 		},
-		[]string{"verdict", "tool"},
+		[]string{"verdict", "server", "tool"},
 	)
 	hitlApprovalNeeded = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "hitl_extauth_approval_needed_total",
 			Help: "MCP tool calls parked because they matched an approve pattern and need a human decision.",
 		},
-		[]string{"tool"},
+		[]string{"server", "tool"},
 	)
 	hitlDecisions = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -49,10 +49,10 @@ func toolLabel(name string) string {
 	return name
 }
 
-func recordVerdict(v Verdict, tool string) {
-	hitlVerdicts.WithLabelValues(v.String(), toolLabel(tool)).Inc()
+func recordVerdict(v Verdict, server, tool string) {
+	hitlVerdicts.WithLabelValues(v.String(), toolLabel(server), toolLabel(tool)).Inc()
 	if v == VerdictApprove {
-		hitlApprovalNeeded.WithLabelValues(toolLabel(tool)).Inc()
+		hitlApprovalNeeded.WithLabelValues(toolLabel(server), toolLabel(tool)).Inc()
 	}
 }
 

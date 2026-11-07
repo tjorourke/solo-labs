@@ -1,10 +1,9 @@
 # AgentgatewayPolicy (OSS) targeting the single /mcp route. ext-auth fires
 # before every request is forwarded, so a denial never reaches the backend.
 #
-# forwardBody pulls the JSON-RPC body into the ext-auth Check() request. This
-# is what lets hitl-extauth read the tool name. Which names are allowed,
-# parked or denied lives in the hitl-tool-policy ConfigMap, not in this
-# policy: agentgateway just calls Check() and does what it says.
+# forwardBody includes the JSON-RPC tool name in the Check() request.
+# hitl-extauth binds the request path to users-mcp, then applies that server's
+# allow, approve and deny lists from the hitl-tool-policy ConfigMap.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:

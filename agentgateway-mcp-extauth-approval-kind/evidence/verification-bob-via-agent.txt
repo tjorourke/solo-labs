@@ -1,0 +1,39 @@
+Bob prompts the kagent dba-agent (Enterprise, kind cluster hitl-sts-part2), 7 November 2026, 18:29 GMT
+enterprise-agentgateway v2026.10.0, kagent OSS 0.10.6 (BYO Agent), Keycloak realm hitl-part2
+
+Bob's Keycloak token goes in the Authorization header of an A2A message/send to the
+kagent controller: POST /api/a2a/mcp-extauth-demo/dba-agent/
+The controller (pod IP 10.244.0.34) forwarded it to the BYO agent Deployment, which kagent
+created from yaml-enterprise/kagent-dba-agent.yaml with serviceAccountName dba-agent.
+
+Prompt: "Tom Reyes left the company last week. Please remove him from the users directory."
+
+dba-agent log (tokens are never logged):
+INFO request received; caller bearer token present: True
+INFO HTTP Request: POST http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/oauth2/token "HTTP/1.1 200 OK"
+INFO STS minted token for user=bob actor=system:serviceaccount:mcp-extauth-demo:dba-agent
+INFO tools/call get_users {}
+INFO tools/call delete_user {"id": "u-2"}
+
+hitl-extauth log:
+[passthrough] id=p-15 rpc="tools/list" reason="not a tools/call"
+[passthrough] id=p-16 rpc="tools/call" tool="get_users" reason="tool \"get_users\" matched allow pattern \"get_.*\""
+[parked] id=p-17 rpc=tools/call tool=delete_user args=map[id:u-2] reason="tool \"delete_user\" matched approve pattern \"delete_.*\""
+[approved] id=p-17 reason="offboarding ticket checked"
+
+scripts/test-bob-via-agent.py output:
+{"pending":[{"id":"p-17","receivedAt":"2026-11-07T18:29:46.177104099Z","method":"POST","path":"/mcp","user":"bob","agent":"dba-agent","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+PASS queue shows user bob and agent dba-agent for delete_user {"id": "u-2"}
+AGENT: Done. Tom Reyes has been permanently removed from the users directory.
+PASS approve released the agent's delete_user
+
+Environment note: the laptop's container VM was overloaded during this run, so the
+enterprise-agentgateway controller (which serves STS on :7777) kept losing its leader
+lease and restarting. The first attempt at 18:29:04 GMT hit that gap and returned an
+error before any tool call; the second attempt at 18:29:25 GMT is the one above.
+
+The lab page's curl commands for this path (port-forward Keycloak, the kagent controller
+and the admin API, then A2A message/send with Bob's bearer) were run as written at
+18:32 GMT after a users-mcp restart:
+PENDING {"pending":[{"id":"p-22","receivedAt":"2026-11-07T18:32:42.687899223Z","method":"POST","path":"/mcp","user":"bob","agent":"dba-agent","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+REPLY Done. Tom Reyes has been permanently removed from the users directory.

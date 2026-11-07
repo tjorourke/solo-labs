@@ -1,0 +1,25 @@
+# Bob talks to this kagent agent. It is a BYO agent (src/dba-agent) because it
+# has to read Bob's bearer token from the A2A request and exchange it at Solo
+# STS before it calls MCP. It runs as the dba-agent ServiceAccount, which is
+# the actor Keycloak's may_act claim allows to act for Bob.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dba-agent
+  namespace: mcp-extauth-demo
+spec:
+  description: DBA assistant for the users directory. Acts for the person who asks, through Solo STS and agentgateway.
+  type: BYO
+  byo:
+    deployment:
+      image: dba-agent:dev
+      imagePullPolicy: IfNotPresent
+      serviceAccountName: dba-agent
+      env:
+      - name: ANTHROPIC_API_KEY
+        valueFrom:
+          secretKeyRef: {name: kagent-anthropic, key: ANTHROPIC_API_KEY}
+      - {name: MODEL, value: claude-haiku-4-5}
+      - {name: STS_TOKEN_URL, value: "http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/oauth2/token"}
+      - {name: MCP_URL, value: "http://extauth-gw.mcp-extauth-demo.svc.cluster.local:3000/mcp"}
+      - {name: MCP_AUDIENCE, value: hitl-mcp}

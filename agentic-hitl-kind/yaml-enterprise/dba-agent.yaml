@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: dba-agent, namespace: ops-tools}
+---
+# No RBAC grants: this actor can present its own mounted token, not review calls.
+apiVersion: v1
+kind: Pod
+metadata: {name: dba-agent, namespace: ops-tools}
+spec:
+  serviceAccountName: dba-agent
+  containers:
+  - name: client
+    image: curlimages/curl:8.10.1
+    command: ["sleep", "86400"]

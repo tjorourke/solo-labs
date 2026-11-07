@@ -1,0 +1,18 @@
+# kagent OSS 0.10.6 for the "Bob asks the dba-agent" path. The only agent in
+# this lab is the BYO dba-agent in mcp-extauth-demo, so the sample agents and
+# their tool servers are switched off. The Anthropic key is passed separately
+# on stdin and never stored in this file.
+providers:
+  default: anthropic
+k8s-agent: {enabled: false}
+kgateway-agent: {enabled: false}
+istio-agent: {enabled: false}
+promql-agent: {enabled: false}
+observability-agent: {enabled: false}
+argo-rollouts-agent: {enabled: false}
+helm-agent: {enabled: false}
+cilium-policy-agent: {enabled: false}
+cilium-manager-agent: {enabled: false}
+cilium-debug-agent: {enabled: false}
+grafana-mcp: {enabled: false}
+kagent-tools: {enabled: false}

@@ -1,0 +1,18 @@
+# Tool rules are scoped to the MCP server key, then matched against the whole
+# tool name as Go regular expressions. Precedence within that server is deny,
+# approve, allow, then default deny. An unknown server is denied.
+# Handshake frames with no tool name still pass.
+# Edit this ConfigMap to reload tool rules without rebuilding the image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hitl-tool-policy
+  namespace: mcp-extauth-demo
+data:
+  policy.yaml: |
+    users-mcp:
+      allow:
+        - get_.*
+      approve:
+        - delete_.*
+      deny: []

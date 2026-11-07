@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -35,11 +36,14 @@ func (v Verdict) String() string {
 	}
 }
 
-// ToolPolicy is the contents of the mounted ConfigMap file.
+// ToolPolicy maps an MCP server name to its own tool rules.
+type ToolPolicy map[string]ServerPolicy
+
+// ServerPolicy applies only to tools on one MCP server.
 // Each entry is a Go regular expression matched against the whole tool name:
 // get_users matches only that tool, get_.* matches every tool starting with
 // get_, and .* matches every tool (for example every tool from this server).
-type ToolPolicy struct {
+type ServerPolicy struct {
 	Allow   []string `json:"allow" yaml:"allow"`
 	Approve []string `json:"approve" yaml:"approve"`
 	Deny    []string `json:"deny" yaml:"deny"`
@@ -49,7 +53,7 @@ func compilePattern(pat string) (*regexp.Regexp, error) {
 	return regexp.Compile("^(?:" + pat + ")$")
 }
 
-func (p ToolPolicy) compile() error {
+func (p ServerPolicy) compile() error {
 	for _, list := range []struct {
 		name     string
 		patterns []string
@@ -91,7 +95,7 @@ func firstMatch(patterns []string, name string) (string, bool) {
 // Handshake frames (empty tool name) always allow, so initialize and
 // tools/list are never parked. Precedence is deny, then approve, then
 // allow. A name that matches none of the lists is denied.
-func (p ToolPolicy) decide(toolName string) (Verdict, string) {
+func (p ServerPolicy) decide(toolName string) (Verdict, string) {
 	if toolName == "" {
 		return VerdictAllow, "not a tools/call"
 	}
@@ -105,6 +109,19 @@ func (p ToolPolicy) decide(toolName string) (Verdict, string) {
 		return VerdictAllow, fmt.Sprintf("tool %q matched allow pattern %q", toolName, pat)
 	}
 	return VerdictDeny, fmt.Sprintf("tool %q is not listed (default deny)", toolName)
+}
+
+// decide selects the server block before matching any tool patterns.
+func (p ToolPolicy) decide(server, tool string) (Verdict, string) {
+	if tool == "" {
+		return VerdictAllow, "not a tools/call"
+	}
+	rules, ok := p[server]
+	if server == "" || !ok {
+		return VerdictDeny, fmt.Sprintf("server %q is not listed (default deny)", server)
+	}
+	verdict, reason := rules.decide(tool)
+	return verdict, fmt.Sprintf("server %q: %s", server, reason)
 }
 
 // PolicyStore loads a YAML policy file and re-reads it when the contents change.
@@ -147,28 +164,33 @@ func (s *PolicyStore) reload() {
 	}
 
 	var p ToolPolicy
-	if err := yaml.Unmarshal(data, &p); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&p); err != nil {
 		s.mu.Lock()
 		s.err = err.Error()
 		s.mu.Unlock()
 		log.Printf("[policy] failed to parse %s: %v (keeping previous policy)", s.path, err)
 		return
 	}
-	if p.Allow == nil {
-		p.Allow = []string{}
-	}
-	if p.Approve == nil {
-		p.Approve = []string{}
-	}
-	if p.Deny == nil {
-		p.Deny = []string{}
-	}
-	if err := p.compile(); err != nil {
-		s.mu.Lock()
-		s.err = err.Error()
-		s.mu.Unlock()
-		log.Printf("[policy] invalid pattern in %s: %v (keeping previous policy)", s.path, err)
-		return
+	for server, rules := range p {
+		if rules.Allow == nil {
+			rules.Allow = []string{}
+		}
+		if rules.Approve == nil {
+			rules.Approve = []string{}
+		}
+		if rules.Deny == nil {
+			rules.Deny = []string{}
+		}
+		if err := rules.compile(); err != nil {
+			s.mu.Lock()
+			s.err = fmt.Sprintf("server %q: %v", server, err)
+			s.mu.Unlock()
+			log.Printf("[policy] invalid pattern in %s for server %q: %v (keeping previous policy)", s.path, server, err)
+			return
+		}
+		p[server] = rules
 	}
 
 	s.mu.Lock()
@@ -177,7 +199,7 @@ func (s *PolicyStore) reload() {
 	s.err = ""
 	s.loadedAt = time.Now().UTC()
 	s.mu.Unlock()
-	log.Printf("[policy] loaded %s allow=%v approve=%v deny=%v", s.path, p.Allow, p.Approve, p.Deny)
+	log.Printf("[policy] loaded %s servers=%v", s.path, p)
 }
 
 func (s *PolicyStore) snapshot() ToolPolicy {
@@ -193,9 +215,7 @@ func (s *PolicyStore) status() map[string]any {
 	defer s.mu.RUnlock()
 	out := map[string]any{
 		"path":     s.path,
-		"allow":    s.policy.Allow,
-		"approve":  s.policy.Approve,
-		"deny":     s.policy.Deny,
+		"servers":  s.policy,
 		"loadedAt": s.loadedAt,
 	}
 	if s.err != "" {

@@ -105,3 +105,33 @@ See [`demo-scripts/runbook.md`](demo-scripts/runbook.md) for the live walkthroug
 
 - `CLAUDE.md`: design decisions, gotchas, integration gaps
 - [Human-in-the-Loop Subagents](https://kagent.dev/docs/kagent/examples/human-in-the-loop): kagent docs
+
+## Enterprise STS identity
+
+The existing walkthrough is OSS HITL without delegation. `yaml-oss/` keeps
+that configuration. The separate Enterprise chapter on `index.html` uses
+`yaml-enterprise/`, Keycloak Bob (`bob` / `bob`, lab fixtures only) and a
+`dba-agent` ServiceAccount. The agent calls Solo STS before MCP; the queue
+shows `user`, `agent`, `toolName` and full `toolArgs`. Raw HTTP headers and
+body are not retained in the queue. The ext-auth service extracts display
+claims only after gateway JWT validation; it is not a token verifier.
+
+```bash
+./scripts/up-enterprise.sh       # new hitl-sts-part1 or hitl-sts-part2 cluster
+./scripts/test-enterprise.py     # exchange, handshake, park, approve, reject
+```
+
+The page shows the actual YAML and kubectl/curl commands, not just these
+shortcuts. The scripts never tear down a cluster. Licence:
+`AGENTGATEWAY_LICENSE_KEY` in `~/.solo/secrets.env`; it is never printed.
+Only the gateway entry point is JWT-protected. The admin API is a lab-only
+ClusterIP with no reviewer authentication. Protect it separately and restrict
+backend access before using this pattern outside an isolated lab. The sample
+ServiceAccount has no review RBAC grants; this is not a self-approval policy.
+
+The Enterprise chapter exercises the gateway with an explicit STS-then-MCP
+client, not the kagent chat. The installed RemoteMCPServer schema supports
+static `headersFrom`; that does not establish per-user JWT propagation from
+the pinned chat runtime. The local `agentsts-adk` SDK reads a subject token
+from session headers, but this lab has not verified that attachment path.
+The original kagent and LangGraph walkthrough remains unchanged on OSS.

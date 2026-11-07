@@ -33,7 +33,7 @@ POLICY=$(curl -s "$ADMIN/policy")
 echo "$POLICY" | python3 -c '
 import json,sys
 p=json.load(sys.stdin)
-assert p["allow"]==["get_.*"] and p["approve"]==["delete_.*"] and p["deny"]==[], p
+assert p["servers"]["users-mcp"]["allow"]==["get_.*"] and p["servers"]["users-mcp"]["approve"]==["delete_.*"] and p["servers"]["users-mcp"]["deny"]==[], p
 assert p["path"]=="/etc/hitl/policy.yaml" and "error" not in p, p
 ' || { echo "FAIL: /policy"; echo "$POLICY"; exit 1; }
 
@@ -50,7 +50,7 @@ sleep 3
 PID=$(curl -s http://localhost:8081/pending | python3 -c "import json,sys; print(json.load(sys.stdin)['pending'][0]['id'])")
 echo "--- /metrics while parked"
 [ "$(metric 'hitl_extauth_pending')" = "1" ] || { echo "FAIL: pending gauge"; exit 1; }
-[ "$(metric 'hitl_extauth_approval_needed_total{tool="delete_user"}')" = "1" ] || { echo "FAIL: approval_needed_total"; exit 1; }
+[ "$(metric 'hitl_extauth_approval_needed_total{server="users-mcp",tool="delete_user"}')" = "1" ] || { echo "FAIL: approval_needed_total"; exit 1; }
 curl -s -X POST "http://localhost:8081/decide/$PID" -d '{"approved": true}' >/dev/null
 wait "$CALL_PID"
 grep -q '"deleted": "u-2"' /tmp/qa-delete-u2.out || { echo "FAIL: approved delete"; cat /tmp/qa-delete-u2.out; exit 1; }
@@ -73,7 +73,7 @@ echo "--- /metrics after the run"
 [ "$(metric 'hitl_extauth_pending')" = "0" ] || { echo "FAIL: pending not 0"; exit 1; }
 [ "$(metric 'hitl_extauth_decisions_total{result="approved"}')" = "1" ] || { echo "FAIL: approved count"; exit 1; }
 [ "$(metric 'hitl_extauth_decisions_total{result="rejected"}')" = "1" ] || { echo "FAIL: rejected count"; exit 1; }
-[ "$(metric 'hitl_extauth_verdicts_total{tool="wipe_users",verdict="deny"}')" = "1" ] || { echo "FAIL: deny verdict"; exit 1; }
+[ "$(metric 'hitl_extauth_verdicts_total{server="users-mcp",tool="wipe_users",verdict="deny"}')" = "1" ] || { echo "FAIL: deny verdict"; exit 1; }
 curl -s "$ADMIN/metrics" | grep -q 'tool="none"' && { echo "FAIL: handshake counted as a verdict"; exit 1; }
 
 echo "--- get_users: u-2 gone, u-3 still present"

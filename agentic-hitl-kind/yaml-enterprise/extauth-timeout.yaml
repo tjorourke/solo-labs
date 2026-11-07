@@ -1,0 +1,7 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata: {name: hitl-extauth-timeout, namespace: hitl}
+spec:
+  targetRefs: [{group: "", kind: Service, name: hitl-extauth}]
+  backend:
+    http: {requestTimeout: 600s}

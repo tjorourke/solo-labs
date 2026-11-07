@@ -1,0 +1,43 @@
+{
+  "realm": "hitl-part1",
+  "enabled": true,
+  "users": [
+    {
+      "username": "bob",
+      "enabled": true,
+      "firstName": "Bob",
+      "lastName": "Ops",
+      "email": "bob@lab.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "dba-client",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "may_act-list",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "may_act",
+            "claim.value": "{\"sub\": [\"system:serviceaccount:ops-tools:dba-agent\"]}",
+            "jsonType.label": "JSON",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+PASS Bob token -> STS exchange as dba-agent
+PASS may_act rejects an unlisted actor
+PASS Strict JWT rejects missing, invalid and non-STS tokens
+PASS authenticated initialize and tools/list do not park
+PASS ConfigMap allow and default deny
+{"pending":[{"id":"p-6","receivedAt":"2026-11-07T16:25:41.092592276Z","method":"POST","path":"/mcp","user":"bob","agent":"dba-agent","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+PASS approve releases delete_user
+PASS reject blocks delete_user
+PASS u-2 deleted, rejected u-3 retained
+PASS queue empty; no raw credentials retained; cluster left running

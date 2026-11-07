@@ -1,0 +1,17 @@
+{
+  "pending": [
+    {
+      "id": "p-4",
+      "receivedAt": "2026-11-07T16:47:07.187981317Z",
+      "method": "POST",
+      "path": "/privileged/mcp",
+      "user": "bob",
+      "agent": "dba-agent",
+      "rpcMethod": "tools/call",
+      "toolName": "run_migration",
+      "toolArgs": {
+        "version": "v3"
+      }
+    }
+  ]
+}
