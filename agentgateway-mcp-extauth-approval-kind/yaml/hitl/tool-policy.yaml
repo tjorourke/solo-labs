@@ -1,0 +1,23 @@
+# Which MCP tool names pass, park for a reviewer, or are denied immediately.
+# Edit this ConfigMap and hitl-extauth re-reads the file; you do not need to
+# rebuild the image. Precedence is deny, then approve, then allow. A tool
+# that matches none of the lists is denied. Handshake frames with no tool
+# name (initialize, tools/list) still pass.
+#
+# Each entry is a Go regular expression matched against the whole tool name.
+# get_users matches only that tool. get_.* matches every tool starting with
+# get_. .* matches every tool, which on this route is every tool from the
+# users-mcp server. If a gateway prefixes tools with a server name, a
+# pattern such as users__.* selects that server's tools.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hitl-tool-policy
+  namespace: mcp-extauth-demo
+data:
+  policy.yaml: |
+    allow:
+      - get_.*
+    approve:
+      - delete_.*
+    deny: []

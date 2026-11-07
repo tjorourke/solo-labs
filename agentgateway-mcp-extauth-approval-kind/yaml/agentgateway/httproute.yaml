@@ -1,5 +1,5 @@
-# One endpoint, one route. Gating is by JSON-RPC body (tool name), not path —
-# see the AgentgatewayPolicy in extauth-policy.yaml and hitl-extauth's Check().
+# One endpoint, one route. Gating is by JSON-RPC body (tool name), not path.
+# See the AgentgatewayPolicy in extauth-policy.yaml and hitl-extauth's Check().
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

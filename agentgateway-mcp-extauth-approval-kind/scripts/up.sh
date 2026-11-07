@@ -27,6 +27,7 @@ docker build -t hitl-extauth:dev src/hitl-extauth
 kind load docker-image hitl-extauth:dev --name mcp-extauth-approval
 
 kubectl apply -f yaml/users-mcp/deployment.yaml
+kubectl apply -f yaml/hitl/tool-policy.yaml
 kubectl apply -f yaml/hitl/extauth.yaml
 kubectl apply -f yaml/agentgateway/gateway.yaml
 kubectl apply -f yaml/agentgateway/httproute.yaml

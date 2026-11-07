@@ -1,8 +1,8 @@
 FROM golang:1.22-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
-COPY main.go ./
+COPY *.go ./
 # go mod tidy populates go.sum + adds the indirect deps needed by go-control-plane
 # (cncf/xds, etc.) which the project only requires transitively. We resolve them
 # at build time so the source tree only carries the direct deps in go.mod.
