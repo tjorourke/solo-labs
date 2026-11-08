@@ -1,13 +1,16 @@
-Executed 2026-11-07 20:53:03 GMT
-GET /policy {"loadedAt": "2026-11-07T20:52:22.492499483Z", "path": "/etc/hitl/policy.yaml", "servers": {"users-mcp": {"allow": ["get_.*"], "approve": ["delete_.*"], "deny": []}}}
-PASS initialize and tools/list pass without parking
-PASS users-mcp/get_users allowed, seeded users present
-PASS users-mcp/wipe_users default-denied without parking
-GET /pending {"pending": [{"id": "p-8", "method": "POST", "path": "/mcp", "receivedAt": "2026-11-07T20:53:03.720621595Z", "rpcMethod": "tools/call", "serverName": "users-mcp", "toolArgs": {"id": "u-2"}, "toolName": "delete_user"}]}
+Executed 2026-11-07 21:56:35 GMT
+GET /policy {"loadedAt": "2026-11-07T21:54:16.03945985Z", "path": "/etc/hitl/policy.yaml", "servers": {"users-mcp": {"approve": ["delete_.*"]}}}
+tools/list ['get_users', 'delete_user']
+PASS initialize and tools/list pass without parking; wipe_users hidden, names unprefixed
+PASS users-mcp/get_users allowed without approval, seeded users present
+wipe_users HTTP 400 {"code": -32602, "message": "Unknown tool: wipe_users"}
+PASS users-mcp/wipe_users passed ext-auth, then refused by native MCP authorization
+GET /pending {"pending": [{"id": "p-31", "method": "POST", "path": "/mcp", "receivedAt": "2026-11-07T21:56:35.860026646Z", "rpcMethod": "tools/call", "serverName": "users-mcp", "toolArgs": {"id": "u-2"}, "toolName": "delete_user"}]}
 PASS delete_user parked; metrics identify users-mcp and delete_user
 PASS approval forwards delete_user
-GET /pending {"pending": [{"id": "p-9", "method": "POST", "path": "/mcp", "receivedAt": "2026-11-07T20:53:03.73515652Z", "rpcMethod": "tools/call", "serverName": "users-mcp", "toolArgs": {"id": "u-3"}, "toolName": "delete_user"}]}
+GET /pending {"pending": [{"id": "p-32", "method": "POST", "path": "/mcp", "receivedAt": "2026-11-07T21:56:35.868974635Z", "rpcMethod": "tools/call", "serverName": "users-mcp", "toolArgs": {"id": "u-3"}, "toolName": "delete_user"}]}
 PASS delete_user parked; metrics identify users-mcp and delete_user
+rejected 403 {"approved":false,"id":"p-32","reason":"server-scoped policy replay"}
 PASS rejection blocks delete_user
 PASS u-2 deleted and rejected u-3 retained; queue empty
 Second-server isolation: Go unit-tested only; no second MCP server is deployed.

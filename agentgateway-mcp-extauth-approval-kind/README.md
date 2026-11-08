@@ -1,34 +1,51 @@
 # Human approval for high-risk MCP tools through agentgateway, by ConfigMap
 
 Hold high-risk MCP tool calls at agentgateway until a platform reviewer approves
-or rejects them. The MCP server does not implement approval. `hitl-extauth`
-selects the server's ConfigMap block, then matches the JSON-RPC tool name against
-its allow, approve and deny lists.
+or rejects them. The MCP server does not implement approval. Two policies split
+the work:
+
+- **Native MCP authorization** (`yaml/agentgateway/mcp-authz.yaml`) on the
+  `users-mcp` MCP backend allows `get_users` and `delete_user`. Every other
+  tool, such as `wipe_users`, is left out of `tools/list` and refused on call
+  by agentgateway with JSON-RPC `-32602`. Allow and deny live here.
+- **The `hitl-tool-policy` ConfigMap** only names tools that must wait for a
+  human. `hitl-extauth` selects the server's block and parks any tool that
+  matches its approve list.
 
 ```yaml
 users-mcp:
-  allow:
-    - get_.*
   approve:
     - delete_.*
-  deny: []
+```
+
+```yaml
+# mcp-authz.yaml, spec.backend.mcp.authorization
+action: Allow
+policy:
+  matchExpressions:
+    - 'mcp.tool.target == "users-mcp" && mcp.tool.name in ["get_users", "delete_user"]'
 ```
 
 `get_users` on `users-mcp` runs immediately. `delete_user` waits for a reviewer.
-Unknown servers and unlisted tools are denied. Rules under one server never
-apply to another. Precedence within a server is deny, approve, allow, then
-default deny. Each entry is a Go regular expression matched against the whole
-tool name. Frames with no tool name, including `initialize` and `tools/list`,
-always pass.
+`wipe_users` passes ext-auth and is refused by agentgateway. Each approve entry
+is a Go regular expression matched against the whole tool name. Rules under one
+server never apply to another. Frames with no tool name, including
+`initialize` and `tools/list`, always pass. If the ConfigMap file has never
+loaded, every tool call is denied rather than run without review.
+
+A tool in the approve list must also be on the native allow-list. ext-auth is
+a route policy and runs before the MCP backend, so a parked tool that native
+authorization refuses would reach a reviewer and then be refused anyway.
 
 ## Identifying the MCP server
 
-This lab routes directly to the `users-mcp` Kubernetes Service, not an
-AgentgatewayBackend MCP target. The JSON-RPC body contains an unprefixed tool
-name and no trustworthy server identity. `serverForPath` reads the HTTP path
-from the ext-auth `CheckRequest` and explicitly binds `/mcp` to `users-mcp`.
-The OSS and Enterprise HTTPRoutes use an exact `/mcp` match and only that
-backend. Other paths resolve to an unknown server and are denied for tool calls.
+The HTTPRoute sends `/mcp` to the `users-mcp` AgentgatewayBackend
+(`yaml/agentgateway/mcp-backend.yaml`), which has one MCP target, also named
+`users-mcp`. With one target, tool names stay unprefixed (`prefixMode`
+defaults to `Conditional`). `serverForPath` reads the HTTP path from the
+ext-auth `CheckRequest`, which is the client's `/mcp`, and explicitly binds it
+to `users-mcp`. The OSS and Enterprise HTTPRoutes use an exact `/mcp` match and
+only that backend. Other paths resolve to no server, so nothing parks there.
 Caller-supplied headers, JSON server fields and tool prefixes cannot select a
 server block. Query parameters do not change the binding.
 
@@ -36,21 +53,23 @@ This is a lab route binding, not automatic MCP server discovery. A new server
 needs its own route and a corresponding binding in `serverForPath`, as well as
 its own ConfigMap block. Do not send a federated, multi-server endpoint through
 this binding. Only `users-mcp` is deployed here. `server_test.go` checks that the
-three route manifests and this binding agree.
+three route manifests, the MCP backends, the native tool policies and this
+binding agree.
 
-Executed on 7 November 2026 at 20:53 GMT on the existing
-`mcp-extauth-approval` cluster: nested `GET /policy`, handshake passthrough,
-`get_users` allowed, `delete_user` parked and approved, a second delete rejected,
-and `wipe_users` default-denied. The queue and metrics identify `users-mcp`.
-The approved delete removed u-2; the rejected delete left u-3 present.
+Executed on 7 November 2026 at 21:56 GMT on the existing `mcp-extauth-approval`
+cluster (agentgateway 1.5.0): approve-only `GET /policy`, handshake
+passthrough, `tools/list` returning `get_users` and `delete_user`,
+`get_users` without approval, `wipe_users` refused with `-32602` and never
+parked, `delete_user` parked and approved, a second delete rejected. With the
+native policy removed for a moment, `tools/list` also returned `wipe_users`.
 `evidence/server-policy-replay.txt` contains the captured output. The cluster
-is left running. An initial API Forbidden response during startup cleared
-before the replay; no credentials or RBAC were changed.
+is left running.
 
+The Enterprise path was replayed at 22:06 GMT on `hitl-sts-part2`
+(enterprise-agentgateway v2026.10.0) with `scripts/test-enterprise.py` and
+`scripts/test-bob-via-agent.py`; see `evidence/verification-*.txt`.
 Cross-server isolation is executed in Go unit tests only. No second MCP server
-is deployed here. Enterprise route manifests are checked statically; the new
-schema has not been replayed through the Enterprise cluster. The earlier Bob
-direct and Bob-via-agent evidence JSON is unchanged.
+is deployed here.
 
 To repeat the OSS test without teardown, restore the mock users, forward the
 admin port in another terminal, then run the test:
@@ -67,7 +86,7 @@ python3 scripts/test-server-policy.py
 
 `GET /pending` lists parked calls with `serverName`, tool name and arguments.
 `POST /decide/{id}` approves or rejects one. `GET /policy` returns the loaded
-rules under `servers`, plus file path, load time and any reload error. Invalid
+approve rules under `servers`, plus file path, load time and any reload error. Invalid
 YAML or regular expressions leave the last good policy in place. ConfigMap file
 updates normally take about a minute to reach the pod on kind.
 
@@ -87,8 +106,8 @@ restrictions outside an isolated lab.
 ```
 
 `scripts/quick.sh` runs the whole flow non-interactively (bring-up, `/policy`,
-passthrough, park/approve with `/metrics`, park/reject, default deny,
-teardown) and prints PASS. Its EXIT trap deletes the kind cluster, so do not
+passthrough, park/approve with `/metrics`, park/reject, `wipe_users` refused
+by native MCP authorization, teardown) and prints PASS. Its EXIT trap deletes the kind cluster, so do not
 point it at a cluster someone is still reviewing.
 
 The full walkthrough with captured payloads is the lab page (`index.html`,

@@ -1,9 +1,11 @@
-# AgentgatewayPolicy (OSS) targeting the single /mcp route. ext-auth fires
+# EnterpriseAgentgatewayPolicy targeting the single /mcp route. ext-auth fires
 # before every request is forwarded, so a denial never reaches the backend.
 #
 # forwardBody includes the JSON-RPC tool name in the Check() request.
-# hitl-extauth binds the request path to users-mcp, then applies that server's
-# allow, approve and deny lists from the hitl-tool-policy ConfigMap.
+# hitl-extauth binds the request path to users-mcp, then parks any tool that
+# matches that server's approve list in the hitl-tool-policy ConfigMap. Every
+# other call passes here. This route policy runs before the MCP backend, so
+# native MCP authorization then allows or refuses the call.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayPolicy
 metadata:

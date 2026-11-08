@@ -3,7 +3,11 @@
 
 Requires the seeded u-2 and u-3 users. Approves deletion of u-2, rejects u-3.
 Restart only this lab's users-mcp deployment before repeating the test.
-Forward hitl-extauth-admin to localhost:18081 before running.
+Forward hitl-extauth-admin to localhost:18081 (or set ADMIN_URL) before running.
+
+Checks the split of work: native MCP authorization on the users-mcp backend
+hides and refuses wipe_users, the ConfigMap's approve list parks delete_user,
+and everything else passes ext-auth untouched.
 """
 import concurrent.futures
 import json
@@ -32,6 +36,14 @@ def request(url, body=None, session=None):
         return error.code, error.headers, error.read().decode()
 
 
+def message(text):
+    """Return the JSON-RPC message from a JSON or a one-event SSE body."""
+    for line in text.splitlines():
+        if line.startswith("data: "):
+            return json.loads(line[6:])
+    return json.loads(text) if text.strip().startswith("{") else None
+
+
 def admin(path, body=None):
     status, _, text = request(ADMIN + path, body)
     assert status in (200, 204), (path, status)
@@ -46,29 +58,36 @@ def rpc(method, params=None, session=None, ident=1):
 
 
 def main():
-    print("Executed", datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d %H:%M:%S GMT"), flush=True)
+    print("Executed", datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d %H:%M:%S %Z"), flush=True)
     policy = admin("/policy")
     assert "error" not in policy, policy
-    assert policy["servers"] == {"users-mcp": {"allow": ["get_.*"], "approve": ["delete_.*"], "deny": []}}, policy
+    assert policy["servers"] == {"users-mcp": {"approve": ["delete_.*"]}}, policy
     print("GET /policy", json.dumps(policy, sort_keys=True), flush=True)
     assert not admin("/pending")["pending"], "do not run while another review is pending"
     status, headers, _ = rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "server-policy-test", "version": "1"}})
     assert status == 200, ("initialize", status)
+    # agentgateway's MCP backend issues the session, so every later frame carries it.
     sid = headers.get("mcp-session-id")
-    # users-mcp uses stateless_http=True, so no session header is required.
+    assert sid, "MCP backend issued no session"
     status, _, _ = request(GATEWAY, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
     assert status in (200, 202, 204), ("initialized", status)
     status, _, text = rpc("tools/list", session=sid)
-    assert status == 200 and "delete_user" in text, ("tools/list", status)
+    names = [t["name"] for t in message(text)["result"]["tools"]]
+    assert status == 200 and names == ["get_users", "delete_user"], ("tools/list", status, names)
     assert not admin("/pending")["pending"], "handshake parked"
-    print("PASS initialize and tools/list pass without parking", flush=True)
+    print("tools/list", names, flush=True)
+    print("PASS initialize and tools/list pass without parking; wipe_users hidden, names unprefixed", flush=True)
     status, _, text = rpc("tools/call", {"name": "get_users", "arguments": {}}, sid, 2)
     assert status == 200 and "u-2" in text and "u-3" in text, "restart the lab users-mcp deployment to restore seeded users"
-    print("PASS users-mcp/get_users allowed, seeded users present", flush=True)
-    status, _, text = rpc("tools/call", {"name": "wipe_users", "arguments": {}}, sid, 3)
-    assert status == 403 and "default deny" in text, ("unlisted tool", status, text)
-    assert not admin("/pending")["pending"], "unlisted tool parked"
-    print("PASS users-mcp/wipe_users default-denied without parking", flush=True)
+    print("PASS users-mcp/get_users allowed without approval, seeded users present", flush=True)
+    wipe_status, _, text = rpc("tools/call", {"name": "wipe_users", "arguments": {}}, sid, 3)
+    error = (message(text) or {}).get("error", {})
+    assert wipe_status == 400 and error.get("code") == -32602, ("wipe_users", wipe_status, text)
+    assert not admin("/pending")["pending"], "wipe_users parked"
+    status, _, metrics = request(ADMIN + "/metrics")
+    assert 'hitl_extauth_verdicts_total{server="users-mcp",tool="wipe_users",verdict="allow"}' in metrics
+    print("wipe_users HTTP", wipe_status, json.dumps(error), flush=True)
+    print("PASS users-mcp/wipe_users passed ext-auth, then refused by native MCP authorization", flush=True)
     for ident, user, approved in [(4, "u-2", True), (5, "u-3", False)]:
         with concurrent.futures.ThreadPoolExecutor() as pool:
             future = pool.submit(rpc, "tools/call", {"name": "delete_user", "arguments": {"id": user}}, sid, ident)
@@ -91,9 +110,11 @@ def main():
             print("PASS delete_user parked; metrics identify users-mcp and delete_user", flush=True)
             admin("/decide/" + pending["id"], {"approved": approved, "reason": "server-scoped policy replay"})
             status, _, result = future.result(timeout=20)
-            assert status == (200 if approved else 403), ("decision", status, result)
             if approved:
-                assert "u-2" in result and '"isError":true' not in result.replace(" ", ""), result
+                assert status == 200 and "u-2" in result and '"isError":true' not in result.replace(" ", ""), (status, result)
+            else:
+                assert status == 403 and "server-scoped policy replay" in result, (status, result)
+                print("rejected", status, result, flush=True)
             print("PASS " + ("approval forwards delete_user" if approved else "rejection blocks delete_user"), flush=True)
     status, _, text = rpc("tools/call", {"name": "get_users", "arguments": {}}, sid, 6)
     assert status == 200 and "u-2" not in text and "u-3" in text, "backend state disagrees with decisions"

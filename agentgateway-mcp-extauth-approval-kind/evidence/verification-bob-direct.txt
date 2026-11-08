@@ -8,23 +8,25 @@ Bob's Keycloak access token (client dba-client) carries:
 sts-jwt.yaml trusts two issuers, each with its own JWKS: Keycloak and Solo STS.
 hitl-extauth: USER_ISSUER (Keycloak) records user only; DELEGATED_ISSUER (STS) records user and agent.
 
-scripts/test-enterprise.py output:
+scripts/test-enterprise.py output, re-run at 22:06 GMT with the approve-only ConfigMap and
+native MCP authorization on the EnterpriseAgentgatewayBackend:
 PASS Bob token -> STS exchange as dba-agent
 PASS may_act rejects an unlisted actor
 PASS Strict JWT rejects missing and invalid tokens
-{"pending":[{"id":"p-3","receivedAt":"2026-11-07T17:41:52.938515101Z","method":"POST","path":"/mcp","user":"bob","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+{"pending":[{"id":"p-7","receivedAt":"2026-11-07T22:06:06.812672012Z","method":"POST","path":"/mcp","user":"bob","rpcMethod":"tools/call","serverName":"users-mcp","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
 PASS Bob direct: queue shows user bob and no agent; reviewer rejected it
+tools/list ['get_users', 'delete_user']
 PASS authenticated initialize and tools/list do not park
-PASS ConfigMap allow and default deny
-{"pending":[{"id":"p-9","receivedAt":"2026-11-07T17:41:56.517365023Z","method":"POST","path":"/mcp","user":"bob","agent":"dba-agent","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
+PASS get_users needs no approval; wipe_users hidden and refused by native MCP authorization
+{"pending":[{"id":"p-13","receivedAt":"2026-11-07T22:06:07.793809406Z","method":"POST","path":"/mcp","user":"bob","agent":"dba-agent","rpcMethod":"tools/call","serverName":"users-mcp","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}
 PASS approve releases delete_user
 PASS reject blocks delete_user
 PASS u-2 deleted, rejected u-3 retained
 PASS queue empty; no raw credentials retained; cluster left running
 
-go test ./... in src/hitl-extauth: ok
+go test ./... and go test -race ./... in src/hitl-extauth: ok
 
-The lab page's curl commands for this path (port-forward Keycloak, svc/extauth-gw on
+Earlier capture (before the approve-only change, unchanged): the lab page's curl commands for this path (port-forward Keycloak, svc/extauth-gw on
 23000 and the admin API; Bob's Keycloak token straight to MCP) were run as written at
 18:33 GMT after a users-mcp restart, then rejected:
 PENDING {"pending":[{"id":"p-25","receivedAt":"2026-11-07T18:33:19.796191601Z","method":"POST","path":"/mcp","user":"bob","rpcMethod":"tools/call","toolName":"delete_user","toolArgs":{"id":"u-2"}}]}

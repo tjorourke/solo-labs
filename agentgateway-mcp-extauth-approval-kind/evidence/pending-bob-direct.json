@@ -1,12 +1,13 @@
 {
   "pending": [
     {
-      "id": "p-3",
-      "receivedAt": "2026-11-07T17:41:52.938515101Z",
+      "id": "p-7",
+      "receivedAt": "2026-11-07T22:06:06.812672012Z",
       "method": "POST",
       "path": "/mcp",
       "user": "bob",
       "rpcMethod": "tools/call",
+      "serverName": "users-mcp",
       "toolName": "delete_user",
       "toolArgs": {
         "id": "u-2"

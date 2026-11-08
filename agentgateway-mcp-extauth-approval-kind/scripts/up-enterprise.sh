@@ -27,7 +27,7 @@ kind load docker-image hitl-extauth-sts-hitl-part2:dev --name "$CLUSTER"
 hitl_kubectl apply -f yaml/users-mcp/deployment.yaml
 hitl_kubectl apply -f yaml/hitl/tool-policy.yaml
 hitl_kubectl apply -f yaml-enterprise/extauth.yaml -f yaml-enterprise/dba-agent.yaml
-hitl_kubectl apply -f yaml-enterprise/gateway.yaml -f yaml-enterprise/httproute.yaml -f yaml-enterprise/extauth-policy.yaml -f yaml-enterprise/extauth-timeout.yaml -f yaml-enterprise/sts-jwt.yaml
+hitl_kubectl apply -f yaml-enterprise/gateway.yaml -f yaml-enterprise/mcp-backend.yaml -f yaml-enterprise/mcp-authz.yaml -f yaml-enterprise/httproute.yaml -f yaml-enterprise/extauth-policy.yaml -f yaml-enterprise/extauth-timeout.yaml -f yaml-enterprise/sts-jwt.yaml
 hitl_kubectl -n mcp-extauth-demo rollout status deploy/users-mcp --timeout=180s
 hitl_kubectl -n mcp-extauth-demo rollout status deploy/hitl-extauth --timeout=180s
 hitl_kubectl -n mcp-extauth-demo rollout status deploy/extauth-gw --timeout=900s

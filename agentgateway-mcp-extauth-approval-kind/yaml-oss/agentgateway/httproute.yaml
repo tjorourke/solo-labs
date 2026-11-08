@@ -1,5 +1,6 @@
-# /mcp is bound only to users-mcp. Keep serverForPath in hitl-extauth in sync.
-# Tool rules within that server come from the hitl-tool-policy ConfigMap.
+# /mcp goes only to the users-mcp MCP backend. Keep serverForPath in
+# hitl-extauth in sync. Approve rules for that server come from the
+# hitl-tool-policy ConfigMap; tool access comes from mcp-authz.yaml.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -14,5 +15,6 @@ spec:
             type: Exact
             value: /mcp
       backendRefs:
-        - name: users-mcp
-          port: 8080
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: users-mcp

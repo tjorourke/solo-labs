@@ -15,6 +15,9 @@ import (
 )
 
 // Verdict is what hitl-extauth should do with one tools/call.
+// The approve rules never deny a tool: agentgateway's native MCP
+// authorization decides which tools are visible and callable. The only deny
+// is fail-closed, when no approve rules have ever loaded.
 type Verdict int
 
 const (
@@ -29,24 +32,20 @@ func (v Verdict) String() string {
 		return "allow"
 	case VerdictApprove:
 		return "approve"
-	case VerdictDeny:
-		return "deny"
 	default:
 		return "deny"
 	}
 }
 
-// ToolPolicy maps an MCP server name to its own tool rules.
+// ToolPolicy maps an MCP server name to the tools on it that need a reviewer.
 type ToolPolicy map[string]ServerPolicy
 
 // ServerPolicy applies only to tools on one MCP server.
 // Each entry is a Go regular expression matched against the whole tool name:
-// get_users matches only that tool, get_.* matches every tool starting with
-// get_, and .* matches every tool (for example every tool from this server).
+// delete_user matches only that tool, delete_.* matches every tool starting
+// with delete_, and .* parks every tool from this server.
 type ServerPolicy struct {
-	Allow   []string `json:"allow" yaml:"allow"`
 	Approve []string `json:"approve" yaml:"approve"`
-	Deny    []string `json:"deny" yaml:"deny"`
 }
 
 func compilePattern(pat string) (*regexp.Regexp, error) {
@@ -54,21 +53,12 @@ func compilePattern(pat string) (*regexp.Regexp, error) {
 }
 
 func (p ServerPolicy) compile() error {
-	for _, list := range []struct {
-		name     string
-		patterns []string
-	}{
-		{"allow", p.Allow},
-		{"approve", p.Approve},
-		{"deny", p.Deny},
-	} {
-		for _, pat := range list.patterns {
-			if pat == "" {
-				continue
-			}
-			if _, err := compilePattern(pat); err != nil {
-				return fmt.Errorf("%s pattern %q: %w", list.name, pat, err)
-			}
+	for _, pat := range p.Approve {
+		if pat == "" {
+			continue
+		}
+		if _, err := compilePattern(pat); err != nil {
+			return fmt.Errorf("approve pattern %q: %w", pat, err)
 		}
 	}
 	return nil
@@ -93,32 +83,32 @@ func firstMatch(patterns []string, name string) (string, bool) {
 
 // decide returns the verdict for a tool name.
 // Handshake frames (empty tool name) always allow, so initialize and
-// tools/list are never parked. Precedence is deny, then approve, then
-// allow. A name that matches none of the lists is denied.
+// tools/list are never parked. A name that matches an approve pattern is
+// parked. Anything else is allowed here and left to agentgateway's native
+// MCP authorization.
 func (p ServerPolicy) decide(toolName string) (Verdict, string) {
 	if toolName == "" {
 		return VerdictAllow, "not a tools/call"
 	}
-	if pat, ok := firstMatch(p.Deny, toolName); ok {
-		return VerdictDeny, fmt.Sprintf("tool %q matched deny pattern %q", toolName, pat)
-	}
 	if pat, ok := firstMatch(p.Approve, toolName); ok {
 		return VerdictApprove, fmt.Sprintf("tool %q matched approve pattern %q", toolName, pat)
 	}
-	if pat, ok := firstMatch(p.Allow, toolName); ok {
-		return VerdictAllow, fmt.Sprintf("tool %q matched allow pattern %q", toolName, pat)
-	}
-	return VerdictDeny, fmt.Sprintf("tool %q is not listed (default deny)", toolName)
+	return VerdictAllow, fmt.Sprintf("tool %q needs no approval", toolName)
 }
 
-// decide selects the server block before matching any tool patterns.
+// decide selects the server block before matching any tool patterns, so a
+// rule under one server never parks the same tool name on another server.
 func (p ToolPolicy) decide(server, tool string) (Verdict, string) {
 	if tool == "" {
 		return VerdictAllow, "not a tools/call"
 	}
+	if p == nil {
+		// Never loaded a valid file: do not let a high-risk call skip review.
+		return VerdictDeny, "approve rules not loaded (fail closed)"
+	}
 	rules, ok := p[server]
 	if server == "" || !ok {
-		return VerdictDeny, fmt.Sprintf("server %q is not listed (default deny)", server)
+		return VerdictAllow, fmt.Sprintf("server %q has no approve rules", server)
 	}
 	verdict, reason := rules.decide(tool)
 	return verdict, fmt.Sprintf("server %q: %s", server, reason)
@@ -145,12 +135,9 @@ func (s *PolicyStore) reload() {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		s.mu.Lock()
-		if s.hash == "" {
-			s.policy = ToolPolicy{}
-		}
 		s.err = err.Error()
 		s.mu.Unlock()
-		log.Printf("[policy] failed to read %s: %v (unlisted tools default to deny)", s.path, err)
+		log.Printf("[policy] failed to read %s: %v (keeping previous approve rules)", s.path, err)
 		return
 	}
 	sum := sha256.Sum256(data)
@@ -166,7 +153,11 @@ func (s *PolicyStore) reload() {
 	var p ToolPolicy
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&p); err != nil {
+	err = decoder.Decode(&p)
+	if err == nil && p == nil {
+		err = fmt.Errorf("no server blocks; use {} to park nothing")
+	}
+	if err != nil {
 		s.mu.Lock()
 		s.err = err.Error()
 		s.mu.Unlock()
@@ -174,14 +165,8 @@ func (s *PolicyStore) reload() {
 		return
 	}
 	for server, rules := range p {
-		if rules.Allow == nil {
-			rules.Allow = []string{}
-		}
 		if rules.Approve == nil {
 			rules.Approve = []string{}
-		}
-		if rules.Deny == nil {
-			rules.Deny = []string{}
 		}
 		if err := rules.compile(); err != nil {
 			s.mu.Lock()

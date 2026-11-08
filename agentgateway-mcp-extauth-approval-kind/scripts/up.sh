@@ -30,6 +30,8 @@ kubectl apply -f yaml/users-mcp/deployment.yaml
 kubectl apply -f yaml/hitl/tool-policy.yaml
 kubectl apply -f yaml/hitl/extauth.yaml
 kubectl apply -f yaml/agentgateway/gateway.yaml
+kubectl apply -f yaml/agentgateway/mcp-backend.yaml
+kubectl apply -f yaml/agentgateway/mcp-authz.yaml
 kubectl apply -f yaml/agentgateway/httproute.yaml
 kubectl apply -f yaml/agentgateway/extauth-policy.yaml
 kubectl apply -f yaml/agentgateway/extauth-timeout.yaml

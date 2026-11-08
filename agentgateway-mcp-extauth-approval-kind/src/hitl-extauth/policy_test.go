@@ -9,11 +9,7 @@ import (
 )
 
 func TestDecide(t *testing.T) {
-	p := ServerPolicy{
-		Allow:   []string{"get_users"},
-		Approve: []string{"delete_user"},
-		Deny:    []string{"wipe_db"},
-	}
+	p := ServerPolicy{Approve: []string{"delete_user"}}
 	cases := []struct {
 		name    string
 		tool    string
@@ -21,11 +17,11 @@ func TestDecide(t *testing.T) {
 		contain string
 	}{
 		{"handshake", "", VerdictAllow, "not a tools/call"},
-		{"allow", "get_users", VerdictAllow, "allow pattern"},
 		{"approve", "delete_user", VerdictApprove, "approve pattern"},
-		{"deny", "wipe_db", VerdictDeny, "deny pattern"},
-		{"unlisted", "get_everything", VerdictDeny, "default deny"},
-		{"no substring", "not_get_users_either", VerdictDeny, "default deny"},
+		{"not listed", "get_users", VerdictAllow, "needs no approval"},
+		// Native MCP authorization hides and denies this, not ext-auth.
+		{"not listed destructive", "wipe_users", VerdictAllow, "needs no approval"},
+		{"no substring", "not_delete_user_either", VerdictAllow, "needs no approval"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -41,21 +37,16 @@ func TestDecide(t *testing.T) {
 }
 
 func TestDecideRegex(t *testing.T) {
-	p := ServerPolicy{
-		Allow:   []string{"get_.*"},
-		Approve: []string{".*delete.*"},
-		Deny:    []string{"wipe_.*"},
-	}
+	p := ServerPolicy{Approve: []string{"delete_.*", ".*_force"}}
 	cases := []struct {
 		tool string
 		want Verdict
 	}{
-		{"get_users", VerdictAllow},
-		{"get_everything", VerdictAllow},
 		{"delete_user", VerdictApprove},
-		{"force_delete", VerdictApprove},
-		{"wipe_db", VerdictDeny},
-		{"list_accounts", VerdictDeny},
+		{"delete_everything", VerdictApprove},
+		{"purge_force", VerdictApprove},
+		{"get_users", VerdictAllow},
+		{"undelete_user", VerdictAllow},
 	}
 	for _, tc := range cases {
 		got, reason := p.decide(tc.tool)
@@ -66,53 +57,69 @@ func TestDecideRegex(t *testing.T) {
 }
 
 func TestDecideAllTools(t *testing.T) {
-	p := ServerPolicy{Allow: []string{".*"}}
+	p := ServerPolicy{Approve: []string{".*"}}
 	got, reason := p.decide("anything_from_this_server")
-	if got != VerdictAllow {
-		t.Fatalf(".* should allow every tool, got %s (%s)", got, reason)
+	if got != VerdictApprove {
+		t.Fatalf(".* should park every tool, got %s (%s)", got, reason)
 	}
 }
 
 func TestDecideAnchored(t *testing.T) {
-	p := ServerPolicy{Allow: []string{"users"}}
-	got, reason := p.decide("get_users")
-	if got != VerdictDeny {
+	p := ServerPolicy{Approve: []string{"delete"}}
+	got, reason := p.decide("delete_user")
+	if got != VerdictAllow {
 		t.Fatalf("unanchored substring should not match, got %s (%s)", got, reason)
 	}
 }
 
-func TestDecideDenyWins(t *testing.T) {
-	p := ServerPolicy{
-		Allow:   []string{".*"},
-		Approve: []string{".*"},
-		Deny:    []string{"delete_user"},
-	}
-	got, reason := p.decide("delete_user")
+func TestPolicyStoreMissingFileFailsClosed(t *testing.T) {
+	s := newPolicyStore(filepath.Join(t.TempDir(), "missing.yaml"))
+	got, reason := s.snapshot().decide("users-mcp", "delete_user")
 	if got != VerdictDeny {
-		t.Fatalf("got %s (%s), want deny", got, reason)
+		t.Fatalf("missing file: got %s (%s), want deny", got, reason)
+	}
+	if got, _ := s.snapshot().decide("users-mcp", ""); got != VerdictAllow {
+		t.Fatalf("missing file: handshake got %s, want allow", got)
 	}
 }
 
-func TestPolicyStoreMissingFileDefaultsDeny(t *testing.T) {
-	s := newPolicyStore(filepath.Join(t.TempDir(), "missing.yaml"))
-	got, reason := s.snapshot().decide("users-mcp", "get_users")
-	if got != VerdictDeny {
-		t.Fatalf("missing file: got %s (%s), want deny", got, reason)
+func TestPolicyStoreEmptyFileFailsClosed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(path, []byte("\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newPolicyStore(path)
+	if got, _ := s.snapshot().decide("users-mcp", "delete_user"); got != VerdictDeny {
+		t.Fatalf("empty file: got %s, want deny", got)
+	}
+	if s.status()["error"] == nil {
+		t.Fatal("expected empty file to be reported")
+	}
+}
+
+func TestPolicyStoreExplicitEmptyParksNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newPolicyStore(path)
+	if got, reason := s.snapshot().decide("users-mcp", "delete_user"); got != VerdictAllow {
+		t.Fatalf("{}: got %s (%s), want allow", got, reason)
 	}
 }
 
 func TestPolicyStoreReload(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "policy.yaml")
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow:\n    - get_.*\n  approve: []\n  deny: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s := newPolicyStore(path)
-	got, _ := s.snapshot().decide("users-mcp", "get_users")
+	got, _ := s.snapshot().decide("users-mcp", "delete_user")
 	if got != VerdictAllow {
-		t.Fatalf("initial get_users: got %s, want allow", got)
+		t.Fatalf("initial delete_user: got %s, want allow", got)
 	}
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow: []\n  approve:\n    - delete_.*\n  deny: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve:\n    - delete_.*\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(5 * time.Millisecond)
@@ -125,16 +132,16 @@ func TestPolicyStoreReload(t *testing.T) {
 func TestPolicyStoreKeepsLastGoodOnParseError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "policy.yaml")
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow:\n    - get_users\n  approve: []\n  deny: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve:\n    - delete_user\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s := newPolicyStore(path)
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow: [\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve: [\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, reason := s.snapshot().decide("users-mcp", "get_users")
-	if got != VerdictAllow {
-		t.Fatalf("after parse error: got %s (%s), want previous allow", got, reason)
+	got, reason := s.snapshot().decide("users-mcp", "delete_user")
+	if got != VerdictApprove {
+		t.Fatalf("after parse error: got %s (%s), want previous approve", got, reason)
 	}
 	if s.status()["error"] == nil || s.status()["error"] == "" {
 		t.Fatal("expected parse error to be reported")
@@ -144,16 +151,16 @@ func TestPolicyStoreKeepsLastGoodOnParseError(t *testing.T) {
 func TestPolicyStoreKeepsLastGoodOnBadRegex(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "policy.yaml")
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow:\n    - get_users\n  approve: []\n  deny: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve:\n    - delete_user\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s := newPolicyStore(path)
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow:\n    - '(unclosed'\n  approve: []\n  deny: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve:\n    - '(unclosed'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, reason := s.snapshot().decide("users-mcp", "get_users")
-	if got != VerdictAllow {
-		t.Fatalf("after bad regex: got %s (%s), want previous allow", got, reason)
+	got, reason := s.snapshot().decide("users-mcp", "delete_user")
+	if got != VerdictApprove {
+		t.Fatalf("after bad regex: got %s (%s), want previous approve", got, reason)
 	}
 	if s.status()["error"] == nil || s.status()["error"] == "" {
 		t.Fatal("expected regex error to be reported")
@@ -162,20 +169,24 @@ func TestPolicyStoreKeepsLastGoodOnBadRegex(t *testing.T) {
 
 func TestServerToolPolicy(t *testing.T) {
 	p := ToolPolicy{
-		"users-mcp":   {Allow: []string{"get_.*"}, Approve: []string{"delete_.*"}},
-		"":            {Allow: []string{".*"}},
-		"archive-mcp": {Allow: []string{"delete_.*"}},
+		"users-mcp":   {Approve: []string{"delete_.*"}},
+		"":            {Approve: []string{".*"}},
+		"archive-mcp": {Approve: []string{"purge_.*"}},
 	}
 	for _, tc := range []struct {
 		server, tool string
 		want         Verdict
 	}{
 		{"users-mcp", "delete_user", VerdictApprove},
+		// A delete rule under users-mcp does not follow the name to another server.
 		{"archive-mcp", "delete_user", VerdictAllow},
+		{"archive-mcp", "purge_all", VerdictApprove},
+		{"users-mcp", "purge_all", VerdictAllow},
 		{"users-mcp", "get_users", VerdictAllow},
-		{"unknown", "delete_user", VerdictDeny},
-		{"", "delete_user", VerdictDeny},
-		{"users-mcp", "wipe_users", VerdictDeny},
+		{"users-mcp", "wipe_users", VerdictAllow},
+		{"unknown", "delete_user", VerdictAllow},
+		// The empty key never matches, even with a catch-all rule.
+		{"", "delete_user", VerdictAllow},
 		{"unknown", "", VerdictAllow},
 	} {
 		t.Run(tc.server+"/"+tc.tool, func(t *testing.T) {
@@ -186,9 +197,10 @@ func TestServerToolPolicy(t *testing.T) {
 		})
 	}
 }
+
 func TestPolicyStatusHasServerBlocks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow: [get_.*]\n  approve: [delete_.*]\n  deny: []\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve: [delete_.*]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	s := newPolicyStore(path)
@@ -196,22 +208,28 @@ func TestPolicyStatusHasServerBlocks(t *testing.T) {
 	if !ok || len(policy["users-mcp"].Approve) != 1 {
 		t.Fatalf("missing server policy: %v", s.status())
 	}
-	if _, ok := s.status()["allow"]; ok {
+	if _, ok := s.status()["approve"]; ok {
 		t.Fatal("legacy flat policy in status")
 	}
 }
 
 func TestPolicyStoreRejectsUnknownFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(path, []byte("users-mcp:\n  allow: [get_users]\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("users-mcp:\n  approve: [delete_user]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	s := newPolicyStore(path)
-	if err := os.WriteFile(path, []byte("users-mcp:\n  aproove: [delete_user]\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := s.snapshot().decide("users-mcp", "get_users")
-	if got != VerdictAllow || s.status()["error"] == nil {
-		t.Fatal("bad schema replaced the last good policy")
+	for _, bad := range []string{
+		"users-mcp:\n  aproove: [delete_user]\n",
+		// The old lists are gone; a stale ConfigMap must not load silently.
+		"users-mcp:\n  allow: [get_.*]\n  approve: [delete_.*]\n  deny: []\n",
+	} {
+		if err := os.WriteFile(path, []byte(bad), 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := s.snapshot().decide("users-mcp", "delete_user")
+		if got != VerdictApprove || s.status()["error"] == nil {
+			t.Fatalf("bad schema replaced the last good policy: %q", bad)
+		}
 	}
 }

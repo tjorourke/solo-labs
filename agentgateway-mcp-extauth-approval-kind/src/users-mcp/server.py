@@ -1,8 +1,10 @@
-"""Users MCP server with read-only get_users and destructive delete_user tools.
+"""Users MCP server with get_users, delete_user and wipe_users tools.
 
-The server has no approval logic. At the gateway, hitl-extauth selects the
-users-mcp ConfigMap block and applies its allow, approve and deny tool rules.
-The server only receives calls the gateway forwards.
+The server has no approval or access logic. At the gateway, native MCP
+authorization on the users-mcp backend allows get_users and delete_user and
+hides wipe_users. hitl-extauth parks delete_user for a reviewer, from the
+users-mcp block of its ConfigMap. The server only receives calls the gateway
+forwards.
 """
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ mcp = FastMCP("users-mcp", stateless_http=True, transport_security=_TS)
 
 @mcp.tool()
 def get_users() -> dict:
-    """List users. Always allowed, never gated."""
+    """List users. Needs no approval."""
     return {"users": db.users}
 
 
@@ -48,8 +50,8 @@ def delete_user(id: str) -> dict:
     """Permanently delete a user by id.
 
     This server does not check who is calling, or ask for confirmation
-    itself. Anything in front of it (agentgateway's extAuth gate, in this
-    lab) is what decides whether this call ever reaches here.
+    itself. agentgateway in front of it (MCP authorization, then the
+    approval gate) decides whether this call ever reaches here.
     """
     match = next((u for u in db.users if u["id"] == id), None)
     if match is None:
@@ -57,6 +59,20 @@ def delete_user(id: str) -> dict:
     db.users.remove(match)
     db.audit.append({"op": "delete", "id": id, "name": match["name"]})
     return {"deleted": id, "name": match["name"]}
+
+
+@mcp.tool()
+def wipe_users() -> dict:
+    """Delete every user.
+
+    This tool exists so the lab can show native MCP authorization at work:
+    the gateway leaves it out of tools/list and refuses calls to it, so a
+    call should never reach here.
+    """
+    removed = len(db.users)
+    db.audit.append({"op": "wipe", "count": removed})
+    db.users.clear()
+    return {"deleted": removed}
 
 
 async def health(_request):

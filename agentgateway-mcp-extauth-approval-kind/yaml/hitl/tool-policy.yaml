@@ -1,8 +1,10 @@
-# Tool rules are scoped to the MCP server key, then matched against the whole
-# tool name as Go regular expressions. Precedence within that server is deny,
-# approve, allow, then default deny. An unknown server is denied.
-# Handshake frames with no tool name still pass.
-# Edit this ConfigMap to reload tool rules without rebuilding the image.
+# Tools that must wait for a human, per MCP server key. Each entry is a Go
+# regular expression matched against the whole tool name. A match is parked
+# until a reviewer approves or rejects it. Every other call passes ext-auth:
+# which tools are visible and callable at all is decided by native MCP
+# authorization on the users-mcp backend (mcp-authz.yaml). Handshake frames
+# with no tool name always pass.
+# Edit this ConfigMap to change which tools park, without rebuilding the image.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,8 +13,5 @@ metadata:
 data:
   policy.yaml: |
     users-mcp:
-      allow:
-        - get_.*
       approve:
         - delete_.*
-      deny: []

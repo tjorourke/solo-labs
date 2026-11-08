@@ -1,13 +1,14 @@
 {
   "pending": [
     {
-      "id": "p-17",
-      "receivedAt": "2026-11-07T18:29:46.177104099Z",
+      "id": "p-21",
+      "receivedAt": "2026-11-07T22:06:25.901586884Z",
       "method": "POST",
       "path": "/mcp",
       "user": "bob",
       "agent": "dba-agent",
       "rpcMethod": "tools/call",
+      "serverName": "users-mcp",
       "toolName": "delete_user",
       "toolArgs": {
         "id": "u-2"

@@ -1,0 +1,22 @@
+# Native MCP authorization: which users-mcp tools exist for a client at all.
+# A tool that matches no expression is left out of tools/list and a call to it
+# is refused by agentgateway with JSON-RPC -32602. wipe_users is not listed, so
+# it is hidden and denied here. delete_user must stay listed, or a call could
+# never reach the approval step in hitl-extauth.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: users-mcp-tools
+  namespace: mcp-extauth-demo
+spec:
+  targetRefs:
+    - group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+      name: users-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'mcp.tool.target == "users-mcp" && mcp.tool.name in ["get_users", "delete_user"]'

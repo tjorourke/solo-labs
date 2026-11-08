@@ -25,7 +25,8 @@ def curl(url, body=None, token=None, session=None):
     raw = k("-n", NS, "exec", "-i", "dba-agent", "--", "curl", "-D", "-", "-K", "-", data="\n".join(config)+"\n")
     head, _, response = raw.replace("\r\n", "\n").partition("\n\n")
     status = int(head.splitlines()[0].split()[1])
-    result_headers = dict(line.lower().split(": ", 1) for line in head.splitlines()[1:] if ": " in line)
+    # Keep header values as sent: agentgateway's MCP session id is case-sensitive.
+    result_headers = {key.lower(): value for key, value in (line.split(": ", 1) for line in head.splitlines()[1:] if ": " in line)}
     return status, result_headers, response
 
 def rpc(method, params=None, token=None, session=None, ident=1):
@@ -111,14 +112,18 @@ def main():
     assert status in (200,202,204),"initialised notification failed"
     status,_,response=rpc("tools/list",token=delegated,session=sid)
     assert status==200 and TOOL in response,"tools/list failed"
+    names=[t['name'] for t in json.loads(next(l[6:] for l in response.splitlines() if l.startswith('data: ')))['result']['tools']]
+    assert names==['get_users','delete_user'],'native MCP authorization did not hide wipe_users: '+str(names)
+    print('tools/list', names)
     assert not admin('/pending')['pending'],"handshake parked"
     print('PASS authenticated initialize and tools/list do not park')
     if PART=='part2':
         status,_,response=rpc('tools/call',{'name':'get_users','arguments':{}},delegated,sid)
         assert status==200 and 'u-2' in response,'safe read failed'
         status,_,response=rpc('tools/call',{'name':'wipe_users','arguments':{}},delegated,sid)
-        assert status==403 and 'default deny' in response,'unlisted tool was not denied'
-        print('PASS ConfigMap allow and default deny')
+        assert status==400 and '-32602' in response,'native MCP authorization did not refuse wipe_users: '+str(status)
+        assert not admin('/pending')['pending'],'wipe_users parked'
+        print('PASS get_users needs no approval; wipe_users hidden and refused by native MCP authorization')
     for approved in (True, False):
         args=ARGS.copy()
         if not approved:

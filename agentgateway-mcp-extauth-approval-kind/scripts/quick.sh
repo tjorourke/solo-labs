@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Non-interactive end-to-end check for the E2E runner.
-# Brings the lab up, checks the ConfigMap policy (GET /policy), exercises
-# get_users (allow via get_.*), delete_user (park/approve, park/reject via
-# delete_.*), wipe_users (default deny, never parked) and GET /metrics,
-# then tears down. Prints PASS on success.
+# Brings the lab up, checks the approve-only ConfigMap (GET /policy), exercises
+# tools/list (wipe_users hidden by native MCP authorization), get_users (no
+# approval), delete_user (park/approve, park/reject via delete_.*), wipe_users
+# (refused by agentgateway, never parked) and GET /metrics, then tears down.
+# Prints PASS on success.
 #
 # The EXIT trap deletes the kind cluster. Do not run this against a cluster
 # someone is still reviewing.
@@ -33,12 +34,14 @@ POLICY=$(curl -s "$ADMIN/policy")
 echo "$POLICY" | python3 -c '
 import json,sys
 p=json.load(sys.stdin)
-assert p["servers"]["users-mcp"]["allow"]==["get_.*"] and p["servers"]["users-mcp"]["approve"]==["delete_.*"] and p["servers"]["users-mcp"]["deny"]==[], p
+assert p["servers"]=={"users-mcp":{"approve":["delete_.*"]}}, p
 assert p["path"]=="/etc/hitl/policy.yaml" and "error" not in p, p
 ' || { echo "FAIL: /policy"; echo "$POLICY"; exit 1; }
 
-echo "--- tools/list"
-mcp --method tools/list | grep -q '"delete_user"' || { echo "FAIL: tools/list"; exit 1; }
+echo "--- tools/list: wipe_users hidden by native MCP authorization"
+LIST=$(mcp --method tools/list)
+echo "$LIST" | grep -q '"delete_user"' || { echo "FAIL: tools/list"; exit 1; }
+echo "$LIST" | grep -q '"wipe_users"' && { echo "FAIL: wipe_users visible"; exit 1; }
 
 echo "--- get_users: passes straight through"
 mcp --method tools/call --tool-name get_users | grep -q 'Priya Shah' || { echo "FAIL: get_users"; exit 1; }
@@ -64,16 +67,16 @@ curl -s -X POST "http://localhost:8081/decide/$PID" -d '{"approved": false, "rea
 wait "$CALL_PID" || true
 grep -q 'approved.:false' /tmp/qa-delete-u3.out || { echo "FAIL: rejected delete"; cat /tmp/qa-delete-u3.out; exit 1; }
 
-echo "--- wipe_users: matches no list, denied without parking"
+echo "--- wipe_users: passes ext-auth, refused by native MCP authorization"
 WIPE=$(mcp --method tools/call --tool-name wipe_users 2>&1 || true)
-echo "$WIPE" | grep -q 'default deny' || { echo "FAIL: default deny"; echo "$WIPE"; exit 1; }
+echo "$WIPE" | grep -q -- '-32602' || { echo "FAIL: wipe_users not refused"; echo "$WIPE"; exit 1; }
 [ "$(curl -s "$ADMIN/pending")" = '{"pending":[]}' ] || { echo "FAIL: wipe_users was parked"; exit 1; }
 
 echo "--- /metrics after the run"
 [ "$(metric 'hitl_extauth_pending')" = "0" ] || { echo "FAIL: pending not 0"; exit 1; }
 [ "$(metric 'hitl_extauth_decisions_total{result="approved"}')" = "1" ] || { echo "FAIL: approved count"; exit 1; }
 [ "$(metric 'hitl_extauth_decisions_total{result="rejected"}')" = "1" ] || { echo "FAIL: rejected count"; exit 1; }
-[ "$(metric 'hitl_extauth_verdicts_total{server="users-mcp",tool="wipe_users",verdict="deny"}')" = "1" ] || { echo "FAIL: deny verdict"; exit 1; }
+[ "$(metric 'hitl_extauth_verdicts_total{server="users-mcp",tool="wipe_users",verdict="allow"}')" = "1" ] || { echo "FAIL: wipe_users verdict"; exit 1; }
 curl -s "$ADMIN/metrics" | grep -q 'tool="none"' && { echo "FAIL: handshake counted as a verdict"; exit 1; }
 
 echo "--- get_users: u-2 gone, u-3 still present"

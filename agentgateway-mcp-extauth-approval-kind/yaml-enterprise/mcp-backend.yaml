@@ -1,0 +1,19 @@
+# The users-mcp Service as an MCP backend. The HTTPRoute points here rather
+# than at the Service, because backend.mcp.authorization only attaches to an
+# MCP backend with spec.mcp populated. One target, so tool names stay
+# unprefixed (prefixMode defaults to Conditional). The target name is the
+# value mcp.tool.target carries in CEL, and matches the ConfigMap server key.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: users-mcp
+  namespace: mcp-extauth-demo
+spec:
+  mcp:
+    targets:
+      - name: users-mcp
+        static:
+          host: users-mcp.mcp-extauth-demo.svc.cluster.local
+          port: 8080
+          path: /mcp
+          protocol: StreamableHTTP

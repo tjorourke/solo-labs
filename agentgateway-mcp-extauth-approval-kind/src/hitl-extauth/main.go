@@ -1,10 +1,13 @@
 // hitl-extauth: Envoy ext-auth gRPC service that parks a Check() call on a Go
 // channel until a decision arrives via the admin HTTP API.
 //
-// The HTTPRoute binds /mcp to users-mcp. Check() selects that server's block
-// in the mounted ConfigMap and matches the JSON-RPC tool name against its
-// allow, approve and deny lists. Tool rules can change without an image rebuild.
-// Adding another backend requires a separate route and serverForPath binding.
+// The HTTPRoute binds /mcp to the users-mcp MCP backend. Check() selects that
+// server's block in the mounted ConfigMap and matches the JSON-RPC tool name
+// against its approve list. A match is parked for a reviewer. Anything else
+// passes, because agentgateway's native MCP authorization on the backend
+// already decides which tools are visible and callable. Approve rules can
+// change without an image rebuild. Adding another backend requires a separate
+// route and serverForPath binding.
 // Part 1 (agentic-hitl-kind) instead gates the entire /privileged route.
 //
 // Two listeners:
@@ -14,14 +17,14 @@
 //
 //	  GET  /pending           → list parked requests
 //	  POST /decide/{id}       → {"approved": bool, "reason": string}
-//	  GET  /policy            → server blocks currently loaded from the ConfigMap
+//	  GET  /policy            → approve rules per server, loaded from the ConfigMap
 //	  GET  /metrics           → Prometheus metrics, including approval_needed_total
 //	  GET  /healthz
 //
-// The gating decision (which tools pass, which park, which are denied) lives
-// entirely in this service's Check(), driven by the ConfigMap. agentgateway
-// does not know or care which tool was called; it just does what Check()
-// tells it.
+// Split of work: agentgateway's AgentgatewayPolicy backend.mcp.authorization
+// allows or hides tools; this service only decides which allowed calls wait
+// for a human. The one deny it raises itself is fail-closed, when no approve
+// rules have loaded.
 package main
 
 import (
@@ -192,8 +195,10 @@ type extAuthServer struct {
 }
 
 // serverForPath binds the ext-auth request path to the backend in httproute.yaml.
-// All three edition manifests restrict /mcp to the users-mcp Service. This is an
-// explicit lab route binding, not MCP server discovery or a gateway target ID.
+// All three edition manifests send /mcp only to the users-mcp MCP backend, whose
+// single target is also named users-mcp. ext-auth runs as a route policy, so it
+// sees the client's path, not the target path. This is an explicit lab route
+// binding, not MCP server discovery.
 // A new backend needs its own route and a corresponding binding here. Never
 // infer the server from client headers, JSON params or a tool-name prefix.
 func serverForPath(path string) string {
