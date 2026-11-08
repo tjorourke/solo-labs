@@ -1,0 +1,19 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: openai
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      openai: {}
+  policies:
+    auth:
+      secretRef:
+        name: openai-secret
+    ai:
+      routes:
+        "/v1/decisions": Decisions
+        "/v1/systemone": SystemOne
+        "/v1/chat/completions": Completions
+        "*": Passthrough

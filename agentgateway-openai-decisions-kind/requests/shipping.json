@@ -1,0 +1,63 @@
+{
+  "model": "gpt-6-luna",
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "The package was left in the rain and the box is soaked through."
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "type": "choice",
+      "name": "queue",
+      "instructions": "Which support queue should handle this ticket?",
+      "choices": [
+        {
+          "value": "billing",
+          "description": "Payments, invoices and refunds."
+        },
+        {
+          "value": "technical",
+          "description": "Problems using the product."
+        },
+        {
+          "value": "shipping",
+          "description": "Delivery, tracking and damage in transit."
+        },
+        {
+          "value": "other",
+          "description": "Requests outside these categories."
+        }
+      ]
+    },
+    {
+      "type": "predicate",
+      "name": "needs_human",
+      "instructions": "Should a person review this ticket before an automated reply? Return true for disputed payments, possible damage requiring evidence, or any request needing account-specific investigation."
+    },
+    {
+      "type": "score",
+      "name": "severity",
+      "instructions": "How severe is the reported customer impact? Use only stated evidence. Do not assume the product is damaged because its packaging is wet.",
+      "levels": [
+        {
+          "label": "Minor inconvenience",
+          "description": "An inconvenience or packaging issue, with no confirmed financial loss or unusable product."
+        },
+        {
+          "label": "Material impact",
+          "description": "A reported incorrect charge or impaired product, but no evidence that the customer is fully blocked."
+        },
+        {
+          "label": "Fully blocked",
+          "description": "The customer explicitly cannot use the product or complete the intended task, with no workaround."
+        }
+      ]
+    }
+  ]
+}

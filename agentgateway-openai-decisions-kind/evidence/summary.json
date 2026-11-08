@@ -1,0 +1,115 @@
+{
+  "tested_at": "2026-11-08T10:45:24.739301+00:00",
+  "context": "kind-openai-decisions",
+  "tickets": {
+    "billing": {
+      "queue": {
+        "type": "choice",
+        "name": "queue",
+        "choice": "billing",
+        "probabilities": [
+          {
+            "value": "billing",
+            "probability": 1.0
+          },
+          {
+            "value": "technical",
+            "probability": 0.0
+          },
+          {
+            "value": "shipping",
+            "probability": 0.0
+          },
+          {
+            "value": "other",
+            "probability": 0.0
+          }
+        ],
+        "confidence": 1.0
+      },
+      "needs_human": {
+        "type": "predicate",
+        "name": "needs_human",
+        "probability": 1.0
+      },
+      "severity": {
+        "type": "score",
+        "name": "severity",
+        "score": 0.99,
+        "probabilities": [
+          {
+            "value": 0,
+            "label": "Minor inconvenience",
+            "probability": 0.01
+          },
+          {
+            "value": 1,
+            "label": "Material impact",
+            "probability": 0.99
+          },
+          {
+            "value": 2,
+            "label": "Fully blocked",
+            "probability": 0.0
+          }
+        ],
+        "confidence": 0.99
+      }
+    },
+    "shipping": {
+      "queue": {
+        "type": "choice",
+        "name": "queue",
+        "choice": "shipping",
+        "probabilities": [
+          {
+            "value": "billing",
+            "probability": 0.0
+          },
+          {
+            "value": "technical",
+            "probability": 0.0
+          },
+          {
+            "value": "shipping",
+            "probability": 1.0
+          },
+          {
+            "value": "other",
+            "probability": 0.0
+          }
+        ],
+        "confidence": 1.0
+      },
+      "needs_human": {
+        "type": "predicate",
+        "name": "needs_human",
+        "probability": 1.0
+      },
+      "severity": {
+        "type": "score",
+        "name": "severity",
+        "score": 0.0,
+        "probabilities": [
+          {
+            "value": 0,
+            "label": "Minor inconvenience",
+            "probability": 1.0
+          },
+          {
+            "value": 1,
+            "label": "Material impact",
+            "probability": 0.0
+          },
+          {
+            "value": 2,
+            "label": "Fully blocked",
+            "probability": 0.0
+          }
+        ],
+        "confidence": 1.0
+      }
+    }
+  },
+  "metrics_present": true
+}

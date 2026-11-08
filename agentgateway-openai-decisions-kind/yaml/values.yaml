@@ -1,0 +1,3 @@
+licensing:
+  createSecret: false
+  secretName: enterprise-agentgateway-license
