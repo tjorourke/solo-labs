@@ -17,10 +17,11 @@ for c in $MCP_NAMES; do
 done
 
 export OIDC_ISSUER=$KEYCLOAK_ISSUER
-# Log arctl in fresh as dev-user. A cached arctl session expires and then every registry check reads 401.
-arctl user login --oidc-flow=password-credentials --oidc-client-id=ar-cli-password \
-  --oidc-username=dev-user --oidc-password=password >/dev/null 2>&1 || bad 'arctl login as dev-user failed'
-deps=$(arctl get deployments -o yaml 2>/dev/null)
+# Read the registry as dev-user with a fresh token. A cached arctl session expires and then every registry check
+# reads 401. --registry-token leaves the platform team's arctl login alone.
+dev_ar_token=$(mint_token dev-user)
+[[ $dev_ar_token == ey* ]] || bad 'no dev-user token for arctl'
+deps=$(arctl get deployments -o yaml --registry-token "$dev_ar_token" 2>/dev/null)
 for r in health finance telco compute; do
   grep -q "/registry/$r" <<<"$deps" && ok "registry reports an endpoint for /registry/$r" || bad "no endpoint for /registry/$r"
 done

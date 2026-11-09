@@ -425,54 +425,44 @@ Remove the lab entries afterwards with `./scripts/codex-config.sh remove`.
 
 ## Register your own MCP server
 
-The four lab servers are only examples. The same five steps bring in any remote MCP server that speaks streamable HTTP, whether your team runs it or it is third-party. The worked example adds a fifth server, `my-inventory`, on port 8005 at `/registry/mine`. Steps 1 to 3 and the dev-user checks in step 5 were run against this lab on 9 Nov 2026, with curl. The Codex entry and sign-in in step 4 were not run for a fifth server.
+This is how a team adds a new service. The example is a logistics shipment-tracking server, `logistics-shipments`, that a delivery team runs on port 8005. Every command and output below is from a live run against this lab on 9 Nov 2026.
 
-1. **Run the server, or point at one that already runs.** The registry only needs a URL that pods can reach. For the example, start another copy of the lab server on 8005:
+1. **Start the server, or use the URL of one that already runs.** The registry only needs a URL that pods can reach. A server on the laptop is `http://host.docker.internal:<port>/mcp` from inside kind.
 
-   ```bash
-   SERVICE=compute-inventory PORT=8005 uv run --python 3.12 --with fastmcp==4.1.6 mcp-servers/server.py &
+   ```
+   SERVICE=logistics-shipments PORT=8005 uv run --python 3.12 --with fastmcp==4.1.6 mcp-servers/server.py &
    ```
 
-   For your own server, skip this and use its URL. A server on the laptop is `http://host.docker.internal:<port>/mcp` from inside kind.
+2. **Register it and deploy it to the Virtual runtime in one command.** Registering needs `manage` access in agentregistry, which in this lab the platform team has, so sign `arctl` in with that account first (`arctl user login`). The file holds the catalogue entry and a Deployment on the `mcp-gateway` Virtual runtime. For your own server change the names, `url`, `pathSuffix` and the hidden tool.
 
-2. **Register it in agentregistry.** Change `name`, `title`, `description` and `url` for your own server:
-
-   ```yaml
+   ```
+   arctl apply -f - <<'YAML'
    apiVersion: ar.dev/v1alpha1
    kind: MCPServer
    metadata:
-     name: my-inventory
+     name: logistics-shipments
    spec:
-     title: "My inventory"
-     description: "A second copy of the compute inventory, standing in for your own server."
+     title: "Logistics shipments"
+     description: "Shipment tracking and delayed shipments for the UK depot network."
      remote:
        type: streamable-http
        url: http://host.docker.internal:8005/mcp
-   ```
-
-   ```bash
-   export OIDC_ISSUER=http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry
-   arctl apply -f - <my-mcpserver.yaml      # with the platform team's arctl login from step 5
-   ```
-
-3. **Make it available through agentgateway.** A Deployment on the `mcp-gateway` Virtual runtime does this. Change `name`, `targetRef.name`, `pathSuffix` and the hidden tool name:
-
-   ```yaml
+   ---
    apiVersion: ar.dev/v1alpha1
    kind: Deployment
    metadata:
-     name: mine
+     name: logistics
    spec:
      targetRef:
        kind: MCPServer
-       name: my-inventory
+       name: logistics-shipments
        tag: latest
      runtimeRef:
        kind: Runtime
        name: mcp-gateway
      runtimeConfig:
        route:
-         pathSuffix: /mine
+         pathSuffix: /logistics
        backend:
          mcp:
            authorization:
@@ -480,43 +470,155 @@ The four lab servers are only examples. The same five steps bring in any remote 
              policy:
                matchExpressions:
                  - '!jwt.Groups.exists(g, g == "developers")'
-                 - 'mcp.tool.name != "restart_vm"'
+                 - 'mcp.tool.name != "cancel_shipment"'
+   YAML
    ```
 
-   ```bash
-   arctl apply -f - <my-deployment.yaml
-   arctl get deployments -o yaml | grep -A40 'name: mine' | grep -E 'reason|endpoint'
-   kubectl --context "$CTX" -n agentregistry-system get httproute,enterpriseagentgatewaybackends | grep mine
+   ```
+   ✓ MCPServer/logistics-shipments (latest) created
+   ✓ Deployment/logistics created
    ```
 
-   The registry writes an `EnterpriseAgentgatewayBackend` and a child `HTTPRoute` under the `agentregistry-delegate` parent route, so the `registry-mcp-auth` JWT policy covers `/registry/mine` with no change. The Deployment reports `DeployedViaAgentgateway` and an endpoint ending in `/registry/mine`. The sign-in metadata for the new path is the one manual piece. Add a `mine-prm` backend and a rule to `yaml/oauth-metadata.yaml`, copying the compute pair with port 8005 and the path `/.well-known/oauth-protected-resource/registry/mine`, then apply it. Check it from the laptop:
+   arctl 2026.10.0 has no `arctl deploy` command, so the Deployment record is what puts a server on agentgateway. It is a registry record applied with arctl, and nobody edits gateway configuration.
 
-   ```bash
-   curl -s -o /dev/null -w '%{http_code}\n' -d '{}' http://localhost:8080/registry/mine        # 401
-   curl -s http://localhost:8080/.well-known/oauth-protected-resource/registry/mine | jq .       # resource and Keycloak issuer
+3. **Check it is on agentgateway.** The registry wrote the route and backend within seconds:
+
+   ```
+   arctl get deployments
+   kubectl -n agentregistry-system get httproute,enterpriseagentgatewaybackends | grep logistics
    ```
 
-4. **Find it from the client.** Add an entry next to the lab ones in `~/.codex/config.toml`, then sign in from a normal terminal, not inside a Codex chat:
+   ```
+   NAME                TARGET                VERSION   TYPE   RUNTIME       STATUS
+   default/compute     compute-inventory     latest    mcp    mcp-gateway   deployed
+   default/finance     finance-payments      latest    mcp    mcp-gateway   deployed
+   default/health      health-records        latest    mcp    mcp-gateway   deployed
+   default/logistics   logistics-shipments   latest    mcp    mcp-gateway   deployed
+   default/telco       telco-network         latest    mcp    mcp-gateway   deployed
 
-   ```toml
-   [mcp_servers.lab-mine]
-   url = "http://localhost:8080/registry/mine"
+   httproute.gateway.networking.k8s.io/gw-rt-dep-default-logistics-be2ed5a9
+   enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/gw-dep-default-logistics-847ccc1e   True
+   ```
+
+   The new route sits under the `/registry` parent route, so the existing sign-in policy already covers `/registry/logistics`.
+
+4. **Add the sign-in metadata for the new path.** This is the one Kubernetes step. An OAuth client such as Codex reads `/.well-known/oauth-protected-resource/registry/logistics` to find Keycloak, and the registry doesn't write that route (it returned 404 before this step).
+
+   ```
+   kubectl apply -f - <<'YAML'
+   apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+   kind: EnterpriseAgentgatewayBackend
+   metadata:
+     name: logistics-prm
+     namespace: agentgateway-system
+   spec:
+     mcp:
+       targets:
+         - name: logistics
+           static:
+             host: host.docker.internal
+             port: 8005
+             path: /mcp
+             protocol: StreamableHTTP
+   YAML
+   kubectl -n agentgateway-system patch httproute registry-oauth-metadata --type=json -p '[{"op":"add","path":"/spec/rules/-","value":{"matches":[{"path":{"type":"PathPrefix","value":"/.well-known/oauth-protected-resource/registry/logistics"}}],"backendRefs":[{"group":"enterpriseagentgateway.solo.io","kind":"EnterpriseAgentgatewayBackend","name":"logistics-prm"}]}}]'
+
+   curl -s -o /dev/null -w '%{http_code}\n' -d '{}' http://localhost:8080/registry/logistics
+   curl -s http://localhost:8080/.well-known/oauth-protected-resource/registry/logistics | jq '{resource, authorization_servers}'
+   ```
+
+   ```
+   401
+   {
+     "resource": "http://localhost:8080/registry/logistics",
+     "authorization_servers": [
+       "http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry"
+     ]
+   }
+   ```
+
+5. **List every MCP server in the registry, as dev-user.** Get a dev-user token from Keycloak, then ask arctl, the registry API or the registry's MCP server. The new server is there straight away.
+
+   ```
+   TOKEN=$(curl -s -d client_id=ar-cli-password -d grant_type=password \
+     -d username=dev-user -d password=password -d scope=openid \
+     http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry/protocol/openid-connect/token | jq -r .access_token)
+   # password is the lab's demo password; nothing is printed
+
+   arctl get mcps --registry-token "$TOKEN"
+   curl -s -H "Authorization: Bearer $TOKEN" http://localhost:12121/v0/mcpservers | jq -r '.items[] | "\(.metadata.name)\t\(.spec.remote.url)"'
+   ```
+
+   ```
+   NAME                  TAG      DESCRIPTION
+   compute-inventory     latest   VMs, their state and size, last month's cost per VM, and ...
+   finance-payments      latest   Account balances, transactions and refunds for business a...
+   health-records        latest   Patient search, appointments and full patient records for...
+   logistics-shipments   latest   Shipment tracking and delayed shipments for the UK depot ...
+   telco-network         latest   Cell-site status, outages and cell-site resets for the ra...
+
+   compute-inventory     http://host.docker.internal:8004/mcp
+   finance-payments      http://host.docker.internal:8002/mcp
+   health-records        http://host.docker.internal:8001/mcp
+   logistics-shipments   http://host.docker.internal:8005/mcp
+   telco-network         http://host.docker.internal:8003/mcp
+   ```
+
+   In Codex, ask "Use lab-registry list_servers and give me just the server names". Codex answered: `compute-inventory, finance-payments, health-records, logistics-shipments, telco-network`.
+
+6. **Add it to Codex and sign in.** The registry lists the server, but calling its tools needs its own entry, because each server has its own URL on the gateway. Add this to `~/.codex/config.toml`, then sign in from a normal terminal as dev-user:
+
+   ```
+   [mcp_servers.lab-logistics]
+   url = "http://localhost:8080/registry/logistics"
    scopes = ["openid", "profile"]
 
-   [mcp_servers.lab-mine.oauth]
+   [mcp_servers.lab-logistics.oauth]
    client_id = "codex-mcp"
    callback_url = "http://127.0.0.1:5555/callback"
    ```
 
-   ```bash
-   codex mcp login lab-mine
+   ```
+   codex mcp login lab-logistics
    ```
 
-   In Codex, `lab-registry`'s `list_servers` now includes `my-inventory`, and `lab-mine` lists its tools.
+7. **List its tools and call one, as dev-user.** With curl, open an MCP session on the new path and send `tools/list`:
 
-5. **Call a tool as dev-user.** dev-user gets `list_vms`, `get_vm` and `get_cost_by_vm` on `/registry/mine`. The tool a developer isn't allowed to use, `restart_vm`, does not appear. A call to `list_vms` for eu-london-1 returns `checkout-api-01` and `checkout-api-02`.
+   ```
+   URL=http://localhost:8080/registry/logistics
+   H=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H "Authorization: Bearer $TOKEN")
+   SID=$(curl -s -D - -o /dev/null "${H[@]}" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.1"}}}' \
+     $URL | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' | tr -d '\r')
+   curl -s "${H[@]}" -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' $URL
+   curl -s "${H[@]}" -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' $URL \
+     | sed -n 's/^data: //p' | jq -r '.result.tools[].name'
+   ```
 
-To remove it again: `arctl delete -f my-deployment.yaml`, `arctl delete -f my-mcpserver.yaml`, take the `mine` rule and the `mine-prm` backend back out of `yaml/oauth-metadata.yaml`, re-apply it, delete the `mine-prm` backend with kubectl and stop the process on 8005.
+   ```
+   track_shipment
+   list_delayed_shipments
+   ```
+
+   `cancel_shipment` isn't there, because developers aren't allowed to use it. Call a tool:
+
+   ```
+   curl -s "${H[@]}" -H "mcp-session-id: $SID" \
+     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_delayed_shipments","arguments":{"depot":"Daventry DC"}}}' $URL \
+     | sed -n 's/^data: //p' | jq '.result.structuredContent.result'
+   ```
+
+   ```
+   [
+     {"shipment_id": "SHP-20944", "origin": "Daventry DC", "destination": "Bristol", "eta": "2026-11-11", "delay_reason": "vehicle fault"},
+     {"shipment_id": "SHP-20963", "origin": "Daventry DC", "destination": "Glasgow", "eta": "2026-11-12", "delay_reason": "missed trunk departure"}
+   ]
+   ```
+
+   In Codex, "use lab-logistics to track shipment SHP-20931" came back with: `SHP-20931: In transit, Daventry DC → Leeds. ETA: 10 November 2026. Last scan: Daventry DC, 9 November at 18:42.`
+
+To remove it: `arctl delete deployment logistics`, `arctl delete mcp logistics-shipments`, `kubectl -n agentgateway-system delete enterpriseagentgatewaybackend logistics-prm`, `kubectl apply -f yaml/oauth-metadata.yaml` to put the metadata route back to the four lab servers, and stop the process on port 8005.
+
 
 ## 9. Extra: a kagent agent calling the same servers for the user
 Codex calls the gateway with your own Keycloak token. An agent should not. Here the `cloud-ops` agent in Solo Enterprise for kagent swaps the user's token at the agentgateway token exchange service (STS) for a delegated token. That token carries the user (`sub`, `Groups`) and the agent (`act`, its service account). The agent reaches the same four servers on a separate `/agent/*` route that only trusts the STS. The same per-tool rule applies, keyed on the user's groups.

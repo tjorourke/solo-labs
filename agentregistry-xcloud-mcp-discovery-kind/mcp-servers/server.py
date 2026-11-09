@@ -1,10 +1,12 @@
 """Small FastMCP server used as an externally hosted MCP in the lab.
 
-One file, four services, picked with SERVICE:
+One file, five services, picked with SERVICE:
   health-records     (cloud-a)  patient search, appointments, full patient record
   finance-payments   (cloud-a)  account balances, transactions, refunds
   telco-network      (cloud-b)  cell-site status, outages, cell-site reset
   compute-inventory  (cloud-b)  VMs, VM detail, VM restart, cost per VM
+  logistics-shipments           shipment tracking, delayed shipments, cancel shipment. Not started by quick.sh up:
+                                it is the new service a team adds in the page's "Register your own MCP server" guide.
 Each service has one sensitive tool that the lab hides from developers at the gateway.
 All data is made up and fixed so the demo is repeatable.
 Tested with fastmcp 4.1.6 (pinned in requirements.txt and in scripts/lib.sh).
@@ -102,6 +104,34 @@ elif SERVICE == "telco-network":
     def reset_cell_site(site_id: str) -> str:
         """Reset a cell site. Drops every call on the site; the platform team hides this from developers."""
         return f"reset scheduled for {site_id}"
+
+elif SERVICE == "logistics-shipments":
+    SHIPMENTS = {
+        "SHP-20931": {"customer": "Northwind Trading Ltd", "origin": "Daventry DC", "destination": "Leeds", "status": "in transit",
+                      "eta": "2026-11-10", "last_scan": "Daventry DC, 2026-11-09 18:42"},
+        "SHP-20944": {"customer": "Harbour Lane Bakery", "origin": "Daventry DC", "destination": "Bristol", "status": "delayed",
+                      "eta": "2026-11-11", "last_scan": "Avonmouth depot, 2026-11-09 14:05", "delay_reason": "vehicle fault"},
+        "SHP-20958": {"customer": "Riverside GP", "origin": "Warrington depot", "destination": "Manchester", "status": "delivered",
+                      "eta": "2026-11-09", "last_scan": "Manchester, 2026-11-09 11:17"},
+        "SHP-20963": {"customer": "Northwind Trading Ltd", "origin": "Daventry DC", "destination": "Glasgow", "status": "delayed",
+                      "eta": "2026-11-12", "last_scan": "Daventry DC, 2026-11-09 07:30", "delay_reason": "missed trunk departure"},
+    }
+
+    @mcp.tool
+    def track_shipment(shipment_id: str) -> dict:
+        """Return the status, ETA and last scan for one shipment, such as SHP-20931."""
+        return {"shipment_id": shipment_id, **SHIPMENTS.get(shipment_id, {"status": "unknown"})}
+
+    @mcp.tool
+    def list_delayed_shipments(depot: str = "") -> list[dict]:
+        """List delayed shipments, optionally only those that left one depot, such as Daventry DC."""
+        return [{"shipment_id": i, "origin": s["origin"], "destination": s["destination"], "eta": s["eta"], "delay_reason": s["delay_reason"]}
+                for i, s in SHIPMENTS.items() if s["status"] == "delayed" and (not depot or s["origin"] == depot)]
+
+    @mcp.tool
+    def cancel_shipment(shipment_id: str, reason: str) -> dict:
+        """Cancel a shipment and release its slot on the trunk. The platform team hides this from developers."""
+        return {"shipment_id": shipment_id, "status": "cancellation requested", "reason": reason}
 
 else:  # compute-inventory
     VMS = {
