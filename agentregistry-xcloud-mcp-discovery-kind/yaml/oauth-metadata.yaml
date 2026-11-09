@@ -1,27 +1,72 @@
-# Serves the OAuth protected-resource metadata (PRM) for /registry/cloud-a.
+# Serves the OAuth protected-resource metadata (PRM) for each of the four /registry/<name> paths.
 # Why this file exists: agentgateway answers PRM inside its MCP handler (crates/agentgateway/src/mcp/auth.rs builds
 # metadata_url = {origin}/.well-known/oauth-protected-resource{request_path}), so the well-known path has to reach an
-# MCP backend with the JWT/MCP policy attached. The registry's child route only matches /registry/cloud-a, so the
+# MCP backend with the JWT/MCP policy attached. The registry's child route only matches /registry/<name>, so the
 # well-known path needs its own route. Pattern from the agentgateway MCP auth guide, which puts
 # /.well-known/oauth-protected-resource/<path> on the same route as the MCP backend
 # (https://agentgateway.dev/docs/kubernetes/latest/documentation/mcp/auth/setup.md).
 # Backend fields (spec.mcp.targets[].static host/port/path/protocol) checked against the shipped
 # enterprise-agentgateway-crds v2026.10.2 EnterpriseAgentgatewayBackend schema.
-# Checked 9 Nov 2026 on v2026.10.2: GET /.well-known/oauth-protected-resource/registry/cloud-a on this route returns 200 with
-# resource http://localhost:8080/registry/cloud-a and authorization_servers [the Keycloak issuer].
-# CLOUD_A_HOST is substituted by scripts/up.sh (container IP of ext-mcp-cloud-a).
+# Checked 9 Nov 2026 on v2026.10.2: GET /.well-known/oauth-protected-resource/registry/compute (and the other three) on this route returns 200 with
+# resource http://localhost:8080/registry/compute and authorization_servers [the Keycloak issuer].
+# The servers run on the laptop on ports 8001 to 8004; pods reach them through host.docker.internal.
 apiVersion: enterpriseagentgateway.solo.io/v1alpha1
 kind: EnterpriseAgentgatewayBackend
 metadata:
-  name: cloud-a-prm
+  name: health-prm
   namespace: agentgateway-system
 spec:
   mcp:
     targets:
-      - name: cloud-a
+      - name: health
         static:
-          host: ${CLOUD_A_HOST}
-          port: 8000
+          host: host.docker.internal
+          port: 8001
+          path: /mcp
+          protocol: StreamableHTTP
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: finance-prm
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: finance
+        static:
+          host: host.docker.internal
+          port: 8002
+          path: /mcp
+          protocol: StreamableHTTP
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: telco-prm
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: telco
+        static:
+          host: host.docker.internal
+          port: 8003
+          path: /mcp
+          protocol: StreamableHTTP
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: compute-prm
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: compute
+        static:
+          host: host.docker.internal
+          port: 8004
           path: /mcp
           protocol: StreamableHTTP
 ---
@@ -37,8 +82,32 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /.well-known/oauth-protected-resource/registry/cloud-a
+            value: /.well-known/oauth-protected-resource/registry/health
       backendRefs:
         - group: enterpriseagentgateway.solo.io
           kind: EnterpriseAgentgatewayBackend
-          name: cloud-a-prm
+          name: health-prm
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /.well-known/oauth-protected-resource/registry/finance
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: finance-prm
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /.well-known/oauth-protected-resource/registry/telco
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: telco-prm
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /.well-known/oauth-protected-resource/registry/compute
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: compute-prm

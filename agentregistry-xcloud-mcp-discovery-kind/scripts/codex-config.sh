@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Adds or removes the lab's Codex MCP entries in ~/.codex/config.toml. Leaves every other line alone,
-# and never touches Claude Code. Key names checked against https://developers.openai.com/codex/mcp.md
+# Key names checked against https://developers.openai.com/codex/mcp.md
 # and codex-rs/cli/src/mcp_cmd.rs @ rust-v0.167.0.
 #
 #   ./scripts/codex-config.sh show            print the exact change, write nothing
 #   ./scripts/codex-config.sh apply           back up, then add the entries
-#   ./scripts/codex-config.sh bearer          switch lab-cloud-a to bearer_token_env_var = "LAB_MCP_TOKEN"
-#   ./scripts/codex-config.sh oauth           switch lab-cloud-a back to Keycloak sign-in
+#   ./scripts/codex-config.sh bearer          switch the four lab-<server> entries to bearer_token_env_var = "LAB_MCP_TOKEN"
+#   ./scripts/codex-config.sh oauth           switch them back to Keycloak sign-in
 #   ./scripts/codex-config.sh remove          back up, then strip only the lab entries
 #
 # TOML note: mcp_oauth_callback_port is a top-level key. Appended after an existing [table] it would become part
@@ -27,21 +27,22 @@ tables_block() {
 [mcp_servers.lab-registry]
 url = "http://localhost:31313/mcp"
 bearer_token_env_var = "LAB_AR_TOKEN"
-
-[mcp_servers.lab-cloud-a]
-url = "http://localhost:8080/registry/cloud-a"
 T
-  if [[ $mode == oauth ]]; then
-    cat <<'T'
-scopes = ["openid", "profile"]
-
-[mcp_servers.lab-cloud-a.oauth]
-client_id = "codex-mcp"
-callback_url = "http://127.0.0.1:5555/callback"
-T
-  else
-    echo 'bearer_token_env_var = "LAB_MCP_TOKEN"'
-  fi
+  local r
+  for r in health finance telco compute; do
+    echo
+    echo "[mcp_servers.lab-$r]"
+    echo "url = \"http://localhost:8080/registry/$r\""
+    if [[ $mode == oauth ]]; then
+      echo 'scopes = ["openid", "profile"]'
+      echo
+      echo "[mcp_servers.lab-$r.oauth]"
+      echo 'client_id = "codex-mcp"'
+      echo 'callback_url = "http://127.0.0.1:5555/callback"'
+    else
+      echo 'bearer_token_env_var = "LAB_MCP_TOKEN"'
+    fi
+  done
   echo "$END"
 }
 
@@ -64,8 +65,8 @@ write() {  # write MODE
   if grep -Eq '^[[:space:]]*mcp_oauth_callback_port[[:space:]]*=' "$rest"; then
     echo "$CFG already sets mcp_oauth_callback_port. Not changing it; sort that out by hand first." >&2; exit 1
   fi
-  if grep -Eq '^\[mcp_servers\.lab-(registry|cloud-a)' "$rest"; then
-    echo "$CFG already has lab-registry or lab-cloud-a outside the lab markers. Not touching it." >&2; exit 1
+  if grep -Eq '^\[mcp_servers\.lab-(registry|compute-inventory)' "$rest"; then
+    echo "$CFG already has lab-registry or a lab-<server> entry outside the lab markers. Not touching it." >&2; exit 1
   fi
   top_block >"$top"; tables_block "$mode" >"$tables"
   python3 - "$rest" "$top" "$tables" "$tmp" <<'PY'
@@ -91,9 +92,9 @@ case "${1:-show}" in
     echo; echo "and this at the end:"; tables_block oauth ;;
   apply)  backup; write oauth; echo "Added the lab entries to $CFG" ;;
   bearer) [[ -f $CFG ]] && grep -qF "$BEGIN" "$CFG" || { echo 'Run apply first' >&2; exit 1; }
-          backup; write bearer; echo 'lab-cloud-a now uses LAB_MCP_TOKEN. Export it from ./scripts/mint-token.sh, then restart Codex.' ;;
+          backup; write bearer; echo 'lab-health, lab-finance, lab-telco and lab-compute now use LAB_MCP_TOKEN. Export it from ./scripts/mint-token.sh, then restart Codex.' ;;
   oauth)  [[ -f $CFG ]] && grep -qF "$BEGIN" "$CFG" || { echo 'Run apply first' >&2; exit 1; }
-          backup; write oauth; echo 'lab-cloud-a back on Keycloak sign-in. Run: codex mcp login lab-cloud-a' ;;
+          backup; write oauth; echo 'Back on Keycloak sign-in. Run codex mcp login for lab-health, lab-finance, lab-telco and lab-compute' ;;
   remove) [[ -f $CFG ]] || { echo "No $CFG"; exit 0; }
           backup; tmp=$(mktemp); strip >"$tmp"; validate "$tmp"; mv "$tmp" "$CFG"
           grep -qF 'xcloud-mcp lab' "$CFG" && { echo 'Lab markers still present' >&2; exit 1; } || echo "Lab entries removed from $CFG" ;;

@@ -1,26 +1,48 @@
-# Two externally hosted MCP servers, catalogued by URL. Shape from
+# Four externally hosted MCP servers, catalogued by URL. Shape from
 # https://docs.solo.io/agentregistry/latest/mcp/remote.md and quickstart/mcp-gateway.md Step 1.
-# CLOUD_A_HOST and CLOUD_B_HOST are the Docker IPs of ext-mcp-cloud-a and ext-mcp-cloud-b on the kind network,
-# substituted with envsubst. Container names would read better, but whether pod DNS resolves Docker container
-# names is UNVERIFIED, so the lab uses IPs.
+# All four run as plain processes on the laptop (scripts/quick.sh servers-up) on ports 8001 to 8004.
+# Pods reach the laptop through host.docker.internal (checked 9 Nov 2026 on OrbStack 29.8.2).
+# The cloud-a / cloud-b grouping is in the title and description only, so it uses no extra fields.
 apiVersion: ar.dev/v1alpha1
 kind: MCPServer
 metadata:
-  name: cloud-a-compute
+  name: health-records
 spec:
-  title: Cloud A compute inventory
-  description: "Instances and their state in cloud-a. Hosted outside the cluster."
+  title: "Health records (cloud-a)"
+  description: "Patient search, appointments and full patient records for the clinics. Hosted in cloud-a, outside the cluster."
   remote:
     type: streamable-http
-    url: http://${CLOUD_A_HOST}:8000/mcp
+    url: http://host.docker.internal:8001/mcp
 ---
 apiVersion: ar.dev/v1alpha1
 kind: MCPServer
 metadata:
-  name: cloud-b-costs
+  name: finance-payments
 spec:
-  title: Cloud B cost report
-  description: "Monthly spend and top services in cloud-b. Hosted outside the cluster."
+  title: "Finance payments (cloud-a)"
+  description: "Account balances, transactions and refunds for business accounts. Hosted in cloud-a, outside the cluster."
   remote:
     type: streamable-http
-    url: http://${CLOUD_B_HOST}:8000/mcp
+    url: http://host.docker.internal:8002/mcp
+---
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: telco-network
+spec:
+  title: "Telco network operations (cloud-b)"
+  description: "Cell-site status, outages and cell-site resets for the radio network. Hosted in cloud-b, outside the cluster."
+  remote:
+    type: streamable-http
+    url: http://host.docker.internal:8003/mcp
+---
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: compute-inventory
+spec:
+  title: "Compute inventory (cloud-b)"
+  description: "VMs, their state and size, last month's cost per VM, and VM restarts. Hosted in cloud-b, outside the cluster."
+  remote:
+    type: streamable-http
+    url: http://host.docker.internal:8004/mcp

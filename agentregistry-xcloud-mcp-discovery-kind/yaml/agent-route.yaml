@@ -1,0 +1,166 @@
+# Step 4: a separate agent path on agentgateway that trusts the STS, not Keycloak.
+# Separate from the Codex /registry/* route because jwtAuthentication.mcp allows exactly one provider
+# (CEL rule in enterprise-agentgateway-crds v2026.10.2), and the agent arrives with an STS token.
+# Backend and policy shape is the same as the backends the registry writes for /registry/* (read back from the
+# cluster on 9 Nov 2026). jwt.Groups is the user's Groups claim, which the STS copies into the delegated token
+# (allowedSubjectClaims in yaml/sts-values.yaml).
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: agent-health
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: default
+        static:
+          host: host.docker.internal
+          port: 8001
+          path: /mcp
+          protocol: StreamableHTTP
+  policies:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - '!jwt.Groups.exists(g, g == "developers")'
+            - 'mcp.tool.name != "get_patient_record"'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: agent-finance
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: default
+        static:
+          host: host.docker.internal
+          port: 8002
+          path: /mcp
+          protocol: StreamableHTTP
+  policies:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - '!jwt.Groups.exists(g, g == "developers")'
+            - 'mcp.tool.name != "issue_refund"'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: agent-telco
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: default
+        static:
+          host: host.docker.internal
+          port: 8003
+          path: /mcp
+          protocol: StreamableHTTP
+  policies:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - '!jwt.Groups.exists(g, g == "developers")'
+            - 'mcp.tool.name != "reset_cell_site"'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: agent-compute
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: default
+        static:
+          host: host.docker.internal
+          port: 8004
+          path: /mcp
+          protocol: StreamableHTTP
+  policies:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - '!jwt.Groups.exists(g, g == "developers")'
+            - 'mcp.tool.name != "restart_vm"'
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agent-mcp
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /agent/health
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: agent-health
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /agent/finance
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: agent-finance
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /agent/telco
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: agent-telco
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /agent/compute
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: agent-compute
+---
+# Only STS-issued tokens get through. Issuer and JWKS path from the STS discovery document
+# (GET :7777/.well-known/openid-configuration, read back 9 Nov 2026).
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: agent-mcp-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: agent-mcp
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
+          jwks:
+            remote:
+              jwksPath: /.well-known/jwks.json
+              backendRef:
+                name: enterprise-agentgateway
+                kind: Service
+                namespace: agentgateway-system
+                port: 7777

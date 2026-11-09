@@ -1,0 +1,20 @@
+# Turns on the agentgateway token exchange service (STS) for the kagent step. Layered on yaml/values.yaml.
+# Shape from https://docs.solo.io/kagent/0.5.x/security/sts-token-exchange/ Step 1, with the plural validator
+# lists from the enterprise-agentgateway v2026.10.2 chart values (the singular forms are deprecated there).
+# issuer, tokenExpiration and allowedSubjectClaims are passed through to the controller as JSON
+# (templates/deployment.yaml, KGW_AGENTGATEWAY_TOKEN_EXCHANGE_CONFIG). Same keys as the tested
+# trustusbank-agent-refund-kind/yaml/values.yaml.
+# The realm puts groups in a claim called Groups (capital G), so that is the claim that must survive the exchange.
+tokenExchange:
+  enabled: true
+  issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
+  tokenExpiration: 15m
+  allowedSubjectClaims: [may_act, preferred_username, Groups]
+  subjectValidators:
+    - validatorType: remote
+      remoteConfig:
+        url: http://keycloak.keycloak.svc.cluster.local:8180/realms/agentregistry/protocol/openid-connect/certs
+  actorValidators:
+    - validatorType: k8s
+  apiValidators:
+    - validatorType: k8s

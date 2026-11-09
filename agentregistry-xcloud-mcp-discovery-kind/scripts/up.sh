@@ -5,11 +5,15 @@ set +x
 cd "$(dirname "$0")/.."
 source scripts/lib.sh
 source "${SECRETS_FILE:-$HOME/.solo/secrets.env}" >/dev/null 2>&1
+# AGENTREGISTRY_LICENSE_KEY is the documented variable. If it is unset, fall back to SOLO_LICENSE_KEY.
+# GLOO_* and MESH_* keys are never used. Only the variable name and a sha256 prefix are printed, never the value.
+if [[ -n ${AGENTREGISTRY_LICENSE_KEY:-} ]]; then AR_LICENSE_SOURCE=AGENTREGISTRY_LICENSE_KEY
+elif [[ -n ${SOLO_LICENSE_KEY:-} ]]; then AR_LICENSE_SOURCE=SOLO_LICENSE_KEY; AGENTREGISTRY_LICENSE_KEY=$SOLO_LICENSE_KEY
+fi
 : "${AGENTGATEWAY_LICENSE_KEY:?Set AGENTGATEWAY_LICENSE_KEY in the secrets file}"
-# Needs a Solo Enterprise for agentregistry key. An agentgateway or Gloo key is not accepted: the server logs
-# "agentregistry enterprise license missing or invalid" (seen 9 Nov 2026 on 2026.10.0; it still served the API).
-: "${AGENTREGISTRY_LICENSE_KEY:?Set AGENTREGISTRY_LICENSE_KEY in the secrets file}"
-for bin in docker kind kubectl helm jq curl envsubst arctl python3; do
+# Needs a key that covers Solo Enterprise for agentregistry. Check the server log after install for the licence line.
+: "${AGENTREGISTRY_LICENSE_KEY:?Set AGENTREGISTRY_LICENSE_KEY (or SOLO_LICENSE_KEY) in the secrets file}"
+for bin in docker kind kubectl helm jq curl arctl python3 uv lsof; do
   command -v "$bin" >/dev/null || { echo "Missing $bin" >&2; exit 1; }
 done
 if kind get clusters | grep -qx "$CLUSTER"; then
@@ -20,16 +24,8 @@ fi
 echo '== 1. kind cluster'
 kind create cluster --config kind/cluster.yaml
 
-echo '== 2. Two MCP servers outside the cluster, on the kind Docker network'
-docker build -t "$MCP_IMAGE" mcp-servers
-for c in cloud-a cloud-b; do
-  docker rm -f "ext-mcp-$c" >/dev/null 2>&1 || true
-  docker run -d --name "ext-mcp-$c" --network kind -e "CLOUD=$c" "$MCP_IMAGE" >/dev/null
-done
-export CLOUD_A_HOST=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' ext-mcp-cloud-a)
-export CLOUD_B_HOST=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' ext-mcp-cloud-b)
-mkdir -p "$STATE_DIR"; printf 'CLOUD_A_HOST=%s\nCLOUD_B_HOST=%s\n' "$CLOUD_A_HOST" "$CLOUD_B_HOST" >"$STATE_DIR/hosts.env"
-echo "cloud-a at $CLOUD_A_HOST, cloud-b at $CLOUD_B_HOST"
+echo '== 2. Two MCP servers outside the cluster, as plain processes on the laptop'
+servers_up
 
 echo '== 3. CoreDNS rewrite so pods resolve the Keycloak issuer host'
 kubectl --context "$CTX" -n kube-system get configmap coredns -o json | python3 -c '
@@ -71,6 +67,7 @@ helm --kube-context "$CTX" upgrade -i enterprise-agentgateway "$AGW_CHARTS/enter
   --version "$AGW_VERSION" -n agentgateway-system -f yaml/values.yaml --wait --timeout 6m
 
 echo '== 6. Enterprise agentregistry'
+echo "agentregistry licence from $AR_LICENSE_SOURCE (sha256 $(printf '%s' "$AGENTREGISTRY_LICENSE_KEY" | shasum -a 256 | cut -c1-8), ${#AGENTREGISTRY_LICENSE_KEY} chars)"
 # Values from https://docs.solo.io/agentregistry/latest/setup/install/kubernetes.md (Keycloak option).
 # arctl apply -f - with a stdin redirect works (run 9 Nov 2026, arctl v2026.8.0 against server 2026.10.0).
 # The licence goes in through --set-file and a process substitution so it never appears in the process list.
@@ -102,13 +99,18 @@ export OIDC_ISSUER=$KEYCLOAK_ISSUER
 arctl user login --oidc-flow=password-credentials --oidc-client-id=ar-cli-password \
   --oidc-username=admin-user --oidc-password=password
 arctl apply -f - <registry/runtime.yaml
-envsubst '${CLOUD_A_HOST} ${CLOUD_B_HOST}' <registry/mcpservers.yaml | arctl apply -f -
+arctl apply -f - <registry/mcpservers.yaml
 arctl apply -f - <registry/deployments.yaml
 arctl apply -f - <registry/rbac.yaml
 
-echo '== 10. Sign-in policy and the PRM route for cloud-a'
-envsubst '${CLOUD_A_HOST}' <yaml/oauth-metadata.yaml | kubectl --context "$CTX" apply -f -
+echo '== 10. Sign-in policy and the PRM routes for the four servers'
+kubectl --context "$CTX" apply -f yaml/oauth-metadata.yaml
 kubectl --context "$CTX" apply --dry-run=server -f yaml/jwt-policy.yaml
 kubectl --context "$CTX" apply -f yaml/jwt-policy.yaml
 
-echo 'Up. Cluster and port-forwards stay running. Next: ./scripts/quick.sh test'
+kubectl --context "$CTX" -n agentregistry-system logs deploy/agentregistry-enterprise-server 2>/dev/null \
+  | grep -iE 'license status|VALID LICENSE|LICENSE WARNING' | sed -E 's/"(ts|time)":"[^"]*",//' | tail -3 || true
+# "agentregistry enterprise license missing or invalid" means the key is not an agentregistry licence. The registry
+# still serves its API and the lab still runs. Checked 9 Nov 2026: none of the keys in the Solo secrets file at the
+# time (agentgateway, gloo, gloo-mesh, gloo-mesh-gateway, gloo-core) was accepted as an agentregistry licence.
+echo 'Up. Cluster, MCP servers and port-forwards stay running. Next: ./scripts/quick.sh test'
