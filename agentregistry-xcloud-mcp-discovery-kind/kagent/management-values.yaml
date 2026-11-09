@@ -1,0 +1,58 @@
+# Solo UI (management chart 0.5.16). Shape from https://docs.solo.io/kagent/0.5.x/security/idp/keycloak/ Step 4
+# and the tested trustusbank-agent-refund-kind/yaml/management-values.yaml.
+# CRDs: see scripts/up-kagent.sh step 5.
+management-crds:
+  enabled: false
+cluster: xcloud-mcp
+platform:
+  multiCluster:
+    enabled: false
+istio:
+  ambient:
+    enabled: false
+global:
+  istio:
+    ambient:
+      enabled: false
+service:
+  type: ClusterIP
+products:
+  kagent:
+    enabled: true
+    namespace: kagent
+  agentgateway:
+    enabled: true
+    namespace: agentgateway-system
+    features:
+      cost-management: false
+      cost-management-writes: false
+licensing:
+  createSecret: false
+  secretName: kagent-management-license
+oidc:
+  issuer: http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry
+ui:
+  publicUrl: http://localhost:19480
+  backend:
+    oidc:
+      clientId: kagent-backend
+      secretRef: kagent-backend-oidc
+  frontend:
+    oidc:
+      clientId: kagent-ui
+rbac:
+  roleMapping:
+    roleMapper: 'has(claims.Groups) ? claims.Groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
+    roleMappings:
+      admins: global.Admin
+      developers: global.Writer
+telemetry:
+  metrics:
+    enabled: false
+  traces:
+    enabled: true
+  collector:
+    replicaCount: 1
+clickhouse:
+  persistentVolume:
+    enabled: false

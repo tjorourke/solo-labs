@@ -1,0 +1,97 @@
+# Step 4: the cloud-ops agent and its four MCP servers, all reached through the /agent/* route on agentgateway.
+# Fields checked with kubectl explain against the kagent.dev/v1alpha2 CRDs from kagent-enterprise-crds 0.5.16:
+#   RemoteMCPServer.spec.{description,protocol,url,timeout}
+#   Agent.spec.declarative.tools[].mcpServer.{kind,apiGroup,name,toolNames,requireApproval}
+# The agent sends the STS token, not the user's Keycloak token, on every MCP call
+# (allowedHeaders doc in the CRD: "STS-generated Authorization headers will take precedence").
+# The sensitive tool in each server needs approval in the chat. Developers never see it at all, because the
+# gateway drops it from tools/list for the developers group.
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: compute-inventory
+  namespace: kagent
+spec:
+  description: Virtual machines and cost by VM (cloud-b)
+  protocol: STREAMABLE_HTTP
+  url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agent/compute
+  timeout: 30s
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: finance-payments
+  namespace: kagent
+spec:
+  description: Accounts, transactions and refunds (cloud-a)
+  protocol: STREAMABLE_HTTP
+  url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agent/finance
+  timeout: 30s
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: telco-network
+  namespace: kagent
+spec:
+  description: Cell sites and outages (cloud-b)
+  protocol: STREAMABLE_HTTP
+  url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agent/telco
+  timeout: 30s
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: health-records
+  namespace: kagent
+spec:
+  description: Patients and appointments (cloud-a)
+  protocol: STREAMABLE_HTTP
+  url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agent/health
+  timeout: 30s
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: cloud-ops
+  namespace: kagent
+spec:
+  description: Answers questions about VMs, cost, payments, cell sites and patients across cloud-a and cloud-b.
+  type: Declarative
+  declarative:
+    runtime: python
+    modelConfig: default-model-config
+    systemMessage: |
+      You are cloud-ops. You answer questions about compute, cost, payments, the telco network and health
+      records across two clouds, using only the tools you have. Call a tool rather than guess. If no tool can do
+      what the user asks, say so plainly and name what is missing. Never invent data.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: compute-inventory
+          toolNames: [list_vms, get_vm, get_cost_by_vm, restart_vm]
+          requireApproval: [restart_vm]
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: finance-payments
+          toolNames: [get_account_balance, list_transactions, issue_refund]
+          requireApproval: [issue_refund]
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: telco-network
+          toolNames: [get_cell_site_status, list_outages, reset_cell_site]
+          requireApproval: [reset_cell_site]
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: health-records
+          toolNames: [search_patients, get_appointments, get_patient_record]
+          requireApproval: [get_patient_record]

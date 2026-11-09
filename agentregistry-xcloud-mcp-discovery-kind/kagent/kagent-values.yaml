@@ -1,0 +1,51 @@
+# Solo Enterprise for kagent 0.5.16 (kagent-enterprise chart). Keys checked against `helm show values` for 0.5.16.
+# STS and remote JWKS: https://docs.solo.io/kagent/0.5.x/security/sts-token-exchange/ Step 2.
+# OIDC: https://docs.solo.io/kagent/0.5.x/security/idp/keycloak/ Step 4.
+# The rest follows the tested trustusbank-agent-refund-kind/yaml/kagent-enterprise-values.yaml.
+global:
+  licensing:
+    createSecret: false
+    secretName: kagent-enterprise-license
+providers:
+  default: openAI
+  openAI:
+    provider: OpenAI
+    model: gpt-4.1-mini
+    apiKeySecretRef: kagent-openai
+    apiKeySecretKey: OPENAI_API_KEY
+oidc:
+  issuer: http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry
+  clientId: kagent-backend
+  secretRef: kagent-backend-oidc
+  stsWellKnownUri: http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/.well-known/openid-configuration
+  # Deprecated in the chart, but 0.5.16 still needs it (as the tested trustusbank lab found on 0.5.11). Without it the
+  # controller tries its legacy OBO signer first and A2A calls fail with "obo token handler not ready" (seen 9 Nov 2026).
+  skipOBO: true
+controller:
+  remoteJwksConfig:
+    serviceRef: {name: enterprise-agentgateway, namespace: agentgateway-system, port: 7777}
+    path: /.well-known/jwks.json
+rbac:
+  roleMapping:
+    roleMapper: 'has(claims.Groups) ? claims.Groups.transformList(i, v, v in rolesMap, rolesMap[v]) : []'
+    roleMappings:
+      admins: global.Admin
+      developers: global.Writer
+database:
+  postgres:
+    bundled:
+      storageClassName: standard
+ui: {enabled: false}
+kmcp: {enabled: false}
+kagent-tools: {enabled: false}
+k8s-agent: {enabled: false}
+kgateway-agent: {enabled: false}
+istio-agent: {enabled: false}
+promql-agent: {enabled: false}
+observability-agent: {enabled: false}
+argo-rollouts-agent: {enabled: false}
+helm-agent: {enabled: false}
+cilium-policy-agent: {enabled: false}
+cilium-manager-agent: {enabled: false}
+cilium-debug-agent: {enabled: false}
+grafana-mcp: {enabled: false}
