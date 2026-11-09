@@ -72,5 +72,25 @@ for r in health finance telco compute; do
   grep -q "/registry/$r" <<<"$depl" && ok "registry MCP list_deployments shows /registry/$r to dev-user" || bad "registry MCP list_deployments missing /registry/$r"
 done
 
+# One path for all four servers (yaml/one-path.yaml)
+ALL="$GW_LOCAL/mcp"
+code=$(curl -s -o /dev/null -w '%{http_code}' -d '{}' "$ALL")
+[[ $code == 401 ]] && ok "/mcp: no token gives 401" || bad "/mcp: no token gave $code, expected 401"
+prm=$(curl -s "$GW_LOCAL/.well-known/oauth-protected-resource/mcp")
+jq -e --arg iss "$KEYCLOAK_ISSUER" --arg res "$ALL" '(.authorization_servers | index($iss)) and .resource == $res' <<<"$prm" >/dev/null \
+  && ok "/mcp: PRM names Keycloak and resource $ALL" || bad "/mcp: PRM missing or wrong: $prm"
+s=$(mcp_init "$ALL" "$DEV")
+tools=$(mcp_rpc "$ALL" "$DEV" "$s" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
+for t in health_search_patients finance_list_transactions telco_list_outages compute_list_vms; do
+  grep -q "\"$t\"" <<<"$tools" && ok "/mcp: dev-user sees $t" || bad "/mcp: dev-user cannot see $t"
+done
+for t in health_get_patient_record finance_issue_refund telco_reset_cell_site compute_restart_vm; do
+  grep -q "\"$t\"" <<<"$tools" && bad "/mcp: dev-user can see $t" || ok "/mcp: $t hidden from dev-user"
+done
+res=$(mcp_rpc "$ALL" "$DEV" "$s" '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compute_list_vms","arguments":{"region":"eu-london-1"}}}')
+grep -q checkout-api-02 <<<"$res" && ok "/mcp: dev-user call to compute_list_vms answered" || bad "/mcp: compute_list_vms call failed"
+res=$(mcp_rpc "$ALL" "$DEV" "$s" '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"telco_list_outages","arguments":{"status":"open"}}}')
+grep -q OUT-5521 <<<"$res" && ok "/mcp: dev-user call to telco_list_outages answered" || bad "/mcp: telco_list_outages call failed"
+
 [[ $started == 1 ]] && stop_port_forwards
 exit $fail

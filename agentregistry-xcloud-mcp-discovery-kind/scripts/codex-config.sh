@@ -5,7 +5,7 @@
 #
 #   ./scripts/codex-config.sh show            print the exact change, write nothing
 #   ./scripts/codex-config.sh apply           back up, then add the entries
-#   ./scripts/codex-config.sh bearer          switch the four lab-<server> entries to bearer_token_env_var = "LAB_MCP_TOKEN"
+#   ./scripts/codex-config.sh bearer          switch lab-all to bearer_token_env_var = "LAB_MCP_TOKEN"
 #   ./scripts/codex-config.sh oauth           switch them back to Keycloak sign-in
 #   ./scripts/codex-config.sh remove          back up, then strip only the lab entries
 #
@@ -29,10 +29,11 @@ url = "http://localhost:31313/mcp"
 bearer_token_env_var = "LAB_AR_TOKEN"
 T
   local r
-  for r in health finance telco compute; do
+  # One entry for all four servers: yaml/one-path.yaml puts them behind /mcp.
+  for r in all; do
     echo
     echo "[mcp_servers.lab-$r]"
-    echo "url = \"http://localhost:8080/registry/$r\""
+    echo "url = \"http://localhost:8080/mcp\""
     if [[ $mode == oauth ]]; then
       echo 'scopes = ["openid", "profile"]'
       echo
@@ -92,7 +93,7 @@ case "${1:-show}" in
     echo; echo "and this at the end:"; tables_block oauth ;;
   apply)  backup; write oauth; echo "Added the lab entries to $CFG" ;;
   bearer) [[ -f $CFG ]] && grep -qF "$BEGIN" "$CFG" || { echo 'Run apply first' >&2; exit 1; }
-          backup; write bearer; echo 'lab-health, lab-finance, lab-telco and lab-compute now use LAB_MCP_TOKEN. Export it from ./scripts/mint-token.sh, then restart Codex.' ;;
+          backup; write bearer; echo 'lab-all now uses LAB_MCP_TOKEN. Export it from ./scripts/mint-token.sh, then restart Codex.' ;;
   oauth)  [[ -f $CFG ]] && grep -qF "$BEGIN" "$CFG" || { echo 'Run apply first' >&2; exit 1; }
           backup; write oauth; echo 'Back on Keycloak sign-in. Run codex mcp login for lab-health, lab-finance, lab-telco and lab-compute' ;;
   remove) [[ -f $CFG ]] || { echo "No $CFG"; exit 0; }

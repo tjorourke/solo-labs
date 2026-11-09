@@ -7,7 +7,7 @@ Tested live on 9 Nov 2026. Solo Enterprise for agentregistry 2026.10.0, Solo Ent
 A platform team has MCP servers it does not run itself, spread over two clouds. cloud-a has a health records service and a payments service. cloud-b has a telco network service and a compute inventory. Each has one tool developers should never call. The lab shows four things, in this order:
 
 1. **Register your own MCP servers, or third-party ones, in agentregistry.** A server is catalogued by its URL. It does not have to run in your cluster or belong to your team. Here all four run as plain processes outside the cluster.
-2. **agentregistry makes them available through agentgateway.** Deploying a registered server through the Virtual runtime writes the agentgateway backend and a `/registry/<name>` route, so every call goes through one gateway with a Keycloak sign-in in front.
+2. **agentregistry makes them available through agentgateway.** Deploying a registered server through the Virtual runtime writes the agentgateway backend and a `/registry/<name>` route. The platform team also puts all of them behind one path, `/mcp`, with a Keycloak sign-in in front.
 3. **A user browses the registry from Codex, Claude Code or another agent harness.** The registry has its own read-only MCP server. From Codex, `list_servers` returns every registered server, and each server's tool list comes back through the gateway.
 4. **A developer calls the servers and tools their access allows.** dev-user signs in once per server and gets the tools a developer may use. Tools a developer isn't allowed to use don't appear.
 
@@ -25,7 +25,7 @@ What each step shows:
 | 4 | Put Keycloak sign-in on the gateway | No token gives 401. The protected-resource metadata points MCP clients at Keycloak |
 | 5 | Hide the sensitive tool on each server from developers | `get_patient_record`, `issue_refund`, `reset_cell_site` and `restart_vm` drop out of `tools/list` for dev-user and return 400 if called by name |
 | 6 | Discover from Codex | Codex asks the read-only registry MCP which servers exist and where |
-| 7 | Sign in from Codex and call tools | `codex mcp login lab-compute` opens Keycloak, then Codex calls compute-inventory through the gateway |
+| 7 | Sign in from Codex and call tools | `codex mcp login lab-all` opens Keycloak, then Codex calls all four servers through one path, `/mcp` |
 | 8 | Ask the kagent `cloud-ops` agent as dev-user | The agent calls the servers on `/agent/*` with a delegated STS token, and dev-user's agent never gets `restart_vm` |
 
 ## How the pieces fit
@@ -330,98 +330,97 @@ curl -s -o /dev/null -w '%{http_code}\n' "${H[@]}" -H "mcp-session-id: $SID" \
 
 dev-user sees `list_vms`, `get_vm` and `get_cost_by_vm` only. Calling `restart_vm` by name gives `400`. The gateway answers with JSON-RPC error -32602 "unknown resource" and no 403, so a developer can't tell the tool exists.
 
-## 8. Run it with Codex
+## 8. One MCP path for every server
 
-Needs Codex 0.167.0 or later (`codex --version`) and the port-forwards up (`./scripts/quick.sh port-forward`). If any of them drop (for example after a pod restart), run `./scripts/quick.sh stop-port-forward && ./scripts/quick.sh port-forward`.
+agentregistry gives each deployed server its own path on the gateway, `/registry/<name>`. That would mean one client entry and one sign-in per server. Instead, the platform team puts all of them behind one path, `/mcp`, once. agentgateway combines the servers into a single MCP server and puts the server name in front of each tool name, so `list_vms` from the compute server becomes `compute_list_vms`. The same Keycloak sign-in protects the path, and one rule hides the four sensitive tools from developers. `quick.sh up` applies it; by hand it is:
 
-Show the change first. Nothing is written until you run `apply`, which makes a timestamped backup of `~/.codex/config.toml`. It touches nothing else.
-
-```bash
-./scripts/codex-config.sh show
-./scripts/codex-config.sh apply
-codex mcp list        # lab-registry: Bearer token, the four lab-<server> entries: OAuth
+```
+kubectl apply -f yaml/one-path.yaml
 ```
 
-```toml
+The registry doesn't create this combined path itself, so it is gateway configuration the platform team keeps. Here is what dev-user gets, with a token from Keycloak and plain curl:
+
+```
+TOKEN=$(curl -s -d client_id=ar-cli-password -d grant_type=password \
+  -d username=dev-user -d password=password -d scope=openid \
+  http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry/protocol/openid-connect/token | jq -r .access_token)
+# password is the lab's demo password; nothing is printed
+
+URL=http://localhost:8080/mcp
+H=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H "Authorization: Bearer $TOKEN")
+SID=$(curl -s -D - -o /dev/null "${H[@]}" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.1"}}}' \
+  $URL | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' | tr -d '\r')
+curl -s "${H[@]}" -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' $URL
+curl -s "${H[@]}" -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' $URL \
+  | sed -n 's/^data: //p' | jq -r '.result.tools[].name'
+```
+
+```
+health_search_patients
+health_get_appointments
+finance_get_account_balance
+finance_list_transactions
+telco_get_cell_site_status
+telco_list_outages
+compute_list_vms
+compute_get_vm
+compute_get_cost_by_vm
+```
+
+The tools a developer isn't allowed to use don't appear. Calling one tool on two different servers through the same path:
+
+```
+curl -s "${H[@]}" -H "mcp-session-id: $SID" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compute_list_vms","arguments":{"region":"eu-london-1"}}}' $URL \
+  | sed -n 's/^data: //p' | jq -c '.result.structuredContent.result[] | {name, state}'
+curl -s "${H[@]}" -H "mcp-session-id: $SID" \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"telco_list_outages","arguments":{"status":"open"}}}' $URL \
+  | sed -n 's/^data: //p' | jq -c '.result.structuredContent.result[]'
+```
+
+```
+{"name":"checkout-api-01","state":"running"}
+{"name":"checkout-api-02","state":"stopped"}
+{"id":"OUT-5521","site":"MAN-CS-0033","started":"2026-11-09T06:12:00Z","impact":"approx. 4,100 subscribers","status":"open"}
+```
+
+### Try it in Codex as dev-user
+
+Back up your Codex config and add one entry. `mcp_oauth_callback_port` is a top-level key, so it goes above the first `[table]` in the file.
+
+```
+cp ~/.codex/config.toml ~/.codex/config.toml.bak
+```
+
+```
 mcp_oauth_callback_port = 5555
 
-[mcp_servers.lab-registry]
-url = "http://localhost:31313/mcp"
-bearer_token_env_var = "LAB_AR_TOKEN"
-
-[mcp_servers.lab-compute]
-url = "http://localhost:8080/registry/compute"
+[mcp_servers.lab-all]
+url = "http://localhost:8080/mcp"
 scopes = ["openid", "profile"]
 
-[mcp_servers.lab-compute.oauth]
+[mcp_servers.lab-all.oauth]
 client_id = "codex-mcp"
 callback_url = "http://127.0.0.1:5555/callback"
 ```
 
-`mcp_oauth_callback_port` is a top-level key, so the script puts it above your first `[table]` and the server tables (lab-registry, lab-health, lab-finance, lab-telco, lab-compute) at the end, each inside marker comments. `remove` takes out only what is between the markers.
+Sign in from a normal terminal, not inside a Codex chat, because the chat sandbox can't reach localhost. Keycloak opens; sign in as dev-user.
 
-**Registry discovery (`lab-registry`).** The registry MCP on 31313 takes a bearer token for a registry user. A Keycloak dev-user token works, and so does an `arctl` session token. `mint-token.sh` prints export lines, so eval it rather than wrapping it in `$(...)`. Start Codex from the same shell, because Codex reads `LAB_AR_TOKEN` when it starts:
-
-```bash
-eval "$(./scripts/mint-token.sh dev-user)"   # sets LAB_AR_TOKEN and LAB_MCP_TOKEN; Keycloak tokens last 5 minutes
+```
+codex mcp list
+codex mcp login lab-all
 ```
 
-**Sign in to each server (browser).** Run this in a normal terminal, not inside a Codex chat. Codex runs chat commands in a sandbox that can't reach localhost, so the sign-in fails there:
-
-```bash
-codex mcp login lab-compute    # then lab-health, lab-finance and lab-telco
+```
+Name          Url                                     Bearer Token Env Var  Status   Auth
+lab-all       http://localhost:8080/mcp               -                     enabled  Not logged in
 ```
 
-Keycloak's agentregistry realm opens. Sign in as `dev-user`, with the password from `yaml/keycloak-realm.yaml` (users, dev-user, credentials). Keycloak sends you back to `http://127.0.0.1:5555/callback`, the redirect registered for the `codex-mcp` client. `codex mcp list` then shows lab-compute as signed in.
+Run on 9 Nov 2026 with Codex 0.167.0 and a dev-user token: Codex had the nine developer tools from all four servers, `compute_list_vms` returned checkout-api-01 (running) and checkout-api-02 (stopped), and `finance_list_transactions` on ACC-20-45-77-55510321 returned TXN-88240 and TXN-88241. To undo, `cp ~/.codex/config.toml.bak ~/.codex/config.toml`.
 
-Tested live on 9 Nov 2026 with Codex 0.167.0 and all four servers. I signed in with `codex mcp login` for `lab-health`, `lab-finance`, `lab-telco` and `lab-compute` in a normal terminal, as `dev-user` (the gateway log shows dev-user's `sub` on every call). `codex mcp list` then showed all four as OAuth and `lab-registry` as a bearer token. In Codex:
+For a non-interactive `codex exec` run, approve the tools you call, for example `-c 'mcp_servers.lab-all.tools.compute_list_vms.approval_mode="approve"'`. Without it Codex refuses with "MCP tool call requires approval, but approval policy is never". `./scripts/codex-config.sh apply` writes the same `lab-all` entry (and a `lab-registry` entry for the registry's own MCP server) as a shortcut.
 
-- `lab-registry`'s `list_servers` returned `compute-inventory`, `finance-payments`, `health-records` and `telco-network`.
-- The tools Codex had were `search_patients` and `get_appointments` from health, `get_account_balance` and `list_transactions` from finance, `get_cell_site_status` and `list_outages` from telco, and `list_vms`, `get_vm` and `get_cost_by_vm` from compute. None of the four sensitive tools showed up.
-- `list_vms` for eu-london-1 went through `/registry/compute` and picked out `checkout-api-02` as the only stopped VM.
-- Asked to restart `checkout-api-02`, Codex said it had no VM restart tool.
-
-For a non-interactive `codex exec` run, approve the tools you call, for example `-c 'mcp_servers.lab-compute.tools.list_vms.approval_mode="approve"'`. Without it Codex refuses with "MCP tool call requires approval, but approval policy is never".
-
-
-`codex exec`, the non-interactive form used to script this, needs `--approve-for-me`. Without it the MCP tool calls are denied under its default `never` approval policy. The interactive `codex` that this lab uses doesn't have this problem.
-
-Checked without signing in (9 Nov 2026):
-- An unauthenticated call to `/registry/compute` returns `401`, with `resource_metadata` pointing to `/.well-known/oauth-protected-resource/registry/compute`.
-- That document names the Keycloak realm issuer and scopes `openid profile`.
-- Keycloak's metadata advertises `authorization_response_iss_parameter_supported: true` and S256 PKCE, so Codex keeps the configured callback.
-- Keycloak accepts `http://127.0.0.1:5555/callback` for `codex-mcp` and rejects any other port.
-
-**Try it:**
-
-```bash
-codex
-```
-
-- "Use lab-registry to list the MCP servers and deployments. Which endpoints do they have?" (`list_servers`, `list_deployments`: the four servers, at `/registry/health`, `/registry/finance`, `/registry/telco` and `/registry/compute`)
-- "Use lab-compute to list the VMs. Which are stopped in eu-london-1?" (`list_vms` through the gateway)
-- "Which telco outages are open, and how many subscribers do they affect?" (`list_outages` through lab-telco)
-- "Show me the full record for patient PT-104233." (dev-user has no `get_patient_record`, so Codex can't)
-- "Restart checkout-api-02." (dev-user has no such tool, so Codex can't call it)
-
-Or call one with curl:
-
-```bash
-source scripts/lib.sh; eval "$(./scripts/mint-token.sh dev-user)"
-s=$(mcp_init "$GW_LOCAL/registry/finance" "$LAB_MCP_TOKEN")
-mcp_rpc "$GW_LOCAL/registry/finance" "$LAB_MCP_TOKEN" "$s" '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_account_balance","arguments":{"account_id":"ACC-20-45-77-10293847"}}}'
-```
-
-**Bearer fallback.** If the browser sign-in fails on stage, switch the four server entries to a pasted token. The gateway runs the same check without the browser:
-
-```bash
-./scripts/codex-config.sh bearer             # the lab-<server> entries use bearer_token_env_var = "LAB_MCP_TOKEN"
-eval "$(./scripts/mint-token.sh dev-user)"
-codex
-./scripts/codex-config.sh oauth              # back to Keycloak sign-in
-```
-
-Remove the lab entries afterwards with `./scripts/codex-config.sh remove`.
 
 ## Register your own MCP server
 
@@ -479,13 +478,10 @@ This is how a team adds a new service. The example is a logistics shipment-track
    ✓ Deployment/logistics created
    ```
 
-   arctl 2026.10.0 has no `arctl deploy` command, so the Deployment record is what puts a server on agentgateway. It is a registry record applied with arctl, and nobody edits gateway configuration.
-
-3. **Check it is on agentgateway.** The registry wrote the route and backend within seconds:
+   arctl 2026.10.0 has no `arctl deploy` command, so the Deployment record is what puts a server on agentgateway. Within seconds the registry wrote its own route, `/registry/logistics`:
 
    ```
    arctl get deployments
-   kubectl -n agentregistry-system get httproute,enterpriseagentgatewaybackends | grep logistics
    ```
 
    ```
@@ -495,56 +491,29 @@ This is how a team adds a new service. The example is a logistics shipment-track
    default/health      health-records        latest    mcp    mcp-gateway   deployed
    default/logistics   logistics-shipments   latest    mcp    mcp-gateway   deployed
    default/telco       telco-network         latest    mcp    mcp-gateway   deployed
-
-   httproute.gateway.networking.k8s.io/gw-rt-dep-default-logistics-be2ed5a9
-   enterpriseagentgatewaybackend.enterpriseagentgateway.solo.io/gw-dep-default-logistics-847ccc1e   True
    ```
 
-   The new route sits under the `/registry` parent route, so the existing sign-in policy already covers `/registry/logistics`.
-
-4. **Add the sign-in metadata for the new path.** This is the one Kubernetes step. An OAuth client such as Codex reads `/.well-known/oauth-protected-resource/registry/logistics` to find Keycloak, and the registry doesn't write that route (it returned 404 before this step).
+3. **Add it to the one MCP path.** The registry doesn't do this part itself: the new server is not on `/mcp` until it is added there. In `yaml/one-path.yaml`, add a target under the compute one and extend the developer rule, then apply it:
 
    ```
-   kubectl apply -f - <<'YAML'
-   apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-   kind: EnterpriseAgentgatewayBackend
-   metadata:
-     name: logistics-prm
-     namespace: agentgateway-system
-   spec:
-     mcp:
-       targets:
          - name: logistics
-           static:
-             host: host.docker.internal
-             port: 8005
-             path: /mcp
-             protocol: StreamableHTTP
-   YAML
-   kubectl -n agentgateway-system patch httproute registry-oauth-metadata --type=json -p '[{"op":"add","path":"/spec/rules/-","value":{"matches":[{"path":{"type":"PathPrefix","value":"/.well-known/oauth-protected-resource/registry/logistics"}}],"backendRefs":[{"group":"enterpriseagentgateway.solo.io","kind":"EnterpriseAgentgatewayBackend","name":"logistics-prm"}]}}]'
-
-   curl -s -o /dev/null -w '%{http_code}\n' -d '{}' http://localhost:8080/registry/logistics
-   curl -s http://localhost:8080/.well-known/oauth-protected-resource/registry/logistics | jq '{resource, authorization_servers}'
+           static: {host: host.docker.internal, port: 8005, path: /mcp, protocol: StreamableHTTP}
    ```
 
    ```
-   401
-   {
-     "resource": "http://localhost:8080/registry/logistics",
-     "authorization_servers": [
-       "http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry"
-     ]
-   }
+                 !(mcp.tool.target == "compute" && mcp.tool.name == "restart_vm") &&
+                 !(mcp.tool.target == "logistics" && mcp.tool.name == "cancel_shipment")
    ```
 
-5. **List every MCP server in the registry, as dev-user.** Get a dev-user token from Keycloak, then ask arctl, the registry API or the registry's MCP server. The new server is there straight away.
+   ```
+   kubectl apply -f yaml/one-path.yaml
+   ```
+
+   Without the rule change, dev-user would see `logistics_cancel_shipment`.
+
+4. **List every MCP server in the registry, as dev-user.** With the dev-user `TOKEN` from above, ask arctl or the registry API. The new server is there straight away.
 
    ```
-   TOKEN=$(curl -s -d client_id=ar-cli-password -d grant_type=password \
-     -d username=dev-user -d password=password -d scope=openid \
-     http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry/protocol/openid-connect/token | jq -r .access_token)
-   # password is the lab's demo password; nothing is printed
-
    arctl get mcps --registry-token "$TOKEN"
    curl -s -H "Authorization: Bearer $TOKEN" http://localhost:12121/v0/mcpservers | jq -r '.items[] | "\(.metadata.name)\t\(.spec.remote.url)"'
    ```
@@ -564,47 +533,18 @@ This is how a team adds a new service. The example is a logistics shipment-track
    telco-network         http://host.docker.internal:8003/mcp
    ```
 
-   In Codex, ask "Use lab-registry list_servers and give me just the server names". Codex answered: `compute-inventory, finance-payments, health-records, logistics-shipments, telco-network`.
-
-6. **Add it to Codex and sign in.** The registry lists the server, but calling its tools needs its own entry, because each server has its own URL on the gateway. Add this to `~/.codex/config.toml`, then sign in from a normal terminal as dev-user:
+5. **Call it as dev-user through `/mcp`.** Open a new session as above and run `tools/list` again. The two logistics tools a developer may use are added, and `cancel_shipment` isn't there:
 
    ```
-   [mcp_servers.lab-logistics]
-   url = "http://localhost:8080/registry/logistics"
-   scopes = ["openid", "profile"]
-
-   [mcp_servers.lab-logistics.oauth]
-   client_id = "codex-mcp"
-   callback_url = "http://127.0.0.1:5555/callback"
+   ...
+   compute_get_cost_by_vm
+   logistics_track_shipment
+   logistics_list_delayed_shipments
    ```
-
-   ```
-   codex mcp login lab-logistics
-   ```
-
-7. **List its tools and call one, as dev-user.** With curl, open an MCP session on the new path and send `tools/list`:
-
-   ```
-   URL=http://localhost:8080/registry/logistics
-   H=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H "Authorization: Bearer $TOKEN")
-   SID=$(curl -s -D - -o /dev/null "${H[@]}" \
-     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.1"}}}' \
-     $URL | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' | tr -d '\r')
-   curl -s "${H[@]}" -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' $URL
-   curl -s "${H[@]}" -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' $URL \
-     | sed -n 's/^data: //p' | jq -r '.result.tools[].name'
-   ```
-
-   ```
-   track_shipment
-   list_delayed_shipments
-   ```
-
-   `cancel_shipment` isn't there, because developers aren't allowed to use it. Call a tool:
 
    ```
    curl -s "${H[@]}" -H "mcp-session-id: $SID" \
-     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_delayed_shipments","arguments":{"depot":"Daventry DC"}}}' $URL \
+     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"logistics_list_delayed_shipments","arguments":{"depot":"Daventry DC"}}}' $URL \
      | sed -n 's/^data: //p' | jq '.result.structuredContent.result'
    ```
 
@@ -615,9 +555,9 @@ This is how a team adds a new service. The example is a logistics shipment-track
    ]
    ```
 
-   In Codex, "use lab-logistics to track shipment SHP-20931" came back with: `SHP-20931: In transit, Daventry DC → Leeds. ETA: 10 November 2026. Last scan: Daventry DC, 9 November at 18:42.`
+   Codex needs no new entry: `lab-all` picks up the new tools the next time it starts. Asked "Use lab-all to track shipment SHP-20931", it answered: `SHP-20931 is in transit to Leeds; ETA 10 November 2026; last scanned at Daventry DC on 9 November at 18:42.`
 
-To remove it: `arctl delete deployment logistics`, `arctl delete mcp logistics-shipments`, `kubectl -n agentgateway-system delete enterpriseagentgatewaybackend logistics-prm`, `kubectl apply -f yaml/oauth-metadata.yaml` to put the metadata route back to the four lab servers, and stop the process on port 8005.
+To remove it: take the logistics lines back out of `yaml/one-path.yaml` and apply it, run `arctl delete deployment logistics` and `arctl delete mcp logistics-shipments`, and stop the process on port 8005.
 
 
 ## 9. Extra: a kagent agent calling the same servers for the user
@@ -668,4 +608,4 @@ CONFIRM_TEARDOWN=xcloud-mcp ./scripts/quick.sh teardown
 
 ## What this lab doesn't cover
 
-One agent only: no calls from one agent to another and no kagent AccessPolicies. Also out: token exchange to the upstream clouds, and a single merged `/mcp` across servers (that needs hand-written agentgateway config, which the registry does not generate). TLS is off everywhere because this is a laptop demo.
+One agent only: no calls from one agent to another and no kagent AccessPolicies. Also out: token exchange to the upstream clouds. TLS is off everywhere because this is a laptop demo.

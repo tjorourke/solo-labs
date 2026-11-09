@@ -108,6 +108,10 @@ kubectl --context "$CTX" apply -f yaml/oauth-metadata.yaml
 kubectl --context "$CTX" apply --dry-run=server -f yaml/jwt-policy.yaml
 kubectl --context "$CTX" apply -f yaml/jwt-policy.yaml
 
+echo '== 11. One MCP path for all four servers (platform team, once)'
+kubectl --context "$CTX" apply --dry-run=server -f yaml/one-path.yaml
+kubectl --context "$CTX" apply -f yaml/one-path.yaml
+
 kubectl --context "$CTX" -n agentregistry-system logs deploy/agentregistry-enterprise-server 2>/dev/null \
   | grep -iE 'license status|VALID LICENSE|LICENSE WARNING' | sed -E 's/"(ts|time)":"[^"]*",//' | tail -3 || true
 # "agentregistry enterprise license missing or invalid" means the key is not an agentregistry licence. The registry
