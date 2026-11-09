@@ -24,7 +24,7 @@ fi
 echo '== 1. kind cluster'
 kind create cluster --config kind/cluster.yaml
 
-echo '== 2. Two MCP servers outside the cluster, as plain processes on the laptop'
+echo '== 2. Four MCP servers outside the cluster, as plain processes on the laptop'
 servers_up
 
 echo '== 3. CoreDNS rewrite so pods resolve the Keycloak issuer host'
