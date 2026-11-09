@@ -1,0 +1,48 @@
+# Sign-in for every /registry/* MCP route, plus the PRM route.
+# Fields checked against the shipped enterprise-agentgateway-crds v2026.10.2 schema:
+#   traffic.jwtAuthentication.{mode, providers[].{issuer,audiences,jwks.remote.{backendRef,jwksPath}}, mcp.{provider,clientId,resourceMetadata}}
+#   CEL: "jwtAuthentication.mcp requires exactly one provider" (size(providers) == 1) and "requires mode Strict".
+# Shape from https://docs.solo.io/agentregistry/latest/quickstart/mcp-gateway.md Step 4 and
+# https://agentgateway.dev/docs/kubernetes/latest/documentation/mcp/auth/setup.md.
+# mcp.provider is left out on purpose. With no provider, auth.rs keeps the Keycloak issuer in the PRM
+# authorization_servers and does not rewrite the AS issuer, so Codex talks to Keycloak directly and the iss it gets back
+# matches (agentgateway issues #3668 and #3635, fix PR #3637 unmerged on 22 Oct 2026).
+# resource is not set, so each path gets its own PRM resource (auth.rs to_rfc_json(new_uri, ...)).
+# resourceMetadata keys scopesSupported and bearerMethodsSupported come out as scopes_supported and
+# bearer_methods_supported in the PRM JSON (checked 9 Nov 2026). The CRD only says
+# "free-form object"; the spelling is taken from the agentgateway MCP auth guide.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: registry-mcp-auth
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: agentregistry-delegate
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: registry-oauth-metadata
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: "http://keycloak.127.0.0.1.nip.io:8180/realms/agentregistry"
+          audiences:
+            - mcp-gateway
+          jwks:
+            remote:
+              jwksPath: /realms/agentregistry/protocol/openid-connect/certs
+              backendRef:
+                name: keycloak
+                kind: Service
+                namespace: keycloak
+                port: 8180
+      mcp:
+        resourceMetadata:
+          scopesSupported:
+            - openid
+            - profile
+          bearerMethodsSupported:
+            - header

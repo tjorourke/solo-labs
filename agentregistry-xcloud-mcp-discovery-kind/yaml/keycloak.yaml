@@ -1,0 +1,75 @@
+# UNVERIFIED: that Codex accepts a plain-http issuer on keycloak.127.0.0.1.nip.io (the Solo MCP-server doc warns MCP clients refuse plain-http IdPs).
+# Keycloak for the lab. Deployment shape from https://docs.solo.io/agentregistry/latest/setup/oidc/keycloak.md
+# (Step 2), image from the agentgateway Keycloak guide (quay.io/keycloak/keycloak:26.7.1).
+# Changes from the Solo doc:
+#   - ClusterIP Service on port 8180 instead of a LoadBalancer on 8080, so the same issuer URL works
+#     from the laptop (kubectl port-forward 8180) and from pods (CoreDNS rewrite, see yaml/coredns-rewrite.txt).
+#   - KC_HOSTNAME pins the issuer to http://keycloak.127.0.0.1.nip.io:8180 whichever way Keycloak is reached.
+#     KC_HOSTNAME_BACKCHANNEL_DYNAMIC lets in-cluster callers use the request host for backchannel URLs.
+#     Options from https://www.keycloak.org/server/hostname (--hostname <full URL>, --hostname-backchannel-dynamic).
+#   - KC_PROXY and PROXY_ADDRESS_FORWARDING from the Solo doc are dropped: there is no proxy in front.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8180
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.7.1
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: "admin"
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: "admin"
+            - name: KC_HOSTNAME
+              value: "http://keycloak.127.0.0.1.nip.io:8180"
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /realms/master
+              port: 8080
+          volumeMounts:
+            - name: realm-config
+              mountPath: /opt/keycloak/data/import
+      volumes:
+        - name: realm-config
+          configMap:
+            name: keycloak-agentregistry-realm

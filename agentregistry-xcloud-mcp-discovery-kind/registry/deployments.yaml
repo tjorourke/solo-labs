@@ -1,0 +1,44 @@
+# Expose both servers on the gateway through the Virtual runtime. The reachable path is /registry<pathSuffix>.
+# Fields from https://docs.solo.io/agentregistry/latest/quickstart/mcp-gateway.md Steps 2, 6 and 7.
+# cloud-a carries an inline tool policy: action Allow passes a call when any expression is true.
+# Admins see every tool. Developers see every tool except restart_instance, which drops out of tools/list
+# and returns 400 with JSON-RPC error -32602 "unknown resource" if called by name (seen on 2026.10.2, 9 Nov 2026).
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: cloud-a
+spec:
+  targetRef:
+    kind: MCPServer
+    name: cloud-a-compute
+    tag: latest
+  runtimeRef:
+    kind: Runtime
+    name: mcp-gateway
+  runtimeConfig:
+    route:
+      pathSuffix: /cloud-a
+    backend:
+      mcp:
+        authorization:
+          action: Allow
+          policy:
+            matchExpressions:
+              - '!jwt.Groups.exists(g, g == "developers")'
+              - 'mcp.tool.name != "restart_instance"'
+---
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: cloud-b
+spec:
+  targetRef:
+    kind: MCPServer
+    name: cloud-b-costs
+    tag: latest
+  runtimeRef:
+    kind: Runtime
+    name: mcp-gateway
+  runtimeConfig:
+    route:
+      pathSuffix: /cloud-b

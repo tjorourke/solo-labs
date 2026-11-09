@@ -1,0 +1,44 @@
+# Serves the OAuth protected-resource metadata (PRM) for /registry/cloud-a.
+# Why this file exists: agentgateway answers PRM inside its MCP handler (crates/agentgateway/src/mcp/auth.rs builds
+# metadata_url = {origin}/.well-known/oauth-protected-resource{request_path}), so the well-known path has to reach an
+# MCP backend with the JWT/MCP policy attached. The registry's child route only matches /registry/cloud-a, so the
+# well-known path needs its own route. Pattern from the agentgateway MCP auth guide, which puts
+# /.well-known/oauth-protected-resource/<path> on the same route as the MCP backend
+# (https://agentgateway.dev/docs/kubernetes/latest/documentation/mcp/auth/setup.md).
+# Backend fields (spec.mcp.targets[].static host/port/path/protocol) checked against the shipped
+# enterprise-agentgateway-crds v2026.10.2 EnterpriseAgentgatewayBackend schema.
+# Checked 9 Nov 2026 on v2026.10.2: GET /.well-known/oauth-protected-resource/registry/cloud-a on this route returns 200 with
+# resource http://localhost:8080/registry/cloud-a and authorization_servers [the Keycloak issuer].
+# CLOUD_A_HOST is substituted by scripts/up.sh (container IP of ext-mcp-cloud-a).
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: cloud-a-prm
+  namespace: agentgateway-system
+spec:
+  mcp:
+    targets:
+      - name: cloud-a
+        static:
+          host: ${CLOUD_A_HOST}
+          port: 8000
+          path: /mcp
+          protocol: StreamableHTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: registry-oauth-metadata
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /.well-known/oauth-protected-resource/registry/cloud-a
+      backendRefs:
+        - group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: cloud-a-prm

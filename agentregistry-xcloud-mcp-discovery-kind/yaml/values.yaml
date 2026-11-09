@@ -1,0 +1,4 @@
+# Enterprise agentgateway Helm values. Same shape as agentgateway-openai-decisions-kind/yaml/values.yaml.
+licensing:
+  createSecret: false
+  secretName: enterprise-agentgateway-license

@@ -1,0 +1,26 @@
+# Two externally hosted MCP servers, catalogued by URL. Shape from
+# https://docs.solo.io/agentregistry/latest/mcp/remote.md and quickstart/mcp-gateway.md Step 1.
+# CLOUD_A_HOST and CLOUD_B_HOST are the Docker IPs of ext-mcp-cloud-a and ext-mcp-cloud-b on the kind network,
+# substituted with envsubst. Container names would read better, but whether pod DNS resolves Docker container
+# names is UNVERIFIED, so the lab uses IPs.
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: cloud-a-compute
+spec:
+  title: Cloud A compute inventory
+  description: "Instances and their state in cloud-a. Hosted outside the cluster."
+  remote:
+    type: streamable-http
+    url: http://${CLOUD_A_HOST}:8000/mcp
+---
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: cloud-b-costs
+spec:
+  title: Cloud B cost report
+  description: "Monthly spend and top services in cloud-b. Hosted outside the cluster."
+  remote:
+    type: streamable-http
+    url: http://${CLOUD_B_HOST}:8000/mcp

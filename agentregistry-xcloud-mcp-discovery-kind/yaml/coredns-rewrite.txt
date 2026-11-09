@@ -1,0 +1,5 @@
+# Line added inside the ".:53 { ... }" block of the kube-system/coredns Corefile, just before "kubernetes cluster.local".
+# Syntax from https://github.com/coredns/coredns/blob/master/plugin/rewrite/README.md
+# ("rewrite [continue|stop] name [exact|...] FROM TO [answer auto]").
+# Pods then resolve the issuer host to the Keycloak Service, so the AR server and the gateway see the same iss as the laptop.
+rewrite name exact keycloak.127.0.0.1.nip.io keycloak.keycloak.svc.cluster.local answer auto

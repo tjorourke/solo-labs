@@ -1,0 +1,24 @@
+# UNVERIFIED: accessLevel view on mcpservers and deployments (the quickstart shows view only on runtimes).
+# Lets the developers group read the catalogue (servers, deployments, runtimes) so the registry MCP
+# list_deployments and get_deployment work for dev-user. Shape from quickstart/mcp-gateway.md Step 5,
+# with accessLevel view instead of manage. "view" is documented on runtimes in that step.
+apiVersion: ar.dev/v1alpha1
+kind: RBACPolicy
+metadata:
+  name: developers-read
+  namespace: default
+spec:
+  principals:
+    - all:
+        - attribute: Groups
+          values: [developers]
+  grants:
+    - name: view-mcpservers
+      accessLevel: view
+      resource: mcpservers
+    - name: view-deployments
+      accessLevel: view
+      resource: deployments
+    - name: view-runtimes
+      accessLevel: view
+      resource: runtimes

@@ -1,0 +1,18 @@
+# Gateway for the registry's Virtual runtime. From https://docs.solo.io/agentregistry/latest/setup/runtime/virtual.md Step 2.
+# The label value must equal the Runtime name (mcp-gateway).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway-proxy
+  namespace: agentgateway-system
+  labels:
+    agentregistry.solo.io/runtime: mcp-gateway
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+    - protocol: HTTP
+      port: 80
+      name: http
+      allowedRoutes:
+        namespaces:
+          from: All

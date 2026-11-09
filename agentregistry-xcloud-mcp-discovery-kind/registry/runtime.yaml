@@ -1,0 +1,8 @@
+# Virtual runtime. Name must equal the agentregistry.solo.io/runtime label on the Gateway and parent route.
+# From https://docs.solo.io/agentregistry/latest/setup/runtime/virtual.md Step 3. Apply with: arctl apply -f registry/runtime.yaml
+apiVersion: ar.dev/v1alpha1
+kind: Runtime
+metadata:
+  name: mcp-gateway
+spec:
+  type: Virtual
