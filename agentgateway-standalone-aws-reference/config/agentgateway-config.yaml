@@ -1,0 +1,736 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# Annotated standalone agentgateway config, covering every item on the customer's list:
+# isolated conf per gateway, rate-limiter, budget, pre-routing, OPA, guardrail,
+# pinned model / alias / model overriding, STT/TTS, API keys auth, failover,
+# canary.
+#
+# Everything in this file was run against a real local agentgateway process
+# (binary v1.7.0) with a real OPA server and real OpenAI/Anthropic calls, not
+# just written from the docs. Three things that live outside this YAML file
+# are called out in comments below rather than faked: vSR, IdP/OIDC, and Vault.
+# A fourth, the EXTERNAL SAAS GUARDRAIL (ZSCALER) section further down, is
+# checked against the agentgateway schema (tag v1.7.0, the binary above) and
+# against the kind-cluster Kubernetes version of this same pattern
+# (agentic-external-guardrail-kind, Option 1), but has not itself been run
+# against a live standalone process or a Zscaler tenant - say so wherever it
+# matters rather than upgrading that claim.
+#
+# Run it with:
+#   export OPENAI_API_KEY=...
+#   export ANTHROPIC_API_KEY=...
+#   export SESSION_KEY=$(openssl rand -hex 32)
+#   agentgateway -f agentgateway-config.yaml
+#
+# IMPORTANT, confirmed by testing: the default way to send an API key is
+#   Authorization: Bearer <key>
+# NOT an x-api-key header. x-api-key only works if a gateway explicitly
+# configures apiKey.location to expect it - this file uses the default.
+
+# -----------------------------------------------------------------------
+# ISOLATED CONF PER GATEWAY
+# Each entry under `gateways` is an independent entrypoint: its own port,
+# its own policies. "public" below carries all the LLM/API traffic and its
+# own pre-routing + OPA policies; "internal" is a second, separately scoped
+# gateway on a different port with nothing shared between them. For real
+# isolation across environments/tenants (separate failure domain, separate
+# admin surface), run this as separate processes/config files - a second
+# `gateways` entry in the SAME file still shares the one process.
+# -----------------------------------------------------------------------
+gateways:
+  public:
+    port: 3000
+
+    # PRE-ROUTING
+    # Gateway-level policies run BEFORE route matching. This sets a header
+    # here as a stand-in for something you'd normally derive from a JWT
+    # claim (e.g. jwt.tier) - the point is that whatever sets it runs ahead
+    # of route selection, so a route can match on it. Confirmed live: a
+    # route matching on x-tier==pro matched correctly even though no client
+    # ever sent that header - only this transformation did.
+    transformations:
+      request:
+        set:
+          x-tier: '"pro"'   # replace with a real CEL expression, e.g. jwt.tier
+
+    # OPA
+    # extAuthz calls any HTTP policy decision point - OPA's REST API in
+    # this case (`opa run -s`, default /v1/data/<package>/<rule> endpoint).
+    # The decision is pulled into CEL metadata, then `authorization` below
+    # enforces it. Confirmed live: missing/wrong input -> 403, correct
+    # input -> 200. Swap `host`/`path`/`body` for your real OPA deployment
+    # and input shape.
+    extAuthz:
+      host: opa.internal:8181            # your real OPA server
+      protocol:
+        http:
+          path: '"/v1/data/httpapi/authz/allow"'
+          addRequestHeaders:
+            content-type: '"application/json"'
+            :method: '"POST"'
+          body: |
+            {"input": {"header": request.headers["x-opa-test"]}}
+          metadata:
+            allow: json(response.body).result
+    authorization:
+      rules:
+      - require: 'extauthz.allow == true'
+
+    # IdP / OIDC (structure only - needs a real identity provider)
+    # jwtAuth validates bearer tokens from any IdP (Keycloak, Cognito, Okta,
+    # etc). Uncomment and point it at your realm/tenant to require a valid
+    # JWT on this gateway. Not exercised live here since it needs a real
+    # IdP; the shape below matches the documented standalone schema.
+    # jwtAuth:
+    #   issuer: https://your-idp/realms/agw
+    #   audiences: [agw-clients]
+    #   jwks:
+    #     url: https://your-idp/realms/agw/protocol/openid-connect/certs
+
+  internal:
+    port: 3001
+    bindAddress: 127.0.0.1   # loopback-only - a second, independently scoped gateway
+
+  # GUARD ADAPTER (see EXTERNAL SAAS GUARDRAIL (ZSCALER) further down)
+  # A third, loopback-only gateway. Nothing outside this process can reach it -
+  # standalone's equivalent of the k8s guard-adapter Gateway's
+  # service.spec.type: ClusterIP. Its only job is to host the two adapter
+  # routes below, which the real LLM guard's webhook calls.
+  guard-adapter:
+    port: 8081
+    bindAddress: 127.0.0.1
+
+# -----------------------------------------------------------------------
+# ROUTING-BASED MODE
+# Ordinary HTTP routing, independent of the LLM config below - confirms
+# `llm` and `gateways`/`routes` can be populated in the same file. This
+# route only matches when x-tier==pro, which is set above, before routing -
+# this is the pre-routing proof: the header the route needs was never sent
+# by the client.
+# -----------------------------------------------------------------------
+routes:
+- name: tier-only
+  gateways: [public]
+  matches:
+  - path: { pathPrefix: /tier-test }
+    headers:
+    - name: x-tier
+      value: { exact: pro }
+  # ROUTE-LEVEL POLICIES
+  # Independent of the gateway-level policies above and of each other -
+  # this route's own header modifier and rate limit apply only to this
+  # route, not the whole gateway. Confirmed live: the backend received
+  # x-served-by on every request, and the rate limit blocked after its own
+  # small bucket (configured separately from the llm-level one) was spent.
+  policies:
+    # REQUEST AND RESPONSE TRANSFORMATION (CEL)
+    # A richer example than a single hardcoded header. Two gotchas this
+    # was fixed against live, worth keeping:
+    #   1. Do NOT `remove` a header you also `set` - on this build remove
+    #      wins over set for the same name, deleting it before `set` runs
+    #      (confirmed: with both, the header never reached the backend at
+    #      all). `set` alone already overwrites any client-supplied value,
+    #      so `set` alone IS the anti-spoofing - no separate remove needed.
+    #   2. Guard a header lookup with `"name" in request.headers` before
+    #      indexing it - `request.headers["x-plan"]` on a request that never
+    #      sent x-plan throws, and the whole `set` for that field silently
+    #      skips rather than falling back to the ternary's other branch
+    #      (confirmed: without the guard, the no-x-plan case produced no
+    #      header at all, not "basic").
+    transformations:
+      request:
+        set:
+          # Derive the real signal from an inbound header (swap the guarded
+          # lookup for a real JWT claim - e.g. jwt.tier - once jwtAuth is
+          # enabled on this gateway).
+          x-tier-claimed: '"x-plan" in request.headers && request.headers["x-plan"] == "gold" ? "pro" : "basic"'
+        add:
+          # Stamp a correlation id only if the caller didn't send one; `in`
+          # is the presence check for a map key - `has()` only works on
+          # `.field` selectors, not bracket indexing, and errors otherwise.
+          x-request-id: '"x-request-id" in request.headers ? request.headers["x-request-id"] : "none"'
+      response:
+        # Compute a response header from the backend's own response body,
+        # so the caller doesn't have to parse it to get this signal.
+        set:
+          x-upstream-ok: 'string(json(response.body).ok)'
+        add:
+          x-served-by: '"agentgateway"'
+    # Confirmed live, all four cases: a spoofed x-tier-claimed is replaced
+    # (not just blocked); x-plan: gold -> x-tier-claimed: pro; any other
+    # value or none -> basic; a caller-sent x-request-id passes through
+    # unchanged, a missing one gets the fallback; the response carries both
+    # x-upstream-ok (from the body) and x-served-by.
+    localRateLimit:
+    - maxTokens: 2
+      tokensPerFill: 2
+      fillInterval: 60s
+  backends:
+  - host: internal-service.svc:8080
+
+# -----------------------------------------------------------------------
+# EXTERNAL SAAS GUARDRAIL (ZSCALER) - adapter routes
+# See the NAMED BACKENDS block below for the vendor Backend these two routes
+# forward to, and llm.policies.guardrails further down for the webhook entry
+# that calls them. Checked against the agentgateway schema (tag v1.7.0) and
+# against the kind-cluster version of this pattern
+# (agentic-external-guardrail-kind, Option 1); NOT run against a live
+# standalone process or a Zscaler tenant.
+#
+# Why two ordinary routes exist at all: the standalone `webhook` guard type
+# (see llm.policies.guardrails below) has `target` + `headers` (CEL on
+# headers only) and no body-transformation field - confirmed from the
+# schema's Webhook definition. Zscaler needs the opposite: its request body
+# is {content, direction}, not {messages}/{choices}, and its reply's `action`
+# is a bare string ("BLOCK"/"Allow"), not the {} / {status_code, body} object
+# agentgateway's webhook contract expects. Body CEL only exists on an
+# ORDINARY route's `transformations` (confirmed: LocalTransform has a `body`
+# field), so these two routes stand between the webhook and Zscaler and do
+# the body mapping - the gateway becomes its own adapter, no separate
+# process. Same reason the k8s Option 1 pattern needs a second
+# Gateway/HTTPRoute instead of a plain promptGuard.webhook.
+#
+# One route per phase because each phase maps a different body - request
+# gets `messages`, response gets `choices`. The webhook calls the DEFAULT
+# path for each phase (/request, /response - that's what `matches` below is
+# keyed on), so no `:path` override is needed on the webhook side; `:path`
+# IS set here, on the way OUT to Zscaler, because the vendor Backend below
+# carries no path of its own.
+# -----------------------------------------------------------------------
+- name: zscaler-guardrail-request
+  gateways: [guard-adapter]
+  matches:
+  - path: { exact: /request }
+  policies:
+    transformations:
+      request:
+        set:
+          # resolve-and-execute-policy lets Zscaler choose the policy. To
+          # target one explicitly, Zscaler's own endpoint is
+          # execute-policy?policyId=<id> instead - swap the literal below.
+          ":path": '"/v1/detection/resolve-and-execute-policy"'
+        body: |
+          json(request.body).with(b, toJson({
+            "content": b.body.messages.map(m, m.content).join("\n"),
+            "direction": "IN"
+          }))
+      response:
+        # Allow only on an explicit allow, tested on `action`. The inverse
+        # (z.action == "BLOCK" ? reject : allow) fails OPEN on anything that
+        # isn't literally "BLOCK" - a 200 carrying an error object, for
+        # instance, has no action field at all and falls through to allow.
+        # Do not gate on sendToApplication: a live tenant has returned it as
+        # false alongside action: "Allow" on a benign prompt. Casing is
+        # case-folded because captures have shown both ALLOW and Allow.
+        body: |
+          json(response.body).with(z,
+            has(z.action) && z.action in ["ALLOW", "Allow", "allow"]
+              ? toJson({"action": {}})
+              : toJson({"action": {
+                  "status_code": 403,
+                  "body": "Blocked by the guardrail.",
+                  "reason": "guardrail blocked the prompt"
+                }})
+          )
+  backends:
+  - backend: zscaler-api
+
+- name: zscaler-guardrail-response
+  gateways: [guard-adapter]
+  matches:
+  - path: { exact: /response }
+  policies:
+    transformations:
+      request:
+        set:
+          ":path": '"/v1/detection/resolve-and-execute-policy"'
+        body: |
+          json(request.body).with(b, toJson({
+            "content": b.body.choices.map(c, c.message.content).join("\n"),
+            "direction": "OUT"
+          }))
+      response:
+        # A Mask replaces the completion and the client still gets a 200 -
+        # the response phase can also reject (status_code/body instead), but
+        # the tokens are already paid for by this point, so masking is what
+        # ships here.
+        body: |
+          json(response.body).with(z,
+            has(z.action) && z.action in ["ALLOW", "Allow", "allow"]
+              ? toJson({"action": {}})
+              : toJson({"action": {
+                  "body": {"choices": [{"message": {
+                    "role": "assistant",
+                    "content": "[removed by the guardrail]"
+                  }}]},
+                  "reason": "guardrail blocked the completion"
+                }})
+          )
+  backends:
+  - backend: zscaler-api
+
+# -----------------------------------------------------------------------
+# NAMED BACKENDS
+# Referenced by `backend: <name>` above, instead of an inline `host:`, so
+# the vendor's TLS and auth policies live in one place rather than being
+# repeated on every route that calls it. FILE-ONLY: confirmed from
+# agentgateway's own admin-API resource kinds (ConfigResourceKind in
+# crates/agentgateway/src/config_store.rs) that there is no resource kind
+# for a named backend - traffic.gateway and traffic.route exist, a backend
+# does not. Changing one of these means editing this file (or shipping a new
+# one), not curl or the UI.
+#
+# `backendTLS.insecure`/`insecureHost` stand in for a corporate TLS-
+# inspecting proxy rewriting the certificate chain - set both only if your
+# egress path actually does that; a straight path to the vendor should
+# verify normally. `backendTunnel.proxy` routes the connection through a
+# corporate HTTP proxy before it reaches the vendor, confirmed to exist in
+# the schema (`Tunnel`/`TunnelMode`, nested under `backendTunnel`, not
+# `tunnel`) as the standalone equivalent of agentgateway's
+# `policies.tunnel.backendRef` in Kubernetes mode - needed wherever direct
+# egress to the vendor's host is not allowed. Leave both out on a path with
+# ordinary internet egress and a vendor cert that verifies normally.
+# -----------------------------------------------------------------------
+backends:
+- name: corporate-proxy
+  host: corporate-proxy.internal:8080   # your real egress proxy
+
+- name: zscaler-api
+  host: api.zseclipse.net:443
+  policies:
+    backendTLS:
+      insecure: true        # only if something on the egress path re-signs the cert
+      insecureHost: true
+    backendAuth:
+      key:
+        # Store the full value Zscaler expects, "Bearer <token>" included if
+        # that's their contract - this field sends it to the backend
+        # verbatim, it does not add a prefix of its own.
+        value: { file: /var/run/secrets/zscaler-api-key }
+        location:
+          header: { name: Authorization }
+    # The field is `backendTunnel`, not `tunnel` - confirmed from the schema's
+    # LocalBackendPolicies (`tunnel` alone is rejected).
+    backendTunnel:
+      proxy: { backend: corporate-proxy }
+
+# -----------------------------------------------------------------------
+# LLM (simplified/model-centric) mode
+# Serves the standard /v1/models, /v1/chat/completions, /v1/audio/* paths
+# under the "public" gateway above.
+# -----------------------------------------------------------------------
+llm:
+  gateways: [public]
+
+  providers:
+  - name: openai
+    provider: openai
+    params:
+      apiKey: "$OPENAI_API_KEY"
+  - name: anthropic
+    provider: anthropic
+    params:
+      apiKey: "$ANTHROPIC_API_KEY"
+
+  models:
+    # PINNED MODEL / ALIAS / MODEL OVERRIDING
+    # These are one feature: the public name a caller requests ("chat-fast")
+    # does not have to match what's actually sent upstream (params.model).
+    # Confirmed live: a request for "chat-fast" was served by the real
+    # gpt-4o-mini-2024-07-18 snapshot.
+    - name: chat-fast
+      provider: { reference: openai }
+      params: { model: gpt-4o-mini }
+
+    - name: chat-quality
+      provider: { reference: anthropic }
+      params: { model: claude-sonnet-4-5-20250929 }
+
+    # `visibility: internal` means this is only reachable through a
+    # virtual model below, never requested directly by name.
+    - name: chat-fast-backup
+      visibility: internal
+      provider: { reference: openai }
+      params: { model: gpt-4o-mini }
+
+    # STT / TTS
+    # Exactly the same mechanism as any other model - no special backend
+    # type. Confirmed live, full round trip: real synthesized audio from
+    # tts-1, transcribed back to the original text by whisper-1.
+    - name: tts-1
+      provider: { reference: openai }
+      params: { model: tts-1 }
+    - name: whisper-1
+      provider: { reference: openai }
+      params: { model: whisper-1 }
+
+    # VSR (SEMANTIC ROUTER) TIER MODELS
+    # These four are the real targets vSR classifies into, named to match
+    # the actual upstream models (see the extProc policy and tier test
+    # below). Confirmed live against a real vSR instance:
+    #   x-entitlement-tier: basic    + STEM prompt -> gpt-5.4
+    #   x-entitlement-tier: standard + STEM prompt -> claude-haiku-4-5
+    #   x-entitlement-tier: pro      + STEM prompt -> claude-sonnet-4-6
+    #   no tier headers, model named directly -> vSR is skipped entirely
+    # A tier can only reach its own model or below - confirmed live, a
+    # basic-tier request for claude-sonnet-4-6 directly was rejected before
+    # it reached Anthropic.
+    - name: gpt-4.1
+      provider: { reference: openai }
+      params: { model: gpt-4.1 }
+    - name: gpt-5.4
+      provider: { reference: openai }
+      params: { model: gpt-5.4 }
+    - name: claude-haiku-4-5-20251001
+      provider: { reference: anthropic }
+      params: { model: claude-haiku-4-5-20251001 }
+      authorization:
+        rules:
+        - 'request.headers["x-entitlement-tier"] in ["standard", "pro"]'
+    - name: claude-sonnet-4-6
+      provider: { reference: anthropic }
+      params: { model: claude-sonnet-4-6 }
+      authorization:
+        rules:
+        - 'request.headers["x-entitlement-tier"] == "pro"'
+
+  virtualModels:
+    # FAILOVER
+    # Priority groups; the best provider within a group is chosen by a
+    # composite health/latency score, and a fully degraded group falls
+    # through to the next one. Confirmed live: resolved to the priority-0
+    # target.
+    - name: chat-resilient
+      routing:
+        failover:
+          targets:
+          - { model: chat-fast, priority: 0 }
+          - { model: chat-fast-backup, priority: 1 }
+
+    # CANARY
+    # The same routing primitive as failover, just weighted instead of
+    # prioritised. Confirmed live: four calls to "chat-canary" landed on
+    # both gpt-4o-mini and claude-sonnet, proving the split actually
+    # dispatches across providers rather than pinning to one.
+    - name: chat-canary
+      routing:
+        weighted:
+          targets:
+          - { model: chat-fast, weight: 90 }
+          - { model: chat-quality, weight: 10 }
+
+    # TASK-BASED ROUTING
+    # The third routing strategy alongside failover and weighted: conditions
+    # evaluated in order, first match wins, final entry with no `when` is
+    # the default. Confirmed live: a plain request resolved to chat-fast,
+    # and the same request with x-task: complex resolved to chat-quality.
+    - name: chat-by-task
+      routing:
+        conditional:
+          targets:
+          - when: 'request.headers["x-task"] == "complex"'
+            model: chat-quality
+          - model: chat-fast
+
+  policies:
+    # VSR (SEMANTIC ROUTER)
+    # `conditional` scopes this to only the requests that opt in - anything
+    # without x-entitlement-tier skips vSR entirely and goes straight to
+    # normal model routing, which is what keeps this composable with every
+    # other model/virtualModel in this file instead of gating all LLM
+    # traffic on this gateway. Confirmed live against a real vSR instance
+    # (ghcr.io/vllm-project/semantic-router/extproc:v0.3.0 - see the image
+    # pin note further down; the upstream standalone example's own
+    # compose.yaml currently points at a broken `:latest`).
+    extProc:
+      conditional:
+      - condition: '"x-entitlement-tier" in request.headers'
+        host: 127.0.0.1:50051   # vSR on the same host - use a container hostname if both run in one Docker network/compose
+        failureMode: failClosed
+        processingOptions:
+          requestHeaderMode: send
+          requestBodyMode: fullDuplexStreamed
+          responseHeaderMode: send
+          responseBodyMode: none
+          requestTrailerMode: send
+          responseTrailerMode: send
+          allowModeOverride: false
+
+    # API KEYS AUTH
+    # Confirmed live: filtered /v1/models response, enforced allowedModels,
+    # and (with config.database set, below) enforced the budget under a
+    # burst of concurrent requests - admission happens immediately, the
+    # block kicks in within a few seconds once the counter catches up.
+    apiKey:
+      mode: strict
+      keys:
+      - key: sk-agw-sample-key
+        metadata: { name: sample-team }
+        allowedModels: ["chat-fast", "chat-quality", "chat-resilient", "chat-canary", "chat-by-task", "tts-1", "whisper-1", "gpt-4.1", "gpt-5.4", "claude-haiku-4-5-20251001", "claude-sonnet-4-6"]
+        budgets:
+        - name: daily-spend
+          limit: { unit: USD, amount: 5 }
+          window: { rolling: 24h }
+          onBudgetExceeded: Block
+
+    # GUARDRAIL
+    # Confirmed live: a message containing "SSN" was rejected with the
+    # configured 400 before it ever reached a provider. `rejection` and
+    # `regex` are siblings, not nested.
+    guardrails:
+      request:
+      - rejection:
+          status: 400
+          body: |
+            {"error": {"message": "Request rejected: sensitive content", "code": "content_policy_violation"}}
+        regex:
+          action: reject
+          rules:
+          - pattern: "SSN"
+
+      # EXTERNAL SAAS GUARDRAIL (ZSCALER)
+      # A second, separate list entry - `regex` and `webhook` are siblings
+      # in RequestGuard/ResponseGuard, but exactly one per entry (confirmed
+      # from the schema's oneOf), so this cannot be folded into the entry
+      # above. Order matters: layers run in array order, so the regex entry
+      # above runs first - a local redaction never reaches the vendor.
+      # `target.host` is the guard-adapter gateway from further up this
+      # file, not Zscaler directly; the webhook posts to its default
+      # /request path, which is exactly what that gateway's adapter route
+      # matches on. NOT run against a live standalone process.
+      - webhook:
+          target:
+            host: "127.0.0.1:8081"
+          failureMode: failClosed
+      response:
+      - webhook:
+          target:
+            host: "127.0.0.1:8081"
+          failureMode: failClosed
+
+    # RATE-LIMITER
+    # localRateLimit is in-process (per pod) - confirmed live, blocked
+    # cleanly once the bucket was exhausted. For a multi-pod standalone
+    # fleet where the limit has to mean the same thing everywhere, replace
+    # this with `remoteRateLimit` pointed at a shared RLS service (e.g.
+    # envoyproxy/ratelimit) backed by Redis/Valkey, so the counter is
+    # shared across every pod rather than per-pod. Not exercised here since
+    # it needs that extra service running.
+    localRateLimit:
+    - maxTokens: 5
+      tokensPerFill: 5
+      fillInterval: 60s
+
+# -----------------------------------------------------------------------
+# MCP
+# Served under the same "public" gateway, at /mcp - which means it's
+# protected by the same pre-routing and OPA policies defined on that
+# gateway above, with no extra wiring. Confirmed live: a request with no
+# x-opa-test header got the same 403 as the LLM routes; with it, a real
+# MCP initialize/tools-list/tools-call round trip succeeded against a real
+# MCP server, including a working Mcp-Session-Id.
+# -----------------------------------------------------------------------
+mcp:
+  gateways: [public]
+  # PER-TOOL AUTHORIZATION (CEL)
+  # mcpAuthorization is a dedicated, MCP-specific rules list - each a CEL
+  # expression over mcp.tool.name (also mcp.tool.arguments, jwt.* claims,
+  # etc), OR'd together: any matching rule allows the call. Tool names are
+  # the PREFIXED ones below, since multiplexing is on (see targets).
+  # Confirmed live: calling "everything_echo" succeeded; calling an
+  # unlisted tool was refused as unknown rather than reaching its server.
+  # This composes with the gateway-level OPA policy above - both apply.
+  policies:
+    mcpAuthorization:
+      rules:
+      - 'mcp.tool.name == "everything_echo"'
+      - 'mcp.tool.name == "time_get_current_time"'
+      # more real-world shapes, from the documented example:
+      # - 'jwt.sub == "test-user" && mcp.tool.name == "everything_get-sum"'
+      # - 'mcp.tool.name == "everything_get-env" && jwt.nested.key == "value"'
+
+  # MULTIPLE MCP SERVERS / TOOLS
+  # Adding another server is just another entry in `targets` - agentgateway
+  # multiplexes them into one MCP server as far as clients can tell.
+  # Confirmed live with two real, different servers: a `tools/list` call
+  # returned tools from BOTH, each auto-prefixed with "<target-name>_" to
+  # avoid name collisions (time_get_current_time, time_convert_time,
+  # everything_echo, everything_get-sum, ...). A `tools/call` against
+  # either target's prefixed name reached that target and returned a real
+  # result. Add as many targets as you have MCP servers - stdio, or a
+  # remote one (`host`/`port` instead of `stdio`), in any mix.
+  targets:
+  - name: time
+    stdio:
+      cmd: uvx
+      # mcp-server-time needs mcp>=1.23.0 with no upper bound, so uvx
+      # resolves the SDK to 2.x by default, which renamed McpError to
+      # MCPError and breaks the import. Pin it below 2 until the server
+      # itself supports mcp 2.x - one failing target fails initialize for
+      # every target it's multiplexed with.
+      args: ["--with", "mcp<2", "mcp-server-time"]
+  - name: everything
+    stdio:
+      cmd: npx
+      args: ["@modelcontextprotocol/server-everything"]
+  # - name: a-remote-mcp-server         # a non-stdio target, same list
+  #   host: mcp.internal
+  #   port: 8443
+  #   path: /mcp
+
+# -----------------------------------------------------------------------
+# TRACING AND ACCESS LOGS -> CLICKHOUSE
+# frontendPolicies applies fleet-wide, across every gateway/route/model/MCP
+# target above. `tracing` sends spans and `accessLog.otlp` sends access-log
+# records to the same place: any OTLP (gRPC) collector. Point `host` at
+# your own, or stand one up with an OpenTelemetry Collector Contrib
+# `clickhouse` exporter - exactly the shape confirmed live in the companion
+# agentgateway-standalone-vault-kind lab (deps/otel-collector +
+# deps/clickhouse): endpoint tcp://clickhouse:9000, create_schema: true,
+# traces_table_name/logs_table_name otel_traces/otel_logs.
+#
+# IMPORTANT: this gets you traces and access logs queryable in ClickHouse
+# by SQL or Grafana. It does NOT by itself put anything in a Solo
+# Enterprise management UI - this reference file has no management plane
+# (see "What this is" above: no AWS/Kubernetes infra here, just the
+# binary). The management UI's own Tracing tab only lights up when
+# `tracing` points at ITS bundled `enterprise-agentgateway-ui-telemetry-
+# collector`, which auto-routes to its own ClickHouse - confirmed against
+# docs.solo.io/agentgateway/latest/documentation/observability/traces/setup/:
+# "if you do not use the built-in ... collector, traces are not stored in
+# ClickHouse and will not appear in the management UI." Swap `host` below
+# for that collector's address if the management UI is what you're after.
+# -----------------------------------------------------------------------
+frontendPolicies:
+  tracing:
+    host: ${OTLP_HOSTPORT}     # your collector, or the management plane's telemetry collector
+    protocol: grpc
+    randomSampling: "0.1"      # 10% of requests, unless the caller already sampled
+
+  accessLog:
+    # Every access log record, with the fields below, also goes to the
+    # collector above as an OTLP log - same destination as traces.
+    otlp:
+      host: ${OTLP_HOSTPORT}
+      protocol: grpc
+    add:
+      llm_provider: 'llm.provider'
+      llm_model: 'llm.responseModel'
+      llm_tokens: 'llm.totalTokens'
+      llm_cost_usd: 'llm.cost'
+      mcp_tool: 'mcp.tool.name'
+
+# -----------------------------------------------------------------------
+# BUDGET requires a database - confirmed live, agentgateway refuses to
+# start with `apiKey.budgets` set and no database configured. sqlite:// for
+# a single process/local test; use postgres:// for a real multi-pod fleet
+# so every pod shares the same counter.
+# -----------------------------------------------------------------------
+config:
+  database:
+    url: "sqlite:///var/lib/agentgateway/budgets.db"
+
+# -----------------------------------------------------------------------
+# VAULT INTEGRATION
+# Credentials are sourced from a file agentgateway reads directly - no env
+# var, no inline key needed anywhere in this config. Confirmed live: a
+# model configured exactly like this made a real authenticated call to
+# OpenAI, with the key read purely from disk:
+#
+#   models:
+#   - name: vault-sourced-model
+#     provider: openai
+#     params:
+#       model: gpt-4o-mini
+#       apiKey:
+#         file: /var/run/secrets/openai-api-key
+#
+# That's agentgateway's whole side of it - this is deliberately
+# populator-agnostic, any process that can write a file works, Vault Agent,
+# cert-manager, a CronJob. Since you're running standalone INSIDE
+# Kubernetes, the real, already-built way to be that populator is a native
+# Kubernetes sidecar (Kubernetes 1.29+, no injector webhook, no operator,
+# no CRDs) - not a plain Docker sidecar, an actual initContainer with
+# restartPolicy: Always in the SAME pod as agentgateway:
+#
+# 1. The pod's own projected service account token (audience "vault", not
+#    the pod's real Kubernetes API token - the gateway container never
+#    sees it) is what Vault Agent logs in with, via Vault's Kubernetes
+#    (TokenReview) or JWT auth method.
+# 2. A templates.hcl ConfigMap tells Vault Agent what to render - one
+#    block per secret, reading one KV v2 path and writing one file, e.g.:
+#
+#    template {
+#      destination          = "/vault/secrets/openai-api-key"
+#      perms                = "0400"
+#      error_on_missing_key = true
+#      contents             = <<-EOT
+#      {{- with secret (env "VAULT_SECRET_PATH") }}{{ .Data.data.openai_api_key }}{{ end }}
+#      EOT
+#    }
+#
+# 3. The sidecar's startupProbe checks every expected file is non-empty
+#    before the gateway container is allowed to start - secrets are
+#    guaranteed to exist before the proxy reads them, no race.
+# 4. The secret itself, and the auth role Vault Agent logs in as, are set
+#    up once on the Vault side (policy scoped to one read-only path, a
+#    Kubernetes auth role bound to this namespace + service account only).
+#
+# This is the exact pattern already built and working in
+# agw-standalone-k8s/components/vault-agent/ (templates.hcl,
+# deployment-patch.yaml) and agw-standalone-k8s/vault/configure-vault.sh
+# (the one-time Vault-side setup) - worth pointing the customer at those
+# files directly rather than reproducing the full manifests here.
+# -----------------------------------------------------------------------
+
+# -----------------------------------------------------------------------
+# vSR (semantic router) - the agentgateway-side config is inline above, in
+# `llm.policies.extProc` and the four tier models in `llm.models`. This
+# section covers the other half: vSR itself, which runs as its own
+# process alongside agentgateway and needs its own config and a port.
+#
+# vSR's config lives in a SEPARATE file (its categorisation rules, not
+# agentgateway's) - see the sibling file `vsr-config.yaml` next to this
+# one, copied unmodified from the upstream reference and confirmed live.
+# The parts that matter:
+#   - `routing.signals.keywords` is the categorisation itself: a named
+#     signal ("stem") that fires when the prompt contains any of those
+#     words. That's the thing to add to for more categories.
+#   - `routing.decisions` is the actual routing table: "if this signal AND
+#     this tier, send it to this model." Priority breaks ties.
+#   - `global.services.authz.identity` is where x-entitlement-tier and
+#     x-authz-user-id (the same two headers agentgateway's extProc.condition
+#     checks for) get read as the caller's tier/identity.
+#
+# The port: vSR listens for agentgateway's classification calls on 50051
+# (gRPC ExtProc), set by nothing in the config above - it's just the
+# container's default. Run it with the known-good pinned image (`:latest`
+# is currently broken against this config - upstream drift, confirmed by
+# testing):
+#
+#   docker run -d -p 50051:50051 \
+#     -v ./vsr-config.yaml:/app/config/config.yaml:ro \
+#     ghcr.io/vllm-project/semantic-router/extproc:v0.3.0 \
+#     /app/config/config.yaml
+#
+# Then `llm.policies.extProc.conditional[].host` above points agentgateway
+# at that same port - `semantic-router:50051` if both are containers on
+# one Docker network (the hostname is whatever you named this container),
+# or `127.0.0.1:50051` if vSR is running directly on the same host as
+# agentgateway, which is what was actually run for the confirmed results.
+# -----------------------------------------------------------------------
+
+# -----------------------------------------------------------------------
+# AUTOMATION APPROACH
+# This file is watched and reloaded on change with no restart (confirmed:
+# edits take effect in-place). Three ways to drive that in practice:
+#   1. Ship a new file (ConfigMap + rollout, or an S3/GCS object + sync
+#      timer) - simplest, works everywhere.
+#   2. The admin API: PUT/DELETE on /api/config/resources/<kind>/<id>
+#      (e.g. llm.apiKey, llm.model, llm.virtualModel) for live, scripted
+#      resource changes with no file edit and no restart.
+#   3. `config.storage.mode: hybrid` + the database above: admin-API writes
+#      land in the database instead of the file, so this baseline file
+#      stays the GitOps-managed source of truth and dynamic resources
+#      (keys, model overlays) layer on top of it.
+# -----------------------------------------------------------------------
