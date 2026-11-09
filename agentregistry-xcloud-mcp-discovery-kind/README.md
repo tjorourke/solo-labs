@@ -1,10 +1,10 @@
-# Find and call MCP servers hosted in other clouds through agentregistry and agentgateway
+# Calling MCP servers outside your cluster through agentregistry and agentgateway
 
-DRAFT, NOT YET RUN. Solo Enterprise for agentregistry 2026.10.0 and Solo Enterprise for agentgateway v2026.10.2 only. Standalone kind cluster `xcloud-mcp`. No OSS edition: the Virtual runtime that writes the gateway config is an Enterprise agentregistry feature.
+Tested live on 9 Nov 2026. Solo Enterprise for agentregistry 2026.10.0 and Solo Enterprise for agentgateway v2026.10.2 only. Standalone kind cluster `xcloud-mcp`. No OSS edition: the Virtual runtime that writes the gateway config is an Enterprise agentregistry feature.
 
 ## The story
 
-A platform team looks after MCP servers that run in different places. One sits in cloud-a and reports compute instances. One sits in cloud-b and reports spend. Neither runs in the platform team's cluster. Developers want to use them from their coding agent without hunting for URLs, and the platform team wants every call to go through one gateway with a real sign-in and a say over which tools a developer gets.
+A platform team looks after MCP servers that run in different places. One in cloud-a reports compute instances and one in cloud-b reports spend. Neither runs in the platform team's cluster. Developers want to use them from their coding agent without hunting for URLs, and the platform team wants every call to go through one gateway with a real sign-in and control over which tools each developer gets.
 
 What each step shows:
 
@@ -33,9 +33,9 @@ What each step shows:
 
 Codex discovers through the registry MCP (`list_deployments` returns the gateway endpoint), then connects to the gateway URL. On the first call the gateway answers 401 with a pointer to its protected-resource metadata. That metadata names Keycloak as the authorisation server, so Codex sends the browser straight to Keycloak and comes back with a token for audience `mcp-gateway`.
 
-Why `mcp.provider` is left off the policy: with `provider: Keycloak` the gateway rewrites the authorisation server issuer to its own URL, Keycloak still returns its own `iss`, and Codex rejects the mismatch. That is agentgateway issues #3668 and #3635; the fix, PR #3637, was not merged on 22 Oct 2026. Without `provider` the issuer stays Keycloak's and there is nothing to mismatch. The price is that Keycloak needs a pre-registered client (`codex-mcp`) because the gateway no longer proxies dynamic client registration.
+The policy leaves out `mcp.provider`. With `provider: Keycloak` the gateway rewrites the authorisation server issuer to its own URL, Keycloak still returns its own `iss`, and Codex rejects the mismatch. That is agentgateway issues #3668 and #3635. The fix, PR #3637, was not merged on 22 Oct 2026. Without `provider` the issuer stays Keycloak's and there is nothing to mismatch. The price is that Keycloak needs a pre-registered client (`codex-mcp`) because the gateway no longer proxies dynamic client registration.
 
-One URL for Keycloak everywhere: tokens carry `iss`, and the gateway and registry check it. The laptop reaches Keycloak through a port-forward on 8180 and pods reach it through its Service, so both use `http://keycloak.127.0.0.1.nip.io:8180`. On the laptop nip.io resolves that name to 127.0.0.1. In the cluster a CoreDNS rewrite sends it to the Keycloak Service. Keycloak's `KC_HOSTNAME` pins the issuer to that URL.
+Keycloak has one URL everywhere, because tokens carry `iss` and both the gateway and the registry check it. The laptop reaches Keycloak through a port-forward on 8180 and pods reach it through its Service, so both use `http://keycloak.127.0.0.1.nip.io:8180`. On the laptop nip.io resolves that name to 127.0.0.1. In the cluster a CoreDNS rewrite sends it to the Keycloak Service. Keycloak's `KC_HOSTNAME` pins the issuer to that URL.
 
 ## Before you start
 
@@ -141,7 +141,7 @@ helm --kube-context "$CTX" upgrade --install agentregistry \
 kubectl --context "$CTX" -n agentregistry-system get pods
 ```
 
-The Solo install guide passes the licence with `--set licensing.licenseKey=...`. `--set-file` with a process substitution keeps it out of the process list; if your Helm rejects that, use the guide's form.
+The Solo install guide passes the licence with `--set licensing.licenseKey=...`. `--set-file` with a process substitution keeps it out of the process list. If your Helm rejects that, use the guide's form.
 
 ## 4. Gateway and parent route (the platform team does this once)
 
@@ -299,13 +299,13 @@ curl -s -o /dev/null -w '%{http_code}\n' "${H[@]}" -H "mcp-session-id: $SID" \
   http://localhost:8080/registry/cloud-a
 ```
 
-dev-user sees `list_instances` and `get_instance` only. Calling `restart_instance` by name gives `400`: the gateway answers with JSON-RPC error -32602 "unknown resource" rather than a 403, so a developer can't tell it exists. Repeat with `./scripts/mint-token.sh admin-user` and `restart_instance` is back.
+dev-user sees `list_instances` and `get_instance` only. Calling `restart_instance` by name gives `400`. The gateway answers with JSON-RPC error -32602 "unknown resource" and no 403, so a developer can't tell the tool exists. Repeat with `./scripts/mint-token.sh admin-user` and `restart_instance` is back.
 
 ## 8. Run it with Codex
 
 Needs Codex 0.167.0 or later (`codex --version`) and the port-forwards up (`./scripts/quick.sh port-forward`). If any of them drop (for example after a pod restart), run `./scripts/quick.sh stop-port-forward && ./scripts/quick.sh port-forward`.
 
-Show the change first. Nothing is written until you run `apply`, which makes a timestamped backup of `~/.codex/config.toml`. It touches nothing else, and never Claude Code:
+Show the change first. Nothing is written until you run `apply`, which makes a timestamped backup of `~/.codex/config.toml`. It touches nothing else.
 
 ```bash
 ./scripts/codex-config.sh show
@@ -345,11 +345,11 @@ codex mcp login lab-cloud-a
 
 Keycloak's agentregistry realm opens. Sign in as `dev-user`, with the password from `yaml/keycloak-realm.yaml` (users, dev-user, credentials). Keycloak sends you back to `http://127.0.0.1:5555/callback`, the redirect registered for the `codex-mcp` client. `codex mcp list` then shows lab-cloud-a as signed in.
 
-Verified live (9 Nov 2026): the browser sign-in as dev-user completed end-to-end and `codex mcp list` flipped lab-cloud-a to signed in. This was the one step nobody had run for real before now.
+Tested live on 9 Nov 2026. The browser sign-in as dev-user completed end to end and `codex mcp list` then showed lab-cloud-a as signed in.
 
-Also verified end-to-end from Codex after sign-in: `list_instances` through lab-cloud-a returned `web-01`/`web-02`/`batch-07`, with `web-02` correctly flagged as the only stopped instance in eu-west; asking Codex to restart `web-02` found no restart tool at all (dev-user's `tools/list` only ever exposes `list_instances`/`get_instance`, confirming the denied tool stays hidden rather than erroring). With `admin-user`'s token, `tools/list` on `/registry/cloud-a` includes `restart_instance`. `monthly_spend` on `/registry/cloud-b` (no tool policy there) returned a figure for dev-user with no filtering, as expected.
+After sign-in, `list_instances` through lab-cloud-a returned `web-01`, `web-02` and `batch-07`, and Codex picked out `web-02` as the only stopped instance in eu-west. Asked to restart `web-02`, Codex found no restart tool, because dev-user's `tools/list` only has `list_instances` and `get_instance`. The denied tool stays hidden and does not return an error. With `admin-user`'s token, `tools/list` on `/registry/cloud-a` includes `restart_instance`. `monthly_spend` on `/registry/cloud-b` (no tool policy there) returned a figure for dev-user with no filtering.
 
-Note: `codex exec` (the non-interactive form used to script this) needs `--approve-for-me`, or the MCP tool calls are auto-denied under its default `never` approval policy — this is a `codex exec` quirk, not a lab issue; the interactive `codex` the lab documents doesn't hit it.
+`codex exec`, the non-interactive form used to script this, needs `--approve-for-me`. Without it the MCP tool calls are denied under its default `never` approval policy. The interactive `codex` that this lab uses doesn't have this problem.
 
 Checked without signing in (9 Nov 2026):
 - An unauthenticated call to `/registry/cloud-a` returns `401`, with `resource_metadata` pointing to `/.well-known/oauth-protected-resource/registry/cloud-a`.
@@ -375,7 +375,7 @@ s=$(mcp_init "$GW_LOCAL/registry/cloud-b" "$LAB_MCP_TOKEN")
 mcp_rpc "$GW_LOCAL/registry/cloud-b" "$LAB_MCP_TOKEN" "$s" '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"monthly_spend","arguments":{"month":"2026-10"}}}'
 ```
 
-**Bearer fallback.** If the browser sign-in fails on stage, switch cloud-a to a pasted token. The gateway runs the same check, just without the browser:
+**Bearer fallback.** If the browser sign-in fails on stage, switch cloud-a to a pasted token. The gateway runs the same check without the browser:
 
 ```bash
 ./scripts/codex-config.sh bearer             # lab-cloud-a uses bearer_token_env_var = "LAB_MCP_TOKEN"
@@ -407,4 +407,4 @@ Teardown deletes the cluster and the two containers, then checks they are really
 
 ## What this lab doesn't cover
 
-Agent-to-agent calls through kagent, token exchange to the upstream clouds, and a single merged `/mcp` across servers (that is hand-written agentgateway config, not something the registry generates). TLS is off everywhere; this is a laptop demo.
+Agent-to-agent calls through kagent, token exchange to the upstream clouds, and a single merged `/mcp` across servers (that needs hand-written agentgateway config, which the registry does not generate). TLS is off everywhere because this is a laptop demo.
