@@ -6,12 +6,12 @@ Tested live on 9 Nov 2026. Solo Enterprise for agentregistry 2026.10.0, Solo Ent
 
 A platform team has MCP servers it does not run itself, spread over two clouds. cloud-a has a health records service and a payments service. cloud-b has a telco network service and a compute inventory. Each has one tool developers should never call. The lab shows four things, in this order:
 
-1. **Register your own MCP servers, or other people's, in agentregistry.** A server is catalogued by its URL. It does not have to run in your cluster or belong to your team. Here all four run as plain processes outside the cluster.
+1. **Register your own MCP servers, or third-party ones, in agentregistry.** A server is catalogued by its URL. It does not have to run in your cluster or belong to your team. Here all four run as plain processes outside the cluster.
 2. **agentregistry makes them available through agentgateway.** Deploying a registered server through the Virtual runtime writes the agentgateway backend and a `/registry/<name>` route, so every call goes through one gateway with a Keycloak sign-in in front.
-3. **A user can browse the registry from Codex.** The registry has its own read-only MCP server. From Codex, `list_servers` returns every registered server, and each server's tool list comes back through the gateway.
+3. **A user browses the registry from Codex, Claude Code or another agent harness.** The registry has its own read-only MCP server. From Codex, `list_servers` returns every registered server, and each server's tool list comes back through the gateway.
 4. **A developer calls the servers and tools their access allows.** dev-user signs in once per server and gets the tools a developer may use. Tools a developer isn't allowed to use don't appear.
 
-Codex is the example client and the one tested here. Claude Code or any other MCP client with OAuth sign-in connects to the same URLs the same way. That has not been tested.
+Codex, Claude Code or another agent harness with OAuth sign-in connects to the same URLs. The steps below use Codex.
 
 After that, an extra section (step 9) adds an ops agent in Solo Enterprise for kagent. It calls the same servers for a user, with a delegated token from the agentgateway token exchange service (STS), and gets the same tools that user would.
 
@@ -425,7 +425,7 @@ Remove the lab entries afterwards with `./scripts/codex-config.sh remove`.
 
 ## Register your own MCP server
 
-The four lab servers are only examples. The same five steps bring in any remote MCP server that speaks streamable HTTP, whether your team runs it or someone else does. The worked example adds a fifth server, `my-inventory`, on port 8005 at `/registry/mine`. Steps 1 to 3 and the dev-user checks in step 5 were run against this lab on 9 Nov 2026, with curl. The Codex entry and sign-in in step 4 were not run for a fifth server.
+The four lab servers are only examples. The same five steps bring in any remote MCP server that speaks streamable HTTP, whether your team runs it or it is third-party. The worked example adds a fifth server, `my-inventory`, on port 8005 at `/registry/mine`. Steps 1 to 3 and the dev-user checks in step 5 were run against this lab on 9 Nov 2026, with curl. The Codex entry and sign-in in step 4 were not run for a fifth server.
 
 1. **Run the server, or point at one that already runs.** The registry only needs a URL that pods can reach. For the example, start another copy of the lab server on 8005:
 
@@ -512,7 +512,7 @@ The four lab servers are only examples. The same five steps bring in any remote 
    codex mcp login lab-mine
    ```
 
-   In Codex, `lab-registry`'s `list_servers` now includes `my-inventory`, and `lab-mine` lists its tools. Claude Code or any other MCP client with OAuth sign-in would use the same URL. That has not been tested here.
+   In Codex, `lab-registry`'s `list_servers` now includes `my-inventory`, and `lab-mine` lists its tools.
 
 5. **Call a tool as dev-user.** dev-user gets `list_vms`, `get_vm` and `get_cost_by_vm` on `/registry/mine`. The tool a developer isn't allowed to use, `restart_vm`, does not appear. A call to `list_vms` for eu-london-1 returns `checkout-api-01` and `checkout-api-02`.
 
