@@ -2,6 +2,10 @@
 # Lets the developers group read the catalogue (servers, deployments, runtimes) so the registry MCP
 # list_deployments and get_deployment work for dev-user. Shape from quickstart/mcp-gateway.md Step 5,
 # with accessLevel view instead of manage. "view" is documented on runtimes in that step.
+# The five view-* grants below were added for the full-catalogue browse: without them list_agents,
+# list_skills, list_prompts, list_models and list_plugins return count 0 to dev-user even once those
+# kinds hold entries, because view on mcpservers/deployments/runtimes doesn't carry to the rest of the
+# catalogue. Checked live on 2026.10.0: each catalog leaf needs its own grant.
 apiVersion: ar.dev/v1alpha1
 kind: RBACPolicy
 metadata:
@@ -22,3 +26,18 @@ spec:
     - name: view-runtimes
       accessLevel: view
       resource: runtimes
+    - name: view-agents
+      accessLevel: view
+      resource: agents
+    - name: view-skills
+      accessLevel: view
+      resource: skills
+    - name: view-prompts
+      accessLevel: view
+      resource: prompts
+    - name: view-models
+      accessLevel: view
+      resource: models
+    - name: view-plugins
+      accessLevel: view
+      resource: plugins

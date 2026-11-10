@@ -1,6 +1,6 @@
 # Calling MCP servers outside your cluster through agentregistry and agentgateway
 
-Tested live on 9 Nov 2026. Solo Enterprise for agentregistry 2026.10.0, Solo Enterprise for agentgateway v2026.10.2 and Solo Enterprise for kagent 0.5.16 only. Standalone kind cluster `xcloud-mcp`. No OSS edition: the Virtual runtime that writes the gateway config is an Enterprise agentregistry feature.
+Tested live on 9-10 Nov 2026. Solo Enterprise for agentregistry 2026.10.0, Solo Enterprise for agentgateway v2026.10.2 and Solo Enterprise for kagent 0.5.16 only. Standalone kind cluster `xcloud-mcp`. No OSS edition: the Virtual runtime that writes the gateway config is an Enterprise agentregistry feature.
 
 ## The story
 
@@ -8,12 +8,12 @@ A platform team has MCP servers it does not run itself, spread over two clouds. 
 
 1. **Register your own MCP servers, or third-party ones, in agentregistry.** A server is catalogued by its URL. It does not have to run in your cluster or belong to your team. Here all four run as plain processes outside the cluster.
 2. **agentregistry makes them available through agentgateway.** Deploying a registered server through the Virtual runtime writes the agentgateway backend and a `/registry/<name>` route. The platform team also puts all of them behind one path, `/mcp`, with a Keycloak sign-in in front.
-3. **A user browses the registry from Codex, Claude Code or another agent harness.** The registry has its own read-only MCP server. From Codex, `list_servers` returns every registered server, and each server's tool list comes back through the gateway.
+3. **A user browses the registry from Codex, Claude Code or another agent harness.** The registry has its own read-only MCP server. From Codex, `list_servers` returns every registered server, and each server's tool list comes back through the gateway. The same read-only server also lists every other catalogue kind: agents, skills, prompts, runtimes, models and plugins.
 4. **A developer calls the servers and tools their access allows.** dev-user signs in once per server and gets the tools a developer may use. Tools a developer isn't allowed to use don't appear.
 
 Codex, Claude Code or another agent harness with OAuth sign-in connects to the same URLs. The steps below use Codex.
 
-After that, an extra section (step 9) adds an ops agent in Solo Enterprise for kagent. It calls the same servers for a user, with a delegated token from the agentgateway token exchange service (STS), and gets the same tools that user would.
+After that, two extra sections go further. "Browse the whole catalogue from Codex" asks that same registry MCP server for every agent, skill, prompt, runtime, model and plugin, not only MCP servers. Step 9 adds an ops agent in Solo Enterprise for kagent: it calls the same servers for a user, with a delegated token from the agentgateway token exchange service (STS), and gets the same tools that user would.
 
 What each step shows:
 
@@ -558,6 +558,115 @@ This is how a team adds a new service. The example is a logistics shipment-track
    Codex needs no new entry: `lab-all` picks up the new tools the next time it starts. Asked "Use lab-all to track shipment SHP-20931", it answered: `SHP-20931 is in transit to Leeds; ETA 10 November 2026; last scanned at Daventry DC on 9 November at 18:42.`
 
 To remove it: take the logistics lines back out of `yaml/one-path.yaml` and apply it, run `arctl delete deployment logistics` and `arctl delete mcp logistics-shipments`, and stop the process on port 8005.
+
+
+## Browse the whole catalogue from Codex
+
+The read-only registry MCP on port 31313 that step 6 used to discover the four servers isn't limited to MCP servers. The same server, same bearer token, also has `list_agents`, `list_skills`, `list_prompts`, `list_runtimes`, `list_models` and `list_plugins`.
+
+This lab's catalogue so far holds only the four servers and two runtimes, so those calls would come back empty. [registry/catalogue.yaml](registry/catalogue.yaml) adds one of each other kind: a `Model`, an `Agent` for the `cloud-ops` agent from step 9 below, a `Skill`, a `Prompt`, and a `Plugin` that reuses the one already published in [Claude Code plugins in AgentRegistry](https://www.masterthemesh.com/solo/agentregistry-plugins/).
+
+```bash
+arctl apply -f - < registry/catalogue.yaml
+```
+
+```
+✓ Model/claude-opus-bedrock (latest) created
+✓ Agent/cloud-ops (latest) created
+✓ Skill/agentgateway-policy-review (latest) created
+✓ Prompt/telco-outage-triage (latest) created
+✓ Plugin/agentgateway-policy-review (latest) created
+```
+
+The Skill and the Plugin both point at the one already published in [Claude Code plugins in AgentRegistry](https://www.masterthemesh.com/solo/agentregistry-plugins/): the Skill at one real subfolder inside it, the Plugin at the whole repository. Their `description` fields above are hand-written, same as every other entry in this file; what's genuinely server-resolved is each one's `status`, not shown here: agentregistry pins the git commit, and for the Plugin, scans the bundle for its real skills, commands and hooks.
+
+One more thing the platform team has to do. The `developers-read` RBAC policy from step 5 only granted `view` on MCP servers, Deployments and runtimes. Without a grant for each of the other five kinds, dev-user's `list_agents`, `list_skills`, `list_prompts`, `list_models` and `list_plugins` calls all come back `count: 0`, even once the entries exist. [registry/rbac.yaml](registry/rbac.yaml) adds the five grants:
+
+```yaml
+    - name: view-agents
+      accessLevel: view
+      resource: agents
+    - name: view-skills
+      accessLevel: view
+      resource: skills
+    - name: view-prompts
+      accessLevel: view
+      resource: prompts
+    - name: view-models
+      accessLevel: view
+      resource: models
+    - name: view-plugins
+      accessLevel: view
+      resource: plugins
+```
+
+```bash
+arctl apply -f - < registry/rbac.yaml
+```
+
+Codex reaches this bridge the same way `codex-config.sh apply` already set up in step 8's Codex section: a `lab-registry` entry with a bearer token, no sign-in step.
+
+```bash
+codex mcp list
+```
+
+```
+Name          Url                         Bearer Token Env Var  Status   Auth
+lab-all       http://localhost:8080/mcp   -                     enabled  Not logged in
+lab-registry  http://localhost:31313/mcp  LAB_AR_TOKEN          enabled  Bearer token
+```
+
+Mint a token and ask Codex to browse the whole catalogue, not look up anything by name. For a non-interactive `codex exec` run, approve the seven `list_*` tools on `lab-registry` up front, the same way step 8 approves `lab-all`'s tools; without it Codex refuses each one with "MCP tool call requires approval, but approval policy is never":
+
+```bash
+eval "$(./scripts/mint-token.sh dev-user)"
+codex exec \
+  -c 'mcp_servers.lab-registry.tools.list_servers.approval_mode="approve"' \
+  -c 'mcp_servers.lab-registry.tools.list_agents.approval_mode="approve"' \
+  -c 'mcp_servers.lab-registry.tools.list_skills.approval_mode="approve"' \
+  -c 'mcp_servers.lab-registry.tools.list_prompts.approval_mode="approve"' \
+  -c 'mcp_servers.lab-registry.tools.list_runtimes.approval_mode="approve"' \
+  -c 'mcp_servers.lab-registry.tools.list_models.approval_mode="approve"' \
+  -c 'mcp_servers.lab-registry.tools.list_plugins.approval_mode="approve"' \
+  "Using lab-registry, list every MCP server, agent, skill, prompt, runtime, model and \
+plugin registered in AgentRegistry. For each kind, name every item and its one-line description."
+```
+
+Run live on 10 Nov 2026 with Codex 0.167.0, this called `list_servers`, `list_agents`, `list_skills`, `list_prompts`, `list_runtimes`, `list_models` and `list_plugins` on `lab-registry`, one each, and answered:
+
+```
+AgentRegistry currently has 11 registered items across the seven requested kinds. All listed entries are tagged `latest` except the two runtimes, which have no tag.
+
+### MCP servers (4)
+- compute-inventory — VMs, their state and size, last month's cost per VM, and VM restarts; hosted in cloud-b, outside the cluster.
+- finance-payments — Account balances, transactions, and refunds for business accounts; hosted in cloud-a, outside the cluster.
+- health-records — Patient search, appointments, and full patient records for the clinics; hosted in cloud-a, outside the cluster.
+- telco-network — Cell-site status, outages, and cell-site resets for the radio network; hosted in cloud-b, outside the cluster.
+
+### Agents (1)
+- cloud-ops — Answers questions about VMs, costs, payments, cell sites, and patient records across cloud-a and cloud-b, using the lab's four MCP servers.
+
+### Skills (1)
+- agentgateway-policy-review — Reviews agentgateway or kgateway configuration YAML against a field checklist and bundled linter; read-only and never applies changes to a cluster.
+
+### Prompts (1)
+- telco-outage-triage — Starting prompt for a developer triaging an open telco outage.
+
+### Runtimes (2)
+Neither runtime has a description field registered; both are configured with type Virtual.
+- mcp-gateway — Virtual runtime.
+- virtual-default — Virtual runtime.
+
+### Models (1)
+- claude-opus-bedrock — Bedrock-hosted Claude Opus catalogue sample; the description says nothing in this lab calls it.
+
+### Plugins (1)
+- agentgateway-policy-review — Reviews agentgateway and kgateway configuration in files or against a live cluster; read-only, and ships skills, commands, an auditor agent, a hook, executables, and an MCP server.
+```
+
+Only a read-only record of each kind comes back this way. There's no tool here to call a cataloged MCP server's own tools, or run an agent. That's what the `/registry/*` and `/mcp` paths above are for. This bridge is the catalogue, not the traffic.
+
+To remove it: `arctl delete model claude-opus-bedrock`, `arctl delete agent cloud-ops`, `arctl delete skill agentgateway-policy-review`, `arctl delete prompt telco-outage-triage`, `arctl delete plugin agentgateway-policy-review`, and take the five `view-*` grants back out of `registry/rbac.yaml`.
 
 
 ## 9. Extra: a kagent agent calling the same servers for the user

@@ -41,4 +41,8 @@ wait_for_me 'In codex ask: "Which compute-inventory instances are stopped in eu-
 say '8. Same thing from curl, so the 400 is visible.'
 run 'DEV=$(mint_token dev-user); S=$(mcp_init $GW_LOCAL/registry/compute $DEV); mcp_rpc $GW_LOCAL/registry/compute $DEV $S '"'"'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"restart_vm","arguments":{"name":"checkout-api-02"}}}'"'"' | tail -3'
 
+say '9. The registry has a second, read-only MCP server on :31313 that lists the whole catalogue, not only servers.'
+run "codex mcp list"
+wait_for_me 'With LAB_AR_TOKEN still exported, run: codex   then ask: "Using lab-registry, list every MCP server, agent, skill, prompt, runtime, model and plugin registered in AgentRegistry."'
+
 say 'Done. If sign-in failed in step 6: ./scripts/codex-config.sh bearer, eval "$(./scripts/mint-token.sh)", restart codex.'

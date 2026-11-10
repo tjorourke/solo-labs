@@ -1,0 +1,80 @@
+# A Model, an Agent, a Skill, a Prompt and a Plugin, so the full-catalogue browse further
+# down has one of each kind to find. A fresh install already supports these kinds, but
+# has no entries for them: only MCPServer and Runtime get written by the steps above.
+# Every field below checked clean with `arctl apply --dry-run` against agentregistry
+# 2026.10.0 before this was applied live. Apply with:
+#   arctl apply -f - < registry/catalogue.yaml
+apiVersion: ar.dev/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-bedrock
+spec:
+  title: "Claude Opus (Bedrock)"
+  description: "A catalogue sample: a Bedrock-hosted model, registered so the full-catalogue browse below has a Model to find. Nothing in this lab calls it; the kagent cloud-ops agent in step 9 uses gpt-4.1-mini, configured directly in kagent-values.yaml, not through this entry."
+  provider: bedrock
+  model: us.anthropic.claude-opus-4-8
+---
+apiVersion: ar.dev/v1alpha1
+kind: Agent
+metadata:
+  name: cloud-ops
+spec:
+  title: "Cloud ops"
+  description: "Answers questions about VMs, cost, payments, cell sites and patient records across cloud-a and cloud-b, using the lab's four MCP servers. The same agent runs in Solo Enterprise for kagent in step 9; this entry catalogues it."
+  mcpServers:
+    - kind: MCPServer
+      name: compute-inventory
+    - kind: MCPServer
+      name: finance-payments
+    - kind: MCPServer
+      name: telco-network
+    - kind: MCPServer
+      name: health-records
+---
+apiVersion: ar.dev/v1alpha1
+kind: Skill
+metadata:
+  name: agentgateway-policy-review
+spec:
+  title: "agentgateway policy review"
+  description: "Review agentgateway or kgateway configuration YAML, a single file or a whole directory, against the field checklist and report findings with the bundled linter. Read-only, never applies anything to a cluster. One of the two skills the Plugin entry below ships; registered on its own so a catalogue browse can find a Skill as well as a Plugin."
+  source:
+    repository:
+      url: https://github.com/tjorourke/agentgateway-policy-review
+      subfolder: skills/agentgateway-policy-review
+      branch: main
+---
+apiVersion: ar.dev/v1alpha1
+kind: Prompt
+metadata:
+  name: telco-outage-triage
+spec:
+  description: "A starting prompt for a developer triaging an open telco outage."
+  content: |
+    Use the telco-network tools to find every open outage. For each one, report the
+    site ID, how many subscribers are affected, and how long it has been open. Do not
+    reset a cell site yourself; name which one you would reset and why, and wait for
+    confirmation.
+---
+apiVersion: ar.dev/v1alpha1
+kind: Plugin
+metadata:
+  name: agentgateway-policy-review
+spec:
+  title: "agentgateway policy review"
+  description: >-
+    Reviews agentgateway and kgateway configuration two ways: statically over a
+    file or a whole directory, and against a live cluster over kubectl, where it
+    reads controller status to find policies that are accepted and attached to
+    nothing, the state that looks like a working policy in kubectl get. Twenty
+    field rules plus thirteen cluster checks, across HTTPRoute, GRPCRoute,
+    TLSRoute and TCPRoute, read-only throughout. Ships two skills, two slash
+    commands, a read-only auditor sub-agent, a PreToolUse hook that blocks an
+    apply only on errors, three executables, and an MCP server pointing at the
+    registry catalogue through the gateway.
+  source:
+    type: git
+    git:
+      repository:
+        url: https://github.com/tjorourke/agentgateway-policy-review
+        branch: main

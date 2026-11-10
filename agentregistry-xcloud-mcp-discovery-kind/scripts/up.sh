@@ -102,6 +102,7 @@ arctl apply -f - <registry/runtime.yaml
 arctl apply -f - <registry/mcpservers.yaml
 arctl apply -f - <registry/deployments.yaml
 arctl apply -f - <registry/rbac.yaml
+arctl apply -f - <registry/catalogue.yaml
 
 echo '== 10. Sign-in policy and the PRM routes for the four servers'
 kubectl --context "$CTX" apply -f yaml/oauth-metadata.yaml

@@ -72,6 +72,23 @@ for r in health finance telco compute; do
   grep -q "/registry/$r" <<<"$depl" && ok "registry MCP list_deployments shows /registry/$r to dev-user" || bad "registry MCP list_deployments missing /registry/$r"
 done
 
+# Full-catalogue browse (registry/catalogue.yaml + registry/rbac.yaml). Without the rbac.yaml
+# view-agents/view-skills/view-prompts/view-models/view-plugins grants, each of these comes back
+# to dev-user as count 0 even though the entries exist. /bin/bash on macOS is 3.2 (no associative
+# arrays), so this is a plain tool:name list, same shape as the CASES array above.
+CATALOGUE=(
+  'list_agents:cloud-ops'
+  'list_skills:agentgateway-policy-review'
+  'list_prompts:telco-outage-triage'
+  'list_models:claude-opus-bedrock'
+  'list_plugins:agentgateway-policy-review'
+)
+for c in "${CATALOGUE[@]}"; do
+  IFS=':' read -r m name <<<"$c"
+  res=$(mcp_rpc "$AR_MCP_LOCAL" "$DEV" "$s" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$m\",\"arguments\":{}}}")
+  grep -q "\"$name\"" <<<"$res" && ok "registry MCP $m shows $name to dev-user" || bad "registry MCP $m missing $name"
+done
+
 # One path for all four servers (yaml/one-path.yaml)
 ALL="$GW_LOCAL/mcp"
 code=$(curl -s -o /dev/null -w '%{http_code}' -d '{}' "$ALL")
